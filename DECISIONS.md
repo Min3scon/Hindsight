@@ -125,3 +125,24 @@ Headless bpy 4.2.23 module, 4-core 2.1 GHz Xeon, strokes touching ~2% of vertice
   Separate/Duplicate, stress/benchmark/install tests (13).
 - The main session wrote the shared types, registry, global timeline, mesh I/O, runtime/recorder,
   operators/keymaps, props, add-on init, test harness and runner, and integrated everything.
+
+## Beta 1.0.0-beta.1 (2026-10-14, second job)
+- Version `1.0.0-beta.1` is in blender_manifest.toml: both the Blender 4.2 and 5.2 extension validators
+  accept it (validate + build exit 0). Tagline ends with "(beta)".
+- Add-on beta labelling: "BETA" in the Undo History sidebar panel header and in Add-on Preferences, with
+  "Beta: please report bugs on GitHub" and a "Report a bug" button (wm.url_open to the issue chooser).
+  Test: tests/test_bl_beta.py. Suite: 16 files / 125 tests green on bpy 4.2.23 and 5.2.2.
+- The repo's default branch is `claude/lucid-brahmagupta-9gsdsn` (it was the first branch pushed to the
+  empty repo), so Pages, workflows and releases already point at the branch with the code. No `main`.
+- **Permission walls (not worked around):**
+  - `POST /repos/Min3scon/Hindsight/pages {"build_type":"workflow"}` -> HTTP 403 "Access to this GitHub
+    API path is not permitted through this proxy." You need to click: **Settings > Pages > Build and
+    deployment > Source: GitHub Actions**, then **Actions > pages > Run workflow** (or push any commit).
+  - `POST /repos/Min3scon/Hindsight/releases` -> HTTP 403 "Creating, editing, or deleting releases is not
+    permitted for this session type." Git tag pushes are refused too (HTTP 403). You need to click:
+    **Releases > Draft a new release > Choose a tag: type `v1.0.0-beta.1` > Create new tag on publish >
+    Target: `claude/lucid-brahmagupta-9gsdsn` > Title "Hindsight 1.0.0 beta 1" > paste
+    `.github/release-notes/v1.0.0-beta.1.md` > tick "Set as a pre-release" > Publish release.** Creating
+    the tag starts `.github/workflows/release.yml`, which builds `hindsight.zip`, attaches it, keeps it a
+    pre-release and uses the notes file. If the zip doesn't appear within a few minutes, attach
+    `docs/download/hindsight.zip` by hand (Edit release > drag the file in).

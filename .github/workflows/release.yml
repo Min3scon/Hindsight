@@ -50,12 +50,24 @@ jobs:
       - name: List zip contents
         run: python3 -m zipfile -l dist/hindsight.zip
 
+      - name: Release notes
+        id: notes
+        run: |
+          f=".github/release-notes/${GITHUB_REF_NAME}.md"
+          if [ -f "$f" ]; then
+            echo "path=$f" >> "$GITHUB_OUTPUT"
+          else
+            echo "Hindsight ${GITHUB_REF_NAME}" > "$RUNNER_TEMP/notes.md"
+            echo "path=$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
+          fi
+
       # Tags with a pre-release suffix (v1.0.0-beta.1, v1.1.0-rc.1) become GitHub pre-releases and are
-      # never marked "latest". If the release already exists (created with notes), only the asset is
-      # added/replaced; its notes are kept.
+      # never marked "latest". Notes come from .github/release-notes/<tag>.md when that file exists. If the
+      # release was already created in the GitHub UI, this step attaches the zip to it.
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/hindsight.zip
           fail_on_unmatched_files: true
+          body_path: ${{ steps.notes.outputs.path }}
           prerelease: ${{ contains(github.ref_name, '-') }}
           make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
