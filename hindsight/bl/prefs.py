@@ -65,7 +65,7 @@ def _update_appearance(self, context):
 _KIND_ITEMS = [(k.upper(), v, f"Record {v.lower()}") for k, v in (
     ("transforms", "Transforms"), ("parenting", "Parenting"), ("visibility", "Visibility"),
     ("names", "Names"), ("collections", "Collections"), ("constraints", "Constraints"),
-    ("edit_steps", "Edit Mode step by step"))]
+    ("edit_steps", "Edit Mode step by step"), ("objects", "Adding and deleting objects"))]
 _KIND_DEFAULT = {k for k, _l, _d in _KIND_ITEMS}
 
 

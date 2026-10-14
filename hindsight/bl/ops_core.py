@@ -101,7 +101,24 @@ class HINDSIGHT_OT_record_everything(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class HINDSIGHT_OT_record_scene(bpy.types.Operator):
+    bl_idname = "hindsight.record_scene"
+    bl_label = "Record Adding and Deleting Objects"
+    bl_description = ("Record objects being added, duplicated and deleted in this scene, so scrubbing the "
+                      "global history brings them back or removes them. Needs Record set to Everything")
+    bl_options = {'REGISTER'}
+
+    on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})
+
+    def execute(self, context):
+        from . import datarec, runtime
+        datarec.set_tracked(context.scene, self.on)
+        runtime.tag_redraw_all()
+        return {'FINISHED'}
+
+
 classes = (HINDSIGHT_OT_step_back, HINDSIGHT_OT_step_forward, HINDSIGHT_OT_goto, HINDSIGHT_OT_record_everything,
+           HINDSIGHT_OT_record_scene,
            HINDSIGHT_OT_confirm_truncate)
 
 _keymaps = []

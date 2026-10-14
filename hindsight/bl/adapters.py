@@ -46,6 +46,7 @@ KINDS = {
     "collections": "Collections",
     "constraints": "Constraints",
     "edit_steps": "Edit Mode step by step",
+    "objects": "Adding and deleting objects",
 }
 
 
@@ -328,12 +329,104 @@ def _write_constraints(ob, want: list) -> None:
         set_struct_values(c, w.get("values") or {})
 
 
-ADAPTERS = {a.id: a for a in (RNAAdapter(), ObjectAdapter())}
+def object_body(ob) -> dict:
+    """What it takes to bring a deleted object back (its mesh comes from the mesh datablock if it
+    still exists, otherwise from the snapshot stored with the step)."""
+    data = ob.data
+    return {
+        "name": ob.name, "type": ob.type,
+        "data": idmap.claim(data) if data is not None else None,
+        "data_name": data.name if data is not None else None,
+        "matrix": [list(map(float, r)) for r in ob.matrix_basis],
+        "parent": idmap.claim(ob.parent) if ob.parent is not None else None,
+        "parent_inverse": [list(map(float, r)) for r in ob.matrix_parent_inverse],
+        "collections": sorted(_coll_ref(c) for c in ob.users_collection),
+        "materials": [idmap.claim(s.material) if s.material is not None else None for s in ob.material_slots],
+        "hide": [bool(ob.hide_viewport), bool(ob.hide_render), bool(ob.hide_select)],
+    }
+
+
+class SceneAdapter(Adapter):
+    """Which objects exist in the scene (adding, deleting, duplicating objects). Bodies and mesh
+    snapshots of the objects that come or go are stored with the step by datarec."""
+    id = "scene"
+    id_types = ("Scene",)
+
+    def capture(self, idb) -> dict:
+        if not kind_on("objects"):
+            return {}
+        return {"objects": sorted(u for u in (idmap.claim(o) for o in idb.objects) if u)}
+
+    def write(self, idb, values: dict, recorded=None) -> None:
+        if "objects" not in values or values["objects"] is MISSING or recorded is None:
+            return
+        want = set(values["objects"])
+        have = {idmap.uid_of(o): o for o in idb.objects}
+        for uid in sorted(set(have) - want):
+            _remove_object(have[uid])
+        made = []
+        for uid in sorted(want - set(have)):
+            ob = _recreate_object(idb, uid, recorded(f"body:{uid}"), recorded(f"snapshot:{uid}"))
+            if ob is not None:
+                made.append((ob, recorded(f"body:{uid}")))
+        for ob, body in made:                       # parents after every object exists
+            if isinstance(body, dict) and body.get("parent"):
+                par = idmap.find(body["parent"])
+                if par is not None:
+                    ob.parent = par
+                    ob.matrix_parent_inverse = to_rna(body["parent_inverse"])
+
+
+def _remove_object(ob) -> None:
+    try:
+        if bpy.context.view_layer.objects.active == ob and ob.mode != "OBJECT":
+            bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception:
+        pass
+    bpy.data.objects.remove(ob, do_unlink=True)      # its data stays (it may come back)
+
+
+def _recreate_object(scene, uid, body, snap):
+    if not isinstance(body, dict):
+        log.warn("an object can't be brought back: its details weren't recorded")
+        return None
+    data = idmap.find(body["data"]) if body.get("data") else None
+    if data is None and body.get("type") == "MESH" and snap is not None:
+        from . import meshio
+        data = bpy.data.meshes.new(body.get("data_name") or body.get("name") or "Mesh")
+        meshio.write_snapshot(data, snap)
+        if body.get("data"):
+            data[idmap.UID_PROP] = body["data"]
+    if data is None and body.get("type") not in ("EMPTY",):
+        log.warn(f"{body.get('name')} can't be brought back: its data is gone")
+        return None
+    ob = bpy.data.objects.new(body.get("name") or "Object", data)
+    ob[idmap.UID_PROP] = uid
+    linked = False
+    for ref in body.get("collections") or ():
+        c = _coll_from_ref(ref)
+        if c is not None:
+            c.objects.link(ob)
+            linked = True
+    if not linked:
+        scene.collection.objects.link(ob)
+    ob.matrix_basis = to_rna(body["matrix"])
+    for slot_mat, mu in zip(range(len(body.get("materials") or ())), body.get("materials") or ()):
+        if data is not None and len(ob.material_slots) <= slot_mat and hasattr(data, "materials"):
+            data.materials.append(idmap.find(mu) if mu else None)
+    hv = body.get("hide") or [False, False, False]
+    ob.hide_viewport, ob.hide_render, ob.hide_select = hv
+    return ob
+
+
+ADAPTERS = {a.id: a for a in (RNAAdapter(), ObjectAdapter(), SceneAdapter())}
 _OBJECT_KINDS = {"collections": "collections", "hide": "visibility", "constraints": "constraints"}
 
 
 def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
+    if adapter_id == "scene":
+        return "objects"
     if adapter_id == "object":
         return _OBJECT_KINDS.get(path)
     if adapter_id == "rna":

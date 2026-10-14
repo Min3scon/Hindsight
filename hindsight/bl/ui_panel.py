@@ -233,18 +233,23 @@ def draw_history_options(layout, context):
 
 
 def _draw_everything(layout, context, obj):
-    """The per-object switch for recording more than sculpting (preference Record: Everything)."""
+    """The switches for recording more than sculpting (preference Record: Everything)."""
     try:
         from . import datarec
-        if obj is None or not datarec.scope_everything():
+        if not datarec.scope_everything():
             return
-        on = datarec.is_tracked(obj)
+        on = datarec.is_tracked(obj) if obj is not None else False
+        scene_on = datarec.is_tracked(context.scene)
     except Exception:
         return
-    row = layout.row()
-    op = row.operator("hindsight.record_everything", text="Record everything on this object",
-                      icon='CHECKBOX_HLT' if on else 'CHECKBOX_DEHLT', depress=on)
-    op.on = not on
+    col = layout.column(align=True)
+    if obj is not None:
+        op = col.operator("hindsight.record_everything", text="Record everything on this object",
+                          icon='CHECKBOX_HLT' if on else 'CHECKBOX_DEHLT', depress=on)
+        op.on = not on
+    op = col.operator("hindsight.record_scene", text="Record adding and deleting objects",
+                      icon='CHECKBOX_HLT' if scene_on else 'CHECKBOX_DEHLT', depress=scene_on)
+    op.on = not scene_on
 
 
 def draw_help(layout, context):
@@ -430,10 +435,34 @@ class VIEW3D_PT_hindsight_scrubber(_SubPanel, bpy.types.Panel):
         draw_scrubber_props(layout.column(), prefs)
 
 
+class VIEW3D_PT_hindsight_advanced(_SubPanel, bpy.types.Panel):
+    bl_label = "Advanced"
+    bl_options = {'DEFAULT_CLOSED'}
+    bl_order = 7
+
+    @classmethod
+    def poll(cls, context):
+        try:
+            from . import datarec
+            return datarec.scope_everything()
+        except Exception:
+            return False
+
+    def draw(self, context):
+        layout = self.layout
+        prefs = get_prefs(context)
+        if prefs is None or not hasattr(prefs, "record_kinds"):
+            layout.label(text="Preferences unavailable", icon='INFO')
+            return
+        wrap(layout, context, "What Record everything records on an object:")
+        col = layout.column(align=True)
+        col.prop(prefs, "record_kinds")
+
+
 class VIEW3D_PT_hindsight_help(_SubPanel, bpy.types.Panel):
     bl_label = "Help"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 7
+    bl_order = 8
 
     def draw(self, context):
         draw_help(self.layout, context)
@@ -447,6 +476,7 @@ classes = (
     VIEW3D_PT_hindsight_filter,
     VIEW3D_PT_hindsight_memory,
     VIEW3D_PT_hindsight_scrubber,
+    VIEW3D_PT_hindsight_advanced,
     VIEW3D_PT_hindsight_help,
 )
 

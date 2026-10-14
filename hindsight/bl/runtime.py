@@ -252,6 +252,11 @@ def _visible_uids() -> set:
         u = obj_uid(ob)
         if u is not None and not is_excluded(ob):
             out.add(u)
+    try:
+        from . import datarec
+        out |= {u for u in datarec.tracked_uids() if datarec._is_scene_uid(u)}
+    except Exception:
+        pass
     return out
 
 
@@ -811,10 +816,28 @@ def _join_hook(step, forward, states):
         return None
 
 
+def _find_any(uid):
+    """An object by uid, or any other recorded datablock (a scene, ...)."""
+    ob = find_object(uid)
+    if ob is not None:
+        return ob
+    try:
+        from . import idmap
+        return idmap.find(uid)
+    except Exception:
+        return None
+
+
 def _goto_history(h, pos: int, final: bool) -> dict:
+    from . import datarec
     states = {}
     for m in list(h.members):
         ob = find_object(m)
+        if ob is None:
+            other = _find_any(m)
+            if other is not None:
+                states[m] = datarec.baseline(other, m)
+            continue
         if ob is not None:
             if ob.mode == "EDIT":
                 with suspended():
@@ -823,18 +846,22 @@ def _goto_history(h, pos: int, final: bool) -> dict:
                 with suspended():
                     bpy.ops.object.mode_set(mode="EDIT")
             states[m] = ensure_state(ob)
-    from . import datarec
     tracked = [m for m in h.members if m in datarec.tracked_uids()]
     vb = {m: dict(states[m].values) for m in tracked if m in states}
     before = h.cursor
     changes = h.goto(pos, states, join_hook=_join_hook)
     wrote_data = False
     for target, keys in changes.items():
-        ob = find_object(target)
+        ob = _find_any(target)
         st = states.get(target) or _STATES.get(target)
         if ob is None or st is None:
             continue
         mesh_keys, data_keys = datarec.split_keys(keys)
+        if not isinstance(ob, bpy.types.Object):
+            if data_keys:
+                datarec.write(ob, st, data_keys)
+                wrote_data = True
+            continue
         if data_keys:
             datarec.write(ob, st, data_keys)
             wrote_data = True

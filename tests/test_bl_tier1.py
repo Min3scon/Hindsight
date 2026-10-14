@@ -276,6 +276,109 @@ def test_edit_mode_default_unchanged():
         [e.meta.get("label") for e in h.entries]
 
 
+def scene_state():
+    """Every object in the scene: name, type, transform bits, collections, and a hash of its mesh."""
+    import hashlib
+    out = {}
+    for ob in C.scene.objects:
+        h = hashlib.blake2b(digest_size=12)
+        if ob.type == "MESH":
+            for k, v in sorted(H.snapshot(ob).items()):
+                h.update(k.encode())
+                h.update(v.tobytes())
+        out[idmap.uid_of(ob)] = (ob.name, ob.type, tuple(fb(r) for r in ob.matrix_basis),
+                                 ob.parent.name if ob.parent else None,
+                                 tuple(sorted(c.name for c in ob.users_collection)), h.hexdigest())
+    return out
+
+
+def scene_goto(pos):
+    h = runtime.reg().history_for(idmap.uid_of(C.scene))
+    runtime._goto_history(h, pos, True)
+    return h
+
+
+def test_objects_added_deleted():
+    a, b, c = setup()
+    datarec.set_tracked(C.scene, True)
+    su = idmap.uid_of(C.scene)
+    states = [scene_state()]
+
+    def rec_scene(label):
+        steps = datarec.commit(label=label, uids=[su])
+        assert len(steps) == 1, (label, steps)
+        states.append(scene_state())
+        return steps[0]
+
+    bpy.ops.mesh.primitive_cube_add(location=(0, 3, 0))
+    cube = C.active_object
+    cube.name = "Cube"
+    st = rec_scene("Add Cube")
+    cu = idmap.uid_of(cube)
+    assert cu in st.extra["_snapshots"], "the new object's mesh is stored with the step"
+    cube.location = (1, 3, 0)
+    cube.data.vertices[0].co.z += 0.5
+    C.view_layer.update()
+    datarec.commit(uids=[su])                         # a move is not a scene change
+    states[-1] = scene_state()
+    for o in C.view_layer.objects:
+        o.select_set(o == a)
+    C.view_layer.objects.active = a
+    bpy.ops.object.duplicate()
+    dup = C.active_object
+    rec_scene("Duplicate")
+    assert idmap.uid_of(dup) != idmap.uid_of(a), "the copy got its own id"
+    for o in C.view_layer.objects:
+        o.select_set(o == cube)
+    C.view_layer.objects.active = cube
+    bpy.ops.object.delete()
+    rec_scene("Delete")
+    h = runtime.reg().history_for(su)
+    assert len(h.entries) == 3, [(e.meta.get("label"), [list(r.changes) for r in e.load().records]) for e in h.entries]
+    for pos in (0, 3, 1, 2, 0, 3, 2):
+        scene_goto(pos)
+        assert scene_state() == states[pos], (pos, sorted(v[0] for v in scene_state().values()),
+                                              sorted(v[0] for v in states[pos].values()))
+    # back to before the delete, then forward and back again
+    scene_goto(2)
+    assert idmap.find(cu) is not None and idmap.find(cu).name.startswith("Cube")
+    scene_goto(3)
+    assert idmap.find(cu) is None
+    assert not datarec.commit(uids=[su]), "jumps record nothing"
+
+
+def test_deleted_object_back_after_reload():
+    import os
+    import tempfile
+    a, b, c = setup()
+    datarec.set_tracked(C.scene, True)
+    su = idmap.uid_of(C.scene)
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 3)
+    assert H.commit(a) is not None                    # A has its own history
+    H.enter(a, "OBJECT")
+    au = runtime.obj_uid(a)
+    want = H.snapshot(a)
+    for o in C.view_layer.objects:
+        o.select_set(o == a)
+    C.view_layer.objects.active = a
+    bpy.ops.object.delete()
+    assert datarec.commit(label="Delete", uids=[su])
+    d = tempfile.mkdtemp(prefix="hs_t1_")
+    path = os.path.join(d, "t.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    assert bpy.data.objects.get("A") is None and not any(m.name.startswith("Sphere") and m.users == 0
+                                                         for m in bpy.data.meshes if False)
+    scene_goto(0)
+    a2 = idmap.find(au)
+    assert a2 is not None and a2.name == "A", "the deleted object is back, with its id"
+    H.assert_same(H.snapshot(a2), want, "its mesh, from the stored copy")
+    ha = runtime.history_of(a2)
+    assert ha is not None and len(ha.entries) == 1, "and its own history is still there"
+
+
 EDIT_STEP_BUDGET_MS = {100_000: 120.0}
 
 
@@ -302,7 +405,8 @@ def test_edit_step_cost():
 
 
 for t in (test_parenting, test_constraints, test_collections_visibility_names, test_kinds_switch_off_and_on,
-          test_random_mix, test_edit_mode_steps, test_edit_mode_default_unchanged, test_edit_step_cost):
+          test_random_mix, test_edit_mode_steps, test_edit_mode_default_unchanged, test_edit_step_cost,
+          test_objects_added_deleted, test_deleted_object_back_after_reload):
     H.run(t)
 datarec.FORCE_SCOPE[0] = None
 datarec.FORCE_KINDS[0] = None

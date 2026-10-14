@@ -21,7 +21,8 @@ from .types import (
 )
 
 TOPO_MARK = "__TOPO__"
-DATA_MARK = "@"       # changed-key tuples ("@", adapter, path) for data records
+DATA_MARK = "@"
+SNAPSHOTS_KEY = "_snapshots"   # same key as step.SNAPSHOTS_KEY (not imported: step imports history types)       # changed-key tuples ("@", adapter, path) for data records
 
 def _steps(entries: list, states: dict):
     """Yield the Step of each entry in order, or None when its object isn't being moved.
@@ -39,13 +40,14 @@ class MeshState:
     """Current recorded state of ONE datablock (the baseline shown at the cursor): mesh channels
     for meshes, plus the values data adapters record ((adapter, path) -> value)."""
 
-    __slots__ = ("counts", "arrays", "removed", "values")
+    __slots__ = ("counts", "arrays", "removed", "values", "snaps")
 
     def __init__(self, counts: dict, arrays: dict, values: dict | None = None):
         self.counts = dict(counts)
         self.arrays = arrays          # key -> flat native array (owned, not copied)
         self.removed = set()          # keys whose attribute must be deleted from the mesh
         self.values = dict(values or {})   # (adapter, path) -> value; absent = MISSING
+        self.snaps = {}               # uid -> Snapshot carried by crossed data steps (objects to recreate)
 
     # ------------------------------------------------------------------ data records
     def apply_record(self, rec: DataChange, forward: bool) -> set:
@@ -190,9 +192,12 @@ class History:
 
     @staticmethod
     def _records(step: Step, forward: bool, states: dict, changed: dict) -> None:
+        snaps = (step.extra or {}).get(SNAPSHOTS_KEY) if step.kind == DATA else None
         for rec in (step.records if forward else reversed(step.records)):
             rs = states.get(rec.target)
             if rs is not None:
+                if snaps:
+                    rs.snaps.update(snaps)
                 changed.setdefault(rec.target, set()).update(rs.apply_record(rec, forward))
 
     @staticmethod
