@@ -125,6 +125,14 @@ def main() -> int:
             continue  # this file holds the patterns themselves
         problems.extend(scan_text(path, data.decode("utf-8", errors="replace"), private))
 
+    # COVERAGE.md may not claim more than the committed evidence shows (tools/make_evidence.py)
+    if (ROOT / "tools" / "make_evidence.py").is_file() and (ROOT / "COVERAGE.md").is_file():
+        r = subprocess.run([sys.executable, str(ROOT / "tools" / "make_evidence.py"), "--check"], cwd=ROOT,
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if r.returncode != 0:
+            problems += ["evidence: " + line for line in r.stdout.strip().splitlines()
+                         if line.startswith("make_evidence:")] or ["evidence: make_evidence.py --check failed"]
+
     scope = "tracked" if args.all else "staged"
     if problems:
         print(f"precommit_check: {len(problems)} problem(s) in {len(files)} {scope} file(s):")

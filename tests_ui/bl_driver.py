@@ -53,6 +53,19 @@ sys.stdout = _Tee(sys.__stdout__, CAPTURED)
 sys.stderr = _Tee(sys.__stderr__, CAPTURED)
 
 
+def _expand_covers(covers: str):
+    """'obj.transforms, obj.parenting: OPS STEPS; sculpt.masks: EXACT' -> [[row, item], ...]."""
+    out = []
+    for group in (covers or "").split(";"):
+        if not group.strip():
+            continue
+        rows, _, items = group.partition(":")
+        if not items.strip():
+            raise ValueError(f"covers group without gate items: {group!r}")
+        out += [[r.strip(), i] for r in rows.split(",") if r.strip() for i in items.split()]
+    return out
+
+
 class Driver:
     def __init__(self):
         self.spec = SPEC
@@ -69,9 +82,12 @@ class Driver:
     def log(self, *a):
         print("[driver %.1fs]" % (time.time() - self.t0), *a)
 
-    def check(self, name, ok, detail=""):
+    def check(self, name, ok, detail="", covers=""):
+        """A hard check. covers: the COVERAGE rows and gate items (tools/gate_spec.py) it is evidence
+        for, as 'row, row: ITEM ITEM; row: ITEM' (read by tools/make_evidence.py)."""
         ok = bool(ok)
-        self.checks.append({"name": name, "ok": ok, "detail": str(detail)[:2000]})
+        self.checks.append({"name": name, "ok": ok, "detail": str(detail)[:2000],
+                            "covers": _expand_covers(covers)})
         self.log(("PASS " if ok else "FAIL ") + name + (" -- " + str(detail)[:300] if detail != "" else ""))
         return ok
 
@@ -230,6 +246,7 @@ def _finish(error=None):
     _finished[0] = True
     res = {"ok": error is None and all(c["ok"] for c in D.checks), "checks": D.checks,
            "notes": D.notes, "error": error, "blender": bpy.app.version_string,
+           "scenario": os.path.basename(SPEC.get("scenario", "")), "date": time.strftime("%Y-%m-%dT%H:%M:%S"),
            "seconds_in_blender": round(time.time() - D.t0, 1)}
     with open(os.path.join(OUT, "result.json"), "w", encoding="utf-8") as fh:
         json.dump(res, fh, indent=1, default=str)

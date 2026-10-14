@@ -129,25 +129,22 @@ def check_yaml_text(path):
 
 
 # --------------------------------------------------------------------------- coverage
-# A data type that COVERAGE.md doesn't list as supported or opt-in may only be named in a sentence
+# A data type that COVERAGE.md doesn't list as supported or partial may only be named in a sentence
 # that says it isn't recorded (or is planned).
 NEGATIONS = ("not recorded", "isn't recorded", "aren't recorded", "not record", "doesn't record",
              "don't record", "doesn't work with", "don't work with", "planned", "paused", "not yet",
              "not supported", "aren't part of", "isn't part of", "not part of")
 
 
-def _coverage_terms():
-    path = ROOT / "COVERAGE.md"
-    if not path.is_file():
-        return []
+def _coverage_terms(text=None):
+    if str(Path(__file__).resolve().parent) not in sys.path:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import coverage_md as cov
+    rows = cov.parse(text) if text is not None else cov.rows(ROOT / "COVERAGE.md")
     terms = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("|") or line.startswith("|---") or line.startswith("| Data "):
-            continue
-        cols = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cols) < 7 or cols[1].lower() in ("supported", "opt-in"):
-            continue
-        terms += [t.strip().lower() for t in cols[-1].split(";") if t.strip()]
+    for row in rows:
+        if row.get("status", "").lower() not in cov.CLAIMABLE:
+            terms += cov.terms(row)
     return sorted(set(terms), key=len, reverse=True)
 
 

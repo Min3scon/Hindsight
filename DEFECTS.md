@@ -19,4 +19,15 @@ Exit criteria for a release: no open S1 or S2; every S3 either fixed or listed i
 | D11 | Site | S2 | Demo Morph and Reset buttons swallowed by the sculpt stage's pointer capture | fixed | tests/site/site_qa.js |
 | D12 | Compression work (headless suite) | S1 | While adding decode-ahead for long jumps, the objects a jump moves were fixed at its start, so a join crossed backwards brought its member back without replaying the member's own earlier steps (it showed its state at the join). Caught before any commit by test_bl_join in all three Blenders | fixed: checked as each step comes up | test_core_history (test_member_brought_back_mid_jump), test_bl_join, tools/mutation_test.py (two mutants) |
 | D13 | Round B features (real interface, all three Blenders) | S2 | The Morph History brush raised an error on every stroke and its tool settings didn't draw in Blender 5.x: radius and strength moved from the tool settings into Sculpt Mode's own paint settings in Blender 5.0. The headless tests set the brush up without drawing or stroking it, so they missed it | fixed: read from Sculpt Mode's settings, older place as fallback | test_bl_morph (test_brush_settings_readable, fails on the old code in all three Blenders), round_b_features |
+| D14 | Tier 2 design review (test audit) | S2 | On an object with Record everything, Object Mode operations that change the mesh (Apply > Scale, Apply Modifier, Set Origin, Shade Smooth) weren't recorded. Scrubbing back past Ctrl+A > Scale put the old scale back on the already scaled mesh | open: fix written on branch tier2 (mesh compared after each operator in Object Mode, in the same step), to be ported with a regression test | |
+| D15 | Tier 2 design review (test audit) | S3 | Animated or driven constraint settings were read as user changes, so changing the frame recorded steps | open: fix written on branch tier2 (animated paths skipped), to be ported with a regression test | |
 | B1 | Round D | n/a | Blender 5.1 crashes if a script switches mode mid-stroke (Blender bug, reproduced without Hindsight) | guarded: no jumps while a stroke runs | round_d |
+
+## Test changes
+
+Tests changed for a reason other than a defect in the product. A test is never weakened; each change says why.
+
+| Date | Test | Change | Reason |
+|---|---|---|---|
+| 2026-10-14 | tests/test_tools_coverage.py | checks the rule against a fixed table instead of the live COVERAGE.md; adds a test that a malformed row is refused | the test guarantee changed the statuses (supported, partial, not covered; opt-in became a separate Recording column). The old test asserted the live file's statuses, which now change through the gate. The rule itself is unchanged and still tested, plus the live file must parse |
+| 2026-10-14 | tests_ui/scenarios/s_round_b_features.py | the activate helper switches the target object to the requested mode even when it kept a mode from before | the test set up Ctrl+J in Sculpt Mode (after Movie Mode playback put A in Sculpt Mode), so the join never ran; the checks are unchanged |

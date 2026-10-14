@@ -16,6 +16,55 @@ newest working site live:**
    the rest as planned.
 Until then: keep the current order of work and keep `[skip ci]` on every commit.
 
+**Test guarantee (owner, 2026-10-14): what counts as finished.** Order of work unchanged. No time
+pressure: never cut tests, rounds or review loops to finish sooner. Stop early only on the usage
+stop-loss (then push, update evidence, make the newest working site live). Website last but mandatory.
+- Files: TEST_AUDIT.md (blunt inventory per tier and row: code written, tests by file and name,
+  real Blender or headless only, what's missing; sculpt tests never count for other rows).
+  COVERAGE.md statuses are `supported`, `partial` (says exactly what works and what doesn't) or
+  `not covered`; a row moves up only through the gate. TEST_EVIDENCE.md is generated from real runs
+  by `tools/make_evidence.py`, never by hand. MANUAL_TESTS.md lists what the harness can't do (exact
+  steps); those rows stay `partial` until the owner confirms.
+- **Tier gate**, every row, on 5.0.1, 5.1.1 and 5.1.2: (1) real operators (bpy.ops with context
+  overrides and the event harness; never poking data); (2) exactness at every step both ways, mesh
+  bit-exact, the rest value-exact; (3) independent oracle (snapshot code separate from adapter capture)
+  plus a replay oracle (same operations in a fresh scene without Hindsight); (4) exactly one step per
+  user operation, operator-end and settle paths, counted; (5) native undo: Ctrl+Z / Ctrl+Shift+Z mixed
+  with scrubbing, across mode switches, Global Undo on and off, undo steps default, min and max;
+  (6) save and reload in sidecar, embed and both, history reattaches, rename, copy-paste to another
+  file, append and link, Shift+D and Alt+D, previous-format files; (7) Hypothesis: 2,000+ random
+  sequences per adapter, shrinking, failing seeds kept in the repo; (8) mutation testing of adapter
+  diff/apply code, survivors explained or killed; (9) fault injection: an adapter raising in capture,
+  diff or apply disables only itself (one log line, sidebar message, history intact, undo and
+  sculpting fine); corrupt stored data gives a clear message, never a crash or a silent wrong state;
+  (10) cost and memory per step on small, medium and heavy scenes against budgets, 30-minute soak per
+  adapter (2-hour mixed soak later), no growth in memory, threads, timers, file handles; (11) every
+  unsupported or partial thing shows a message in the add-on and a COVERAGE line, tested; (12)
+  screenshots of the row's UI in real Blender, looked at; cut off or overlapping is a defect.
+  Then update COVERAGE and TEST_EVIDENCE from real results, commit, push, verify, and only then start
+  the next tier. No later tier while an earlier one has open S1 or S2.
+- Per tier minimum coverage and cross-feature/system tests: see the owner's list (copied in
+  TEST_AUDIT.md under "Required by the test guarantee").
+- Anti-gaming: never weaken, skip, loosen or delete a test (a wrong test is fixed with a reason in
+  DEFECTS.md); every bug gets a regression test that fails without the fix; intermittent failures are
+  S2 defects (run suspicious tests 20 times); a fix that breaks an earlier test resets the clean-pass
+  counter.
+- Cadence: after each tier gate a full regression pass on all Blenders, commit, push, verify, HANDOFF.
+  Every few hours the whole suite from a clean sandbox with the zip from the branch (TEST_ROUNDS.md).
+  After each tier, one fresh-context Opus hostile QA reviewer (one at a time); fix all, regression
+  tests, rerun the gate; a second reviewer if it found any S1 or S2. Three clean passes count from
+  after the last completed tier, over everything.
+- Test data: make_test_models.py gets a scene per COVERAGE row plus heavy versions (table and robot
+  from primitives, parented hierarchy, modifier-heavy object, big GN graph, shader tree, painted
+  weights and textures, animated rig with NLA, every object type, 20+ object scene). Owner's model
+  copies run through the new rows too; delete the copies at the end.
+- Website v2 matches COVERAGE exactly (supported as supported, partial with limits, the rest planned);
+  check_copy fails on any data type that isn't a supported or partial row; "What it records" page
+  generated from COVERAGE and TEST_EVIDENCE with real media captured during the gates.
+- Final report adds: per tier rows supported / partial / not covered, tests per layer, defects by
+  severity and open count, per-adapter cost and memory per step, reviewer findings, MANUAL_TESTS
+  items, and a table of all rows with their evidence lines.
+
 Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, SITE_PLAN.md, STYLE.md.
 
 ## Current job: beta 2 ("broken and sloppy" to polished), started 2026-10-14
@@ -122,6 +171,11 @@ object was added, so Ctrl+J ran in Sculpt Mode). Next: Tier 2.
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
 adapter records, migration from 1-3) -> Tiers 1..6 -> website v2 -> final test passes -> ship.
+Since the test guarantee: Tier 2 code is parked on the local branch `tier2` (worktree `.tmp/wt3b`,
+commit 2ac7e45, also `.tmp/tier2_wip.patch`). Now: audit (TEST_AUDIT.md, COVERAGE statuses, evidence
+tooling), then the full gate for sculpting (existing rows) and Tier 1, including D14 (Object Mode mesh
+changes on recorded objects weren't recorded: Apply Scale, Apply Modifier, Set Origin; the fix is in
+the tier2 commit and gets ported), then Tier 2 resumes from that branch.
 Branches: gated commits go to the default branch with [skip ci] until the site is ready to deploy;
 WIP goes to `hindsight-wip`.
 

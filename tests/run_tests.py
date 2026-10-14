@@ -8,7 +8,9 @@ With --blender the user's Blender settings are never read or written: BLENDER_US
 throwaway folder under .tmp/ and --factory-startup is passed.
 """
 import glob
+import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -31,6 +33,26 @@ def _sandbox_env(tag):
     return env
 
 
+RESULTS = os.path.join(ROOT, ".tmp", "results", "headless")
+
+
+def _save_result(label, f, r, out, seconds):
+    """Per-test results for tools/make_evidence.py: .tmp/results/headless/<blender>/<file>.json and the
+    full output next to it."""
+    d = os.path.join(RESULTS, label)
+    os.makedirs(d, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(f))[0]
+    with open(os.path.join(d, stem + ".log"), "w", encoding="utf-8") as fh:
+        fh.write(out)
+    tests = [{"name": m.group(2), "ok": m.group(1) == "PASS"}
+             for m in re.finditer(r"^(PASS|FAIL) (test_\w+)", out, re.M)]
+    res = {"source": "headless", "blender": label, "file": "tests/" + os.path.basename(f),
+           "date": time.strftime("%Y-%m-%dT%H:%M:%S"), "rc": r.returncode, "seconds": round(seconds, 1),
+           "tests": tests, "log": stem + ".log"}
+    with open(os.path.join(d, stem + ".json"), "w", encoding="utf-8") as fh:
+        json.dump(res, fh, indent=1)
+
+
 def run_suite(cmd_for, env, files, label):
     failed = []
     t0 = time.time()
@@ -42,6 +64,7 @@ def run_suite(cmd_for, env, files, label):
         npass = out.count("PASS ")
         nfail = out.count("FAIL ")
         ok = r.returncode == 0 and nfail == 0 and npass > 0
+        _save_result(label, f, r, out, time.time() - t)
         print(f"{'ok  ' if ok else 'FAIL'} [{label}] {os.path.basename(f):32s} pass={npass} fail={nfail} "
               f"rc={r.returncode} {time.time() - t:.1f}s", flush=True)
         if not ok:
