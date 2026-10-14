@@ -1,0 +1,150 @@
+"""Storage tiering and caps. Pure Python + numpy, no bpy.
+
+Histories are duck-typed: h.entries (list[Entry]), h.cursor (int), h.drop_oldest(n) -> int.
+Recent entries stay raw (fast undo); older ones are packed (compressed) by a background
+worker thread; caps drop the oldest entries.
+"""
+from __future__ import annotations
+
+import heapq
+import queue
+import threading
+
+from .step import step_to_bytes
+
+_STOP = object()
+
+
+class Packer:
+    """Background thread that packs entries off the main thread.
+
+    The worker only touches numpy + codec. The swap is atomic for readers:
+    entry.blob is set first, then entry.step = None, so Entry.load() always finds one.
+    """
+
+    def __init__(self):
+        self._q = queue.SimpleQueue()
+        self._cond = threading.Condition()
+        self._pending = 0
+        self._inflight = set()           # id(entry) queued and not yet processed
+        self._stopped = False
+        self.errors = 0
+        self.last_error = None
+        self.packed = 0
+        self._thread = threading.Thread(target=self._run, name="HindsightPacker", daemon=True)
+        self._thread.start()
+
+    # main thread -----------------------------------------------------------
+    def submit(self, entry, codec: str) -> None:
+        if entry.step is None:
+            return
+        if self._stopped or not self._thread.is_alive():
+            entry.pack(codec)
+            return
+        with self._cond:
+            if id(entry) in self._inflight:
+                return
+            self._inflight.add(id(entry))
+            self._pending += 1
+        self._q.put((entry, codec))
+
+    def pending(self) -> int:
+        with self._cond:
+            return self._pending
+
+    def drain(self, timeout: float | None = None) -> None:
+        with self._cond:
+            self._cond.wait_for(lambda: self._pending == 0, timeout)
+
+    def stop(self) -> None:
+        if self._stopped:
+            return
+        self._stopped = True
+        self._q.put(_STOP)
+        self._thread.join(timeout=10.0)
+
+    # worker thread ---------------------------------------------------------
+    def _run(self) -> None:
+        while True:
+            item = self._q.get()
+            if item is _STOP:
+                return
+            entry, codec = item
+            try:
+                step = entry.step
+                if step is not None:
+                    blob = step_to_bytes(step, codec)
+                    if entry.step is step:      # not replaced/packed meanwhile
+                        entry.blob = blob
+                        entry.step = None
+                        self.packed += 1
+            except Exception as e:            # keep the worker alive; entry stays raw
+                self.errors += 1
+                self.last_error = repr(e)
+            finally:
+                with self._cond:
+                    self._inflight.discard(id(entry))
+                    self._pending -= 1
+                    if self._pending == 0:
+                        self._cond.notify_all()
+
+
+def enforce_tiers(histories: list, settings, packer: Packer | None = None) -> None:
+    """Pack every entry older than the newest `settings.raw_steps` of each history."""
+    raw = max(0, int(settings.raw_steps))
+    codec = settings.compression
+    for h in histories:
+        entries = h.entries
+        n = len(entries) - raw
+        for i in range(n):
+            e = entries[i]
+            if e.step is None:
+                continue
+            if packer is not None:
+                packer.submit(e, codec)
+            else:
+                e.pack(codec)
+
+
+def total_bytes(histories: list) -> int:
+    return int(sum(e.nbytes() for h in histories for e in h.entries))
+
+
+def _drop(h, n: int) -> int:
+    if n <= 0:
+        return 0
+    r = h.drop_oldest(n)
+    return n if r is None else int(r)
+
+
+def enforce_caps(histories: list, settings) -> int:
+    """Apply max_steps per history, then the global memory limit (oldest seq first).
+
+    Returns the number of entries dropped.
+    """
+    dropped = 0
+    max_steps = max(1, int(settings.max_steps))
+    for h in histories:
+        over = len(h.entries) - max_steps
+        if over > 0:
+            dropped += _drop(h, over)
+
+    limit = int(settings.memory_limit_mb) * (1 << 20)
+    total = total_bytes(histories)
+    if total <= limit:
+        return dropped
+    # plan: merge histories by seq of their oldest remaining entry; count drops per history
+    plan = [0] * len(histories)
+    heap = [(h.entries[0].meta.get("seq", 0), i) for i, h in enumerate(histories) if h.entries]
+    heapq.heapify(heap)
+    while total > limit and heap:
+        _seq, i = heapq.heappop(heap)
+        entries = histories[i].entries
+        j = plan[i]
+        total -= entries[j].nbytes()
+        plan[i] = j + 1
+        if j + 1 < len(entries):
+            heapq.heappush(heap, (entries[j + 1].meta.get("seq", 0), i))
+    for i, n in enumerate(plan):
+        dropped += _drop(histories[i], n)
+    return dropped

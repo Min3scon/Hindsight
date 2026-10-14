@@ -1,0 +1,19 @@
+schema_version = "1.0.0"
+
+id = "hindsight"
+version = "1.0.0"
+name = "Hindsight"
+tagline = "Scrubbable per-object sculpt history with a history recall brush"
+maintainer = "Min3scon"
+type = "add-on"
+website = "https://min3scon.github.io/Hindsight/"
+tags = ["Sculpt", "Paint", "Mesh"]
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 Min3scon"]
+
+[permissions]
+files = "Save sculpt history next to the blend file and in user data"
+
+[build]
+paths_exclude_pattern = ["__pycache__/", ".*", "*.pyc", "/tests/"]

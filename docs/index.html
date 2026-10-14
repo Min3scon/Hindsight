@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hindsight — scrubbable sculpt history for Blender</title>
+<meta name="description" content="Hindsight is a free, GPL-3.0 Blender 4.2+ extension that gives every object a scrubbable sculpt undo history of up to 10,000 steps, with a slider along the bottom of the 3D viewport.">
+<meta name="theme-color" content="#0e0f12">
+<meta property="og:title" content="Hindsight — scrubbable sculpt history for Blender">
+<meta property="og:description" content="A per-object sculpt undo history of up to 10,000 steps with a slider along the bottom of the 3D viewport. Free, GPL-3.0, Blender 4.2+.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://min3scon.github.io/Hindsight/">
+<meta property="og:image" content="https://min3scon.github.io/Hindsight/og.svg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>document.documentElement.className+=' js';</script>
+<style>
+:root{
+  --bg:#0e0f12;--bg-2:#121419;--surface:#171a20;--surface-2:#1e222a;--line:#2a2f39;--line-2:#383e4b;
+  --text:#ecebe7;--muted:#a3a9b5;--accent:#ff9a3c;--accent-ink:#1a1107;--cool:#6cc4ff;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+  --gut:clamp(16px,4vw,32px);
+}
+*,*::before,*::after{box-sizing:border-box}
+html{color-scheme:dark;scroll-behavior:smooth;-webkit-text-size-adjust:100%;scroll-padding-top:72px}
+body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.65 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+svg{max-width:100%}
+a{color:var(--cool);text-underline-offset:3px}
+a:hover{color:#a9ddff}
+:focus-visible{outline:2px solid var(--cool);outline-offset:3px;border-radius:4px}
+h1,h2,h3,h4,p,ol,ul,figure,table{margin:0}
+.wrap{width:min(1120px,100% - 2 * var(--gut));margin-inline:auto}
+.skip{position:absolute;left:12px;top:-60px;background:var(--accent);color:var(--accent-ink);padding:10px 16px;border-radius:8px;font-weight:700;z-index:100;text-decoration:none}
+.skip:focus{top:12px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+kbd{font:600 .82em/1 var(--mono);background:var(--surface-2);border:1px solid var(--line-2);border-bottom-width:2px;border-radius:6px;padding:.28em .5em;color:var(--text);white-space:nowrap}
+code{font:500 .9em var(--mono);background:var(--surface-2);padding:.1em .4em;border-radius:5px}
+
+/* nav */
+.site-header{position:sticky;top:0;z-index:50;background:rgba(14,15,18,.82);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:60px}
+.brand{display:flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:800;letter-spacing:-.02em;font-size:1.15rem}
+.brand svg{width:26px;height:26px;flex:none}
+.nav-links{display:none;list-style:none;padding:0;gap:4px}
+.nav-links a{display:block;padding:8px 12px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:.95rem}
+.nav-links a:hover{color:var(--text);background:var(--surface)}
+.nav-cta{display:flex;gap:8px;align-items:center}
+.btn-sm{display:inline-flex;align-items:center;padding:8px 14px;border-radius:9px;font-size:.92rem;font-weight:650;text-decoration:none;border:1px solid var(--line-2);color:var(--text);background:var(--surface)}
+.btn-sm:hover{border-color:var(--cool);color:var(--text)}
+.btn-sm.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn-sm.primary:hover{background:#ffab5c;color:var(--accent-ink)}
+@media (min-width:900px){.nav-links{display:flex}}
+@media (max-width:420px){.nav-cta .btn-sm:not(.primary){display:none}}
+
+/* hero */
+.hero{position:relative;overflow:hidden;padding-block:clamp(36px,6vw,88px) clamp(56px,8vw,104px);
+  background:radial-gradient(900px 500px at 6% -8%,rgba(255,154,60,.17),transparent 62%),radial-gradient(760px 520px at 100% 8%,rgba(108,196,255,.12),transparent 62%),var(--bg)}
+.hero::before{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:48px 48px;
+  -webkit-mask-image:linear-gradient(to bottom,#000 0%,transparent 80%);mask-image:linear-gradient(to bottom,#000 0%,transparent 80%)}
+.hero-grid{position:relative;display:grid;gap:40px;grid-template-columns:minmax(0,1fr);align-items:center}
+@media (min-width:980px){.hero-grid{grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);gap:56px}}
+.eyebrow{font:700 .78rem/1.2 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:14px}
+h1{font-size:clamp(3.3rem,13.5vw,7.6rem);line-height:.92;letter-spacing:-.05em;font-weight:800;margin:0 0 .2em;display:flex;align-items:center;gap:.06em;flex-wrap:nowrap}
+h1 .ph{display:inline-block;width:.07em;height:.78em;border-radius:3px;background:linear-gradient(var(--accent),#ffcf9a);box-shadow:0 0 28px rgba(255,154,60,.7);animation:breathe 2.6s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.45}}
+.pitch{font-size:clamp(1.15rem,2.6vw,1.5rem);line-height:1.45;color:#d6d4cf;max-width:34ch;margin-bottom:30px}
+.dl-block{margin-bottom:26px}
+.dl-row{display:flex;flex-wrap:wrap;align-items:center;gap:14px 18px}
+.btn-download{display:inline-flex;align-items:center;gap:.65em;padding:1em 1.7em;border-radius:14px;background:var(--accent);color:var(--accent-ink);font-weight:750;font-size:1.2rem;line-height:1.1;text-decoration:none;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18),0 14px 38px -10px rgba(255,154,60,.6);transition:transform .16s ease,box-shadow .16s ease,background .16s}
+.btn-download::before{content:"";width:1.15em;height:1.15em;background:currentColor;flex:none;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v11M7 11l5 5 5-5M5 20h14'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 4v11M7 11l5 5 5-5M5 20h14'/%3E%3C/svg%3E") center/contain no-repeat}
+.btn-download:hover{background:#ffab5c;color:var(--accent-ink);transform:translateY(-2px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.25),0 20px 46px -10px rgba(255,154,60,.75)}
+.btn-download:active{transform:translateY(0)}
+.dl-meta{font:600 .95rem var(--mono);color:var(--muted);white-space:nowrap}
+.dl-alt{margin-top:10px;font-size:.88rem}
+.steps{list-style:none;padding:0;counter-reset:s;display:grid;gap:12px;margin-bottom:26px;max-width:46ch}
+.steps li{counter-increment:s;position:relative;padding-left:44px;color:#d6d4cf;line-height:1.5}
+.steps li::before{content:counter(s);position:absolute;left:0;top:-1px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:700 .85rem var(--mono);color:var(--accent);border:1.5px solid rgba(255,154,60,.55);background:rgba(255,154,60,.08)}
+.steps strong{color:var(--text);font-weight:650}
+.hero-links{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px}
+.btn-ghost{display:inline-flex;align-items:center;gap:.5em;padding:.7em 1.15em;border-radius:11px;border:1px solid var(--line-2);background:rgba(23,26,32,.7);color:var(--text);text-decoration:none;font-weight:650;transition:border-color .15s,background .15s}
+.btn-ghost:hover{border-color:var(--cool);background:var(--surface-2);color:var(--text)}
+.btn-ghost svg{width:1.15em;height:1.15em}
+.compat{font:600 .9rem var(--mono);color:var(--muted)}
+.hero-art{display:none}
+@media (min-width:980px){.hero-art{display:block}}
+.hero-art svg{width:100%;height:auto;display:block;overflow:visible}
+
+/* sections */
+section{position:relative}
+.sec{padding-block:clamp(60px,9vw,112px)}
+.sec.alt{background:var(--bg-2);border-block:1px solid var(--line)}
+.sec-head{margin-bottom:clamp(28px,5vw,52px);max-width:62ch}
+h2{font-size:clamp(1.9rem,5.4vw,3.1rem);line-height:1.08;letter-spacing:-.035em;font-weight:800;margin-bottom:14px}
+.lead{color:var(--muted);font-size:1.1rem;line-height:1.6}
+h3{font-size:1.12rem;line-height:1.3;letter-spacing:-.01em;font-weight:700}
+
+/* demo */
+.demo{background:radial-gradient(800px 380px at 50% 0,rgba(108,196,255,.08),transparent 70%),var(--bg)}
+.viewport{position:relative;border:1px solid var(--line-2);border-radius:18px;background:#0a0b0d;box-shadow:0 50px 90px -40px rgba(0,0,0,.9),0 0 0 6px rgba(255,255,255,.02)}
+.stage{position:relative;aspect-ratio:16/9;border-radius:17px 17px 0 0;overflow:hidden;background:linear-gradient(#30333b,#1a1c21 70%,#15161a);cursor:ew-resize;touch-action:pan-y}
+@media (max-width:640px){.stage{aspect-ratio:4/4.5}}
+.scene{position:absolute;inset:0;width:100%;height:100%;display:block}
+.vp-label{position:absolute;font:500 .78rem/1.35 var(--mono);color:#b9bec8;pointer-events:none;letter-spacing:.02em}
+.vp-label b{color:var(--text);font-weight:600}
+.vp-tl{left:14px;top:12px}
+.vp-tr{right:12px;top:10px;width:54px;height:54px}
+.vp-step{left:14px;bottom:10px;color:var(--muted)}
+.chip{position:absolute;right:12px;bottom:10px;border:1px solid var(--line-2);background:rgba(10,11,13,.7);color:var(--muted);font:600 .74rem var(--mono);padding:6px 10px;border-radius:999px;cursor:pointer}
+.chip[aria-pressed="true"]{color:var(--cool);border-color:rgba(108,196,255,.5)}
+.chip:hover{color:var(--text)}
+.scrubber{display:flex;align-items:center;gap:10px;padding:8px 14px 8px 8px;background:#0b0c0f;border-top:1px solid var(--line);border-radius:0 0 17px 17px}
+.dot-btn{flex:none;width:38px;height:38px;display:grid;place-items:center;background:transparent;border:0;border-radius:50%;cursor:pointer;padding:0}
+.dot-btn span{width:16px;height:16px;border-radius:50%;background:var(--cool);box-shadow:0 0 0 3px rgba(108,196,255,.22);transition:box-shadow .15s,transform .15s}
+.dot-btn:hover span,.dot-btn[aria-expanded="true"] span{box-shadow:0 0 0 6px rgba(108,196,255,.28);transform:scale(1.06)}
+.bar-wrap{position:relative;flex:1;min-width:0;display:flex;align-items:center}
+.counter{flex:none;font:600 .85rem var(--mono);color:var(--text);min-width:5.9em;text-align:right;font-variant-numeric:tabular-nums}
+.counter i{font-style:normal;color:var(--muted)}
+input[type=range]{--f:1;-webkit-appearance:none;appearance:none;width:100%;height:30px;margin:0;background:transparent;cursor:pointer}
+input[type=range]:focus-visible{outline-offset:2px;border-radius:6px}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--accent) 0,var(--accent) calc(6px + (100% - 12px) * var(--f)),#2c313c calc(6px + (100% - 12px) * var(--f)),#2c313c 100%)}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:#2c313c}
+input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:var(--accent)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:12px;height:26px;margin-top:-10px;border-radius:4px;background:#ffd2a1;border:2px solid var(--accent);box-shadow:0 0 0 3px rgba(255,154,60,.18),0 4px 12px rgba(0,0,0,.6)}
+input[type=range]::-moz-range-thumb{width:8px;height:22px;border-radius:4px;background:#ffd2a1;border:2px solid var(--accent);box-shadow:0 0 0 3px rgba(255,154,60,.18)}
+input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 0 0 6px rgba(255,154,60,.22),0 4px 12px rgba(0,0,0,.6)}
+.mark{position:absolute;top:1px;width:0;height:0;margin-left:-5px;border-inline:5px solid transparent;border-top:8px solid var(--cool);pointer-events:none;left:calc(6px + (100% - 12px) * var(--mf,0))}
+.mark[hidden]{display:none}
+.menu{position:absolute;left:10px;bottom:56px;z-index:5;width:min(260px,calc(100% - 20px));padding:6px;background:#1b1e25;border:1px solid var(--line-2);border-radius:12px;box-shadow:0 24px 50px -10px rgba(0,0,0,.85);animation:pop .14s ease-out;transform-origin:0 100%}
+.menu[hidden]{display:none}
+@keyframes pop{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
+.menu button{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:7px;background:transparent;color:var(--text);font:500 .92rem/1.2 var(--sans);text-align:left;cursor:pointer}
+.menu button:hover,.menu button:focus-visible{background:#2a303b;outline:0}
+.menu button:focus-visible{box-shadow:inset 0 0 0 2px var(--cool)}
+.menu .tick{flex:none;width:16px;height:16px;border-radius:4px;border:1.5px solid var(--line-2);display:grid;place-items:center}
+.menu [aria-checked="true"] .tick{background:var(--cool);border-color:var(--cool)}
+.menu [aria-checked="true"] .tick::after{content:"";width:8px;height:4px;border-left:2px solid #07131c;border-bottom:2px solid #07131c;transform:rotate(-45deg) translate(1px,-1px)}
+.menu .gap{flex:none;width:16px}
+.menu hr{border:0;height:1px;background:var(--line);margin:5px 6px}
+.caption{margin-top:18px;text-align:center;color:#d6d4cf;font-weight:550}
+.status{min-height:1.6em;margin-top:6px;text-align:center;color:var(--muted);font-size:.9rem}
+
+/* prose */
+.prose-grid{display:grid;gap:clamp(28px,4vw,44px) clamp(28px,5vw,64px);grid-template-columns:minmax(0,1fr)}
+@media (min-width:820px){.prose-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.prose-item{border-top:1px solid var(--line);padding-top:20px}
+.prose-item h3{margin-bottom:10px;display:flex;align-items:center;gap:10px}
+.prose-item h3::before{content:"";width:8px;height:8px;border-radius:2px;background:var(--accent);flex:none;transform:rotate(45deg)}
+.prose-item p{color:#c9ccd3}
+
+/* feature grid */
+.feat-grid{list-style:none;padding:0;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:600px){.feat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:980px){.feat-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.feat{position:relative;height:100%;padding:22px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--surface),#13151a);transition:border-color .2s,transform .2s,background .2s}
+.feat:hover{border-color:rgba(255,154,60,.5);transform:translateY(-3px)}
+.feat.wide{grid-column:1/-1;background:linear-gradient(120deg,rgba(255,154,60,.13),rgba(108,196,255,.07) 70%),var(--surface)}
+@media (min-width:980px){.feat.wide{grid-column:span 2}}
+.ico{width:30px;height:30px;fill:none;stroke:var(--accent);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;display:block;margin-bottom:14px}
+.feat:nth-child(even) .ico{stroke:var(--cool)}
+.feat.wide .ico{stroke:var(--accent)}
+.feat h3{margin-bottom:6px}
+.feat p{color:var(--muted);font-size:.95rem;line-height:1.55}
+
+/* fast */
+.fast-grid{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);margin-bottom:44px}
+@media (min-width:700px){.fast-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (min-width:1040px){.fast-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.card{padding:22px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.card .n{font:700 .8rem var(--mono);color:var(--accent);letter-spacing:.1em;margin-bottom:10px;display:block}
+.card h3{margin-bottom:8px}
+.card p{color:var(--muted);font-size:.95rem;line-height:1.55}
+.xor{margin-top:34px;padding:clamp(18px,3vw,30px);border:1px solid var(--line);border-radius:18px;background:var(--surface);display:grid;gap:22px;grid-template-columns:minmax(0,1fr);align-items:center}
+@media (min-width:860px){.xor{grid-template-columns:minmax(0,1fr) minmax(0,1.1fr)}}
+.xor p{color:#c9ccd3}
+.xor p+p{margin-top:12px}
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+table{border-collapse:collapse;width:100%}
+caption{caption-side:top;text-align:left;padding:14px 16px 0;color:var(--muted);font-size:.9rem}
+th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:700 .78rem/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+tbody tr:last-child td{border-bottom:0}
+td{color:#d6d4cf}
+@media (max-width:520px){th,td{padding:11px 10px;font-size:.88rem}th{font-size:.68rem}}
+#bench-body td[colspan]{text-align:center;color:var(--muted);padding-block:26px}
+
+/* interface */
+.diagrams{display:grid;gap:20px;grid-template-columns:minmax(0,1fr);margin-bottom:34px}
+@media (min-width:900px){.diagrams{grid-template-columns:repeat(2,minmax(0,1fr))}.diagrams .dg-a{grid-column:1/-1}}
+.dg{margin:0;padding:clamp(14px,2.4vw,24px);border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.dg svg{display:block;width:100%;height:auto;margin-inline:auto}
+.dg-a svg{max-width:760px}
+.dg-b svg,.dg-c svg{max-width:420px}
+.dg figcaption{margin-top:14px;color:var(--muted);font-size:.93rem;line-height:1.55}
+.dg figcaption strong{color:var(--text)}
+.dg ol{padding-left:1.2em;margin-top:8px;display:grid;gap:3px}
+.d-frame{fill:#14161b;stroke:#383e4b;stroke-width:1.5}
+.d-line{stroke:#2e333e;stroke-width:1.2}
+.d-small{font:500 14px var(--mono);fill:#a3a9b5}
+.d-form{fill:url(#dClay);stroke:#6cc4ff;stroke-opacity:.5;stroke-width:1.5}
+.d-track{fill:#2c313c}.d-fill{fill:#ff9a3c}.d-handle{fill:#ffd2a1;stroke:#ff9a3c;stroke-width:2.5}
+.d-dot{fill:#6cc4ff}.d-mono{font:600 15px var(--mono);fill:#ecebe7}
+.d-badge{fill:#0e0f12;stroke:#ff9a3c;stroke-width:1.6}
+.d-bt{font:700 14px var(--mono);fill:#ff9a3c;text-anchor:middle;dominant-baseline:central}
+.d-lead{stroke:#ff9a3c;stroke-width:1.3;stroke-dasharray:3 3}
+.d-label{font:600 17px var(--sans);fill:#ecebe7}
+.d-panel{fill:#1b1e25;stroke:#383e4b;stroke-width:1.5}
+.d-row{font:500 15px var(--sans);fill:#ecebe7}
+.d-sep{stroke:#2e333e;stroke-width:1}
+.d-check{fill:none;stroke:#6cc4ff;stroke-width:1.6}
+.d-checkon{fill:#6cc4ff}
+.d-tick{fill:none;stroke:#07131c;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.d-note{font:600 12.5px var(--mono);fill:#ff9a3c}
+.d-brk{fill:none;stroke:#ff9a3c;stroke-width:1.5;stroke-linecap:round}
+.d-sec{fill:#222731;stroke:#323946}
+.d-sech{font:650 14.5px var(--sans);fill:#ecebe7}
+.d-chev{fill:none;stroke:#a3a9b5;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.d-ph{fill:#2c313c}
+.d-tab{fill:#171a20;stroke:#323946}
+.d-tab-on{fill:#2a1d0e;stroke:#ff9a3c}
+.d-tabt{font:600 12px var(--sans);fill:#a3a9b5;text-anchor:middle;dominant-baseline:central}
+.d-tabt.on{fill:#ffcf9a}
+.shots{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:760px){.shots{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.shot{aspect-ratio:16/10;display:grid;place-items:center;text-align:center;padding:18px;border:2px dashed var(--line-2);border-radius:14px;color:var(--muted);font-size:.95rem;background:repeating-linear-gradient(135deg,transparent 0 14px,rgba(255,255,255,.02) 14px 28px)}
+
+/* install */
+.two{display:grid;gap:clamp(28px,5vw,64px);grid-template-columns:minmax(0,1fr)}
+@media (min-width:860px){.two{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.panel{padding:clamp(22px,3vw,34px);border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+.panel h3{font-size:1.4rem;margin-bottom:16px;letter-spacing:-.02em}
+.panel .steps{max-width:none;margin-bottom:22px}
+.panel p{color:#c9ccd3}
+.panel .btn-download{font-size:1.05rem}
+.qs{list-style:none;padding:0;counter-reset:q;display:grid;gap:14px}
+.qs li{counter-increment:q;position:relative;padding-left:44px;color:#d6d4cf}
+.qs li::before{content:counter(q);position:absolute;left:0;top:-1px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font:700 .85rem var(--mono);color:var(--cool);border:1.5px solid rgba(108,196,255,.5);background:rgba(108,196,255,.07)}
+
+/* reference */
+.note{display:block;color:var(--muted);font-size:.86rem}
+.keys{white-space:normal}
+.keys .alt-os{color:var(--muted);font-size:.86rem;display:block;margin-top:6px}
+.keys .alt-os kbd{font-size:.74rem}
+.faq details{border:1px solid var(--line);border-radius:14px;background:var(--surface);transition:border-color .2s}
+.faq details+details{margin-top:10px}
+.faq details[open]{border-color:rgba(255,154,60,.45)}
+.faq summary{list-style:none;cursor:pointer;padding:18px 54px 18px 20px;font-weight:650;position:relative;line-height:1.4}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:"";position:absolute;right:20px;top:50%;width:10px;height:10px;border-right:2px solid var(--accent);border-bottom:2px solid var(--accent);transform:translateY(-70%) rotate(45deg);transition:transform .2s}
+.faq details[open] summary::after{transform:translateY(-30%) rotate(-135deg)}
+.faq summary:focus-visible{outline-offset:-3px}
+.faq details p{padding:0 20px 20px;color:#c9ccd3}
+.limits{list-style:none;padding:0;display:grid;gap:10px}
+.limits li{position:relative;padding:14px 16px 14px 46px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:#d6d4cf}
+.limits li::before{content:"!";position:absolute;left:14px;top:14px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:800 .8rem var(--mono);background:rgba(255,154,60,.14);color:var(--accent);border:1.5px solid rgba(255,154,60,.5)}
+.sub{margin-top:clamp(44px,6vw,72px)}
+.sub>h3{font-size:1.6rem;letter-spacing:-.025em;margin-bottom:18px}
+
+/* footer */
+footer{border-top:1px solid var(--line);background:#0a0b0d;padding-block:44px 52px}
+.foot{display:grid;gap:22px}
+.foot-links{display:flex;flex-wrap:wrap;gap:8px 22px;list-style:none;padding:0}
+.foot-links a{color:var(--text)}
+.foot-links a:hover{color:var(--cool)}
+.foot .ver{font:600 .9rem var(--mono);color:var(--muted)}
+.foot .disc{color:var(--muted);font-size:.92rem;max-width:70ch}
+
+@media (max-width:420px){
+  .btn-download{font-size:1rem;padding:.9em 1.1em;gap:.5em}
+  .dl-meta{font-size:.82rem}
+  .dl-row{gap:12px 12px}
+}
+@media (max-width:380px){
+  .btn-download{font-size:.94rem;padding:.85em .95em;gap:.45em}
+  .dl-meta{font-size:.76rem}
+  .dl-row{gap:10px}
+}
+
+/* reveal */
+.js .reveal{opacity:0;transform:translateY(18px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}
+.js .reveal.in{opacity:1;transform:none}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .js .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<defs>
+<symbol id="i-rewind" viewBox="0 0 24 24"><path d="M11 6l-6 6 6 6M19 6l-6 6 6 6"/></symbol>
+<symbol id="i-scrub" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M6.5 16.5h11"/><rect x="11" y="14.2" width="3" height="4.6" rx="1"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><circle cx="6" cy="6.5" r="2.2"/><path d="M11.5 6.5H20M4 13h16M4 18.5h16"/></symbol>
+<symbol id="i-brush" viewBox="0 0 24 24"><path d="M20 4l-8.5 8.5"/><path d="M9.5 11.5c-2.6 0-4 1.8-4 3.8 0 1.5-.8 2.5-2 3.2 4 1.4 9 .3 9-3.7z"/></symbol>
+<symbol id="i-movie" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M10.2 9.2v5.6l4.6-2.8z"/></symbol>
+<symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12L4 7.5M12 12v9"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.3 3.2 3.3 14.8 0 18M12 3c-3.3 3.2-3.3 14.8 0 18"/></symbol>
+<symbol id="i-join" viewBox="0 0 24 24"><circle cx="9" cy="12" r="5.5"/><circle cx="15" cy="12" r="5.5"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="11.5" height="11.5" rx="2"/><rect x="9" y="9" width="11.5" height="11.5" rx="2"/></symbol>
+<symbol id="i-faceset" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1.6"/><rect x="13" y="3.5" width="7.5" height="7.5" rx="1.6"/><rect x="3.5" y="13" width="7.5" height="7.5" rx="1.6"/><path d="M14.5 17l2 2 3.5-4"/></symbol>
+<symbol id="i-verts" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="18" r="2"/><circle cx="19" cy="18" r="2"/><path d="M7 18h10M6.1 16.2l4.9-9.2M17.9 16.2L13 7"/></symbol>
+<symbol id="i-snap" viewBox="0 0 24 24"><path d="M8.5 7l1.5-3h4l1.5 3"/><rect x="3" y="7" width="18" height="13" rx="2.5"/><circle cx="12" cy="13.5" r="3.6"/></symbol>
+<symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M6 15c0-4.5 12-2 12-5"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M3.5 5h17l-6.5 7.8V19l-4-2v-4.2z"/></symbol>
+<symbol id="i-disk" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></symbol>
+<symbol id="i-life" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.8"/><path d="M5.6 5.6l3.7 3.7M14.7 14.7l3.7 3.7M18.4 5.6l-3.7 3.7M9.3 14.7l-3.7 3.7"/></symbol>
+<symbol id="i-gauge" viewBox="0 0 24 24"><path d="M3.8 17.5a9 9 0 1 1 16.4 0"/><path d="M12 15.5l4-5"/><circle cx="12" cy="16" r="1.4"/><path d="M7 20h10"/></symbol>
+<symbol id="i-github" viewBox="0 0 24 24"><path d="M9 19c-4.3 1.4-4.3-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.2s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.2A4.6 4.6 0 0 0 4 9.5c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21"/></symbol>
+</defs>
+</svg>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="#top" aria-label="Hindsight, back to top">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#171a20" stroke="#383e4b"/><circle cx="16" cy="13" r="7" fill="#d9bfa8"/><rect x="5" y="24" width="22" height="3" rx="1.5" fill="#2c313c"/><rect x="5" y="24" width="14" height="3" rx="1.5" fill="#ff9a3c"/><rect x="17.6" y="21.4" width="3.4" height="8" rx="1.2" fill="#ffd2a1" stroke="#ff9a3c"/></svg>
+      Hindsight
+    </a>
+    <nav aria-label="Primary">
+      <ul class="nav-links">
+        <li><a href="#demo">Demo</a></li>
+        <li><a href="#what">What it does</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#fast">Performance</a></li>
+        <li><a href="#interface">Interface</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn-sm" href="https://github.com/Min3scon/Hindsight">GitHub</a>
+      <a class="btn-sm primary" href="download/hindsight.zip" download="hindsight.zip">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- 1. HERO -->
+<section class="hero" id="top" aria-labelledby="hero-h">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Free extension for Blender</p>
+      <h1 id="hero-h">Hindsight<span class="ph" aria-hidden="true"></span></h1>
+      <p class="pitch">Drag a slider along the bottom of the viewport and travel back through every stroke of your sculpt.</p>
+
+      <div class="dl-block">
+        <div class="dl-row">
+          <a class="btn-download" href="download/hindsight.zip" download="hindsight.zip">Download Hindsight</a>
+          <span class="dl-meta">v<!--HS_VERSION-->1.0.0<!--/HS_VERSION--> · <!--HS_SIZE-->0 KB<!--/HS_SIZE--></span>
+        </div>
+        <p class="dl-alt"><a href="https://github.com/Min3scon/Hindsight/releases">Other versions on GitHub Releases</a></p>
+      </div>
+
+      <ol class="steps" aria-label="Install in three steps">
+        <li><a href="download/hindsight.zip" download="hindsight.zip">Download hindsight.zip</a></li>
+        <li>In Blender: <strong>Edit &gt; Preferences &gt; Get Extensions &gt; Install from Disk</strong>, pick the zip</li>
+        <li>In the 3D Viewport press <kbd>N</kbd> and open the “Undo History” tab</li>
+      </ol>
+
+      <div class="hero-links">
+        <a class="btn-ghost" href="https://github.com/Min3scon/Hindsight"><svg class="ico-inline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+        <span class="compat">Blender 4.2+ / GPL-3.0</span>
+      </div>
+    </div>
+
+    <div class="hero-art" aria-hidden="true">
+      <svg id="heroArt" viewBox="0 0 400 350" focusable="false">
+        <defs>
+          <radialGradient id="hClay" cx=".38" cy=".3" r=".8"><stop offset="0" stop-color="#f3d9c2"/><stop offset=".55" stop-color="#9c8472"/><stop offset="1" stop-color="#2f2925"/></radialGradient>
+        </defs>
+        <g id="heroGhosts"></g>
+        <path id="heroLive" fill="url(#hClay)" stroke="#ff9a3c" stroke-width="2.4" stroke-linejoin="round"/>
+        <path id="heroTicks" stroke="#ffffff" stroke-opacity=".22" stroke-width="1.5"/>
+        <rect x="20" y="326" width="360" height="5" rx="2.5" fill="#2c313c"/>
+        <rect id="heroFill" x="20" y="326" width="360" height="5" rx="2.5" fill="#ff9a3c"/>
+        <rect id="heroHandle" x="0" y="316" width="12" height="25" rx="4" fill="#ffd2a1" stroke="#ff9a3c" stroke-width="2.4"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- 2. DEMO -->
+<section class="sec demo" id="demo" aria-labelledby="demo-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Try it</p>
+      <h2 id="demo-h">Scrub a sculpt, right here</h2>
+      <p class="lead">A working mock-up of the real viewport scrubber. Drag the bar, hover across the viewport, or open the History Menu with the dot.</p>
+    </div>
+
+    <figure class="reveal" style="margin:0">
+      <div class="viewport" id="viewport">
+        <div class="stage" id="stage">
+          <svg class="scene" viewBox="0 0 400 310" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Mock 3D viewport showing a sculpted form that reshapes as the history slider moves" focusable="false">
+            <defs>
+              <radialGradient id="clay" cx=".38" cy=".28" r=".85"><stop offset="0" stop-color="#f6ddc6"/><stop offset=".5" stop-color="#a68c79"/><stop offset="1" stop-color="#2d2723"/></radialGradient>
+              <radialGradient id="shadow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#000" stop-opacity=".55"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+            </defs>
+            <g stroke="#ffffff" fill="none" stroke-width="1" opacity=".1">
+              <path d="M-600 240H1000M-600 252H1000M-600 270H1000M-600 296H1000M-600 336H1000"/>
+              <path d="M200 224L-340 360M200 224L-140 360M200 224L10 360M200 224L110 360M200 224L200 360M200 224L290 360M200 224L390 360M200 224L540 360M200 224L740 360"/>
+            </g>
+            <ellipse cx="200" cy="292" rx="150" ry="11" fill="url(#shadow)"/>
+            <path id="ghost" fill="none" stroke="#6cc4ff" stroke-width="1.6" stroke-dasharray="5 5" stroke-linejoin="round" opacity="0"/>
+            <path id="form" fill="url(#clay)" stroke="#ff9a3c" stroke-opacity=".75" stroke-width="1.6" stroke-linejoin="round"/>
+            <g id="verts" fill="#6cc4ff" opacity=".55"></g>
+            <g id="brushWrap"><circle id="brush" cx="0" cy="0" r="15" fill="rgba(255,154,60,.12)" stroke="#ffcf9a" stroke-width="1.6" stroke-dasharray="3 3"/><circle cx="0" cy="0" r="2" fill="#ffcf9a"/></g>
+          </svg>
+          <div class="vp-label vp-tl">User Perspective<br><b>Sculpt Mode</b></div>
+          <svg class="vp-label vp-tr" viewBox="0 0 54 54" aria-hidden="true" focusable="false"><circle cx="27" cy="27" r="25" fill="rgba(255,255,255,.04)"/><path d="M27 27L46 33M27 27L27 6M27 27L12 40" stroke-width="2.4" stroke-linecap="round" fill="none" stroke="#7a8190"/><circle cx="46" cy="33" r="5" fill="#e0614f"/><circle cx="27" cy="7" r="5" fill="#6dbb5a"/><circle cx="12" cy="40" r="5" fill="#4f8fe0"/></svg>
+          <div class="vp-label vp-step" id="vpStep" aria-hidden="true">Step 214</div>
+          <button type="button" class="chip" id="hoverToggle" aria-pressed="true" hidden>Hover scrub: on</button>
+        </div>
+
+        <div class="scrubber">
+          <button type="button" class="dot-btn" id="dotBtn" aria-label="History Menu" aria-haspopup="menu" aria-expanded="false" aria-controls="histMenu"><span></span></button>
+          <div class="bar-wrap">
+            <input type="range" id="scrub" min="0" max="214" value="214" step="1" aria-label="Undo history step" aria-valuetext="Step 214 of 214 recorded">
+            <span class="mark" id="mark" hidden></span>
+          </div>
+          <span class="counter" id="counter" aria-hidden="true">214 / 10000</span>
+        </div>
+
+        <div class="menu" id="histMenu" role="menu" aria-label="History Menu" hidden>
+          <button type="button" role="menuitemcheckbox" aria-checked="false" data-act="global"><span class="tick"></span>Use Global Undo History</button>
+          <button type="button" role="menuitemcheckbox" aria-checked="true" data-act="modes"><span class="tick"></span>Preserve Modes</button>
+          <hr role="separator">
+          <button type="button" role="menuitem" data-act="target"><span class="gap"></span>Set Morph Target Here</button>
+          <button type="button" role="menuitemcheckbox" aria-checked="false" data-act="morph"><span class="tick"></span>Morph History Brush</button>
+          <hr role="separator">
+          <button type="button" role="menuitem" data-act="delete"><span class="gap"></span>Delete Past Undo Steps</button>
+          <button type="button" role="menuitem" data-act="reset"><span class="gap"></span>Reset Undo History</button>
+          <hr role="separator">
+          <button type="button" role="menuitem" data-act="off"><span class="gap"></span>Turn Off Undo History</button>
+          <button type="button" role="menuitem" data-act="resetoff"><span class="gap"></span>Reset and Turn Off</button>
+        </div>
+      </div>
+      <figcaption class="caption">Drag the slider: every stroke is a step you can return to.</figcaption>
+      <p class="status" id="demoStatus" role="status" aria-live="polite"></p>
+    </figure>
+  </div>
+</section>
+
+<!-- 3. WHAT IT DOES -->
+<section class="sec alt" id="what" aria-labelledby="what-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow">What it does</p>
+      <h2 id="what-h">A long memory for every sculpt</h2>
+      <p class="lead">Sculpting is a stream of small decisions. Hindsight keeps each one, so a good idea from an hour ago is never more than a drag away.</p>
+    </div>
+    <div class="prose-grid">
+      <article class="prose-item reveal">
+        <h3>Rewind, stroke by stroke</h3>
+        <p>Every brush stroke in Sculpt Mode becomes one step in that object’s history, and each object can hold up to 10,000 of them. Blender’s built-in undo is a short list by default; Hindsight works alongside it and keeps a far deeper record of how the form grew.</p>
+      </article>
+      <article class="prose-item reveal">
+        <h3>The scrubber</h3>
+        <p>A slider sits along the bottom of the 3D viewport. Drag it and the mesh follows you backwards or forwards through the steps, live. A step counter shows where you are, and Ctrl+Z and Ctrl+Shift+Z still step one at a time.</p>
+      </article>
+      <article class="prose-item reveal">
+        <h3>Morph History brush</h3>
+        <p>Choose a moment in the history and mark it with Set Morph Target Here. Then paint with the Morph History brush: the areas you touch drift back toward the shape they had at that moment, and everything you leave alone stays as it is now. Recover yesterday’s nose without losing today’s jaw.</p>
+      </article>
+      <article class="prose-item reveal">
+        <h3>Movie Mode</h3>
+        <p>Play the history back on the Timeline as a timelapse. Press play and watch the sculpt build itself from the first stroke to the last, ready to screen-capture or just to enjoy.</p>
+      </article>
+      <article class="prose-item reveal">
+        <h3>Per-object and global history</h3>
+        <p>By default every object has its own timeline, so rewinding one never disturbs another. Prefer a single shared timeline for the whole scene? Switch on global history, and Preserve Modes controls how modes are treated as you step through it.</p>
+      </article>
+      <article class="prose-item reveal">
+        <h3>Join and unmerge</h3>
+        <p>Join sculpted objects with Ctrl+J and Hindsight merges their histories. Scrub back past the join and the original objects come back, each with its own history intact.</p>
+      </article>
+      <article class="prose-item reveal" style="grid-column:1/-1">
+        <h3>Persistent history, with crash recovery</h3>
+        <p>History does not have to vanish when you close Blender. Save it in a sidecar folder next to the .blend, embed it inside the .blend, or do both. If Blender ever crashes, Crash Recovery can bring your history back, either from the last saved state or from the interrupted session.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- 4. FEATURES -->
+<section class="sec" id="features" aria-labelledby="feat-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Features</p>
+      <h2 id="feat-h">Everything in the box</h2>
+    </div>
+    <ul class="feat-grid">
+      <li class="feat wide reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-rewind"/></svg><h3>10,000-step rewind</h3><p>Up to 10,000 steps per object, one for every stroke, all of them one drag away.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-scrub"/></svg><h3>Viewport scrubber</h3><p>A slider along the bottom of the 3D viewport that jumps to any step, with a live step counter.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-menu"/></svg><h3>History Menu</h3><p>The dot at the left end of the bar opens quick actions for the history of the active object.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-brush"/></svg><h3>Morph History brush</h3><p>Paint chosen areas back toward the shape they had at a step you marked as the morph target.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-movie"/></svg><h3>Movie Mode</h3><p>Play the whole history back on the Timeline as a timelapse of your sculpt.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cube"/></svg><h3>Per-object history</h3><p>Each object keeps its own timeline, so rewinding one leaves the others alone.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-globe"/></svg><h3>Global history + Preserve Modes</h3><p>Switch to one shared timeline when you want it, with an option for how modes are handled.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-join"/></svg><h3>Join / Unmerge</h3><p>Scrub back past a Ctrl+J join and the original objects return.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-copy"/></svg><h3>Separate &amp; duplicate aware</h3><p>Separating and duplicating understand history, and warn about linked duplicates.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-faceset"/></svg><h3>Masks, Face Sets, visibility, colours</h3><p>More than shape: masks, Face Sets, hidden geometry and colours are part of the history too.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-verts"/></svg><h3>Edit Mode grouping</h3><p>Edit Mode work is grouped into history steps, so a session reads as a few clear moments.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-snap"/></svg><h3>Voxel Remesh &amp; Trim snapshots</h3><p>Operations that change topology are stored as full snapshots, so you can rewind straight through them.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-branch"/></svg><h3>Branching with truncation warning</h3><p>Sculpt after scrubbing back and the future branch is replaced, with a warning before it happens.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-filter"/></svg><h3>Collection filtering</h3><p>Choose which collections are tracked, so history is only kept where you want it.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-disk"/></svg><h3>Sidecar / Embed / Both saving</h3><p>Keep history in a sidecar folder, embedded in the .blend, or both.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-life"/></svg><h3>Crash recovery</h3><p>Bring your history back after a crash, from the last save or the interrupted session.</p></li>
+      <li class="feat reveal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gauge"/></svg><h3>Memory limits &amp; live readout</h3><p>Set limits and watch how much memory the history is using, right in the sidebar.</p></li>
+    </ul>
+  </div>
+</section>
+
+<!-- 5. HOW IT STAYS FAST -->
+<section class="sec alt" id="fast" aria-labelledby="fast-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Under the hood</p>
+      <h2 id="fast-h">How it stays fast</h2>
+      <p class="lead">Ten thousand steps sounds heavy. It is not, because almost nothing is copied.</p>
+    </div>
+    <div class="fast-grid">
+      <div class="card reveal"><span class="n">01</span><h3>Only what changed</h3><p>A brush stroke touches a small patch of the mesh. Hindsight stores only the vertices that actually moved, not the whole object.</p></div>
+      <div class="card reveal"><span class="n">02</span><h3>One record, both ways</h3><p>Each change is saved as the XOR difference of the old and new float bits. The same record turns the old shape into the new one and back again.</p></div>
+      <div class="card reveal"><span class="n">03</span><h3>Compressed</h3><p>Those difference records are mostly zeros, so they compress very well with zstd, or zlib where zstd is not available.</p></div>
+      <div class="card reveal"><span class="n">04</span><h3>Full copies are rare</h3><p>A complete copy of the mesh is kept only when the topology changes, such as a remesh. Ordinary strokes never need one.</p></div>
+    </div>
+
+    <div class="xor reveal">
+      <div>
+        <h3 style="font-size:1.4rem;margin-bottom:12px">Scrubbing is a single write</h3>
+        <p>When you drag the slider across many steps, Hindsight does not rebuild the mesh at every one. It folds all the steps of the drag into one buffer and writes the mesh once.</p>
+        <p>That is why scrubbing feels like moving a slider, not like replaying a recording.</p>
+      </div>
+      <svg viewBox="0 0 440 210" role="img" aria-labelledby="xor-t xor-d" style="width:100%;height:auto;display:block">
+        <title id="xor-t">XOR delta diagram</title>
+        <desc id="xor-d">A before state XOR a stored delta gives the after state, and the after state XOR the same delta gives the before state again. Several deltas fold into one buffer before a single mesh write.</desc>
+        <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15" font-weight="600" text-anchor="middle">
+          <rect x="8" y="14" width="96" height="44" rx="9" fill="#1e222a" stroke="#383e4b"/><text x="56" y="42" fill="#ecebe7">before</text>
+          <rect x="172" y="14" width="96" height="44" rx="9" fill="#2a1d0e" stroke="#ff9a3c"/><text x="220" y="42" fill="#ffcf9a">delta</text>
+          <rect x="336" y="14" width="96" height="44" rx="9" fill="#1e222a" stroke="#383e4b"/><text x="384" y="42" fill="#ecebe7">after</text>
+          <text x="138" y="43" fill="#6cc4ff" font-size="20">⊕</text>
+          <text x="302" y="43" fill="#6cc4ff" font-size="20">=</text>
+        </g>
+        <path d="M384 64v24H56V64M50 72l6-8 6 8" fill="none" stroke="#6cc4ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="220" y="112" fill="#a3a9b5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" text-anchor="middle">after ⊕ delta = before</text>
+        <g stroke="#2e333e"><path d="M8 132H432"/></g>
+        <g font-family="ui-monospace, Menlo, Consolas, monospace" font-size="13" font-weight="600" text-anchor="middle">
+          <rect x="8" y="150" width="62" height="34" rx="7" fill="#2a1d0e" stroke="#ff9a3c"/><text x="39" y="171" fill="#ffcf9a">step</text>
+          <rect x="82" y="150" width="62" height="34" rx="7" fill="#2a1d0e" stroke="#ff9a3c"/><text x="113" y="171" fill="#ffcf9a">step</text>
+          <rect x="156" y="150" width="62" height="34" rx="7" fill="#2a1d0e" stroke="#ff9a3c"/><text x="187" y="171" fill="#ffcf9a">step</text>
+          <path d="M232 167h42" stroke="#6cc4ff" stroke-width="1.8" stroke-linecap="round"/><path d="M268 161l7 6-7 6" fill="none" stroke="#6cc4ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="282" y="150" width="68" height="34" rx="7" fill="#1e222a" stroke="#6cc4ff"/><text x="316" y="171" fill="#6cc4ff">buffer</text>
+          <path d="M358 167h20" stroke="#6cc4ff" stroke-width="1.8" stroke-linecap="round"/><path d="M372 161l7 6-7 6" fill="none" stroke="#6cc4ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="386" y="150" width="46" height="34" rx="7" fill="#1e222a" stroke="#383e4b"/><text x="409" y="171" fill="#ecebe7">mesh</text>
+        </g>
+        <text x="220" y="202" fill="#a3a9b5" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" text-anchor="middle">many steps fold into one buffer, one mesh write</text>
+      </svg>
+    </div>
+
+    <div class="tbl-wrap reveal" style="margin-top:34px">
+      <table id="bench-table">
+        <caption>Benchmark results will appear here once they have been measured.</caption>
+        <thead><tr><th scope="col">Vertices</th><th scope="col">Memory per step</th><th scope="col">Record a stroke</th><th scope="col">Scrub 100 steps</th></tr></thead>
+        <tbody id="bench-body"><tr><td colspan="4">Benchmarks are being measured.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- 6. INTERFACE -->
+<section class="sec" id="interface" aria-labelledby="ui-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow">The interface</p>
+      <h2 id="ui-h">Three places to know</h2>
+      <p class="lead">Hindsight adds a scrubber to the viewport, a small menu, and one tab in the sidebar. That is all.</p>
+    </div>
+
+    <div class="diagrams">
+      <figure class="dg dg-a reveal">
+        <svg viewBox="0 0 520 310" role="img" aria-labelledby="da-t da-d">
+          <title id="da-t">Viewport with the scrubber along the bottom</title>
+          <desc id="da-d">A 3D viewport containing a sculpted form. Along the bottom edge is the scrubber: a round dot at the left that opens the History Menu, a thin bar, a handle on the bar, and a step counter at the right.</desc>
+          <defs><radialGradient id="dClay" cx=".38" cy=".28" r=".85"><stop offset="0" stop-color="#f6ddc6"/><stop offset=".5" stop-color="#a68c79"/><stop offset="1" stop-color="#2d2723"/></radialGradient></defs>
+          <rect class="d-frame" x="8" y="8" width="504" height="236" rx="12"/>
+          <path class="d-line" d="M8 36H512M8 204H512"/>
+          <text class="d-small" x="22" y="27">3D Viewport · Sculpt Mode</text>
+          <path class="d-form" d="M195.0 38.0C207.3 36.7 220.8 40.0 232.0 44.0C243.2 48.0 254.3 55.0 262.0 62.0C269.7 69.0 274.7 79.3 278.0 86.0C281.3 92.7 282.3 97.7 282.0 102.0C281.7 106.3 276.0 108.0 276.0 112.0C276.0 116.0 277.3 120.0 282.0 126.0C286.7 132.0 302.0 142.7 304.0 148.0C306.0 153.3 298.0 155.7 294.0 158.0C290.0 160.3 282.0 159.3 280.0 162.0C278.0 164.7 282.7 170.7 282.0 174.0C281.3 177.3 276.3 179.3 276.0 182.0C275.7 184.7 281.0 186.3 280.0 190.0C279.0 193.7 274.7 200.0 270.0 204.0C265.3 208.0 258.3 212.7 252.0 214.0C245.7 215.3 237.0 210.0 232.0 212.0C227.0 214.0 223.3 220.3 222.0 226.0C220.7 231.7 219.3 241.0 224.0 246.0C228.7 251.0 237.7 253.0 250.0 256.0C262.3 259.0 282.3 260.0 298.0 264.0C313.7 268.0 335.0 275.7 344.0 280.0C353.0 284.3 361.0 288.0 352.0 290.0C343.0 292.0 315.3 291.7 290.0 292.0C264.7 292.3 230.0 292.0 200.0 292.0C170.0 292.0 135.3 292.3 110.0 292.0C84.7 291.7 57.0 292.0 48.0 290.0C39.0 288.0 47.0 284.3 56.0 280.0C65.0 275.7 86.3 268.0 102.0 264.0C117.7 260.0 138.3 259.3 150.0 256.0C161.7 252.7 168.7 249.3 172.0 244.0C175.3 238.7 173.7 230.0 170.0 224.0C166.3 218.0 157.3 213.3 150.0 208.0C142.7 202.7 132.3 199.0 126.0 192.0C119.7 185.0 114.7 175.3 112.0 166.0C109.3 156.7 109.0 146.3 110.0 136.0C111.0 125.7 114.0 114.0 118.0 104.0C122.0 94.0 127.3 84.7 134.0 76.0C140.7 67.3 147.8 58.3 158.0 52.0C168.2 45.7 182.7 39.3 195.0 38.0Z" transform="translate(166 40) scale(.5)"/>
+          <circle class="d-dot" cx="32" cy="224" r="8"/>
+          <circle cx="32" cy="224" r="13" fill="none" stroke="#6cc4ff" stroke-opacity=".35" stroke-width="2"/>
+          <rect class="d-track" x="56" y="221" width="340" height="6" rx="3"/>
+          <rect class="d-fill" x="56" y="221" width="284" height="6" rx="3"/>
+          <rect class="d-handle" x="334" y="212" width="12" height="24" rx="4"/>
+          <text class="d-mono" x="404" y="230">214 / 10000</text>
+          <path class="d-lead" d="M32 238V262M174 228V262M340 238V262M436 236V262"/>
+          <g>
+            <circle class="d-badge" cx="32" cy="276" r="13"/><text class="d-bt" x="32" y="276">1</text><text class="d-label" x="52" y="282">Dot</text>
+            <circle class="d-badge" cx="174" cy="276" r="13"/><text class="d-bt" x="174" y="276">2</text><text class="d-label" x="194" y="282">Bar</text>
+            <circle class="d-badge" cx="340" cy="276" r="13"/><text class="d-bt" x="340" y="276">3</text><text class="d-label" x="358" y="282">Handle</text>
+            <circle class="d-badge" cx="436" cy="276" r="13"/><text class="d-bt" x="436" y="276">4</text><text class="d-label" x="454" y="282">Counter</text>
+          </g>
+        </svg>
+        <figcaption><strong>The scrubber.</strong>
+          <ol>
+            <li><strong>Dot:</strong> the round button at the left end. It opens the History Menu.</li>
+            <li><strong>Bar:</strong> a thin track that spans every recorded step of the active object.</li>
+            <li><strong>Handle:</strong> drag it to travel back and forward through the history.</li>
+            <li><strong>Step counter:</strong> where you are, out of the 10,000-step limit.</li>
+          </ol>
+        </figcaption>
+      </figure>
+
+      <figure class="dg dg-b reveal">
+        <svg viewBox="0 0 360 424" role="img" aria-labelledby="db-t db-d">
+          <title id="db-t">The History Menu</title>
+          <desc id="db-d">A popup menu listing eight items in four groups: Use Global Undo History, Preserve Modes, Set Morph Target Here, Morph History Brush, Delete Past Undo Steps, Reset Undo History, Turn Off Undo History, Reset and Turn Off.</desc>
+          <rect class="d-frame" x="8" y="8" width="344" height="46" rx="10"/>
+          <circle class="d-dot" cx="34" cy="31" r="8"/>
+          <circle cx="34" cy="31" r="13" fill="none" stroke="#6cc4ff" stroke-opacity=".35" stroke-width="2"/>
+          <rect class="d-track" x="62" y="28" width="268" height="6" rx="3"/>
+          <rect class="d-fill" x="62" y="28" width="210" height="6" rx="3"/>
+          <rect class="d-handle" x="266" y="19" width="12" height="24" rx="4"/>
+          <path class="d-lead" d="M34 46V66"/>
+          <rect class="d-panel" x="14" y="66" width="256" height="344" rx="11"/>
+          <rect class="d-check" x="30" y="86" width="16" height="16" rx="4"/>
+          <text class="d-row" x="58" y="99">Use Global Undo History</text>
+          <rect class="d-checkon" x="30" y="122" width="16" height="16" rx="4"/><path class="d-tick" d="M34 130l3 3 5-6"/>
+          <text class="d-row" x="58" y="135">Preserve Modes</text>
+          <path class="d-sep" d="M26 154H258"/>
+          <text class="d-row" x="58" y="183">Set Morph Target Here</text>
+          <rect class="d-check" x="30" y="206" width="16" height="16" rx="4"/>
+          <text class="d-row" x="58" y="219">Morph History Brush</text>
+          <path class="d-sep" d="M26 238H258"/>
+          <text class="d-row" x="58" y="267">Delete Past Undo Steps</text>
+          <text class="d-row" x="58" y="303">Reset Undo History</text>
+          <path class="d-sep" d="M26 322H258"/>
+          <text class="d-row" x="58" y="351">Turn Off Undo History</text>
+          <text class="d-row" x="58" y="387">Reset and Turn Off</text>
+          <path class="d-brk" d="M278 80v66M278 162v70M278 246v70M278 330v70"/>
+          <text class="d-note" x="288" y="117">Settings</text>
+          <text class="d-note" x="288" y="201">Morph</text>
+          <text class="d-note" x="288" y="285">Clear</text>
+          <text class="d-note" x="288" y="369">Off</text>
+        </svg>
+        <figcaption><strong>The History Menu.</strong> Click the dot to open it. Two options are settings, two work with the morph target, and the rest clear or switch off the history.</figcaption>
+      </figure>
+
+      <figure class="dg dg-c reveal">
+        <svg viewBox="0 0 360 384" role="img" aria-labelledby="dc-t dc-d">
+          <title id="dc-t">The Undo History tab in the N-panel</title>
+          <desc id="dc-d">The sidebar opened with N, with an Undo History tab selected. It contains five sections: Movie Mode, Scrubber, Memory, Collection Filtering and Reset.</desc>
+          <rect class="d-panel" x="12" y="8" width="268" height="366" rx="10"/>
+          <text class="d-sech" x="28" y="36" style="font-size:16px">Undo History</text>
+          <path class="d-sep" d="M24 48H268"/>
+          <rect class="d-sec" x="24" y="60" width="244" height="32" rx="7"/><path class="d-chev" d="M38 70l6 6-6 6"/><text class="d-sech" x="56" y="81">Movie Mode</text>
+          <rect class="d-sec" x="24" y="100" width="244" height="32" rx="7"/><path class="d-chev" d="M36 113l6 6 6-6"/><text class="d-sech" x="56" y="121">Scrubber</text>
+          <rect class="d-check" x="36" y="144" width="16" height="16" rx="4"/><rect class="d-ph" x="62" y="148" width="130" height="8" rx="4"/>
+          <rect class="d-checkon" x="36" y="170" width="16" height="16" rx="4"/><path class="d-tick" d="M40 178l3 3 5-6"/><rect class="d-ph" x="62" y="174" width="100" height="8" rx="4"/>
+          <rect class="d-sec" x="24" y="198" width="244" height="32" rx="7"/><path class="d-chev" d="M36 211l6 6 6-6"/><text class="d-sech" x="56" y="219">Memory</text>
+          <rect class="d-track" x="36" y="244" width="220" height="10" rx="5"/><rect class="d-fill" x="36" y="244" width="96" height="10" rx="5"/>
+          <rect class="d-ph" x="36" y="266" width="150" height="8" rx="4"/>
+          <rect class="d-sec" x="24" y="288" width="244" height="32" rx="7"/><path class="d-chev" d="M38 298l6 6-6 6"/><text class="d-sech" x="56" y="309">Collection Filtering</text>
+          <rect class="d-sec" x="24" y="328" width="244" height="32" rx="7"/><path class="d-chev" d="M38 338l6 6-6 6"/><text class="d-sech" x="56" y="349">Reset</text>
+          <rect class="d-tab" x="284" y="14" width="64" height="34" rx="7"/><text class="d-tabt" x="316" y="31">Item</text>
+          <rect class="d-tab" x="284" y="54" width="64" height="34" rx="7"/><text class="d-tabt" x="316" y="71">Tool</text>
+          <rect class="d-tab" x="284" y="94" width="64" height="34" rx="7"/><text class="d-tabt" x="316" y="111">View</text>
+          <rect class="d-tab-on" x="284" y="134" width="64" height="86" rx="7"/>
+          <text class="d-tabt on" x="316" y="164">Undo</text><text class="d-tabt on" x="316" y="184">History</text>
+        </svg>
+        <figcaption><strong>The Undo History tab.</strong> Press <kbd>N</kbd> in the 3D Viewport and pick the tab. Sections: Movie Mode, Scrubber, Memory, Collection Filtering and Reset.</figcaption>
+      </figure>
+    </div>
+
+    <div class="shots">
+      <div class="shot reveal" role="img" aria-label="Screenshot placeholder: Scrubber in Sculpt Mode"><span>Screenshot placeholder: Scrubber in Sculpt Mode</span></div>
+      <div class="shot reveal" role="img" aria-label="Screenshot placeholder: History Menu open"><span>Screenshot placeholder: History Menu open</span></div>
+      <div class="shot reveal" role="img" aria-label="Screenshot placeholder: Undo History sidebar tab"><span>Screenshot placeholder: Undo History sidebar tab</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 7. INSTALL -->
+<section class="sec alt" id="install" aria-labelledby="inst-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Get started</p>
+      <h2 id="inst-h">Install and quick start</h2>
+    </div>
+    <div class="two">
+      <div class="panel reveal">
+        <h3>Install</h3>
+        <ol class="steps" aria-label="Install steps">
+          <li><a href="download/hindsight.zip" download="hindsight.zip">Download hindsight.zip</a></li>
+          <li>In Blender: <strong>Edit &gt; Preferences &gt; Get Extensions &gt; Install from Disk</strong>, pick the zip</li>
+          <li>In the 3D Viewport press <kbd>N</kbd> and open the “Undo History” tab</li>
+        </ol>
+        <a class="btn-download" href="download/hindsight.zip" download="hindsight.zip">Download Hindsight</a>
+      </div>
+      <div class="panel reveal">
+        <h3>Quick start</h3>
+        <ol class="qs">
+          <li>Select a mesh.</li>
+          <li>Enter Sculpt Mode and sculpt.</li>
+          <li>The scrubber appears after the first stroke.</li>
+          <li>Drag it, or use <kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>.</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8. SHORTCUTS / FAQ / LIMITS -->
+<section class="sec" id="faq" aria-labelledby="ref-h">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <p class="eyebrow">Reference</p>
+      <h2 id="ref-h">Shortcuts, answers and limits</h2>
+    </div>
+
+    <div class="tbl-wrap reveal" id="shortcuts">
+      <table>
+        <caption>Keyboard shortcuts</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Shortcut</th></tr></thead>
+        <tbody>
+          <tr><td>Step back</td><td class="keys"><kbd>Ctrl</kbd> + <kbd>Z</kbd><span class="alt-os"><kbd>Cmd</kbd> + <kbd>Z</kbd> on Mac</span></td></tr>
+          <tr><td>Step forward</td><td class="keys"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd><span class="alt-os"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> on Mac</span></td></tr>
+          <tr><td>Switch objects keeping history<span class="note">Sculpt Mode</span></td><td class="keys"><kbd>Alt</kbd> + <kbd>Q</kbd></td></tr>
+          <tr><td>Join with history merge</td><td class="keys"><kbd>Ctrl</kbd> + <kbd>J</kbd></td></tr>
+          <tr><td>Separate<span class="note">Edit Mode</span></td><td class="keys"><kbd>P</kbd></td></tr>
+          <tr><td>Duplicate with independent history</td><td class="keys"><kbd>Shift</kbd> + <kbd>D</kbd></td></tr>
+          <tr><td>Linked duplicate<span class="note">Shares mesh data, so a warning is shown</span></td><td class="keys"><kbd>Alt</kbd> + <kbd>D</kbd></td></tr>
+          <tr><td>Sidebar</td><td class="keys"><kbd>N</kbd></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sub faq reveal">
+      <h3>FAQ</h3>
+      <details><summary>Does it replace Blender’s undo?</summary><p>No. It works alongside Blender’s own undo. Ctrl+Z and Ctrl+Shift+Z keep working, and Hindsight adds a much deeper, scrubbable history on top.</p></details>
+      <details><summary>How much memory does it use?</summary><p>Only the vertices that changed in each stroke are stored, and the records are compressed. You can set memory limits in the sidebar and in the add-on preferences, and the sidebar shows a live readout.</p></details>
+      <details><summary>Can I share a file with its history?</summary><p>Yes. Set Save Mode to Embed and save the .blend; the history travels inside the file.</p></details>
+      <details><summary>What if Blender crashes?</summary><p>Use Crash Recovery. By default it restores the Last Saved history, and you can choose Interrupted Session instead to pick up from where Blender stopped.</p></details>
+      <details><summary>What about Dyntopo or Multires?</summary><p>They are not supported in v1. If you use either, a warning appears.</p></details>
+    </div>
+
+    <div class="sub reveal">
+      <h3>Known limitations</h3>
+      <ul class="limits">
+        <li>No Dyntopo or Multires support.</li>
+        <li>Object transforms are not recorded, so old steps may play back in the wrong place.</li>
+        <li>Modifiers, shape keys, materials, vertex groups and weight paint are not stored.</li>
+        <li>Deform modifiers such as Armature and Displace can give unpredictable results.</li>
+        <li>Animated objects may play back differently.</li>
+        <li>Blender’s Global Undo must be enabled (Preferences &gt; System).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <ul class="foot-links">
+      <li><a href="https://github.com/Min3scon/Hindsight">GitHub</a></li>
+      <li><a href="https://github.com/Min3scon/Hindsight/blob/main/LICENSE">GPL-3.0 licence</a></li>
+      <li><a href="https://github.com/Min3scon/Hindsight/releases">Changelog</a></li>
+      <li><a href="download/hindsight.zip" download="hindsight.zip">Download</a></li>
+    </ul>
+    <p class="ver">Hindsight v<!--HS_VERSION-->1.0.0<!--/HS_VERSION--> · Blender 4.2+ · GPL-3.0</p>
+    <p class="disc">Hindsight is an independent project inspired by ZBrush's History Recall Brush. It is not affiliated with any other product.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  'use strict';
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var canHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  var MAX = 214, LIMIT = 10000;
+
+  /* ---------- keyframes: a sphere that grows into a head-and-shoulders bust ---------- */
+  var BUST = [[195,38],[232,44],[262,62],[278,86],[282,102],[276,112],[282,126],[304,148],[294,158],[280,162],[282,174],[276,182],[280,190],[270,204],[252,214],[232,212],[222,226],[224,246],[250,256],[298,264],[344,280],[352,290],[290,292],[200,292],[110,292],[48,290],[56,280],[102,264],[150,256],[172,244],[170,224],[150,208],[126,192],[112,166],[110,136],[118,104],[134,76],[158,52]];
+  var N = BUST.length;
+  function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
+  function smooth(x) { x = x < 0 ? 0 : x > 1 ? 1 : x; return x * x * (3 - 2 * x); }
+  var per = [0], i, j;
+  for (i = 1; i < N; i++) per[i] = per[i - 1] + dist(BUST[i - 1], BUST[i]);
+  var total = per[N - 1] + dist(BUST[N - 1], BUST[0]);
+  var SPHERE = BUST.map(function (p, k) {
+    var a = -Math.PI / 2 + (per[k] / total) * Math.PI * 2;
+    return [200 + 92 * Math.cos(a), 158 + 92 * Math.sin(a)];
+  });
+  function region(k) {
+    if (k <= 4 || k >= 33) return [0, 6];
+    if (k <= 15) return [0.8, 7];
+    if (k <= 17) return [1, 7];
+    if (k <= 28) return [1.2, 7];
+    if (k <= 30) return [1, 7];
+    return [0.4, 6.4];
+  }
+  var KEYS = [];
+  for (j = 0; j < 8; j++) {
+    KEYS.push(BUST.map(function (p, k) {
+      var r = region(k), m = smooth((j - r[0]) / (r[1] - r[0]));
+      return [SPHERE[k][0] + (p[0] - SPHERE[k][0]) * m, SPHERE[k][1] + (p[1] - SPHERE[k][1]) * m];
+    }));
+  }
+  function frame(frac) {
+    var t = Math.max(0, Math.min(1, frac)) * 7, a = Math.min(6, Math.floor(t)), f = t - a, A = KEYS[a], B = KEYS[a + 1];
+    var out = new Array(N);
+    for (var k = 0; k < N; k++) out[k] = [A[k][0] + (B[k][0] - A[k][0]) * f, A[k][1] + (B[k][1] - A[k][1]) * f];
+    return out;
+  }
+  function pathOf(P) {
+    var n = P.length, d = 'M' + P[0][0].toFixed(1) + ' ' + P[0][1].toFixed(1);
+    for (var k = 0; k < n; k++) {
+      var p0 = P[(k + n - 1) % n], p1 = P[k], p2 = P[(k + 1) % n], p3 = P[(k + 2) % n];
+      d += 'C' + (p1[0] + (p2[0] - p0[0]) / 6).toFixed(1) + ' ' + (p1[1] + (p2[1] - p0[1]) / 6).toFixed(1) + ' ' +
+        (p2[0] - (p3[0] - p1[0]) / 6).toFixed(1) + ' ' + (p2[1] - (p3[1] - p1[1]) / 6).toFixed(1) + ' ' +
+        p2[0].toFixed(1) + ' ' + p2[1].toFixed(1);
+    }
+    return d + 'Z';
+  }
+  function centroidOfChange(frac) {
+    var t = Math.max(0, Math.min(1, frac)) * 7, a = Math.min(6, Math.floor(t)), f = t - a, A = KEYS[a], B = KEYS[a + 1], sx = 0, sy = 0, sw = 0;
+    for (var k = 0; k < N; k++) {
+      var w = dist(A[k], B[k]) + 0.01, x = A[k][0] + (B[k][0] - A[k][0]) * f, y = A[k][1] + (B[k][1] - A[k][1]) * f;
+      sx += x * w * w; sy += y * w * w; sw += w * w;
+    }
+    return [sx / sw, sy / sw];
+  }
+
+  /* ---------- demo ---------- */
+  var slider = document.getElementById('scrub');
+  var form = document.getElementById('form');
+  var ghost = document.getElementById('ghost');
+  var vertsG = document.getElementById('verts');
+  var brushWrap = document.getElementById('brushWrap');
+  var counter = document.getElementById('counter');
+  var vpStep = document.getElementById('vpStep');
+  var stage = document.getElementById('stage');
+  var mark = document.getElementById('mark');
+  var status = document.getElementById('demoStatus');
+  var NS = 'http://www.w3.org/2000/svg';
+  var circles = [];
+  for (i = 0; i < N; i++) { var c = document.createElementNS(NS, 'circle'); c.setAttribute('r', '1.9'); vertsG.appendChild(c); circles.push(c); }
+  var targetFrac = null;
+  var morphOn = false;
+  function targetShape() { return targetFrac === null ? KEYS[7] : frame(targetFrac); }
+  function setGhost() { ghost.setAttribute('d', pathOf(targetShape())); }
+  setGhost();
+  brushWrap.style.transition = reduce ? 'none' : 'transform .12s linear';
+
+  function render(v) {
+    var frac = v / MAX, P = frame(frac);
+    form.setAttribute('d', pathOf(P));
+    for (var k = 0; k < N; k++) { circles[k].setAttribute('cx', P[k][0].toFixed(1)); circles[k].setAttribute('cy', P[k][1].toFixed(1)); }
+    var cc = centroidOfChange(frac);
+    brushWrap.style.transform = 'translate(' + cc[0].toFixed(1) + 'px,' + cc[1].toFixed(1) + 'px)';
+    counter.textContent = v + ' / ' + LIMIT;
+    vpStep.textContent = 'Step ' + v;
+    slider.setAttribute('aria-valuetext', 'Step ' + v + ' of ' + MAX + ' recorded');
+    slider.style.setProperty('--f', frac.toFixed(4));
+    ghost.style.opacity = (v >= MAX && targetFrac === null) ? '0' : '1';
+  }
+  function setV(v) { v = Math.max(0, Math.min(MAX, Math.round(v))); if (String(v) !== slider.value) slider.value = v; render(v); }
+
+  var introOn = false;
+  function stopIntro() { introOn = false; }
+  function runIntro() {
+    if (reduce || introOn) return;
+    introOn = true;
+    var t0 = null, LOW = 8;
+    function ease(x) { return x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2; }
+    function step(ts) {
+      if (!introOn) return;
+      if (t0 === null) t0 = ts;
+      var e = ts - t0, v;
+      if (e < 1800) v = MAX - (MAX - LOW) * ease(e / 1800);
+      else if (e < 2250) v = LOW;
+      else if (e < 3900) v = LOW + (MAX - LOW) * ease((e - 2250) / 1650);
+      else { setV(MAX); introOn = false; return; }
+      setV(v);
+      requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  slider.addEventListener('input', function () { stopIntro(); render(parseInt(slider.value, 10)); });
+  slider.addEventListener('pointerdown', stopIntro);
+  slider.addEventListener('keydown', stopIntro);
+
+  var hoverOn = canHover;
+  var chip = document.getElementById('hoverToggle');
+  if (canHover) {
+    chip.hidden = false;
+    chip.addEventListener('click', function () {
+      hoverOn = !hoverOn;
+      chip.setAttribute('aria-pressed', hoverOn ? 'true' : 'false');
+      chip.textContent = 'Hover scrub: ' + (hoverOn ? 'on' : 'off');
+    });
+    chip.addEventListener('pointermove', function (e) { e.stopPropagation(); });
+  }
+  stage.addEventListener('pointermove', function (e) {
+    if (e.pointerType !== 'mouse' || !hoverOn) return;
+    stopIntro();
+    var r = stage.getBoundingClientRect();
+    setV(((e.clientX - r.left) / r.width) * MAX);
+  });
+  function dragScrub(e) {
+    if (e.pointerType === 'mouse') return;
+    var r = stage.getBoundingClientRect();
+    stopIntro();
+    setV(((e.clientX - r.left) / r.width) * MAX);
+  }
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'mouse') return;
+    stage.setPointerCapture && stage.setPointerCapture(e.pointerId);
+    dragScrub(e);
+    stage.onpointermove = dragScrub;
+  });
+  function endDrag(e) { stage.onpointermove = null; }
+  stage.addEventListener('pointerup', endDrag);
+  stage.addEventListener('pointercancel', endDrag);
+
+  /* history menu */
+  var dot = document.getElementById('dotBtn');
+  var menu = document.getElementById('histMenu');
+  var items = Array.prototype.slice.call(menu.querySelectorAll('[role^="menuitem"]'));
+  function say(t) { status.textContent = t; }
+  function openMenu() { menu.hidden = false; dot.setAttribute('aria-expanded', 'true'); items[0].focus(); }
+  function closeMenu(ret) { if (menu.hidden) return; menu.hidden = true; dot.setAttribute('aria-expanded', 'false'); if (ret) dot.focus(); }
+  dot.addEventListener('click', function () { stopIntro(); if (menu.hidden) openMenu(); else closeMenu(true); });
+  document.addEventListener('pointerdown', function (e) { if (!menu.hidden && !menu.contains(e.target) && !dot.contains(e.target)) closeMenu(false); });
+  menu.addEventListener('keydown', function (e) {
+    var idx = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(idx + 1) % items.length].focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(idx - 1 + items.length) % items.length].focus(); }
+    else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+    else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeMenu(true); }
+    else if (e.key === 'Tab') { closeMenu(false); }
+  });
+  items.forEach(function (it) {
+    it.addEventListener('click', function () {
+      var act = it.getAttribute('data-act'), label = it.textContent.trim(), on;
+      if (it.getAttribute('role') === 'menuitemcheckbox') {
+        on = it.getAttribute('aria-checked') !== 'true';
+        it.setAttribute('aria-checked', on ? 'true' : 'false');
+      }
+      if (act === 'target') {
+        targetFrac = parseInt(slider.value, 10) / MAX;
+        mark.style.setProperty('--mf', targetFrac.toFixed(4)); mark.hidden = false; setGhost(); render(parseInt(slider.value, 10));
+        say('Morph target set at step ' + slider.value + '. The dashed outline and the marker on the bar show it.');
+      } else if (act === 'morph') {
+        morphOn = on;
+        say(on ? 'Morph History Brush on' + (targetFrac === null ? '. Set a morph target first.' : '. Painting would pull areas back toward the target.') : 'Morph History Brush off.');
+      } else if (act === 'global' || act === 'modes') {
+        say(label + (on ? ': on.' : ': off.') + ' (Demo only.)');
+      } else {
+        say(label + ': demo only, nothing is changed here.');
+      }
+      closeMenu(true);
+    });
+  });
+
+  setV(MAX);
+  var demoSec = document.getElementById('demo');
+  if ('IntersectionObserver' in window && !reduce) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (en) { if (en.isIntersecting) { io.disconnect(); setTimeout(runIntro, 350); } });
+    }, { threshold: 0.55 });
+    io.observe(stage);
+  }
+
+  /* ---------- hero art: onion-skin history with a live shape ---------- */
+  var heroLive = document.getElementById('heroLive');
+  if (heroLive) {
+    var ghosts = document.getElementById('heroGhosts'), ticks = '', col = ['#6cc4ff', '#79bdf0', '#8ab4d8', '#a7a9b0', '#c9a284', '#e69c5c', '#f79b44', '#ff9a3c'];
+    for (j = 0; j < 7; j++) {
+      var gp = document.createElementNS(NS, 'path');
+      gp.setAttribute('d', pathOf(KEYS[j])); gp.setAttribute('fill', 'none'); gp.setAttribute('stroke', col[j]);
+      gp.setAttribute('stroke-opacity', (0.16 + j * 0.05).toFixed(2)); gp.setAttribute('stroke-width', '1.6'); gp.setAttribute('stroke-linejoin', 'round');
+      ghosts.appendChild(gp);
+    }
+    for (i = 0; i <= 30; i++) ticks += 'M' + (20 + i * 12) + ' ' + (i % 5 === 0 ? 312 : 318) + 'v' + (i % 5 === 0 ? 10 : 4);
+    document.getElementById('heroTicks').setAttribute('d', ticks);
+    var hHandle = document.getElementById('heroHandle'), hFill = document.getElementById('heroFill');
+    function heroSet(f) {
+      heroLive.setAttribute('d', pathOf(frame(f)));
+      hHandle.setAttribute('x', (20 + f * 348).toFixed(1));
+      hFill.setAttribute('width', (6 + f * 348).toFixed(1));
+    }
+    heroSet(1);
+    if (!reduce) {
+      var heroVisible = true, raf = 0, hero = document.querySelector('.hero-art');
+      var hio = new IntersectionObserver(function (es) { heroVisible = es[0].isIntersecting; if (heroVisible && !raf) raf = requestAnimationFrame(loop); });
+      hio.observe(hero);
+      var loop = function (ts) {
+        raf = 0;
+        if (!heroVisible) return;
+        var ph = (ts % 11000) / 11000, tri = ph < .5 ? ph * 2 : (1 - ph) * 2;
+        heroSet(smooth((tri - .12) / .76));
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+    }
+  }
+
+  /* ---------- reveal on scroll ---------- */
+  var rev = document.querySelectorAll('.reveal');
+  if (reduce || !('IntersectionObserver' in window)) {
+    Array.prototype.forEach.call(rev, function (el) { el.classList.add('in'); });
+  } else {
+    var ro = new IntersectionObserver(function (es) {
+      es.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); ro.unobserve(en.target); } });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.05 });
+    Array.prototype.forEach.call(rev, function (el, n) { el.style.transitionDelay = ((n % 3) * 70) + 'ms'; ro.observe(el); });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+<title>Hindsight</title>
+<defs><radialGradient id="c" cx=".38" cy=".3" r=".8"><stop offset="0" stop-color="#f6ddc6"/><stop offset=".6" stop-color="#b79b86"/><stop offset="1" stop-color="#5a4a3f"/></radialGradient></defs>
+<rect width="32" height="32" rx="7" fill="#0e0f12"/>
+<rect x=".75" y=".75" width="30.5" height="30.5" rx="6.3" fill="none" stroke="#383e4b" stroke-width="1.5"/>
+<circle cx="16" cy="12.5" r="7.5" fill="url(#c)"/>
+<rect x="5" y="24" width="22" height="3" rx="1.5" fill="#2c313c"/>
+<rect x="5" y="24" width="14" height="3" rx="1.5" fill="#ff9a3c"/>
+<rect x="17.2" y="21" width="4" height="9" rx="1.5" fill="#ffd2a1" stroke="#ff9a3c" stroke-width="1.2"/>
+</svg>

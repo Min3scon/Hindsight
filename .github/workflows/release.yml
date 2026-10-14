@@ -1,0 +1,56 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check tag matches manifest version
+        run: |
+          manifest_version="$(python3 -c 'import tomllib; print(tomllib.load(open("hindsight/blender_manifest.toml", "rb"))["version"])')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$tag_version" != "$manifest_version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match manifest version ${manifest_version}"
+            exit 1
+          fi
+
+      # Preferred path: the official Blender 4.2 LTS build and validate commands.
+      - name: Blender build
+        id: blender
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libxi6 libxkbcommon0 libxxf86vm1 libxfixes3 libxrender1 libgl1 libsm6 libegl1
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/blender.tar.xz" \
+            https://download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz
+          mkdir -p "$RUNNER_TEMP/blender"
+          tar -xJf "$RUNNER_TEMP/blender.tar.xz" -C "$RUNNER_TEMP/blender" --strip-components=1
+          mkdir -p dist
+          "$RUNNER_TEMP/blender/blender" --command extension build --source-dir hindsight --output-filepath dist/hindsight.zip
+          "$RUNNER_TEMP/blender/blender" --command extension validate dist/hindsight.zip
+
+      # Used when the Blender download or run fails (blocked mirror, missing libs, ...).
+      - name: Fallback build
+        if: steps.blender.outcome != 'success'
+        run: python3 scripts/build_zip.py --blender-ext "" --out dist/hindsight.zip
+
+      - name: List zip contents
+        run: python3 -m zipfile -l dist/hindsight.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/hindsight.zip
+          fail_on_unmatched_files: true

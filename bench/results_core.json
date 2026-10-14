@@ -1,0 +1,60 @@
+{
+ "python": "3.11.17",
+ "numpy": "2.4.6",
+ "codecs": [
+  "zstd",
+  "lz4",
+  "zlib",
+  "none"
+ ],
+ "machine": "x86_64",
+ "reps": 5,
+ "results": [
+  {
+   "verts": 99904,
+   "changed_verts": 1988,
+   "diff_ms": 0.4175419999228325,
+   "raw_bytes": 31808,
+   "raw_step_nbytes": 32128,
+   "pack_delta_ms": 0.022196999907464487,
+   "zstd_bytes": 12162,
+   "zstd_pack_ms": 0.09589799992681947,
+   "zstd_unpack_apply_ms": 0.11931200015169452,
+   "lz4_bytes": 12744,
+   "lz4_pack_ms": 0.05808199966850225,
+   "lz4_unpack_apply_ms": 0.1260680000996217,
+   "zlib_bytes": 12257,
+   "zlib_pack_ms": 0.29362999976001447,
+   "zlib_unpack_apply_ms": 0.1924630000758043,
+   "apply_raw_ms": 0.05744699956267141,
+   "apply100_raw_ms": 6.474274000083824,
+   "apply100_packed_ms": 14.047570999991876,
+   "undo100_raw_ms": 6.683882000288577,
+   "avg_packed_bytes_100": 12301,
+   "full_positions_bytes": 1198848
+  },
+  {
+   "verts": 500000,
+   "changed_verts": 9948,
+   "diff_ms": 2.4860129997250624,
+   "raw_bytes": 159168,
+   "raw_step_nbytes": 159488,
+   "pack_delta_ms": 0.09801699980016565,
+   "zstd_bytes": 58012,
+   "zstd_pack_ms": 0.5455810000967176,
+   "zstd_unpack_apply_ms": 0.6718489999002486,
+   "lz4_bytes": 61744,
+   "lz4_pack_ms": 0.2051900000878959,
+   "lz4_unpack_apply_ms": 0.7158390003496606,
+   "zlib_bytes": 57693,
+   "zlib_pack_ms": 2.4052899998423527,
+   "zlib_unpack_apply_ms": 1.2284609997550433,
+   "apply_raw_ms": 0.44520700021166704,
+   "apply100_raw_ms": 29.524968000259832,
+   "apply100_packed_ms": 61.91378799985614,
+   "undo100_raw_ms": 30.637627000032808,
+   "avg_packed_bytes_100": 59018,
+   "full_positions_bytes": 6000000
+  }
+ ]
+}

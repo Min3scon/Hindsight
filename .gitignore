@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+/dist/
+/build/
+*.blend1
+.DS_Store
+/bench/results_tmp/
