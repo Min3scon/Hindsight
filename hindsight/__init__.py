@@ -17,7 +17,7 @@ def register():
     for name, required in _MODULES:
         try:
             mod = importlib.import_module(f".bl.{name}", __package__)
-        except ImportError as e:
+        except Exception as e:
             if required:
                 raise
             if not getattr(e, "name", "").endswith(name):

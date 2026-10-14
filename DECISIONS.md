@@ -71,3 +71,14 @@
 1. Scrubber at the bottom of the viewport in Sculpt Mode (with the step counter visible).
 2. History Menu open from the dot.
 3. Undo History sidebar tab (Movie Mode, Scrubber, Memory, Collection Filtering open).
+
+## Repository settings you need to change
+- **GitHub Pages is not enabled yet.** The `pages` workflow builds the zip fine but fails at
+  `configure-pages` with "Get Pages site failed ... Not Found". Turn it on: **Settings > Pages >
+  Build and deployment > Source: GitHub Actions**, then re-run the latest `pages` workflow (or push).
+  The site will be at https://min3scon.github.io/Hindsight/ and the download at
+  https://min3scon.github.io/Hindsight/download/hindsight.zip.
+- The repository had no commits before this work, so the working branch
+  `claude/lucid-brahmagupta-9gsdsn` became the default branch. There is no other branch to open a pull
+  request against, so no PR was created. The Pages workflow deploys from whatever the default branch is.
+- If the `github-pages` environment has deployment branch rules, allow the default branch and `v*` tags.

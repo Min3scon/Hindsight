@@ -24,6 +24,7 @@ _STATES: dict = {}          # object uid -> MeshState (what the mesh shows at th
 _DIRTY: dict = {}           # object uid -> time of last geometry update
 _TRACK = {"name": None, "uid": None, "mode": None}
 _SUSPEND = [0]
+IN_HANDLER = [False]          # True while Movie Mode applies a step from a frame-change handler
 _LAST_UNDO_MATCH = [0.0]
 _UID_CACHE: dict = {}
 _PENDING_TRUNCATE: dict = {}  # object uid -> number of future steps awaiting confirmation
@@ -283,6 +284,20 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
         if "__TOPO__" in keys:
             mode = obj.mode
             is_active = bpy.context.view_layer.objects.active == obj
+            if mode != "OBJECT" and is_active and IN_HANDLER[0]:
+                # Mode switches inside a frame/depsgraph handler crash Blender: defer to a timer.
+                name = obj.name
+                snap = st.to_snapshot()
+
+                def _later():
+                    ob = bpy.data.objects.get(name)
+                    if ob is not None:
+                        tmp = MeshState(snap.counts, snap.arrays)
+                        _write_state(ob, tmp, {"__TOPO__"}, final)
+                    return None
+                bpy.app.timers.register(_later, first_interval=0.0)
+                st.removed.clear()
+                return
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode="OBJECT")
             meshio.write_snapshot(me, st.to_snapshot())

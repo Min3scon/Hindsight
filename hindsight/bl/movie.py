@@ -19,6 +19,23 @@ def _active(sh) -> bool:
     return bool(sh is not None and sh.movie_mode and sh.use_global)
 
 
+class _Proxy:
+    """Read-only view of a bpy object with some attributes overridden."""
+    def __init__(self, base, **over):
+        self.__dict__["_base"] = base
+        self.__dict__.update(over)
+
+    def __getattr__(self, name):
+        return getattr(self.__dict__["_base"], name)
+
+
+def _no_operator_context(context):
+    """Context for goto() inside a frame-change handler: Preserve Modes off, because calling
+    operators (mode switches) while the depsgraph is being evaluated crashes Blender."""
+    sc = context.scene
+    return _Proxy(context, scene=_Proxy(sc, hindsight=_Proxy(sc.hindsight, preserve_modes=False)))
+
+
 def _apply(context, value) -> bool:
     """Move the global timeline to `value` if Movie Mode is active. True if it moved."""
     if _BUSY[0]:
@@ -35,11 +52,13 @@ def _apply(context, value) -> bool:
     prev = getattr(runtime.goto, "_movie", False)
     _BUSY[0] = True
     runtime.goto._movie = True
+    runtime.IN_HANDLER[0] = True
     try:
         with runtime.suspended():
             runtime.goto(context, target, final=True)
     finally:
         runtime.goto._movie = prev
+        runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
     return True
 
@@ -66,7 +85,7 @@ def on_frame_change(scene, depsgraph=None) -> None:
                 value = scene.evaluated_get(depsgraph).hindsight.movie_step
             except Exception:
                 pass
-        _apply(bpy.context, value)
+        _apply(_no_operator_context(bpy.context), value)
     except Exception as e:
         print("Hindsight movie error:", e)
 
