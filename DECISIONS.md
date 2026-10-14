@@ -81,6 +81,13 @@
 - The repository had no commits before this work, so the working branch
   `claude/lucid-brahmagupta-9gsdsn` became the default branch. There is no other branch to open a pull
   request against, so no PR was created. The Pages workflow deploys from whatever the default branch is.
+- **Tag v1.0.0 could not be pushed from this session** (the git proxy answers HTTP 403 for tags; only the
+  working branch is pushable). The tag exists locally at commit `1c1acf7`. To publish the release, do
+  one of: (a) on GitHub: Releases > Draft a new release > Choose a tag: type `v1.0.0` > Target:
+  `claude/lucid-brahmagupta-9gsdsn` > Publish; or (b) locally: `git fetch origin && git tag v1.0.0
+  origin/claude/lucid-brahmagupta-9gsdsn && git push origin v1.0.0`. Either triggers
+  `.github/workflows/release.yml`, which builds `hindsight.zip` and attaches it to the release. The
+  website's Download button does not depend on this: it serves `docs/download/hindsight.zip` directly.
 - If the `github-pages` environment has deployment branch rules, allow the default branch and `v*` tags.
 
 ## Known issues
