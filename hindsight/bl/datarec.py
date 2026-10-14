@@ -88,8 +88,26 @@ def _state(uid: str) -> MeshState:
     return st
 
 
+def enabled_kinds():
+    """Data kinds switched on in the preferences (None: all)."""
+    if FORCE_KINDS[0] is not None:
+        return set(FORCE_KINDS[0])
+    try:
+        from .prefs import get_prefs
+        p = get_prefs()
+        if p is not None and hasattr(p, "record_kinds"):
+            return {k.lower() for k in p.record_kinds}
+    except Exception:
+        pass
+    return None
+
+
+FORCE_KINDS = [None]          # tests: a set of kind ids
+
+
 def capture(idb) -> dict:
     """(adapter, path) -> value for every adapter that handles this datablock."""
+    adapters.ENABLED_KINDS[0] = enabled_kinds()
     out = {}
     for a in adapters.for_datablock(idb):
         for path, v in a.capture(idb).items():
@@ -179,6 +197,8 @@ def _diff(old: dict, new: dict) -> dict:
         a, b = old.get(k, MISSING), new.get(k, MISSING)
         if a is MISSING and b is MISSING:
             continue
+        if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or ""):
+            continue        # a kind switched off isn't read; that isn't a removal
         if a is MISSING or b is MISSING or not adapters.same(a, b):
             out[k] = (a, b)
     return out
@@ -337,6 +357,16 @@ def _records_match(step, uid, diff: dict, inverse: bool) -> bool:
             if (x is MISSING) != (y is MISSING) or (x is not MISSING and not adapters.same(x, y)):
                 return False
     return True
+
+
+def rebaseline() -> None:
+    """Re-read every tracked datablock without recording (after the data kinds change)."""
+    for uid in tracked_uids():
+        idb = idmap.find(uid)
+        if idb is not None:
+            st = _state(uid)
+            st.values.update(capture(idb))
+    _DIRTY.clear()
 
 
 def prime() -> None:

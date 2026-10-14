@@ -62,6 +62,20 @@ def _update_appearance(self, context):
     _redraw()
 
 
+_KIND_ITEMS = [(k.upper(), v, f"Record {v.lower()}") for k, v in (
+    ("transforms", "Transforms"), ("parenting", "Parenting"), ("visibility", "Visibility"),
+    ("names", "Names"), ("collections", "Collections"), ("constraints", "Constraints"))]
+_KIND_DEFAULT = {k for k, _l, _d in _KIND_ITEMS}
+
+
+def _update_kinds(self, context):
+    try:
+        from . import datarec
+        datarec.rebaseline()
+    except Exception:
+        pass
+
+
 RECORD_SCOPE_ITEMS = (
     ('SCULPT', "Sculpting only", "Record sculpt and paint strokes, as before"),
     ('EVERYTHING', "Everything", "Also record other changes on objects you switch on with Record everything "
@@ -147,6 +161,14 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         name="Record",
         items=RECORD_SCOPE_ITEMS,
         default='SCULPT',
+    )
+    record_kinds: EnumProperty(
+        name="Data kinds",
+        description="What Record everything records on an object",
+        items=_KIND_ITEMS,
+        options={'ENUM_FLAG'},
+        default=_KIND_DEFAULT,
+        update=_update_kinds,
     )
     welcomed: BoolProperty(default=False, options={'HIDDEN'})
 
