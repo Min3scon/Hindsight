@@ -5,7 +5,7 @@ Registry blob (``history.hsr`` / embedded ID property):
     b"HSR1" | u32 json_len | JSON | for each history, for each entry: u64 len | Entry.to_bytes()
 
 JSON = {"version", "format", "writer", "next_seq", "use_global", "preserve_modes", "by_object",
-        "disabled", "histories": [{"uid", "members", "cursor", "enabled", "morph_target",
+        "disabled", "everything", "histories": [{"uid", "members", "cursor", "enabled", "morph_target",
                                    "n_entries", "metas": [entry.meta, ...], "crcs": [...]}]}
 
 Entry metas are stored in the JSON so loading never unpacks a step: entries come back as
@@ -127,6 +127,7 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
         "preserve_modes": bool(reg.preserve_modes),
         "by_object": dict(reg.by_object),
         "disabled": sorted(getattr(reg, "disabled", ()) or ()),
+        "everything": sorted(getattr(reg, "everything", ()) or ()),
         "histories": hjson,
     }
     js = json.dumps(doc, separators=(",", ":"), default=_json_default).encode("utf-8")
@@ -173,6 +174,8 @@ def registry_from_bytes(b: bytes):
     reg.by_object = dict(doc.get("by_object", {}))
     if hasattr(reg, "disabled"):
         reg.disabled = set(doc.get("disabled", []))
+    if hasattr(reg, "everything"):
+        reg.everything = set(doc.get("everything", []))
     max_seq = 0
     truncated = False
     for hd in doc.get("histories", []):
@@ -365,6 +368,10 @@ def replay(reg, records: list) -> int:
             h.entries = []
             h.cursor = 0
             h.morph_target = None
+        elif rtype == "META_EVERYTHING":
+            t = header.get("uid")
+            if t and hasattr(reg, "everything"):
+                (reg.everything.add if header.get("on") else reg.everything.discard)(t)
         elif rtype == "META":
             if not uid:
                 continue

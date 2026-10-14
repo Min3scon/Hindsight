@@ -80,7 +80,28 @@ class HINDSIGHT_OT_confirm_truncate(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (HINDSIGHT_OT_step_back, HINDSIGHT_OT_step_forward, HINDSIGHT_OT_goto,
+class HINDSIGHT_OT_record_everything(bpy.types.Operator):
+    bl_idname = "hindsight.record_everything"
+    bl_label = "Record Everything on This Object"
+    bl_description = ("Also record changes other than sculpting on this object, such as moving it. "
+                      "Needs Record set to Everything in the preferences")
+    bl_options = {'REGISTER'}
+
+    on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context, "active_object", None) is not None
+
+    def execute(self, context):
+        from . import datarec
+        datarec.set_tracked(context.active_object, self.on)
+        from . import runtime
+        runtime.tag_redraw_all()
+        return {'FINISHED'}
+
+
+classes = (HINDSIGHT_OT_step_back, HINDSIGHT_OT_step_forward, HINDSIGHT_OT_goto, HINDSIGHT_OT_record_everything,
            HINDSIGHT_OT_confirm_truncate)
 
 _keymaps = []

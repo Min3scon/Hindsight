@@ -74,6 +74,12 @@ def set_registry(r: Registry) -> None:
     _UID_CACHE.clear()
     _NATIVE_PENDING.clear()
     _TRACK.update(name=None, uid=None, mode=None)
+    try:
+        from . import datarec, idmap
+        datarec.forget()
+        idmap.forget()
+    except Exception:
+        pass
 
 
 def settings():
@@ -218,9 +224,9 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
     st = _STATES.get(uid)
     if obj.mode == "EDIT" and st is not None:
         return st  # mesh arrays are not readable in Edit Mode; keep the pre-edit baseline
-    if st is None or refresh:
+    if st is None or refresh or not st.counts:
         snap = meshio.read_snapshot(obj.data)
-        st = MeshState(snap.counts, snap.arrays)
+        st = MeshState(snap.counts, snap.arrays, st.values if st is not None else None)
         _STATES[uid] = st
     return st
 
@@ -398,8 +404,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         return None
     mode = mode or obj.mode
     st = _STATES.get(uid)
-    if st is None:
-        ensure_state(obj)
+    if st is None or not st.counts:          # no mesh baseline yet (or data values only)
+        ensure_state(obj, refresh=True)
         return None
     if _blocking(obj):
         ensure_state(obj, refresh=True)
@@ -631,6 +637,11 @@ def on_depsgraph(scene, depsgraph=None) -> None:
     if _SUSPEND[0] or depsgraph is None:
         return
     guard.mark_ok("recorder")
+    try:
+        from . import datarec
+        datarec.on_update(depsgraph)
+    except Exception as e:
+        log.error_once(("datarec_update", str(e)), f"data recorder error: {e}", e)
     obj = _active()
     if obj is None or obj.type != "MESH":
         check_mode_transition()
@@ -671,12 +682,19 @@ def _tick_once() -> None:
 
 def tick() -> float:
     """Commits each stroke as it ends (or once updates settle). Never raises."""
+    busy = False
     try:
         _tick_once()
         ensure_handlers()
     except Exception as e:
         log.error_once(("tick", str(e)), f"timer error: {e}", e)
-    return 0.02 if _DIRTY else 0.1
+    try:
+        from . import datarec
+        datarec.tick()
+        busy = bool(datarec._DIRTY)
+    except Exception as e:
+        log.error_once(("datarec_tick", str(e)), f"data recorder error: {e}", e)
+    return 0.02 if (_DIRTY or busy) else 0.1
 
 
 @persistent
@@ -689,6 +707,11 @@ def on_undo(*_a) -> None:
     if obj is not None and obj.type == "MESH" and obj.mode in RECORD_MODES:
         if obj_uid(obj) in _STATES:
             commit(obj)
+    try:
+        from . import datarec
+        datarec.on_undo()
+    except Exception as e:
+        log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
 
 
 _HANDLERS = (("depsgraph_update_post", on_depsgraph), ("undo_post", on_undo), ("redo_post", on_undo))
@@ -742,20 +765,37 @@ def _goto_history(h, pos: int, final: bool) -> dict:
                 with suspended():
                     bpy.ops.object.mode_set(mode="EDIT")
             states[m] = ensure_state(ob)
+    from . import datarec
+    tracked = [m for m in h.members if m in datarec.tracked_uids()]
+    vb = {m: dict(states[m].values) for m in tracked if m in states}
+    before = h.cursor
     changes = h.goto(pos, states, join_hook=_join_hook)
+    wrote_data = False
     for target, keys in changes.items():
         ob = find_object(target)
         st = states.get(target) or _STATES.get(target)
         if ob is None or st is None:
             continue
+        mesh_keys, data_keys = datarec.split_keys(keys)
+        if data_keys:
+            datarec.write(ob, st, data_keys)
+            wrote_data = True
+        if not mesh_keys:
+            continue
         reenter_edit = ob.mode == "EDIT"
         if reenter_edit:
             with suspended():
                 bpy.ops.object.mode_set(mode="OBJECT")
-        _write_state(ob, st, keys, final)
+        _write_state(ob, st, mesh_keys, final)
         if reenter_edit:
             with suspended():
                 bpy.ops.object.mode_set(mode="EDIT")
+    if wrote_data and final and not IN_HANDLER[0]:
+        ob = find_object(h.members[0]) if h.members else None
+        if ob is None or ob.mode == "OBJECT":
+            if datarec.push_undo():
+                va = {m: dict(states[m].values) for m in tracked if m in states}
+                datarec.note_jump(h, before, h.cursor, vb, va)
     _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
     return changes
 

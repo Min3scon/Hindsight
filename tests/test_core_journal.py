@@ -300,7 +300,8 @@ def test_append_read_roundtrip():
         j.close()
         with open(path, "rb") as fh:
             raw = fh.read(4)
-        assert raw == MAGIC and set(RTYPES) == {"STEP", "CURSOR", "TRUNC", "DROP", "RESET", "META", "SAVE"}
+        assert raw == MAGIC and set(RTYPES) == {"STEP", "CURSOR", "TRUNC", "DROP", "RESET", "META", "SAVE",
+                                            "META_EVERYTHING"}
         j2 = Journal(path)
         assert j2.size() == os.path.getsize(path)
         assert j2.read() == recs
@@ -611,6 +612,11 @@ def test_replay_semantics():
     assert len(h.entries) == 1
     assert replay(reg, [("SAVE", {"blend": "x"}, b""), ("RESET", {"hist": "H1"}, b"")]) == 1
     assert h.entries == [] and h.cursor == 0 and h.morph_target is None
+    # "Record everything" switches (data adapters) are replayed too
+    replay(reg, [("META_EVERYTHING", {"uid": "objA", "on": True}, b""),
+                 ("META_EVERYTHING", {"uid": "objB", "on": True}, b""),
+                 ("META_EVERYTHING", {"uid": "objB", "on": False}, b"")])
+    assert reg.everything == {"objA"}, reg.everything
 
 
 def test_embed_base64():
