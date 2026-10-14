@@ -23,6 +23,7 @@ DEBOUNCE = 0.15
 _REG = Registry()
 _STATES: dict = {}          # object uid -> MeshState (what the mesh shows at the cursor)
 _DIRTY: dict = {}           # object uid -> time of last geometry update
+_STROKE_SEEN: set = set()   # object uids changed while a stroke operator was running
 _TRACK = {"name": None, "uid": None, "mode": None}
 _SUSPEND = [0]
 IN_HANDLER = [False]          # True while Movie Mode applies a step from a frame-change handler
@@ -31,6 +32,23 @@ _LAST_UNDO_MATCH = [0.0]
 # undo_post/redo_post handler. Without it, a change that happens to reverse the previous step
 # (fill a mask, then clear it) would be mistaken for an undo and not recorded.
 _NATIVE_PENDING: set = set()
+# Objects whose mesh Hindsight has written since they entered their current mode. Blender's own
+# sculpt undo doesn't know about those writes: undoing past one re-applies stale stroke data on
+# top of the jumped-to mesh. For these objects Ctrl+Z never falls back to Blender's undo, and a
+# Blender undo that lands outside the history is put back (see commit()).
+_WROTE: set = set()
+NATIVE_UNDO_TEXT = ("Blender's own undo can't go back past a history jump in Sculpt or Vertex Paint "
+                    "Mode, so it was reversed. Use Ctrl+Z or the slider")
+
+
+def mark_written(obj) -> None:
+    uid = obj_uid(obj)
+    if uid is not None:
+        _WROTE.add(uid)
+
+
+def wrote(obj) -> bool:
+    return obj_uid(obj) in _WROTE
 _UID_CACHE: dict = {}
 _PENDING_TRUNCATE: dict = {}  # object uid -> number of future steps awaiting confirmation
 missing_message = [None]      # history folder missing for this file, set by persistence
@@ -51,6 +69,8 @@ def set_registry(r: Registry) -> None:
     MEMORY.update(estimate=0, evicted=0, warned=False)
     _STATES.clear()
     _DIRTY.clear()
+    _STROKE_SEEN.clear()
+    _WROTE.clear()
     _UID_CACHE.clear()
     _NATIVE_PENDING.clear()
     _TRACK.update(name=None, uid=None, mode=None)
@@ -310,6 +330,7 @@ def _apply_to_state(st: MeshState, step: Step) -> None:
 
 
 def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
+    mark_written(obj)
     me = obj.data
     with suspended():
         if "__TOPO__" in keys:
@@ -367,6 +388,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         return None
     uid = obj_uid(obj, create=True)
     _DIRTY.pop(uid, None)
+    _STROKE_SEEN.discard(uid)
     if obj.mode == "EDIT":
         return None  # Edit Mode changes are grouped and recorded when leaving Edit Mode
     if uid in _REG.disabled or is_excluded(obj):
@@ -415,6 +437,11 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
             _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
             tag_redraw_all()
             return None
+        if uid in _WROTE and mode in RECORD_MODES:
+            # Blender's undo replayed stroke data recorded before a Hindsight jump: the result is
+            # not a real state. Put the mesh back (never record it, never drop later steps).
+            _put_back_after_native_undo(obj, st, step)
+            return None
     if h is not None:
         fut = h.future_count()
         if fut > 0:
@@ -441,6 +468,26 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     _enforce(h)
     tag_redraw_all()
     return step
+
+
+def _put_back_after_native_undo(obj, st: MeshState, step: Step) -> None:
+    keys = {d.key for d in step.deltas} | set(st.removed) if step.kind == DELTA else {"__TOPO__"}
+    name = obj.name
+
+    def _later():
+        ob = bpy.data.objects.get(name)
+        if ob is not None:
+            _write_state(ob, st, keys)
+            tag_redraw_all()
+        return None
+    # Never write meshes or switch modes inside Blender's undo handler: do it right after.
+    bpy.app.timers.register(_later, first_interval=0.0)
+    log.warn(NATIVE_UNDO_TEXT)
+    try:
+        from .selfcheck import flash_status
+        flash_status("Hindsight: " + NATIVE_UNDO_TEXT, 10.0)
+    except Exception:
+        pass
 
 
 def _revert(obj, st: MeshState, step: Step) -> None:
@@ -541,6 +588,7 @@ def _active():
 
 def _enter(obj) -> None:
     uid = obj_uid(obj, create=True)
+    _WROTE.discard(uid)      # entering a mode starts a fresh Blender undo context for it
     h = _REG.history_for(uid)
     st = _STATES.get(uid)
     if obj.mode == "EDIT":
@@ -593,6 +641,8 @@ def on_depsgraph(scene, depsgraph=None) -> None:
                 uid = obj_uid(obj)
                 if uid is not None:
                     _DIRTY[uid] = time.time()
+                    if stroke_running():
+                        _STROKE_SEEN.add(uid)
                 break
     check_mode_transition()
 
@@ -601,25 +651,29 @@ def on_depsgraph(scene, depsgraph=None) -> None:
 def _tick_once() -> None:
     check_mode_transition()
     if _DIRTY and stroke_running():
-        return   # a slow modifier stack can pause updates mid-stroke; wait for the release
+        return   # never split a stroke, even if a slow modifier stack pauses its updates
     now = time.time()
     for uid, t in list(_DIRTY.items()):
-        if now - t >= DEBOUNCE:
+        # A stroke that has finished is committed at once, so quick strokes stay separate steps.
+        # Changes without a stroke operator (filters run from a menu, scripts) wait for the
+        # updates to settle.
+        if uid in _STROKE_SEEN or now - t >= DEBOUNCE:
             ob = find_object(uid)
             if ob is None or ob.mode not in RECORD_MODES:
                 _DIRTY.pop(uid, None)
+                _STROKE_SEEN.discard(uid)
                 continue
             commit(ob)
 
 
 def tick() -> float:
-    """Commits a stroke once its geometry updates stop (debounced). Never raises."""
+    """Commits each stroke as it ends (or once updates settle). Never raises."""
     try:
         _tick_once()
         ensure_handlers()
     except Exception as e:
         log.error_once(("tick", str(e)), f"timer error: {e}", e)
-    return 0.1
+    return 0.02 if _DIRTY else 0.1
 
 
 @persistent

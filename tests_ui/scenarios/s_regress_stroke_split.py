@@ -1,5 +1,8 @@
-"""Regression (Round E, beta 2): on a slow modifier stack one stroke was split into two steps,
-because updates paused longer than the 0.15 s debounce while the mouse was still down.
+"""Regressions (beta 2): one stroke must be exactly one step.
+
+1. Round E: on a slow modifier stack one stroke was split into two steps, because updates paused
+   longer than the 0.15 s debounce while the mouse was still down.
+2. Round C: quick strokes (less than 0.15 s apart) were merged into one step.
 
 A test-only depsgraph handler sleeps 0.25 s on every update to make Blender that slow.
 One stroke must still be exactly one step.
@@ -39,3 +42,13 @@ def run(d):
         rt.stroke_running = real
     yield 0.6
     d.check("slow updates: the stroke is still one step", C.info(d)["len"] == 2, C.info(d))
+
+    # quick strokes, about 0.1 s apart, each must be its own step
+    before = C.info(d)["len"]
+    win, area, reg, ui, space = d.view3d()
+    for k in range(12):
+        x0, y0 = reg.width * (0.42 + 0.015 * k), reg.height * 0.5
+        yield from d.drag(reg, [(x0 + j * 9, y0) for j in range(7)], step_wait=0.01)
+        yield 0.05
+    yield 0.6
+    d.check("12 quick strokes, 12 steps", C.info(d)["len"] == before + 12, (before, C.info(d)))

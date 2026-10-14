@@ -25,6 +25,7 @@ SUITE = [
     ("regress_file_load", False, False),
     ("fail_inject", False, False),
     ("regress_stroke_split", False, False),
+    ("regress_native_undo", False, False),
 ]
 
 

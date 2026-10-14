@@ -120,6 +120,7 @@ def apply_morph_at(obj, center_local, radius_local: float, strength: float) -> i
             meshio.write_channel(me, POSITION_KEY, cur)
             me.update()
             obj.update_tag()
+        runtime.mark_written(obj)
         s["moved"] = True
     return moved
 

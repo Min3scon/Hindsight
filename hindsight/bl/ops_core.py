@@ -4,6 +4,21 @@ import bpy
 from . import runtime
 
 
+def _fallback(op, context, native, edge_text):
+    """At either end of the history. Blender's own undo/redo runs only when it is safe: when the
+    object has no history, or Hindsight hasn't written its mesh since it entered this mode."""
+    obj = getattr(context, "active_object", None)
+    info = runtime.scrub_info(context)
+    if op.native_fallback and (info is None or not info.get("len") or obj is None or not runtime.wrote(obj)):
+        try:
+            return native()
+        except RuntimeError:
+            return {'CANCELLED'}
+    if info is not None and info.get("len"):
+        op.report({'INFO'}, edge_text)
+    return {'CANCELLED'}
+
+
 class HINDSIGHT_OT_step_back(bpy.types.Operator):
     bl_idname = "hindsight.step_back"
     bl_label = "Hindsight: Step Back"
@@ -16,12 +31,7 @@ class HINDSIGHT_OT_step_back(bpy.types.Operator):
     def execute(self, context):
         if runtime.step(context, -1):
             return {'FINISHED'}
-        if self.native_fallback:
-            try:
-                return bpy.ops.ed.undo()
-            except RuntimeError:
-                return {'CANCELLED'}
-        return {'CANCELLED'}
+        return _fallback(self, context, bpy.ops.ed.undo, "Start of the history")
 
 
 class HINDSIGHT_OT_step_forward(bpy.types.Operator):
@@ -36,12 +46,7 @@ class HINDSIGHT_OT_step_forward(bpy.types.Operator):
     def execute(self, context):
         if runtime.step(context, +1):
             return {'FINISHED'}
-        if self.native_fallback:
-            try:
-                return bpy.ops.ed.redo()
-            except RuntimeError:
-                return {'CANCELLED'}
-        return {'CANCELLED'}
+        return _fallback(self, context, bpy.ops.ed.redo, "End of the history")
 
 
 class HINDSIGHT_OT_goto(bpy.types.Operator):

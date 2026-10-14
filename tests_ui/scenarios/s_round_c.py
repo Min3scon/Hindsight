@@ -188,7 +188,7 @@ def run(d):
     yield 0.15
     verify("ctrl+shift+z")
     d.check(f"every jump bit-exact ({n_jumps} slider jumps, 3 drags, 4 shortcuts)", not bad, bad[:10])
-    d.note("jump_ms_median", round(sorted(x for x, _ in t_jump)[len(t_jump) // 2], 2))
+    d.note("jump_ms_median", round(sorted(x for x, _ in t_jump)[len(t_jump) // 2], 2) if t_jump else None)
     far = [x for x, dist in t_jump if dist > total * 0.6]
     d.note("jump_ms_far_max", round(max(far), 1) if far else None)
 
