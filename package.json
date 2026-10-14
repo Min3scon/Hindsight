@@ -1,0 +1,11 @@
+{
+  "name": "hindsight-tools",
+  "private": true,
+  "description": "Dev tooling for the Hindsight website and tests (not shipped).",
+  "scripts": {
+    "site:qa": "node tests/site/site_qa.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

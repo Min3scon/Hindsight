@@ -1,10 +1,68 @@
 # Decisions log
 
-## Timing
+## Beta 2 job (2026-10-14, on the owner's Windows PC)
+
+### Environment
+- Real Blender found: 5.0.1 and 5.1.2 (Blender Foundation installers), 5.1.1 (Steam). No 4.2-4.5 build is
+  installed (a leftover "Blender 4.0" folder has no blender.exe). The manifest minimum stays 4.2.0; 4.2 is
+  covered by code review only and is called out as untested on real 4.2 in the release notes.
+- Every real-Blender run uses a sandbox profile under `.tmp/profiles/<version>/` (BLENDER_USER_RESOURCES,
+  CONFIG, SCRIPTS, EXTENSIONS, DATAFILES, TEMP). The owner's preferences are never read or written.
+- Harness: `tests_ui/hs_ui.py` launches Blender with a window, `--enable-event-simulate` (real OS input is
+  ignored, simulated mouse and keys drive it), and runs a scenario from `tests_ui/scenarios/` on a timer.
+- The headless suite now also runs inside real Blender: `python tests/run_tests.py --blender all`.
+
+### Root cause of "installs but shows no UI" (evidence: `.tmp/ui/*` runs, images in test_rounds/evidence)
+Reproduced with the live 1.0.0-beta.1 zip from the website, installed through Blender's own
+Install from Disk operator in a fresh profile, on 5.0.1, 5.1.1 and 5.1.2. Registration itself is fine:
+all 14 modules register, preferences resolve, keymaps and the draw handler are installed, no traceback.
+What breaks is everything a user can see:
+
+1. **Recording stops after any file load (main cause).** `runtime.on_depsgraph` and `runtime.on_undo`
+   were appended to `bpy.app.handlers` without `@persistent`, and nothing re-added them in `load_post`.
+   Blender removes non-persistent handlers on every File > Open, File > New, Revert and when a .blend is
+   opened by double-click (add-ons register first, then the file loads). After that no stroke is ever
+   recorded. Evidence: `repro_load` on all three versions: before the load
+   `depsgraph_update_post` has `runtime.on_depsgraph`; after `wm.open_mainfile` only `dupsep._on_depsgraph`
+   is left, and a real stroke adds no step (`before=1 after=1`).
+2. **The on-screen slider only exists once a history exists.** `scrub_info()` returns None until the first
+   recorded step, so a new user sees nothing in the viewport. Combined with (1), most users never get a
+   first step, so they never see the slider at all.
+3. **In Sculpt Mode on Blender 4.3+ the slider is drawn under the brush asset shelf.** The shelf is a
+   bottom-aligned overlapping region (y 87-170 in a 1080x900 window). The slider is drawn 18 px above
+   the bottom of the WINDOW region, which is exactly under the shelf. Evidence: `repro_scrubber`:
+   with the shelf shown nothing is visible; hiding the shelf reveals "1 / 10000" at the bottom.
+4. **The sidebar tab is the only always-present UI, and Blender keeps the sidebar closed by default.**
+   The panel has no poll and does appear (screenshot `install_gui/02`), but only after pressing N and
+   finding the "Undo History" tab. There was no header button, no status message, nothing in F3.
+
+Checklist items that were checked and are NOT the cause:
+- register() swallowing errors: required modules re-raise (Blender prints the traceback and disables the
+  add-on); optional ones print one line. No error happened here, but a failure would have been nearly
+  silent for optional modules. Fixed anyway: full traceback plus a one-time popup.
+- Extension id, zip layout, package name, imports: manifest at the zip root, id `hindsight`, installs as
+  `bl_ext.user_default.hindsight`, relative imports only, all names valid identifiers.
+- Panel poll: the main panel has no poll; sub-panels poll only on `scene.hindsight`.
+- gpu/blf: `UNIFORM_COLOR`, `batch_for_shader`, `blf.size(font, size)` and POST_PIXEL all work on 5.0-5.1
+  (the slider draws once uncovered).
+- Keymaps: registered (13 items). Preferences: `bl_idname` equals the package, preferences resolve.
+- Timers: `runtime.tick` is persistent and survives loads. Handlers are registered in register(), not at
+  import time; the problem is only the missing `@persistent` (cause 1).
+
+### Fix plan (Step 3)
+- `@persistent` on every handler, plus a `load_post` check that re-installs any that went missing.
+- The slider shows in Sculpt and Vertex Paint Mode from the start (empty track and a short hint), and sits
+  above any bottom-aligned overlapping region (asset shelf).
+- A sidebar tab that works without any custom drawing, a header popover, F3 entries, a first-enable
+  status message, self-check and copy diagnostics.
+
+## Earlier jobs (cloud session, headless bpy only)
+
+### Timing
 - First start: 2026-10-14 11:49:28 UTC. Schedule reset by the follow-up instructions at **11:56:12 UTC**
   (deadline 12:56 UTC).
 
-## Environment / research
+### Environment / research
 - The four reference URLs (80.lv, superhivemarket.com x2, the docs site on github.io) are blocked by this
   cloud environment's network policy (proxy 403 / DNS). The docs site is a public GitHub repo, so its
   HTML source was read from a clone (behaviour text only; nothing copied). The product page and FAQ text
@@ -18,7 +76,7 @@
   or fail their poll, so tests simulate strokes by writing mesh attributes directly and calling the
   same `runtime.commit()` the stroke-end detector calls.
 
-## Behaviour guesses (please verify against the original)
+### Behaviour guesses (please verify against the original)
 1. **Stroke-end detection**: a depsgraph handler marks the object dirty; a 0.1 s timer commits once no
    geometry update arrived for 0.15 s. `Window.modal_operators` does not exist in 4.2 or 5.2. A long
    pause mid-stroke with a brush that stops sending updates could split one stroke into two steps.
@@ -52,11 +110,11 @@
 18. In Sculpt Mode the viewport may need a mode toggle to show positions written from Python; a hidden
     preference `sculpt_refresh_toggle` is read if present (default off). **Manual check needed.**
 
-## Scope cuts (per the follow-up instructions)
+### Scope cuts (per the follow-up instructions)
 - STRETCH features dropped. No memory-mapped cold tier, no checkpoints, no dirty-chunk tracking
   (full numpy diff per stroke).
 
-## Manual UI checks (cannot be tested headless)
+### Manual UI checks (cannot be tested headless)
 - Scrubber drawing, drag in Sculpt Mode (clicks must beat brush strokes), dot opens History Menu,
   step counter, locked look in Movie Mode.
 - Real brush strokes / filters / mask / face set / hide operators produce exactly one step each;
@@ -67,12 +125,12 @@
 - Dyntopo/Multires viewport warning text.
 - Viewport refresh after scrubbing in Sculpt Mode.
 
-## Screenshots to capture for the website
+### Screenshots to capture for the website
 1. Scrubber at the bottom of the viewport in Sculpt Mode (with the step counter visible).
 2. History Menu open from the dot.
 3. Undo History sidebar tab (Movie Mode, Scrubber, Memory, Collection Filtering open).
 
-## Repository settings you need to change
+### Repository settings you need to change
 - **GitHub Pages is not enabled yet.** The `pages` workflow builds the zip fine but fails at
   `configure-pages` with "Get Pages site failed ... Not Found". Turn it on: **Settings > Pages >
   Build and deployment > Source: GitHub Actions**, then re-run the latest `pages` workflow (or push).
@@ -90,7 +148,7 @@
   website's Download button does not depend on this: it serves `docs/download/hindsight.zip` directly.
 - If the `github-pages` environment has deployment branch rules, allow the default branch and `v*` tags.
 
-## Known issues
+### Known issues
 - Morph target set on a step that later gets dropped by branching (scrub back, sculpt) is cleared; set a
   new target after branching.
 - A stroke that exactly reverses the previous step bit-for-bit is treated like a native undo (the
@@ -102,7 +160,7 @@
   a timelapse.
 - Linked-duplicate (Alt+D) popup and Mask Extract confirmation are untested in a real UI.
 
-## Benchmarks (real, measured; see bench/RESULTS.md)
+### Benchmarks (real, measured; see bench/RESULTS.md)
 Headless bpy 4.2.23 module, 4-core 2.1 GHz Xeon, strokes touching ~2% of vertices:
 - 100k verts: 12.4 KB/step packed (32.1 KB raw), record 1.07 ms, scrub 1/100/300 steps 0.4/13/36 ms,
   5,000-step jump 724 ms; save/load of 300 steps 105/118 ms.
@@ -116,7 +174,7 @@ Headless bpy 4.2.23 module, 4-core 2.1 GHz Xeon, strokes touching ~2% of vertice
   and tier checks rescanned every entry on each commit. Made incremental (full rescan every 64 commits):
   now flat at ~0.95 ms; stress test 36 s -> 28 s.
 
-## Agents used
+### Agents used
 - Haiku: R1 and R2 research, README, PARITY audit (4 completed). Two early haiku website/CI agents were
   stopped by the plan change before producing anything.
 - Sonnet: website, build/publish/Pages workflows (2).
@@ -126,7 +184,7 @@ Headless bpy 4.2.23 module, 4-core 2.1 GHz Xeon, strokes touching ~2% of vertice
 - The main session wrote the shared types, registry, global timeline, mesh I/O, runtime/recorder,
   operators/keymaps, props, add-on init, test harness and runner, and integrated everything.
 
-## Beta 1.0.0-beta.1 (2026-10-14, second job)
+### Beta 1.0.0-beta.1 (2026-10-14, second job)
 - Version `1.0.0-beta.1` is in blender_manifest.toml: both the Blender 4.2 and 5.2 extension validators
   accept it (validate + build exit 0). Tagline ends with "(beta)".
 - Add-on beta labelling: "BETA" in the Undo History sidebar panel header and in Add-on Preferences, with

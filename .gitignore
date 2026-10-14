@@ -5,3 +5,16 @@ __pycache__/
 *.blend1
 .DS_Store
 /bench/results_tmp/
+
+# Local-only workspace folders (large, regenerable or private; never commit)
+/.tools/
+/.venv/
+node_modules/
+/.blender_profiles/
+/.tmp/
+/test_models/
+/my_models_copies/
+/test_screens_raw/
+/logs/
+/.cache/
+/tests/site/out/

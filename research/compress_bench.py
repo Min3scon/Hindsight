@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compression benchmark for Hindsight per-stroke sculpt deltas.
 
-Run:  /home/user/venvs/bench/bin/python research/compress_bench.py
+Run:  $BENCH_VENV/bin/python research/compress_bench.py
 Deps: numpy, lz4, zstandard (zlib is stdlib). Prints markdown tables to stdout.
 
 Payloads (1,000,000-vertex UV-sphere-like mesh, index order is row-major so a

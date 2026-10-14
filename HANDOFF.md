@@ -1,31 +1,38 @@
 # Handoff
 
-## State at v1.0.0 (~12:20 UTC)
-- All tiers (P1, P2, P3) implemented. 15 test files / 123 headless tests pass on bpy 4.2.23 and 5.2.2
-  (`python3 tests/run_tests.py`; set `HINDSIGHT_PY` to choose the interpreter).
-- Website in docs/ with the zip at docs/download/hindsight.zip (rebuilt by `python3 scripts/build_zip.py`
-  and by the pages workflow).
-- Needs the repo owner: enable GitHub Pages (Settings > Pages > Source: GitHub Actions).
+Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, PARITY.md.
 
-## What a second round should do
-1. Run the manual UI checks listed in DECISIONS.md in a real Blender 4.2 and 5.x session (scrubber drag
-   priority over brush strokes, stroke-end detection with real brushes and filters, Sculpt Mode viewport
-   refresh after scrubbing, confirmation dialogs, Morph History tool in the toolbar).
-2. Capture the three screenshots and replace the placeholders on the website.
-3. Measure 1M vertices and the 6,000-step memory target.
-4. STRETCH items (Multires, Dyntopo, transforms, shape keys for Morph, multiple named morph targets).
+## Current job: beta 2 ("broken and sloppy" to polished), started 2026-10-14
+Brief: steps 0-6 (PC check, real Blender, root cause, new UI, hardening and test rounds, new website,
+ship). Work happens on the owner's Windows PC. Only branch: `claude/lucid-brahmagupta-9gsdsn` (default,
+Pages source).
+
+### Status
+- [x] Step 0: tools checked. git, gh (logged in as Min3scon), Python 3.13 and 3.11, Node 22, ffmpeg 7.
+  Installed: Playwright 1.63.0 (repo devDependency, `npm install`) with Chromium, Firefox, WebKit.
+- [x] Step 1: real Blender 5.0.1, 5.1.1 (Steam), 5.1.2 driven with a window through `tests_ui/hs_ui.py`.
+- [x] Step 2: root cause found and written to DECISIONS.md (handlers not persistent, slider hidden
+  until first step and under the asset shelf, sidebar closed by default).
+- [ ] Step 3: new in-Blender UI
+- [ ] Step 4: hardening and test rounds A-G (log in TEST_ROUNDS.md)
+- [ ] Step 5: website rebuilt from scratch
+- [ ] Step 6: ship 1.0.0-beta.2 and verify live
+
+### How to run things
+- List Blenders: `python tests_ui/hs_ui.py list`
+- Build the zip with real Blender: `python tests_ui/hs_ui.py build` (writes .tmp/build/hindsight.zip)
+- Real-UI scenario: `python tests_ui/hs_ui.py run <name> --blender all [--fresh]`
+  (scenarios live in tests_ui/scenarios/s_<name>.py; output in .tmp/ui/<name>/<version>/)
+- Headless suite inside real Blender: `python tests/run_tests.py --blender all`
+- Pre-commit hook (installed in .git/hooks) runs `tools/precommit_check.py`: blocks big files, secrets and
+  personal paths. Never write drive-letter paths into public files.
+
+### Safety rules for this job
+- Never touch the owner's Blender prefs or add-ons: always go through the sandbox env in hs_ui.py.
+- Owner's .blend files: only copies in `my_models_copies/` (git-ignored), deleted at the end.
+- Nothing from `.tmp/`, `test_models/`, `my_models_copies/` goes into git.
 
 ## Map
-- Contracts: INTERFACES.md. Parity: PARITY.md. Guesses, known issues, settings: DECISIONS.md.
-- Core (no bpy): hindsight/core. Blender layer: hindsight/bl. Tests: tests/. Benchmarks: bench/.
-
-## Beta job (1.0.0-beta.1), in progress
-- Done: manifest 1.0.0-beta.1 + "(beta)" tagline; BETA tag + Report a bug in sidebar/prefs
-  (bl/beta.py, tests/test_bl_beta.py); issue templates (.github/ISSUE_TEMPLATE); release workflow marks
-  `-` tags as pre-releases and uses .github/release-notes/<tag>.md; README beta notice; single Pages
-  workflow `.github/workflows/static.yml` (builds zip, publishes docs/).
-- Blocked (needs the owner): creating the GitHub Release / pushing tags (HTTP 403). See DECISIONS.md for
-  the click-path. Pages is enabled now.
-- Website rebuild: docs/index.html + assets/site.* (layout/content), assets/demo.* (live sculpt demo +
-  Movie Mode), assets/extras.* (unmerge demo, clips, delta diagram). QA script:
-  scratchpad qa/qa.js (serves docs/ under /Hindsight/ on 127.0.0.1:8765).
+- Contracts: INTERFACES.md. Parity: PARITY.md. Decisions and known issues: DECISIONS.md.
+- Core (no bpy): hindsight/core. Blender layer: hindsight/bl. Headless tests: tests/. Real-UI tests:
+  tests_ui/. Benchmarks: bench/. Website: docs/.

@@ -6,8 +6,8 @@ Usage:
 
 Steps:
   1. Build <out> from hindsight/ and validate it.
-       * With a usable blender_ext.py (--blender-ext, else $BLENDER_EXT, else the
-         bpy 4.2 venv path below) the official `build` + `validate` commands run.
+       * With a usable blender_ext.py (--blender-ext, else $BLENDER_EXT) the
+         official `build` + `validate` commands run.
        * With --blender-ext "" (or a path that does not exist) a stdlib-only
          fallback zips the CONTENTS of hindsight/ at the zip root and runs a
          minimal manifest validation.
@@ -34,9 +34,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SOURCE = ROOT / "hindsight"
-DEFAULT_BLENDER_EXT = Path(
-    "/home/user/venvs/bpy42/lib/python3.11/site-packages/bpy/4.2/scripts/addons_core/bl_pkg/cli/blender_ext.py"
-)
 MANIFEST = "blender_manifest.toml"
 
 # Always excluded by the fallback builder (gitignore-style patterns). The
@@ -350,8 +347,6 @@ def resolve_blender_ext(arg: str | None) -> Path | None:
     """Pick the blender_ext.py to use, or None for the pure-python fallback."""
     if arg is None:
         arg = os.environ.get("BLENDER_EXT")
-    if arg is None:
-        return DEFAULT_BLENDER_EXT if DEFAULT_BLENDER_EXT.is_file() else None
     if not arg:
         return None
     path = Path(arg)
@@ -364,7 +359,7 @@ def resolve_blender_ext(arg: str | None) -> Path | None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Build hindsight.zip and refresh the website download.")
     ap.add_argument("--blender-ext", default=None, metavar="PATH",
-                    help="path to blender_ext.py (default: $BLENDER_EXT, else the bpy 4.2 venv copy if present); "
+                    help="path to blender_ext.py (default: $BLENDER_EXT); "
                          "pass an empty string to force the pure-python fallback builder")
     ap.add_argument("--out", default=str(ROOT / "dist" / "hindsight.zip"), metavar="ZIP",
                     help="output zip (default: dist/hindsight.zip)")

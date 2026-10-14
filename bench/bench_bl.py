@@ -1,6 +1,6 @@
 """Benchmark of Hindsight inside real Blender (bpy 4.2 as a Python module, headless).
 
-Run: /home/user/venvs/bpy42/bin/python bench/bench_bl.py
+Run: $BPY42_VENV/bin/python bench/bench_bl.py
 Writes bench/results_bl.json and bench/RESULTS.md. All numbers are measured on this machine.
 Strokes are simulated (positions written with foreach_set, then runtime.commit), because sculpt
 brush operators cannot run headless in bpy-module mode.

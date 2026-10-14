@@ -5,8 +5,8 @@ Python package = `hindsight/` (the extension source dir, has `blender_manifest.t
 `hindsight/bl/**` is the Blender layer. Relative imports only (`from ..core.types import Step`).
 Optional wheels: `zstandard`, `lz4` — always guarded by `try: import ...` with a zlib fallback.
 
-Python for tests: `/home/user/venvs/bpy42/bin/python` (Python 3.11, numpy, bpy 4.2.23 as a module,
-zstandard, lz4). Also `/home/user/venvs/bpy52/bin/python` (bpy 5.2.2). Core tests must also pass
+Python for tests: any interpreter with bpy installed as a module, e.g. `$BPY42_VENV/bin/python` (Python
+3.11, numpy, bpy 4.2.23, zstandard, lz4) or `$BPY52_VENV/bin/python` (bpy 5.2.2). Core tests must also pass
 without bpy. Test runner: `python tests/run_tests.py [pattern]` (each `tests/test_*.py` runs in its own
 subprocess; a test file is a script that exits 0 on success, uses plain `assert`, and prints `PASS <name>`
 per test function). Every test file starts with:

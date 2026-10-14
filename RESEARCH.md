@@ -4,7 +4,7 @@ Phase 0 research by two agents (R1: Blender API, R2: packaging/compression/CI). 
 
 # Hindsight R1: Blender 4.2 Python API notes
 
-Legend: "verified" = checked by running bpy 4.2.23 headless (`/home/user/venvs/bpy42`), by reading the bundled 4.2 scripts, or by grepping the 4.2 binary. "(UNVERIFIED)" = not confirmed locally. "web" = from search-result snippets only. docs.blender.org and developer.blender.org are blocked by the egress proxy (403) in this session, so those pages were not read directly. Headless bpy has no UI, so GPU drawing, msgbus callbacks and sculpt strokes could not be exercised.
+Legend: "verified" = checked by running bpy 4.2.23 headless (`$BPY42_VENV`), by reading the bundled 4.2 scripts, or by grepping the 4.2 binary. "(UNVERIFIED)" = not confirmed locally. "web" = from search-result snippets only. docs.blender.org and developer.blender.org are blocked by the egress proxy (403) in this session, so those pages were not read directly. Headless bpy has no UI, so GPU drawing, msgbus callbacks and sculpt strokes could not be exercised.
 
 ## 1. Detecting sculpt strokes and mode changes
 
@@ -178,14 +178,14 @@ paths_exclude_pattern = ["__pycache__/", ".*", "/research/", "/docs/", "*.blend"
 - `blender_ext.py` is stdlib-only (imports `tomllib`), so it runs under plain Python 3.11+ without Blender. Verified with 3.11.17 and 3.13.16:
 
 ```bash
-BLENDER_EXT=/home/user/venvs/bpy42/lib/python3.11/site-packages/bpy/4.2/scripts/addons_core/bl_pkg/cli/blender_ext.py
+BLENDER_EXT=$BPY42_VENV/lib/python3.11/site-packages/bpy/4.2/scripts/addons_core/bl_pkg/cli/blender_ext.py
 /usr/bin/python3.11 "$BLENDER_EXT" build --source-dir addon/ --output-filepath dist/hindsight.zip \
-  --valid-tags /home/user/venvs/bpy42/lib/python3.11/site-packages/bpy/4.2/scripts/modules/_bpy_internal/extensions/tags.py
+  --valid-tags $BPY42_VENV/lib/python3.11/site-packages/bpy/4.2/scripts/modules/_bpy_internal/extensions/tags.py
 /usr/bin/python3.11 "$BLENDER_EXT" validate addon/
 ```
 
 - Plain Python skips tag checks unless `--valid-tags <tags.py>` is given (its default is empty). Verified both ways.
-- Exact Blender-equivalent without the GUI binary (verified): `/home/user/venvs/bpy42/bin/python -I` with `import bpy; from bl_pkg.bl_extension_cli import cli_extension_handler; sys.exit(cli_extension_handler(args))`.
+- Exact Blender-equivalent without the GUI binary (verified): `$BPY42_VENV/bin/python -I` with `import bpy; from bl_pkg.bl_extension_cli import cli_extension_handler; sys.exit(cli_extension_handler(args))`.
 
 ### Zip contents (verified)
 
@@ -270,7 +270,7 @@ def start():
 
 ## 3. Compression benchmark
 
-- Script: `research/compress_bench.py`. Run with `/home/user/venvs/bench/bin/python research/compress_bench.py` (about 60 s). Venv: Python 3.13.16, numpy 2.5.4, lz4 4.4.5, zstandard 0.25.0, x86_64 Linux, seed 1234. Every round trip is asserted.
+- Script: `research/compress_bench.py`. Run with `$BENCH_VENV/bin/python research/compress_bench.py` (about 60 s). Venv: Python 3.13.16, numpy 2.5.4, lz4 4.4.5, zstandard 0.25.0, x86_64 Linux, seed 1234. Every round trip is asserted.
 - Data: 1,000,000 vertices on a jittered lat/long grid with row-major indices. Stroke: the 5,000 vertices nearest a 60-degree great-circle path. Their indices form 115 consecutive runs (median gap 1, max gap 997). Offsets about 1e-3 radial. Deltas are XOR of uint32 bit patterns.
 - Payloads (bytes): a, b, c, bc = 80,000 per stroke; d = 12,000,000; e = 1,000,000.
   - a: raw indices + XOR. b: delta-encoded indices + XOR. c: raw indices + byte-shuffled XOR. bc: delta indices + byte-shuffled XOR (extra). d: full f32 positions. e: dense uint8 mask delta.

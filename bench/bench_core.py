@@ -1,6 +1,6 @@
 """Benchmark of the Hindsight storage engine (core.delta / core.step / core.codec).
 
-Run: /home/user/venvs/bpy42/bin/python bench/bench_core.py
+Run: $BPY42_VENV/bin/python bench/bench_core.py
 Prints a markdown table and writes bench/results_core.json. All numbers measured (median of 5).
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
