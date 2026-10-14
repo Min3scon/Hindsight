@@ -1,0 +1,174 @@
+<!--page
+title: Hindsight docs: install, features and troubleshooting
+description: How to install Hindsight, what each part of it does, the shortcuts, what to do when something looks wrong, and measured numbers.
+path: docs/
+root: ../
+-->
+{{nav:docs}}
+<main id="main" class="wrap">
+  <div class="doc">
+    <aside>
+      <nav aria-label="On this page">
+        <a href="#install">Install</a>
+        <a href="#quick-start">Quick start</a>
+        <a href="#slider">The slider</a>
+        <a href="#tab">The Undo History tab</a>
+        <a href="#recorded">What gets recorded</a>
+        <a href="#branching">Going back and sculpting again</a>
+        <a href="#morph">Morph History brush</a>
+        <a href="#movie">Movie Mode</a>
+        <a href="#global">Global history</a>
+        <a href="#filtering">Collection Filtering</a>
+        <a href="#join">Join, separate, duplicate</a>
+        <a href="#saving">Saving and recovery</a>
+        <a href="#memory">Memory</a>
+        <a href="#shortcuts">Shortcuts</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#faq">FAQ</a>
+        <a href="#known-issues">Known issues</a>
+        <a href="#benchmarks">Benchmarks</a>
+      </nav>
+    </aside>
+    <article>
+      <h1>Docs</h1>
+      <p>Everything about Hindsight {{version}} on one page. It's a beta: {{tested}}</p>
+
+      <h2 id="install">Install</h2>
+      <ol>
+        <li>Download <a href="../download/hindsight.zip" download>hindsight.zip</a> ({{size}}). Keep it zipped.</li>
+        <li>In Blender, open <strong>Edit &gt; Preferences &gt; Get Extensions</strong>. Click the small arrow at the top right and choose <strong>Install from Disk</strong>.</li>
+        <li>Pick the zip. Hindsight is switched on straight away, and the status bar says so once.</li>
+      </ol>
+      <p>Hindsight needs Blender 4.2 or newer. To remove it, use the same Get Extensions page: open the Hindsight entry and choose Uninstall. Nothing is left behind except the history folders next to your saved files.</p>
+
+      <h2 id="quick-start">Quick start</h2>
+      <ol>
+        <li>Select a mesh and enter Sculpt Mode. An empty slider appears along the bottom of the viewport.</li>
+        <li>Sculpt. Each stroke becomes one step, and the counter at the right end of the slider goes up.</li>
+        <li>Drag the slider to go back. The mesh follows as you drag. Drag forward again and nothing is lost.</li>
+        <li>Or press <kbd>Ctrl</kbd> <kbd>Z</kbd> and <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> to move one step at a time.</li>
+        <li>Save the file. The history is saved with it and comes back when you open it.</li>
+      </ol>
+      {{figure:where|The Undo History tab in the sidebar (press N) and the slider at the bottom of the 3D Viewport.}}
+
+      <h2 id="slider">The slider</h2>
+      <p>The slider sits along the bottom of every 3D Viewport while the active object has a history, and in Sculpt and Vertex Paint Mode as soon as you enter them. It keeps clear of the brush shelf, the toolbar and the sidebar.</p>
+      <ul>
+        <li>Drag anywhere along it to scrub. A click jumps to that step.</li>
+        <li>The ring at its left end opens the History Menu.</li>
+        <li>The numbers on the right are the current step and the number of steps.</li>
+        <li>A short blue mark shows the morph target, if one is set.</li>
+      </ul>
+      <p>Height, width, margin and colours are in the On-screen slider panel of the tab and in the add-on preferences.</p>
+
+      <h2 id="tab">The Undo History tab</h2>
+      <p>Press <kbd>N</kbd> in the 3D Viewport and open Undo History. It works in every mode and without the on-screen slider, so it's the place to look if anything seems missing.</p>
+      <ul>
+        <li><strong>The slider and arrows</strong> go back and forth through the active object's history. The line below says which step you're on.</li>
+        <li><strong>History Menu</strong> holds global history, the morph target, and the options to clear or pause recording.</li>
+        <li><strong>History options</strong>, <strong>Movie Mode</strong>, <strong>Collection Filtering</strong>, <strong>Memory</strong> and <strong>On-screen slider</strong> are collapsed until you need them.</li>
+        <li><strong>Help</strong> has Run self-check, Copy diagnostics and Report a bug.</li>
+      </ul>
+      <p>The same controls are in the header button next to the mode menus, and F3 finds Step Back, Step Forward, Open History Menu, Run Self-check and Copy Diagnostics if you type "hindsight".</p>
+
+      <h2 id="recorded">What gets recorded</h2>
+      <ul>
+        <li>Sculpt strokes and filters: vertex positions, masks, face sets and hidden faces.</li>
+        <li>Vertex Paint strokes: float and byte colour attributes.</li>
+        <li>Edit Mode: everything you change between entering and leaving Edit Mode becomes one step, once the object has a history.</li>
+        <li>Changes made elsewhere, for example a modifier applied in Object Mode, become one step the next time you enter Sculpt Mode.</li>
+        <li>Topology changes such as Voxel Remesh store a full copy of the mesh for that one step.</li>
+      </ul>
+      <p>A stroke is recorded when you let go of the mouse, so one stroke is always one step. A stroke stores only the vertices it moved, as the bitwise difference between their old and new values. The same record turns the old shape into the new one and back, which is why jumping is exact.</p>
+      <p>Not recorded: object transforms, modifiers, shape keys, vertex groups and weight paint, materials, and anything with Multires or Dyntopo switched on. Hindsight says so in the tab when it applies to the active object.</p>
+
+      <h2 id="branching">Going back and sculpting again</h2>
+      <p>If you go back and then sculpt, the steps after the current one are dropped, the same way Ctrl+Z works. If that would drop 10 steps or more, Hindsight asks first and your stroke is undone until you confirm. The number is a preference.</p>
+
+      <h2 id="morph">Morph History brush</h2>
+      <p>Go to a step you liked, open the History Menu and choose <strong>Set morph target</strong>. Go back to the latest step, choose <strong>Use Morph History brush</strong>, and paint. Wherever you paint, the mesh moves toward its shape at the target step.</p>
+      <p>Light strokes give a partial blend. The rest of the mesh stays as it is, and the result is a normal step you can scrub past.</p>
+      <p>The brush respects the sculpt mask. It doesn't work with shape keys, Multires or Dyntopo.</p>
+
+      <h2 id="movie">Movie Mode</h2>
+      <p>Movie Mode plays the history on the timeline. Turn on global history, tick Movie Mode in the tab, then use <strong>Quick auto key</strong> to set frames per step.</p>
+      <p>Playing or scrubbing the timeline then steps through the history, and you can render it like any animation. The history itself can't be changed while Movie Mode is on.</p>
+
+      <h2 id="global">Global history</h2>
+      <p>By default each object has its own history. Global history puts every object's steps on one timeline, in the order you made them. With <strong>Follow object and mode</strong> on, stepping to another object's change selects that object and puts it in the mode the change was made in.</p>
+
+      <h2 id="filtering">Collection Filtering</h2>
+      <p>Choose collections to leave out (blacklist) or to record exclusively (whitelist). Objects that are filtered out record nothing and their existing history is hidden, not deleted.</p>
+
+      <h2 id="join">Join, separate, duplicate</h2>
+      <ul>
+        <li><strong>Join</strong> (<kbd>Ctrl</kbd> <kbd>J</kbd>) merges the histories. Scrubbing back past the join brings the original objects back, each with its own history.</li>
+        <li><strong>Separate</strong> (<kbd>P</kbd> in Edit Mode) and Mask Extract give the new object its own empty history, after asking.</li>
+        <li><strong>Duplicate</strong> (<kbd>Shift</kbd> <kbd>D</kbd>) starts the copy with its own empty history.</li>
+        <li><strong>Linked duplicates</strong> (<kbd>Alt</kbd> <kbd>D</kbd>) share mesh data, so they share history too. Hindsight warns when you make one.</li>
+      </ul>
+
+      <h2 id="saving">Saving and recovery</h2>
+      <p>By default the history goes in a folder next to the .blend, named after it: <code>scene.blend</code> gets <code>scene_hindsight</code>. Keep the two together when you move or share the file. In the preferences you can store it inside the .blend instead, or both.</p>
+      <p>The file format has a version number and a checksum per step. If part of a history file is damaged, the steps before the damage still load and the tab tells you what was lost.</p>
+      <p>A file saved by a newer Hindsight is left alone, not overwritten. Older files from beta 1 load as they are.</p>
+      <p>If Blender closes unexpectedly, the next open loads the history as it was last saved. Set <strong>On open</strong> to <strong>Unsaved steps</strong> in the preferences to also bring back steps made after the last save.</p>
+
+      <h2 id="memory">Memory</h2>
+      <p>All histories together are kept under a limit, 4096 MB by default. When it's reached, the oldest steps go first and the tab says so. Each object keeps at most 10,000 steps.</p>
+      <p>Recent steps stay uncompressed for instant scrubbing. Older ones are compressed with Zstandard. The Memory panel in the tab shows what each object uses.</p>
+
+      <h2 id="shortcuts">Shortcuts</h2>
+      <table>
+        <thead><tr><th>Action</th><th>Keys</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Step back</td><td><kbd>Ctrl</kbd> <kbd>Z</kbd></td><td>Sculpt and Vertex Paint Mode</td></tr>
+          <tr><td>Step forward</td><td><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></td><td>Sculpt and Vertex Paint Mode</td></tr>
+          <tr><td>Open the tab</td><td><kbd>N</kbd>, then Undo History</td><td>3D Viewport</td></tr>
+          <tr><td>Find any Hindsight action</td><td><kbd>F3</kbd>, then type "hindsight"</td><td>3D Viewport</td></tr>
+          <tr><td>Join, keeping histories</td><td><kbd>Ctrl</kbd> <kbd>J</kbd></td><td>Object Mode</td></tr>
+          <tr><td>Separate</td><td><kbd>P</kbd></td><td>Edit Mode</td></tr>
+          <tr><td>Linked duplicate (with a warning)</td><td><kbd>Alt</kbd> <kbd>D</kbd></td><td>Object Mode</td></tr>
+        </tbody>
+      </table>
+      <p>On macOS, <kbd>Cmd</kbd> works in place of <kbd>Ctrl</kbd>. In Object and Edit Mode, Blender's own undo is untouched.</p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <h3>I don't see anything after installing</h3>
+      <p>Press <kbd>N</kbd> in the 3D Viewport and look for the Undo History tab. If it isn't there, open Edit &gt; Preferences &gt; Add-ons, search for Hindsight and check it's ticked. The slider itself only shows in Sculpt and Vertex Paint Mode, or once an object has a history.</p>
+      <h3>Strokes aren't recorded</h3>
+      <p>The tab says why: recording paused for this object, Multires or Dyntopo switched on, or the object filtered out by Collection Filtering. If none of those apply, open Help in the tab and click <strong>Run self-check</strong>.</p>
+      <h3>The tab says part of Hindsight was switched off</h3>
+      <p>Something raised an error. That one part (for example the on-screen slider) was switched off so nothing else breaks, and your history is untouched. Run self-check to switch it back on, and please send the diagnostics.</p>
+      <h3>History folder missing</h3>
+      <p>The file was saved with its history in a <code>_hindsight</code> folder that isn't next to it any more. Put the folder back beside the .blend and open the file again.</p>
+      <h3>Blender's undo after a jump was reversed</h3>
+      <p>After Hindsight moves the mesh in Sculpt or Vertex Paint Mode, Blender's own undo can't go back past that point without mixing up stroke data. Hindsight undoes Blender's undo in that case and says so. Use <kbd>Ctrl</kbd> <kbd>Z</kbd> or the slider instead. Leaving and re-entering the mode resets this.</p>
+      <h3>Reporting a bug</h3>
+      <p>Click <strong>Copy diagnostics</strong> in the Help panel and paste the text into a <a href="https://github.com/Min3scon/Hindsight/issues/new/choose">bug report</a>. It has versions, settings, the self-check result and the last log lines, with your paths removed.</p>
+
+      <h2 id="faq">FAQ</h2>
+      <dl class="faq">
+        <dt>Does it slow down sculpting?</dt>
+        <dd>Recording a stroke on a 100k mesh took under a millisecond in my tests, after you let go. Nothing runs while you're mid-stroke.</dd>
+        <dt>How big do the history files get?</dt>
+        <dd>It depends on how much each stroke moves. In the 10,000-step test on a 100k mesh, small strokes averaged {{bytes_per_step}} per step.</dd>
+        <dt>Does it replace Blender's undo?</dt>
+        <dd>Only Ctrl+Z in Sculpt and Vertex Paint Mode. Everywhere else Blender's undo works as normal.</dd>
+        <dt>Can I share a file with its history?</dt>
+        <dd>Yes. Send the <code>_hindsight</code> folder with it, or switch the preferences to store the history inside the .blend.</dd>
+        <dt>Is it free?</dt>
+        <dd>Yes, under the GPL 3.0 or later. The source is on <a href="https://github.com/Min3scon/Hindsight">GitHub</a>.</dd>
+      </dl>
+
+      <h2 id="known-issues">Known issues</h2>
+      <ul>
+        {{known_issues}}
+      </ul>
+
+      <h2 id="benchmarks">Benchmarks</h2>
+      {{benchmarks}}
+    </article>
+  </div>
+</main>
+{{footer}}

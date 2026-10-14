@@ -1,0 +1,574 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hindsight docs: install, features and troubleshooting</title>
+<meta name="description" content="How to install Hindsight, what each part of it does, the shortcuts, what to do when something looks wrong, and measured numbers.">
+<link rel="canonical" href="https://min3scon.github.io/Hindsight/docs/">
+
+<meta name="theme-color" content="#0c0c0e">
+<meta name="color-scheme" content="dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Hindsight">
+<meta property="og:locale" content="en_GB">
+<meta property="og:title" content="Hindsight docs: install, features and troubleshooting">
+<meta property="og:description" content="How to install Hindsight, what each part of it does, the shortcuts, what to do when something looks wrong, and measured numbers.">
+<meta property="og:url" content="https://min3scon.github.io/Hindsight/docs/">
+<meta property="og:image" content="https://min3scon.github.io/Hindsight/assets/img/og.png">
+<meta property="og:image:secure_url" content="https://min3scon.github.io/Hindsight/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Hindsight, a Blender add-on: a sculpt with a history slider under it">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Hindsight docs: install, features and troubleshooting">
+<meta name="twitter:description" content="How to install Hindsight, what each part of it does, the shortcuts, what to do when something looks wrong, and measured numbers.">
+<meta name="twitter:image" content="https://min3scon.github.io/Hindsight/assets/img/og.png">
+<meta name="twitter:image:alt" content="Hindsight, a Blender add-on: a sculpt with a history slider under it">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../assets/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+<link rel="manifest" href="../site.webmanifest">
+<link rel="preload" href="../assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../assets/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
+<style>@font-face {
+font-family: "Fraunces";
+src: url("../assets/fonts/fraunces-var.woff2") format("woff2");
+font-weight: 300 800;
+font-style: normal;
+font-display: swap;
+}
+@font-face {
+font-family: "Inter";
+src: url("../assets/fonts/inter-var.woff2") format("woff2");
+font-weight: 300 800;
+font-style: normal;
+font-display: swap;
+}
+:root {
+color-scheme: dark;
+--bg: #0c0c0e;
+--bg-raise: #111114;
+--panel: #16161a;
+--panel-2: #1c1c21;
+--line: rgba(255, 255, 255, 0.08);
+--line-2: rgba(255, 255, 255, 0.14);
+--text: #edebe6;
+--text-2: #b4b1a9;
+--text-3: #8b8881;
+--accent: #ff9b42;
+--accent-2: #ffb672;
+--accent-ink: #1c1005;
+--focus: #ffcf9e;
+--radius-s: 6px;
+--radius: 12px;
+--radius-l: 16px;
+--shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 24px 64px -24px rgba(0, 0, 0, 0.7);
+--ease: cubic-bezier(0.2, 0.7, 0.1, 1);
+--display: "Fraunces", "Iowan Old Style", Georgia, serif;
+--sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+--gutter: 24px;
+--max: 1160px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 88px; }
+body {
+margin: 0;
+background: var(--bg);
+color: var(--text);
+font: 400 17px/1.6 var(--sans);
+font-feature-settings: "cv11", "ss01";
+-webkit-font-smoothing: antialiased;
+-moz-osx-font-smoothing: grayscale;
+text-rendering: optimizeLegibility;
+}
+img, video, canvas, svg { display: block; max-width: 100%; }
+a { color: inherit; text-decoration-color: rgba(255, 155, 66, 0.5); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--accent); }
+p { margin: 0 0 16px; }
+h1, h2, h3 { margin: 0; font-weight: 600; }
+kbd {
+font: 500 0.82em/1 var(--sans);
+padding: 3px 6px 2px;
+border: 1px solid var(--line-2);
+border-bottom-width: 2px;
+border-radius: 5px;
+background: var(--panel);
+color: var(--text);
+white-space: nowrap;
+}
+code { font: 500 0.9em/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--text); }
+::selection { background: rgba(255, 155, 66, 0.35); }
+:focus-visible {
+outline: 2px solid var(--focus);
+outline-offset: 3px;
+border-radius: 4px;
+}
+.visually-hidden {
+position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip {
+position: absolute; left: 16px; top: -48px; z-index: 50;
+padding: 8px 16px; border-radius: var(--radius-s);
+background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none;
+transition: top 0.2s var(--ease);
+}
+.skip:focus { top: 16px; }
+.wrap { width: 100%; max-width: calc(var(--max) + 2 * var(--gutter)); margin: 0 auto; padding: 0 var(--gutter); }
+.nav {
+position: sticky; top: 0; z-index: 40;
+background: rgba(12, 12, 14, 0.78);
+backdrop-filter: saturate(140%) blur(14px);
+-webkit-backdrop-filter: saturate(140%) blur(14px);
+border-bottom: 1px solid transparent;
+transition: border-color 0.3s var(--ease);
+}
+.nav.scrolled { border-bottom-color: var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 600; letter-spacing: -0.01em; }
+.brand svg { width: 26px; height: 26px; }
+.badge {
+font: 600 10.5px/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
+padding: 4px 6px 3px; border-radius: 4px; color: var(--accent); border: 1px solid rgba(255, 155, 66, 0.45);
+}
+.nav ul { display: flex; gap: 4px; margin: 0 0 0 auto; padding: 0; list-style: none; }
+.nav li a {
+display: block; padding: 8px 12px; border-radius: var(--radius-s); text-decoration: none;
+color: var(--text-2); font-size: 15px; transition: color 0.2s, background-color 0.2s;
+}
+.nav li a:hover, .nav li a[aria-current="page"] { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.nav li a.btn-primary, .nav li a.btn-primary:hover { color: var(--accent-ink); background: var(--accent); margin-left: 8px; }
+.nav li a.btn-primary:hover { background: var(--accent-2); }
+.btn {
+--h: 48px;
+display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+height: var(--h); padding: 0 22px; border-radius: 999px;
+font: 600 16px/1 var(--sans); text-decoration: none; cursor: pointer;
+border: 1px solid transparent;
+transition: transform 0.18s var(--ease), background-color 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 8px 24px -10px rgba(255, 155, 66, 0.6); }
+.btn-primary:hover { background: var(--accent-2); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+.btn-quiet { background: transparent; color: var(--text); border-color: var(--line-2); }
+.btn-quiet:hover { border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.04); }
+.btn-small { --h: 38px; padding: 0 16px; font-size: 14.5px; }
+.hero { padding: 88px 0 40px; }
+.eyebrow { color: var(--text-3); font-size: 14px; letter-spacing: 0.02em; margin-bottom: 16px; }
+.hero h1 {
+font-family: var(--display);
+font-weight: 480;
+font-size: clamp(44px, 7.4vw, 92px);
+line-height: 1.02;
+letter-spacing: -0.012em;
+font-variation-settings: "opsz" 48;
+max-width: 12ch;
+}
+.hero .lede { margin: 24px 0 32px; max-width: 34em; font-size: 19px; color: var(--text-2); }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.meta { margin-top: 20px; font-size: 14px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.meta span + span::before { content: "\00b7"; margin: 0 8px; color: var(--text-3); }
+.frame {
+position: relative; margin-top: 56px; border-radius: var(--radius-l); overflow: hidden;
+background: #1a1a1d; border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.frame video, .frame img { width: 100%; height: auto; }
+.frame .cap {
+position: absolute; left: 16px; bottom: 16px; padding: 6px 10px; border-radius: 999px;
+font-size: 13px; color: var(--text-2); background: rgba(12, 12, 14, 0.72);
+}
+section { padding: 120px 0; }
+section + section { border-top: 1px solid var(--line); }
+.head { max-width: 40em; margin-bottom: 48px; }
+.head h2 {
+font-family: var(--display); font-weight: 520; font-size: clamp(32px, 4.2vw, 48px);
+line-height: 1.08; letter-spacing: -0.01em; font-variation-settings: "opsz" 36; margin-bottom: 16px;
+}
+.head p { color: var(--text-2); font-size: 18px; margin: 0; }
+.demo {
+position: relative; border-radius: var(--radius-l); border: 1px solid var(--line);
+background: radial-gradient(120% 90% at 50% 38%, #26252a 0%, #18181c 55%, #121215 100%);
+box-shadow: var(--shadow); overflow: hidden;
+}
+.demo-stage { position: relative; height: clamp(360px, 58vw, 560px); touch-action: none; cursor: none; }
+.demo-stage canvas { width: 100%; height: 100%; }
+.demo-stage .ring {
+position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; opacity: 0;
+border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.75); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+transition: opacity 0.15s;
+}
+.demo-stage.orbit { cursor: grab; }
+.demo-stage.orbit:active { cursor: grabbing; }
+.hint {
+position: absolute; left: 50%; top: 24px; transform: translate(-50%, 0);
+padding: 8px 14px; border-radius: 999px; font-size: 14px; color: var(--text);
+background: rgba(12, 12, 14, 0.78); border: 1px solid var(--line); pointer-events: none;
+opacity: 0; transition: opacity 0.4s var(--ease), transform 0.4s var(--ease);
+}
+.hint.on { opacity: 1; }
+.hint.low { top: auto; bottom: 16px; }
+.tools {
+position: absolute; top: 16px; left: 16px; display: flex; gap: 6px; padding: 4px;
+border-radius: 999px; background: rgba(12, 12, 14, 0.72); border: 1px solid var(--line);
+}
+.tool {
+height: 32px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--text-2);
+font: 500 13.5px/1 var(--sans); cursor: pointer; transition: background-color 0.2s, color 0.2s;
+}
+.tool:hover { color: var(--text); }
+.tool[aria-pressed="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.demo-reset { position: absolute; top: 16px; right: 16px; }
+.dock {
+display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px;
+padding: 16px 20px; border-top: 1px solid var(--line); background: rgba(10, 10, 12, 0.55);
+}
+.ctl { display: flex; gap: 6px; }
+.icon-btn {
+width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%;
+border: 1px solid var(--line-2); background: transparent; color: var(--text); cursor: pointer;
+transition: background-color 0.2s, border-color 0.2s, transform 0.15s var(--ease);
+}
+.icon-btn:hover { background: rgba(255, 255, 255, 0.06); }
+.icon-btn:active { transform: scale(0.96); }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn.dot { border-color: rgba(255, 155, 66, 0.55); }
+.icon-btn.dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.icon-btn.playing { background: rgba(255, 155, 66, 0.14); border-color: var(--accent); }
+.track { position: relative; height: 40px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.track .rail { position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.09); }
+.track .fill { position: absolute; left: 0; height: 6px; border-radius: 3px; background: var(--accent); width: 0; }
+.track .knob {
+position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+background: #ffd2a6; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(255, 155, 66, 0.18); left: 0;
+}
+.track.smooth .fill { transition: width 0.22s var(--ease); }
+.track.smooth .knob { transition: left 0.22s var(--ease); }
+.track .tick { position: absolute; top: 9px; width: 2px; height: 22px; margin-left: -1px; border-radius: 1px; background: #79d6ff; opacity: 0; }
+.track .tick.on { opacity: 1; }
+.track:focus-visible { outline-offset: 4px; }
+.count { font: 500 14px/1 var(--sans); color: var(--text-2); font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+.readout { padding: 0 20px 16px; font-size: 13.5px; color: var(--text-3); font-variant-numeric: tabular-nums; min-height: 37px; background: rgba(10, 10, 12, 0.55); }
+.readout b { color: var(--text-2); font-weight: 600; }
+.menu {
+position: absolute; z-index: 5; min-width: 230px; padding: 6px; border-radius: var(--radius);
+background: #1e1e23; border: 1px solid var(--line-2); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+opacity: 0; transform: translateY(6px); pointer-events: none; transition: opacity 0.16s, transform 0.16s var(--ease);
+}
+.menu.open { opacity: 1; transform: none; pointer-events: auto; }
+.menu button {
+display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; border-radius: 8px;
+background: transparent; color: var(--text); font: 450 14.5px/1.2 var(--sans); cursor: pointer;
+}
+.menu button:hover, .menu button:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
+.menu button:disabled { color: var(--text-3); cursor: default; background: none; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.nogl { display: grid; place-items: center; height: 100%; padding: 32px; text-align: center; color: var(--text-2); }
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.feature { display: flex; flex-direction: column; }
+.feature .media {
+border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #1a1a1d;
+aspect-ratio: 4 / 3; margin-bottom: 20px;
+}
+.feature .media video, .feature .media img { width: 100%; height: 100%; object-fit: cover; }
+.feature h3 { font-size: 19px; letter-spacing: -0.01em; margin-bottom: 8px; }
+.feature p { color: var(--text-2); margin: 0; }
+.where { display: grid; grid-template-columns: 1.35fr 1fr; gap: 32px; align-items: start; }
+.annot { position: relative; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
+.annot svg.labels { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.shot { margin: 0; }
+.shot button {
+display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
+overflow: hidden; background: #1a1a1d; cursor: zoom-in; transition: border-color 0.2s, transform 0.25s var(--ease);
+}
+.shot button:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.shot img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; object-position: top left; }
+.shot figcaption { margin-top: 10px; font-size: 14px; color: var(--text-2); line-height: 1.5; }
+.shot figcaption b { color: var(--text); font-weight: 600; display: block; }
+.lightbox {
+position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px;
+background: rgba(6, 6, 8, 0.88); opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.lightbox.open { opacity: 1; pointer-events: auto; }
+.lightbox img { max-height: 82vh; width: auto; border-radius: var(--radius); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
+.lightbox p { margin: 16px 0 0; color: var(--text-2); text-align: center; max-width: 60ch; }
+.lightbox .close { position: absolute; top: 16px; right: 16px; }
+.install { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
+.steps { counter-reset: s; margin: 0; padding: 0; list-style: none; }
+.steps li { counter-increment: s; position: relative; padding: 0 0 24px 52px; color: var(--text-2); }
+.steps li::before {
+content: counter(s); position: absolute; left: 0; top: -2px; width: 32px; height: 32px; border-radius: 50%;
+display: grid; place-items: center; font: 600 14px/1 var(--sans); color: var(--text); border: 1px solid var(--line-2);
+}
+.steps li b { color: var(--text); font-weight: 600; }
+.beta {
+padding: 28px; border-radius: var(--radius-l); background: var(--panel); border: 1px solid var(--line);
+}
+.beta h3 { font-size: 19px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+.beta p { color: var(--text-2); }
+.beta .links { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 15px; }
+footer { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--text-3); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px 32px; }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+footer a { text-decoration: none; color: var(--text-2); }
+footer a:hover { color: var(--text); }
+.doc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 56px; padding: 56px 0 96px; }
+.doc aside nav { position: sticky; top: 96px; display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.doc aside a { padding: 6px 10px; border-radius: var(--radius-s); text-decoration: none; color: var(--text-2); }
+.doc aside a:hover, .doc aside a.here { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.doc article { max-width: 72ch; }
+.doc article h1 {
+font-family: var(--display); font-weight: 520; font-size: clamp(36px, 5vw, 56px); line-height: 1.05;
+letter-spacing: -0.02em; font-variation-settings: "opsz" 120; margin-bottom: 16px;
+}
+.doc article h2 {
+font-family: var(--display); font-weight: 540; font-size: 30px; letter-spacing: -0.015em;
+margin: 64px 0 16px; padding-top: 8px; font-variation-settings: "opsz" 72;
+}
+.doc article h3 { font-size: 18.5px; margin: 32px 0 8px; }
+.doc article p, .doc article li { color: var(--text-2); }
+.doc article li { margin-bottom: 8px; }
+.doc article strong { color: var(--text); font-weight: 600; }
+.doc table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.doc th, .doc td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.doc th { color: var(--text); font-weight: 600; }
+.doc td { color: var(--text-2); }
+.doc figure { margin: 24px 0; }
+.doc figure img { border-radius: var(--radius); border: 1px solid var(--line); }
+.doc figcaption { font-size: 14px; color: var(--text-3); margin-top: 8px; }
+.note { padding: 16px 20px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); margin: 16px 0; }
+.faq dt { color: var(--text); font-weight: 600; margin-top: 24px; }
+.faq dd { margin: 8px 0 0; color: var(--text-2); }
+.release { padding: 32px 0; border-bottom: 1px solid var(--line); }
+.release h2 { margin-top: 0 !important; }
+.release .date { color: var(--text-3); font-size: 14px; margin-bottom: 12px; }
+.notfound { min-height: 70vh; display: grid; place-items: center; text-align: center; }
+.notfound h1 { font-family: var(--display); font-weight: 520; font-size: clamp(40px, 6vw, 72px); letter-spacing: -0.02em; margin-bottom: 16px; }
+.notfound p { color: var(--text-2); margin-bottom: 32px; }
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
+.no-js .reveal { opacity: 1; transform: none; }
+@media (max-width: 1023px) {
+.features { grid-template-columns: 1fr 1fr; }
+.features .feature:last-child { grid-column: span 2; }
+.features .feature:last-child .media { aspect-ratio: 16 / 9; }
+.where, .install { grid-template-columns: 1fr; }
+.doc { grid-template-columns: 1fr; gap: 24px; }
+.doc aside nav { position: static; flex-direction: row; flex-wrap: wrap; }
+}
+@media (max-width: 719px) {
+:root { --gutter: 16px; }
+body { font-size: 16px; }
+section { padding: 80px 0; }
+.hero { padding: 56px 0 24px; }
+.hero .lede { font-size: 17px; }
+.nav ul li:not(.keep) { display: none; }
+.nav .wrap { gap: 12px; }
+.features { grid-template-columns: 1fr; }
+.features .feature:last-child { grid-column: auto; }
+.features .feature:last-child .media { aspect-ratio: 4 / 3; }
+.gallery { grid-template-columns: 1fr 1fr; gap: 12px; }
+.dock { grid-template-columns: 1fr; gap: 12px; padding: 14px 16px; }
+.dock .ctl { justify-content: space-between; }
+.count { text-align: left; }
+.tools { top: 12px; left: 12px; }
+.demo-reset { top: 12px; right: 12px; }
+.frame { margin-top: 40px; }
+}
+@media (max-width: 400px) {
+.gallery { grid-template-columns: 1fr; }
+.btn { padding: 0 18px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+.demo-stage { height: 78vh; }
+.hero { padding-top: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+*, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; scroll-behavior: auto !important; }
+.reveal { opacity: 1; transform: none; }
+}</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav"><div class="wrap"><a class="brand" href="../" aria-label="Hindsight home"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1d1d22"/><circle cx="8.5" cy="16" r="3.3" fill="none" stroke="#ff9b42" stroke-width="1.8"/><rect x="14" y="14.6" width="13" height="2.8" rx="1.4" fill="#3b3a42"/><rect x="14" y="14.6" width="7.5" height="2.8" rx="1.4" fill="#ff9b42"/><circle cx="21.5" cy="16" r="3" fill="#ffd2a6"/></svg><span>Hindsight</span></a><ul><li><a href="../#demo-section">Demo</a></li><li><a href="../docs/" aria-current=page>Docs</a></li><li><a href="../changelog/">Changelog</a></li><li class="keep"><a class="btn btn-primary btn-small" href="../download/hindsight.zip" download>Download beta</a></li></ul></div></header>
+<main id="main" class="wrap">
+  <div class="doc">
+    <aside>
+      <nav aria-label="On this page">
+        <a href="#install">Install</a>
+        <a href="#quick-start">Quick start</a>
+        <a href="#slider">The slider</a>
+        <a href="#tab">The Undo History tab</a>
+        <a href="#recorded">What gets recorded</a>
+        <a href="#branching">Going back and sculpting again</a>
+        <a href="#morph">Morph History brush</a>
+        <a href="#movie">Movie Mode</a>
+        <a href="#global">Global history</a>
+        <a href="#filtering">Collection Filtering</a>
+        <a href="#join">Join, separate, duplicate</a>
+        <a href="#saving">Saving and recovery</a>
+        <a href="#memory">Memory</a>
+        <a href="#shortcuts">Shortcuts</a>
+        <a href="#troubleshooting">Troubleshooting</a>
+        <a href="#faq">FAQ</a>
+        <a href="#known-issues">Known issues</a>
+        <a href="#benchmarks">Benchmarks</a>
+      </nav>
+    </aside>
+    <article>
+      <h1>Docs</h1>
+      <p>Everything about Hindsight 1.0.0-beta.1 on one page. It's a beta: tested in the real Blender interface on 5.0.1, 5.1.1 and 5.1.2 on Windows, including 10,000-step sessions and files from beta 1.</p>
+
+      <h2 id="install">Install</h2>
+      <ol>
+        <li>Download <a href="../download/hindsight.zip" download>hindsight.zip</a> (87 KB). Keep it zipped.</li>
+        <li>In Blender, open <strong>Edit &gt; Preferences &gt; Get Extensions</strong>. Click the small arrow at the top right and choose <strong>Install from Disk</strong>.</li>
+        <li>Pick the zip. Hindsight is switched on straight away, and the status bar says so once.</li>
+      </ol>
+      <p>Hindsight needs Blender 4.2 or newer. To remove it, use the same Get Extensions page: open the Hindsight entry and choose Uninstall. Nothing is left behind except the history folders next to your saved files.</p>
+
+      <h2 id="quick-start">Quick start</h2>
+      <ol>
+        <li>Select a mesh and enter Sculpt Mode. An empty slider appears along the bottom of the viewport.</li>
+        <li>Sculpt. Each stroke becomes one step, and the counter at the right end of the slider goes up.</li>
+        <li>Drag the slider to go back. The mesh follows as you drag. Drag forward again and nothing is lost.</li>
+        <li>Or press <kbd>Ctrl</kbd> <kbd>Z</kbd> and <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> to move one step at a time.</li>
+        <li>Save the file. The history is saved with it and comes back when you open it.</li>
+      </ol>
+      
+
+      <h2 id="slider">The slider</h2>
+      <p>The slider sits along the bottom of every 3D Viewport while the active object has a history, and in Sculpt and Vertex Paint Mode as soon as you enter them. It keeps clear of the brush shelf, the toolbar and the sidebar.</p>
+      <ul>
+        <li>Drag anywhere along it to scrub. A click jumps to that step.</li>
+        <li>The ring at its left end opens the History Menu.</li>
+        <li>The numbers on the right are the current step and the number of steps.</li>
+        <li>A short blue mark shows the morph target, if one is set.</li>
+      </ul>
+      <p>Height, width, margin and colours are in the On-screen slider panel of the tab and in the add-on preferences.</p>
+
+      <h2 id="tab">The Undo History tab</h2>
+      <p>Press <kbd>N</kbd> in the 3D Viewport and open Undo History. It works in every mode and without the on-screen slider, so it's the place to look if anything seems missing.</p>
+      <ul>
+        <li><strong>The slider and arrows</strong> go back and forth through the active object's history. The line below says which step you're on.</li>
+        <li><strong>History Menu</strong> holds global history, the morph target, and the options to clear or pause recording.</li>
+        <li><strong>History options</strong>, <strong>Movie Mode</strong>, <strong>Collection Filtering</strong>, <strong>Memory</strong> and <strong>On-screen slider</strong> are collapsed until you need them.</li>
+        <li><strong>Help</strong> has Run self-check, Copy diagnostics and Report a bug.</li>
+      </ul>
+      <p>The same controls are in the header button next to the mode menus, and F3 finds Step Back, Step Forward, Open History Menu, Run Self-check and Copy Diagnostics if you type "hindsight".</p>
+
+      <h2 id="recorded">What gets recorded</h2>
+      <ul>
+        <li>Sculpt strokes and filters: vertex positions, masks, face sets and hidden faces.</li>
+        <li>Vertex Paint strokes: float and byte colour attributes.</li>
+        <li>Edit Mode: everything you change between entering and leaving Edit Mode becomes one step, once the object has a history.</li>
+        <li>Changes made elsewhere, for example a modifier applied in Object Mode, become one step the next time you enter Sculpt Mode.</li>
+        <li>Topology changes such as Voxel Remesh store a full copy of the mesh for that one step.</li>
+      </ul>
+      <p>A stroke is recorded when you let go of the mouse, so one stroke is always one step. A stroke stores only the vertices it moved, as the bitwise difference between their old and new values. The same record turns the old shape into the new one and back, which is why jumping is exact.</p>
+      <p>Not recorded: object transforms, modifiers, shape keys, vertex groups and weight paint, materials, and anything with Multires or Dyntopo switched on. Hindsight says so in the tab when it applies to the active object.</p>
+
+      <h2 id="branching">Going back and sculpting again</h2>
+      <p>If you go back and then sculpt, the steps after the current one are dropped, the same way Ctrl+Z works. If that would drop 10 steps or more, Hindsight asks first and your stroke is undone until you confirm. The number is a preference.</p>
+
+      <h2 id="morph">Morph History brush</h2>
+      <p>Go to a step you liked, open the History Menu and choose <strong>Set morph target</strong>. Go back to the latest step, choose <strong>Use Morph History brush</strong>, and paint. Wherever you paint, the mesh moves toward its shape at the target step.</p>
+      <p>Light strokes give a partial blend. The rest of the mesh stays as it is, and the result is a normal step you can scrub past.</p>
+      <p>The brush respects the sculpt mask. It doesn't work with shape keys, Multires or Dyntopo.</p>
+
+      <h2 id="movie">Movie Mode</h2>
+      <p>Movie Mode plays the history on the timeline. Turn on global history, tick Movie Mode in the tab, then use <strong>Quick auto key</strong> to set frames per step.</p>
+      <p>Playing or scrubbing the timeline then steps through the history, and you can render it like any animation. The history itself can't be changed while Movie Mode is on.</p>
+
+      <h2 id="global">Global history</h2>
+      <p>By default each object has its own history. Global history puts every object's steps on one timeline, in the order you made them. With <strong>Follow object and mode</strong> on, stepping to another object's change selects that object and puts it in the mode the change was made in.</p>
+
+      <h2 id="filtering">Collection Filtering</h2>
+      <p>Choose collections to leave out (blacklist) or to record exclusively (whitelist). Objects that are filtered out record nothing and their existing history is hidden, not deleted.</p>
+
+      <h2 id="join">Join, separate, duplicate</h2>
+      <ul>
+        <li><strong>Join</strong> (<kbd>Ctrl</kbd> <kbd>J</kbd>) merges the histories. Scrubbing back past the join brings the original objects back, each with its own history.</li>
+        <li><strong>Separate</strong> (<kbd>P</kbd> in Edit Mode) and Mask Extract give the new object its own empty history, after asking.</li>
+        <li><strong>Duplicate</strong> (<kbd>Shift</kbd> <kbd>D</kbd>) starts the copy with its own empty history.</li>
+        <li><strong>Linked duplicates</strong> (<kbd>Alt</kbd> <kbd>D</kbd>) share mesh data, so they share history too. Hindsight warns when you make one.</li>
+      </ul>
+
+      <h2 id="saving">Saving and recovery</h2>
+      <p>By default the history goes in a folder next to the .blend, named after it: <code>scene.blend</code> gets <code>scene_hindsight</code>. Keep the two together when you move or share the file. In the preferences you can store it inside the .blend instead, or both.</p>
+      <p>The file format has a version number and a checksum per step. If part of a history file is damaged, the steps before the damage still load and the tab tells you what was lost.</p>
+      <p>A file saved by a newer Hindsight is left alone, not overwritten. Older files from beta 1 load as they are.</p>
+      <p>If Blender closes unexpectedly, the next open loads the history as it was last saved. Set <strong>On open</strong> to <strong>Unsaved steps</strong> in the preferences to also bring back steps made after the last save.</p>
+
+      <h2 id="memory">Memory</h2>
+      <p>All histories together are kept under a limit, 4096 MB by default. When it's reached, the oldest steps go first and the tab says so. Each object keeps at most 10,000 steps.</p>
+      <p>Recent steps stay uncompressed for instant scrubbing. Older ones are compressed with Zstandard. The Memory panel in the tab shows what each object uses.</p>
+
+      <h2 id="shortcuts">Shortcuts</h2>
+      <table>
+        <thead><tr><th>Action</th><th>Keys</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Step back</td><td><kbd>Ctrl</kbd> <kbd>Z</kbd></td><td>Sculpt and Vertex Paint Mode</td></tr>
+          <tr><td>Step forward</td><td><kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd></td><td>Sculpt and Vertex Paint Mode</td></tr>
+          <tr><td>Open the tab</td><td><kbd>N</kbd>, then Undo History</td><td>3D Viewport</td></tr>
+          <tr><td>Find any Hindsight action</td><td><kbd>F3</kbd>, then type "hindsight"</td><td>3D Viewport</td></tr>
+          <tr><td>Join, keeping histories</td><td><kbd>Ctrl</kbd> <kbd>J</kbd></td><td>Object Mode</td></tr>
+          <tr><td>Separate</td><td><kbd>P</kbd></td><td>Edit Mode</td></tr>
+          <tr><td>Linked duplicate (with a warning)</td><td><kbd>Alt</kbd> <kbd>D</kbd></td><td>Object Mode</td></tr>
+        </tbody>
+      </table>
+      <p>On macOS, <kbd>Cmd</kbd> works in place of <kbd>Ctrl</kbd>. In Object and Edit Mode, Blender's own undo is untouched.</p>
+
+      <h2 id="troubleshooting">Troubleshooting</h2>
+      <h3>I don't see anything after installing</h3>
+      <p>Press <kbd>N</kbd> in the 3D Viewport and look for the Undo History tab. If it isn't there, open Edit &gt; Preferences &gt; Add-ons, search for Hindsight and check it's ticked. The slider itself only shows in Sculpt and Vertex Paint Mode, or once an object has a history.</p>
+      <h3>Strokes aren't recorded</h3>
+      <p>The tab says why: recording paused for this object, Multires or Dyntopo switched on, or the object filtered out by Collection Filtering. If none of those apply, open Help in the tab and click <strong>Run self-check</strong>.</p>
+      <h3>The tab says part of Hindsight was switched off</h3>
+      <p>Something raised an error. That one part (for example the on-screen slider) was switched off so nothing else breaks, and your history is untouched. Run self-check to switch it back on, and please send the diagnostics.</p>
+      <h3>History folder missing</h3>
+      <p>The file was saved with its history in a <code>_hindsight</code> folder that isn't next to it any more. Put the folder back beside the .blend and open the file again.</p>
+      <h3>Blender's undo after a jump was reversed</h3>
+      <p>After Hindsight moves the mesh in Sculpt or Vertex Paint Mode, Blender's own undo can't go back past that point without mixing up stroke data. Hindsight undoes Blender's undo in that case and says so. Use <kbd>Ctrl</kbd> <kbd>Z</kbd> or the slider instead. Leaving and re-entering the mode resets this.</p>
+      <h3>Reporting a bug</h3>
+      <p>Click <strong>Copy diagnostics</strong> in the Help panel and paste the text into a <a href="https://github.com/Min3scon/Hindsight/issues/new/choose">bug report</a>. It has versions, settings, the self-check result and the last log lines, with your paths removed.</p>
+
+      <h2 id="faq">FAQ</h2>
+      <dl class="faq">
+        <dt>Does it slow down sculpting?</dt>
+        <dd>Recording a stroke on a 100k mesh took under a millisecond in my tests, after you let go. Nothing runs while you're mid-stroke.</dd>
+        <dt>How big do the history files get?</dt>
+        <dd>It depends on how much each stroke moves. In the 10,000-step test on a 100k mesh, small strokes averaged about 1 KB per step.</dd>
+        <dt>Does it replace Blender's undo?</dt>
+        <dd>Only Ctrl+Z in Sculpt and Vertex Paint Mode. Everywhere else Blender's undo works as normal.</dd>
+        <dt>Can I share a file with its history?</dt>
+        <dd>Yes. Send the <code>_hindsight</code> folder with it, or switch the preferences to store the history inside the .blend.</dd>
+        <dt>Is it free?</dt>
+        <dd>Yes, under the GPL 3.0 or later. The source is on <a href="https://github.com/Min3scon/Hindsight">GitHub</a>.</dd>
+      </dl>
+
+      <h2 id="known-issues">Known issues</h2>
+      <ul>
+        <li>Only tested on Windows so far, and only on Blender 5.0 and 5.1 in the real interface. Blender 4.2 to 4.5 should work but I haven&#x27;t run them yet.</li>
+<li>Multires and Dyntopo aren&#x27;t recorded. Recording pauses on those objects and the tab says why.</li>
+<li>Modifiers, shape keys, vertex groups, weight paint and materials aren&#x27;t part of the history.</li>
+<li>After Hindsight moves the mesh in Sculpt or Vertex Paint Mode, Blender&#x27;s own undo can&#x27;t go back past that point. Hindsight reverses it and asks you to use Ctrl+Z or the slider.</li>
+<li>Movie Mode: if playback crosses a remesh while the object is in Sculpt Mode, that frame shows the old topology for a moment. Render from Object Mode.</li>
+<li>If you sculpt from an earlier step and that drops the step set as the morph target, the target is cleared. Set it again.</li>
+<li>Linked duplicates share one history, because they share one mesh.</li>
+      </ul>
+
+      <h2 id="benchmarks">Benchmarks</h2>
+      <p>Being measured for this release.</p>
+    </article>
+  </div>
+</main>
+<footer><div class="wrap"><p>Hindsight is free software under the GPL 3.0 or later. Made by Min3scon. Blender is a trademark of the Blender Foundation.</p><nav aria-label="Footer"><a href="../docs/">Docs</a><a href="../changelog/">Changelog</a><a href="https://github.com/Min3scon/Hindsight">GitHub</a><a href="https://github.com/Min3scon/Hindsight/issues/new/choose">Report a bug</a></nav></div></footer>
+<script src="../assets/site.js" defer></script>
+</body>
+</html>

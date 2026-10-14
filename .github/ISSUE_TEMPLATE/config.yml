@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Hindsight website and beta status
-    url: https://min3scon.github.io/Hindsight/#beta
-    about: What is tested so far, what still needs real-Blender testing, and known issues.
+  - name: Docs, troubleshooting and known issues
+    url: https://min3scon.github.io/Hindsight/docs/#troubleshooting
+    about: Most problems have a short answer here.

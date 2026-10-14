@@ -53,7 +53,7 @@ def snapshot_to_bytes(s: Snapshot) -> bytes:
 def snapshot_from_bytes(b) -> Snapshot:
     mv = memoryview(b)
     if bytes(mv[:4]) != SNAP_MAGIC:
-        raise ValueError("snapshot_from_bytes: bad magic")
+        raise ValueError("snapshot_from_bytes: not a Hindsight snapshot (wrong header)")
     (hl,) = _U32.unpack_from(mv, 4)
     head = json.loads(bytes(mv[8:8 + hl]).decode("utf-8"))
     off = 8 + hl
@@ -102,7 +102,7 @@ def read_header(b) -> dict:
     """Header JSON of a step blob (no decompression)."""
     mv = memoryview(b)
     if bytes(mv[:4]) != STEP_MAGIC:
-        raise ValueError("step blob: bad magic")
+        raise ValueError("step blob: not a Hindsight step (wrong header)")
     (hl,) = _U32.unpack_from(mv, 4)
     return json.loads(bytes(mv[8:8 + hl]).decode("utf-8"))
 
@@ -110,7 +110,7 @@ def read_header(b) -> dict:
 def step_from_bytes(b) -> Step:
     mv = memoryview(b)
     if bytes(mv[:4]) != STEP_MAGIC:
-        raise ValueError("step blob: bad magic")
+        raise ValueError("step blob: not a Hindsight step (wrong header)")
     (hl,) = _U32.unpack_from(mv, 4)
     head = json.loads(bytes(mv[8:8 + hl]).decode("utf-8"))
     body = memoryview(_codec.decompress(mv[8 + hl:]))

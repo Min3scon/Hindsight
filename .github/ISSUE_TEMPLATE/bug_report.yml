@@ -1,78 +1,61 @@
 name: Bug report
-description: Something in Hindsight (beta) doesn't work as expected
+description: Something in Hindsight doesn't work the way the docs say
 title: "[Bug] "
 labels: ["bug", "beta"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for testing the Hindsight beta. Please back up your .blend before trying to reproduce a problem.
+        Thanks for trying the beta. The quickest way to a fix: in Blender, open the Undo History tab (press N), open Help, click Copy diagnostics, and paste the text below.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Undo History tab > Help > Copy diagnostics. It has versions, settings and recent log lines, with file paths removed.
+      render: text
+    validations:
+      required: true
   - type: input
     id: blender
     attributes:
       label: Blender version
-      placeholder: "e.g. 4.2.3 LTS"
+      placeholder: "5.1.2"
     validations:
       required: true
   - type: input
     id: os
     attributes:
       label: Operating system
-      placeholder: "e.g. Windows 11, macOS 14 (Apple Silicon), Ubuntu 24.04"
+      placeholder: "Windows 11, macOS 15, Ubuntu 24.04"
     validations:
       required: true
   - type: input
     id: hindsight
     attributes:
       label: Hindsight version
-      description: Shown in Edit > Preferences > Add-ons / Get Extensions.
-      placeholder: "1.0.0-beta.1"
+      description: The first line of the diagnostics, or Edit > Preferences > Add-ons.
+      placeholder: "1.0.0-beta.2"
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
+      label: What you did
       placeholder: |
-        1. Open a new file, add a UV sphere
-        2. Enter Sculpt Mode and make 3 strokes
-        3. Drag the scrubber back...
+        1. Opened a file with a 200k mesh
+        2. Made 3 strokes in Sculpt Mode
+        3. Dragged the slider back to step 1
     validations:
       required: true
   - type: textarea
-    id: expected
+    id: result
     attributes:
-      label: Expected result
+      label: What happened, and what you expected
+      description: Error text from Window > Toggle System Console (Windows) or the terminal helps a lot.
     validations:
       required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual result
-      description: Include any error text from Window > Toggle System Console (Windows) or the terminal.
-    validations:
-      required: true
-  - type: dropdown
-    id: survived
-    attributes:
-      label: Did the history survive saving and reopening the file?
-      options:
-        - "Yes"
-        - "No"
-        - "Didn't try"
-    validations:
-      required: true
-  - type: dropdown
-    id: savemode
-    attributes:
-      label: Save Mode (Add-on Preferences)
-      options:
-        - Sidecar
-        - Embed
-        - Both
-        - Not sure
   - type: textarea
     id: extra
     attributes:
       label: Anything else
-      description: Mesh size, Dyntopo/Multires/modifiers in use, screenshots or a small .blend if you can share one.
+      description: Mesh size, Multires or Dyntopo, modifiers, a screenshot, or a small .blend if you can share one.

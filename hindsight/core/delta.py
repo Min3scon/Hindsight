@@ -100,7 +100,7 @@ def unpack_delta(b) -> ChannelDelta:
     mv = memoryview(b)
     magic, flags, isz, w, dsz, klen, k, first = _HDR.unpack_from(mv, 0)
     if magic != _MAGIC:
-        raise ValueError("unpack_delta: bad magic")
+        raise ValueError("unpack_delta: not a Hindsight delta (wrong header)")
     off = _HDR.size
     key = bytes(mv[off:off + klen]).decode("utf-8")
     off += klen

@@ -1,123 +1,107 @@
-/* Hindsight website: navigation, scroll progress, reveal-on-scroll, active section.
-   No dependencies. Everything degrades to a plain, fully visible page without it. */
+/* Small page behaviour: nav border on scroll, gentle reveals, lazy videos and demo, lightbox. */
 (function () {
   "use strict";
-
   var doc = document.documentElement;
-  doc.classList.add("js");
+  doc.classList.remove("no-js");
+  var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  var reduceMotion = false;
-  try {
-    reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch (e) { /* old browsers */ }
-
-  /* ---------- Mobile section menu ---------- */
-  var toggle = document.querySelector(".nav-toggle");
-  var links = document.getElementById("nav-links");
-
-  function setMenu(open, focusToggle) {
-    if (!toggle || !links) return;
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    toggle.setAttribute("aria-label", open ? "Close the section menu" : "Open the section menu");
-    links.classList.toggle("is-open", open);
-    if (!open && focusToggle) toggle.focus();
+  var nav = document.querySelector(".nav");
+  if (nav) {
+    var onScroll = function () { nav.classList.toggle("scrolled", window.scrollY > 8); };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
   }
 
-  if (toggle && links) {
-    toggle.addEventListener("click", function () {
-      var open = toggle.getAttribute("aria-expanded") !== "true";
-      setMenu(open, false);
-      if (open) {
-        var first = links.querySelector("a");
-        if (first) first.focus({ preventScroll: true });
-      }
-    });
-    links.addEventListener("click", function (ev) {
-      if (ev.target.closest("a")) setMenu(false, false);
-    });
-    document.addEventListener("keydown", function (ev) {
-      if (ev.key === "Escape" && toggle.getAttribute("aria-expanded") === "true") setMenu(false, true);
-    });
-    document.addEventListener("click", function (ev) {
-      if (toggle.getAttribute("aria-expanded") !== "true") return;
-      if (!ev.target.closest(".nav-menu") && !ev.target.closest(".nav-toggle")) setMenu(false, false);
-    });
-    window.addEventListener("resize", function () {
-      if (window.innerWidth > 1120) setMenu(false, false);
-    });
+  if (!("IntersectionObserver" in window)) {
+    Array.prototype.forEach.call(document.querySelectorAll(".reveal"), function (el) { el.classList.add("in"); });
+  } else {
+    var ro = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add("in"); ro.unobserve(e.target); }
+      });
+    }, { rootMargin: "0px 0px -8% 0px" });
+    Array.prototype.forEach.call(document.querySelectorAll(".reveal"), function (el) { ro.observe(el); });
+
+    // Looping clips play only while on screen, and never with reduced motion.
+    var vo = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        var v = e.target;
+        if (e.isIntersecting) {
+          if (!v.dataset.loaded) {
+            Array.prototype.forEach.call(v.querySelectorAll("source[data-src]"), function (s) { s.src = s.dataset.src; });
+            v.load();
+            v.dataset.loaded = "1";
+          }
+          if (!reduced) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        } else if (!v.paused) v.pause();
+      });
+    }, { rootMargin: "200px 0px" });
+    Array.prototype.forEach.call(document.querySelectorAll("video[data-lazy]"), function (v) { vo.observe(v); });
+
+    // The demo script loads when the demo is about to scroll into view.
+    var demo = document.getElementById("demo");
+    if (demo) {
+      var load = function () {
+        if (demo.dataset.loaded) return;
+        demo.dataset.loaded = "1";
+        var s = document.createElement("script");
+        s.src = demo.getAttribute("data-script");
+        s.defer = true;
+        document.body.appendChild(s);
+      };
+      // Start WebGL only when the demo is about to be seen, and when the browser is idle.
+      var idle = window.requestIdleCallback || function (f) { return setTimeout(f, 1); };
+      var dobs = new IntersectionObserver(function (es) {
+        if (es[0].isIntersecting) { idle(load, { timeout: 400 }); dobs.disconnect(); }
+      }, { rootMargin: "0px 0px 160px 0px" });
+      dobs.observe(demo);
+      if (location.hash === "#demo") load();
+    }
   }
 
-  /* ---------- Scroll progress along the bottom of the nav (a page-sized scrubber) ---------- */
-  var bar = document.querySelector(".nav-progress span");
-  var ticking = false;
-  function updateProgress() {
-    ticking = false;
-    if (!bar) return;
-    var max = doc.scrollHeight - window.innerHeight;
-    var p = max > 0 ? Math.min(1, Math.max(0, window.scrollY / max)) : 0;
-    bar.style.setProperty("--p", p.toFixed(4));
-  }
-  window.addEventListener("scroll", function () {
-    if (!ticking) { ticking = true; window.requestAnimationFrame(updateProgress); }
-  }, { passive: true });
-  window.addEventListener("resize", updateProgress);
-  updateProgress();
-
-  /* ---------- Reveal on scroll ---------- */
-  var revealEls = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
-  // Stagger children of grids marked data-stagger, in rows of up to three.
-  Array.prototype.forEach.call(document.querySelectorAll("[data-stagger]"), function (grid) {
-    Array.prototype.forEach.call(grid.children, function (child, i) {
-      child.style.setProperty("--d", ((i % 3) * 0.07).toFixed(2) + "s");
+  // Lightbox for the screenshot gallery.
+  var box = document.querySelector(".lightbox");
+  if (box) {
+    var img = box.querySelector("img"), cap = box.querySelector("p"), closeBtn = box.querySelector(".close");
+    var opener = null;
+    var close = function () {
+      box.classList.remove("open");
+      box.setAttribute("aria-hidden", "true");
+      box.setAttribute("inert", "");
+      if (opener) opener.focus();
+    };
+    Array.prototype.forEach.call(document.querySelectorAll("[data-zoom]"), function (b) {
+      b.addEventListener("click", function () {
+        opener = b;
+        img.src = b.getAttribute("data-zoom");
+        img.alt = b.querySelector("img").alt;
+        img.width = +b.getAttribute("data-w");
+        img.height = +b.getAttribute("data-h");
+        cap.textContent = b.getAttribute("data-caption") || "";
+        box.removeAttribute("inert");
+        box.classList.add("open");
+        box.setAttribute("aria-hidden", "false");
+        closeBtn.focus();
+      });
     });
-  });
+    closeBtn.addEventListener("click", close);
+    box.addEventListener("click", function (e) { if (e.target === box) close(); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && box.classList.contains("open")) close(); });
+  }
 
-  if (!reduceMotion && "IntersectionObserver" in window && revealEls.length) {
-    doc.classList.add("reveal-on");
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add("is-in");
-          io.unobserve(entry.target);
+  // Docs sidebar: mark the section being read.
+  var links = document.querySelectorAll(".doc aside a[href^='#']");
+  if (links.length && "IntersectionObserver" in window) {
+    var map = {};
+    Array.prototype.forEach.call(links, function (a) { map[a.getAttribute("href").slice(1)] = a; });
+    var so = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting && map[e.target.id]) {
+          Array.prototype.forEach.call(links, function (a) { a.classList.remove("here"); });
+          map[e.target.id].classList.add("here");
         }
       });
-    }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
-    revealEls.forEach(function (el) {
-      var r = el.getBoundingClientRect();
-      if (r.top < window.innerHeight && r.bottom > 0) el.classList.add("is-in");
-      else io.observe(el);
-    });
-    // Anything jumped past via an anchor link should not stay hidden.
-    window.addEventListener("hashchange", function () {
-      revealEls.forEach(function (el) {
-        var r = el.getBoundingClientRect();
-        if (r.top < window.innerHeight) el.classList.add("is-in");
-      });
-    });
-  } else {
-    revealEls.forEach(function (el) { el.classList.add("is-in"); });
-  }
-
-  /* ---------- Highlight the section in view ---------- */
-  if ("IntersectionObserver" in window && links) {
-    var navAnchors = {};
-    Array.prototype.forEach.call(links.querySelectorAll('a[href^="#"]'), function (a) {
-      navAnchors[a.getAttribute("href").slice(1)] = a;
-    });
-    var current = null;
-    var spy = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (!entry.isIntersecting) return;
-        var a = navAnchors[entry.target.id];
-        if (!a || a === current) return;
-        if (current) current.removeAttribute("aria-current");
-        a.setAttribute("aria-current", "true");
-        current = a;
-      });
-    }, { rootMargin: "-45% 0px -50% 0px", threshold: 0 });
-    Object.keys(navAnchors).forEach(function (id) {
-      var el = document.getElementById(id);
-      if (el) spy.observe(el);
-    });
+    }, { rootMargin: "-20% 0px -70% 0px" });
+    Object.keys(map).forEach(function (id) { var el = document.getElementById(id); if (el) so.observe(el); });
   }
 })();

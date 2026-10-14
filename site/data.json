@@ -1,0 +1,16 @@
+{
+  "tested": "tested in the real Blender interface on 5.0.1, 5.1.1 and 5.1.2 on Windows, including 10,000-step sessions and files from beta 1.",
+  "bytes_per_step": "about 1 KB",
+  "known_issues": [
+    "Only tested on Windows so far, and only on Blender 5.0 and 5.1 in the real interface. Blender 4.2 to 4.5 should work but I haven't run them yet.",
+    "Multires and Dyntopo aren't recorded. Recording pauses on those objects and the tab says why.",
+    "Modifiers, shape keys, vertex groups, weight paint and materials aren't part of the history.",
+    "After Hindsight moves the mesh in Sculpt or Vertex Paint Mode, Blender's own undo can't go back past that point. Hindsight reverses it and asks you to use Ctrl+Z or the slider.",
+    "Movie Mode: if playback crosses a remesh while the object is in Sculpt Mode, that frame shows the old topology for a moment. Render from Object Mode.",
+    "If you sculpt from an earlier step and that drops the step set as the morph target, the target is cleared. Set it again.",
+    "Linked duplicates share one history, because they share one mesh."
+  ],
+  "shots": [],
+  "annotated": null,
+  "benchmarks_html": "<p>Being measured for this release.</p>"
+}

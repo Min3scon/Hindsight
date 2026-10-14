@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Fraunces"; src: url("../assets/fonts/fraunces-var.woff2") format("woff2"); font-weight: 300 800; }
+  @font-face { font-family: "Inter"; src: url("../assets/fonts/inter-var.woff2") format("woff2"); font-weight: 300 800; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: var(--w); height: var(--h); background: #0c0c0e; overflow: hidden; }
+  body {
+    position: relative; color: #edebe6; font-family: Inter, sans-serif;
+    background:
+      radial-gradient(60% 80% at 78% 42%, rgba(255, 155, 66, 0.10), transparent 70%),
+      radial-gradient(90% 90% at 20% 110%, #17161a, #0c0c0e 70%);
+  }
+  .pad { position: absolute; inset: var(--safe); display: flex; flex-direction: column; justify-content: space-between; }
+  .top { display: flex; align-items: center; gap: 18px; }
+  .top svg { width: 64px; height: 64px; }
+  .name { font: 600 40px/1 Inter, sans-serif; letter-spacing: -0.01em; }
+  .badge { font: 700 17px/1 Inter, sans-serif; letter-spacing: 0.1em; color: #ff9b42; border: 2px solid rgba(255,155,66,.6); border-radius: 7px; padding: 7px 9px 6px; }
+  h1 { font: 480 var(--title)/1.02 Fraunces, serif; font-variation-settings: "opsz" 48; letter-spacing: -0.012em; max-width: var(--tw); }
+  .sub { font: 450 var(--sub)/1.3 Inter, sans-serif; color: #b4b1a9; margin-top: 18px; }
+  .slider { display: flex; align-items: center; gap: 22px; }
+  .ring { width: 30px; height: 30px; border-radius: 50%; border: 5px solid #ff9b42; flex: none; position: relative; }
+  .ring::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: #ff9b42; }
+  .track { position: relative; flex: 1; height: 14px; border-radius: 7px; background: #2e2d33; }
+  .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 62%; border-radius: 7px; background: #ff9b42; }
+  .knob { position: absolute; left: 62%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%;
+          background: #ffd2a6; box-shadow: 0 4px 18px rgba(0,0,0,.6), 0 0 0 8px rgba(255,155,66,.18); }
+  .count { font: 600 30px/1 Inter, sans-serif; color: #edebe6; font-variant-numeric: tabular-nums; flex: none; }
+  .art { position: absolute; right: var(--art-r); top: var(--art-t); width: var(--art-w); }
+</style>
+</head>
+<body>
+  <div class="pad">
+    <div class="top">
+      <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#1d1d22"/><circle cx="8.5" cy="16" r="3.3" fill="none" stroke="#ff9b42" stroke-width="1.8"/><rect x="14" y="14.6" width="13" height="2.8" rx="1.4" fill="#3b3a42"/><rect x="14" y="14.6" width="7.5" height="2.8" rx="1.4" fill="#ff9b42"/><circle cx="21.5" cy="16" r="3" fill="#ffd2a6"/></svg>
+      <span class="name">Hindsight</span>
+      <span class="badge">BETA</span>
+    </div>
+    <div>
+      <h1>Scrub back through your sculpt</h1>
+      <p class="sub">A free Blender add-on. Every object keeps its own history.</p>
+    </div>
+    <div class="slider">
+      <span class="ring"></span>
+      <div class="track"><span class="fill"></span><span class="knob"></span></div>
+      <span class="count">372 / 600</span>
+    </div>
+  </div>
+</body>
+</html>

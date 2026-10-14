@@ -1,0 +1,97 @@
+<!--page
+title: Hindsight: scrub back through your sculpt in Blender
+description: A Blender add-on that gives every sculpted object its own history. Drag a slider to go back and forth through up to 10,000 steps. Free beta.
+path:
+root: ./
+-->
+{{nav:home}}
+<main id="main">
+  <div class="hero">
+    <div class="wrap">
+      <p class="eyebrow">Blender add-on <span class="badge">Beta</span></p>
+      <h1>Scrub back through your sculpt</h1>
+      <p class="lede">Hindsight gives every object its own history. Drag a slider to any of the last 10,000 steps, look, and drag back. The history is saved with your file.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="download/hindsight.zip" download>{{icon:download}}Download beta</a>
+        <a class="btn btn-quiet" href="#demo">Try the demo</a>
+      </div>
+      <p class="meta"><span>Version {{version}}</span><span>{{size}} zip</span><span>Blender 4.2 and newer</span></p>
+      <div class="frame reveal">
+        {{video:hero|A sculpt in Blender being scrubbed back and forth with the Hindsight slider at the bottom of the viewport|1600|900|eager}}
+      </div>
+    </div>
+  </div>
+
+  <section id="demo-section" aria-labelledby="demo-h">
+    <div class="wrap">
+      <div class="head reveal">
+        <h2 id="demo-h">Try it here</h2>
+        <p>Drag on the shape to sculpt, then drag the slider. Each stroke is one step, and jumping back and forth is exact.</p>
+      </div>
+      {{demo}}
+    </div>
+  </section>
+
+  <section aria-labelledby="what-h">
+    <div class="wrap">
+      <div class="head reveal">
+        <h2 id="what-h">What it does</h2>
+      </div>
+      <div class="features">
+        <div class="feature reveal">
+          <div class="media">{{video:feature-scrub|Two sculpted objects in Blender, each with its own history slider|960|720|lazy}}</div>
+          <h3>A history for every object</h3>
+          <p>Up to 10,000 steps per object. A step stores only the vertices that stroke moved, about 12 KB on a 100k mesh.</p>
+        </div>
+        <div class="feature reveal">
+          <div class="media">{{video:feature-morph|The Morph History brush painting an earlier shape back onto one area of a sculpt|960|720|lazy}}</div>
+          <h3>Paint an earlier shape back</h3>
+          <p>Mark a step as the morph target, then brush it back onto the nose, or one ear. The rest stays as it is.</p>
+        </div>
+        <div class="feature reveal">
+          <div class="media">{{video:feature-movie|Movie Mode playing a sculpt history on the Blender timeline|960|720|lazy}}</div>
+          <h3>Your sculpt as a timelapse</h3>
+          <p>Movie Mode plays every step on the timeline, so you can render the whole session as a video.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="screenshots" aria-labelledby="where-h">
+    <div class="wrap">
+      <div class="head reveal">
+        <h2 id="where-h">Where to find it</h2>
+        <p>Press <kbd>N</kbd> in the 3D Viewport and open the Undo History tab. The slider at the bottom of the viewport does the same job without the sidebar.</p>
+      </div>
+      <div class="where">
+        <div class="reveal">{{annotated}}</div>
+        <ul class="gallery reveal">
+          {{shots}}
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="install" aria-labelledby="install-h">
+    <div class="wrap install">
+      <div class="reveal">
+        <div class="head">
+          <h2 id="install-h">Install</h2>
+        </div>
+        <ol class="steps">
+          <li><b>Download</b> <a href="download/hindsight.zip" download>hindsight.zip</a>. Don't unzip it.</li>
+          <li>In Blender, open <b>Edit &gt; Preferences &gt; Get Extensions</b>, click the arrow at the top right and choose <b>Install from Disk</b>.</li>
+          <li>Pick the zip. Then press <kbd>N</kbd> in the 3D Viewport and open the <b>Undo History</b> tab.</li>
+        </ol>
+      </div>
+      <div class="beta reveal">
+        <h3><span class="badge">Beta</span> What's tested</h3>
+        <p>{{tested}}</p>
+        <p>It hasn't been tried on macOS or Linux yet. Back up your files. If something breaks, the Undo History tab has a Copy diagnostics button for the report.</p>
+        <div class="links"><a href="docs/#known-issues">Known issues</a><a href="https://github.com/Min3scon/Hindsight/issues/new/choose">Report a bug</a><a href="changelog/">What changed</a></div>
+      </div>
+    </div>
+  </section>
+</main>
+{{lightbox}}
+{{footer}}

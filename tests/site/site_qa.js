@@ -1,654 +1,335 @@
 #!/usr/bin/env node
 /*
- * Site QA for the Hindsight website (docs/), served exactly like GitHub Pages
- * under the /Hindsight/ base path. Prints PASS/FAIL/INFO lines and exits 1 on any FAIL.
+ * Site QA for docs/ (served like GitHub Pages under /Hindsight/). Prints PASS/FAIL lines, exits 1 on any FAIL.
  *
- *   node tests/site/site_qa.js            # screenshots go to $QA_OUT or ./tests/site/out
+ *   node tests/site/site_qa.js [--browsers chromium,firefox,webkit] [--shots] [--quick]
+ *
+ * Checks: every page loads with no console errors in each browser; head tags (title, description,
+ * canonical, Open Graph, Twitter, icons, manifest); every internal link and asset resolves; no external
+ * requests; landing page weight before media; the demo (strokes, exact rewind and replay, keyboard undo,
+ * morph target and Morph brush, Movie Mode, Reset, hundreds of steps), frame time while dragging with 4x
+ * CPU throttling (Chromium), and touch on a phone viewport. --shots saves screenshots of every page at
+ * 360, 390, 768, 1024, 1440 and 1920 px and a landscape phone into tests/site/out/.
  */
-'use strict';
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const zlib = require('zlib');
-const { chromium } = require('/opt/node-tools/node_modules/playwright');
+"use strict";
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const pw = require("playwright");
 
-const DOCS = path.resolve(__dirname, '../../docs');
-const OUT = process.env.QA_OUT || path.join(__dirname, 'out');
-const CHROME = process.env.QA_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const VERSION = '1.0.0-beta.1';
-const PROD = 'https://min3scon.github.io/Hindsight/';
-const EXTERNAL_OK = /^https:\/\/github\.com\/Min3scon\/Hindsight(?:[\/?#].*)?$/;
-fs.mkdirSync(OUT, { recursive: true });
+const ROOT = path.resolve(__dirname, "..", "..");
+const DOCS = path.join(ROOT, "docs");
+const OUT = path.join(__dirname, "out");
+const BASE = "/Hindsight/";
+const PROD = "https://min3scon.github.io/Hindsight/";
+const args = process.argv.slice(2);
+const opt = (name, def) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : def; };
+const BROWSERS = opt("--browsers", "chromium,firefox,webkit").split(",");
+const SHOTS = args.includes("--shots");
+const QUICK = args.includes("--quick");
+const PAGES = ["", "docs/", "changelog/", "404.html"];
+const WIDTHS = [360, 390, 768, 1024, 1440, 1920];
 
-/* ----------------------------------------------------------------- results */
 let fails = 0, passes = 0;
 const failList = [];
 function check(area, name, ok, detail) {
-  const line = `${ok ? 'PASS' : 'FAIL'} [${area}] ${name}${detail !== undefined && detail !== '' ? ' -- ' + (typeof detail === 'string' ? detail : JSON.stringify(detail)) : ''}`;
+  const line = `${ok ? "PASS" : "FAIL"} [${area}] ${name}${detail !== undefined && detail !== "" ? " -- " + (typeof detail === "string" ? detail : JSON.stringify(detail)) : ""}`;
   console.log(line);
   if (ok) passes++; else { fails++; failList.push(line); }
   return ok;
 }
-function info(area, msg) { console.log(`INFO [${area}] ${msg}`); }
-const short = (a, n = 6) => (a.length > n ? a.slice(0, n).concat([`...(+${a.length - n})`]) : a);
 
-/* ---------------------------------------------------------- static server */
-const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.avif': 'image/avif',
-  '.gif': 'image/gif', '.ico': 'image/x-icon', '.json': 'application/json', '.xml': 'application/xml', '.txt': 'text/plain; charset=utf-8',
-  '.zip': 'application/zip', '.woff2': 'font/woff2', '.woff': 'font/woff', '.mp4': 'video/mp4', '.webm': 'video/webm', '.webmanifest': 'application/manifest+json' };
-function startServer() {
-  const server = http.createServer((req, res) => {
-    const u = new URL(req.url, 'http://x');
-    let p;
-    try { p = decodeURIComponent(u.pathname); } catch (e) { p = '/'; }
-    const send404 = () => {
-      const f = path.join(DOCS, '404.html');
-      res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(fs.existsSync(f) ? fs.readFileSync(f) : 'Not found');
-    };
-    if (!p.startsWith('/Hindsight/')) {
-      if (p === '/Hindsight') { res.writeHead(301, { location: '/Hindsight/' }); return res.end(); }
-      return send404();
-    }
-    let file = path.normalize(path.join(DOCS, p.slice('/Hindsight/'.length)));
-    if (file !== DOCS && !file.startsWith(DOCS + path.sep)) return send404();
-    let st = null;
-    try { st = fs.statSync(file); } catch (e) { /* missing */ }
-    if (st && st.isDirectory()) {
-      if (!p.endsWith('/')) { res.writeHead(301, { location: p + '/' }); return res.end(); }
-      file = path.join(file, 'index.html');
-      try { st = fs.statSync(file); } catch (e) { st = null; }
-    }
-    if (!st || !st.isFile()) return send404();
-    res.writeHead(200, { 'content-type': TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream', 'content-length': st.size, 'cache-control': 'no-store' });
-    if (req.method === 'HEAD') return res.end();
-    fs.createReadStream(file).pipe(res);
+// ------------------------------------------------------------------------ server
+const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": "application/javascript", ".svg": "image/svg+xml",
+  ".png": "image/png", ".webp": "image/webp", ".json": "application/json", ".xml": "application/xml", ".txt": "text/plain",
+  ".zip": "application/zip", ".woff2": "font/woff2", ".mp4": "video/mp4", ".webm": "video/webm", ".webmanifest": "application/manifest+json" };
+function serve() {
+  return new Promise((resolve) => {
+    const srv = http.createServer((req, res) => {
+      let url = decodeURIComponent(req.url.split("?")[0].split("#")[0]);
+      if (!url.startsWith(BASE)) url = "/404";
+      let file = path.join(DOCS, url.slice(BASE.length));
+      if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
+      if (!fs.existsSync(file)) { res.writeHead(404, { "Content-Type": "text/html" }); return res.end(fs.readFileSync(path.join(DOCS, "404.html"))); }
+      res.writeHead(200, { "Content-Type": TYPES[path.extname(file)] || "application/octet-stream" });
+      fs.createReadStream(file).pipe(res);
+    });
+    srv.listen(0, "127.0.0.1", () => resolve(srv));
   });
-  return new Promise(r => server.listen(0, '127.0.0.1', () => r(server)));
-}
-async function get(url) {
-  const r = await fetch(url, { redirect: 'follow' });
-  return { status: r.status, buf: Buffer.from(await r.arrayBuffer()), type: r.headers.get('content-type') || '' };
 }
 
-/* ------------------------------------------------------------ zip reading */
-function readZip(buf) {
-  let eocd = -1;
-  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  if (eocd < 0) throw new Error('no end-of-central-directory record');
-  const count = buf.readUInt16LE(eocd + 10);
-  let off = buf.readUInt32LE(eocd + 16);
-  const entries = [];
-  for (let k = 0; k < count; k++) {
-    if (buf.readUInt32LE(off) !== 0x02014b50) throw new Error('bad central directory entry');
-    const method = buf.readUInt16LE(off + 10), csize = buf.readUInt32LE(off + 20), nlen = buf.readUInt16LE(off + 28),
-      xlen = buf.readUInt16LE(off + 30), clen = buf.readUInt16LE(off + 32), lho = buf.readUInt32LE(off + 42);
-    const name = buf.slice(off + 46, off + 46 + nlen).toString('utf8');
-    entries.push({ name, method, csize, lho });
-    off += 46 + nlen + xlen + clen;
+// ------------------------------------------------------------------------ static checks (no browser)
+function staticChecks() {
+  for (const p of PAGES) {
+    const file = path.join(DOCS, p.endsWith(".html") ? p : p + "index.html");
+    const html = fs.readFileSync(file, "utf8");
+    const meta = (sel) => { const m = html.match(new RegExp(`<meta ${sel}="([^"]*)"`)); return m ? m[1] : null; };
+    const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1] || "";
+    check("head", `${p || "/"} title under 60 chars`, title.length > 0 && title.length < 60, title);
+    const desc = meta('name="description" content');
+    check("head", `${p || "/"} description under 160 chars`, desc && desc.length <= 160, desc);
+    if (p !== "404.html") {
+      const canon = (html.match(/<link rel="canonical" href="([^"]+)"/) || [])[1];
+      check("head", `${p || "/"} canonical`, canon === PROD + p, canon);
+    }
+    for (const prop of ["og:type", "og:title", "og:description", "og:url", "og:site_name", "og:locale", "og:image",
+      "og:image:width", "og:image:height", "og:image:type", "og:image:alt"]) {
+      check("head", `${p || "/"} ${prop}`, !!meta(`property="${prop}" content`));
+    }
+    check("head", `${p || "/"} og:image absolute https`, (meta('property="og:image" content') || "").startsWith("https://"));
+    for (const name of ["twitter:card", "twitter:title", "twitter:description", "twitter:image", "twitter:image:alt", "theme-color", "color-scheme"]) {
+      check("head", `${p || "/"} ${name}`, !!meta(`name="${name}" content`));
+    }
+    for (const rel of ['rel="icon" href="[^"]*favicon.svg"', 'sizes="32x32"', 'rel="apple-touch-icon"', 'rel="manifest"']) {
+      check("head", `${p || "/"} ${rel.split('"')[1] || rel}`, new RegExp(rel).test(html));
+    }
+    check("perf", `${p || "/"} no render-blocking stylesheet`, !/<link[^>]+rel="stylesheet"/.test(html));
+    check("perf", `${p || "/"} scripts deferred`, !/<script(?![^>]*\bdefer\b)[^>]*\bsrc=/.test(html));
+    check("privacy", `${p || "/"} no external hosts`, !/(src|href)="https?:\/\/(?!min3scon\.github\.io|github\.com\/Min3scon)/.test(html),
+      (html.match(/(src|href)="https?:\/\/[^"]+/g) || []).filter((u) => !/min3scon|Min3scon/.test(u)));
   }
-  const read = e => {
-    const n = buf.readUInt16LE(e.lho + 26), x = buf.readUInt16LE(e.lho + 28);
-    const data = buf.slice(e.lho + 30 + n + x, e.lho + 30 + n + x + e.csize);
-    return e.method === 0 ? data : zlib.inflateRawSync(data);
-  };
-  return { entries, read };
+  for (const f of ["sitemap.xml", "robots.txt", "site.webmanifest", "favicon.svg", "assets/img/og.png", "assets/img/og-square.png",
+    "assets/img/favicon-32.png", "assets/img/icon-192.png", "assets/img/apple-touch-icon.png", "download/hindsight.zip"]) {
+    check("files", f, fs.existsSync(path.join(DOCS, f)));
+  }
+  const og = path.join(DOCS, "assets/img/og.png");
+  if (fs.existsSync(og)) {
+    const b = fs.readFileSync(og);
+    check("og", "og.png is 1200x630", b.readUInt32BE(16) === 1200 && b.readUInt32BE(20) === 630, [b.readUInt32BE(16), b.readUInt32BE(20)]);
+    check("og", "og.png under 300 KB", b.length < 300 * 1024, Math.round(b.length / 1024) + " KB");
+  }
 }
 
-/* -------------------------------------------------------- page utilities */
-function watch(page) {
-  const w = { errors: [], bad: [], bytes: 0, urls: [] };
-  page.on('pageerror', e => w.errors.push('pageerror: ' + String(e).slice(0, 200)));
-  page.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) w.errors.push('console: ' + m.text().slice(0, 200)); });
-  page.on('requestfailed', r => { if (!/^data:|^blob:/.test(r.url())) w.bad.push('failed ' + r.url() + ' ' + (r.failure() || {}).errorText); });
-  page.on('response', async r => {
-    w.urls.push(r.url());
-    if (r.status() >= 400) w.bad.push(r.status() + ' ' + r.url());
-    if (/\.zip(\?|$)/.test(r.url())) return;
-    try { w.bytes += (await r.body()).length; } catch (e) { /* redirects etc. */ }
-  });
-  w.mark = () => ({ e: w.errors.length, b: w.bad.length });
-  w.since = m => w.errors.slice(m.e).concat(w.bad.slice(m.b));
-  return w;
-}
-async function settle(page, ms = 600) {
-  await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
-  await page.waitForTimeout(ms);
-}
-
-/* The demo helpers run in the page. They find a point on the clay outline (via the
- * optional toCanvas() helper) so strokes really touch the shape. */
-const PAGE_HELPERS = () => {
-  window.__qaOverflow = VW => {
-    const out = [];
-    for (const e of document.body.querySelectorAll('*')) {
-      const r = e.getBoundingClientRect();
-      if (r.right <= VW + 1 || r.width === 0) continue;
-      const p = e.parentElement; const pr = p && p.getBoundingClientRect();
-      if (p && p !== document.body && pr.right > VW + 1) continue; // report the outermost overflowing element only
-      let clip = false; for (let a = p; a && a !== document.body; a = a.parentElement) { const ox = getComputedStyle(a).overflowX; if (ox !== 'visible') { clip = true; break; } }
-      if (clip) continue;
-      out.push(e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).join('.') : '') + ` right=${Math.round(r.right)}`);
-    }
-    return out.slice(0, 5);
-  };
-  window.__qa = {
-    canvas() {
-      return document.querySelector('#hs-demo canvas.hsd-canvas') || document.querySelector('#hs-demo canvas') || document.querySelector('#demo canvas');
-    },
-    outline(k) { // canvas-space coordinates of outline point k (fraction 0..1 around the shape)
-      const D = window.HindsightDemo, s = D.snapshot(), n = s.length / 2, i = Math.floor(((k % 1) + 1) % 1 * n);
-      if (typeof D.toCanvas === 'function') return D.toCanvas(s[2 * i], s[2 * i + 1]);
-      const c = this.canvas().getBoundingClientRect();
-      return [c.width * (0.3 + 0.4 * (k % 1)), c.height * 0.5];
-    },
-    pts(k, n, dx, dy) { const [x, y] = this.outline(k); const out = []; for (let i = 0; i < n; i++) out.push([x + (i - n / 2) * dx, y + (i - n / 2) * dy]); return out; },
-  };
-};
-
-async function canvasBox(page) {
-  const h = await page.evaluateHandle(() => window.__qa.canvas());
-  const el = h.asElement();
-  if (!el) return null;
-  await el.scrollIntoViewIfNeeded().catch(() => {});
-  await page.waitForTimeout(150);
-  return el.boundingBox();
-}
-
-/* -------------------------------------------------------------- the suite */
-(async () => {
-  const server = await startServer();
-  const BASE = `http://127.0.0.1:${server.address().port}/Hindsight/`;
-  info('setup', `serving ${DOCS} at ${BASE}; screenshots -> ${OUT}`);
-  const browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] });
-  const watchers = {};
-  try {
-    /* ============ 1. viewports ============ */
-    const VPS = [
-      ['phone', { viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }],
-      ['tablet', { viewport: { width: 820, height: 1180 }, hasTouch: true }],
-      ['desktop', { viewport: { width: 1440, height: 900 } }],
-    ];
-    let zipSizeShown = null;
-    for (const [name, opts] of VPS) {
-      const A = `layout ${name}`;
-      const ctx = await browser.newContext(opts);
-      await ctx.addInitScript(PAGE_HELPERS);
-      const page = await ctx.newPage();
-      const w = watch(page); watchers[name] = w;
-      const resp = await page.goto(BASE, { waitUntil: 'load', timeout: 30000 }).catch(e => ({ status: () => 'goto error ' + e.message }));
-      await settle(page);
-      check(A, 'index.html loads with 200', resp.status() === 200, String(resp.status()));
-      const firstLoadBytes = w.bytes;
-      const s = await page.evaluate(VW => {
-        const vis = el => { if (!el) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
-          return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity > 0.05 && r.right > 0 && r.left < innerWidth; };
-        const ownText = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
-        const h1 = document.querySelector('h1');
-        const nav = document.querySelector('nav');
-        const navRoot = nav ? (nav.closest('header') || nav) : (document.querySelector('header'));
-        const hero = h1 ? ((h1.parentElement && h1.parentElement.closest('.hero, #hero, [class~="hero"], section, header')) || h1.parentElement) : null;
-        const badgeIn = (root, notIn) => root ? [...root.querySelectorAll('*')].filter(e => !(notIn && notIn !== root && notIn.contains(e)) && /^(public\s+)?beta$/i.test(ownText(e)) && vis(e)) : [];
-        const navBadges = badgeIn(navRoot, hero && hero !== navRoot && !hero.contains(navRoot) ? hero : null);
-        const heroBadges = hero && !hero.contains(navRoot) ? badgeIn(hero) : (hero ? badgeIn(hero, navRoot) : []);
-        const bannerCands = [...document.querySelectorAll('body *')].filter(e => /Hindsight is in public beta/i.test(e.textContent || ''));
-        const banner = bannerCands[bannerCands.length - 1];
-        const dls = [...document.querySelectorAll('a')].filter(a => /download\s+beta/i.test(a.textContent || '') || /download\s+beta/i.test(a.getAttribute('aria-label') || ''));
-        const dl = dls.map(a => ({ href: a.getAttribute('href'), download: a.hasAttribute('download'), text: ownText(a).slice(0, 90),
-          parentText: ownText(a.parentElement).slice(0, 200), visible: vis(a) }));
-        return { sw: document.documentElement.scrollWidth, bw: document.body.scrollWidth, iw: VW, overflow: window.__qaOverflow(VW),
-          navBadge: navBadges.length > 0, heroBadge: heroBadges.length > 0, heroTag: hero ? hero.tagName + '.' + hero.className : null,
-          banner: !!banner, bannerVisible: vis(banner), dl };
-      }, opts.viewport.width);
-      check(A, 'no console errors / page errors', w.errors.length === 0, short(w.errors, 4));
-      check(A, 'no HTTP 4xx/5xx or failed requests', w.bad.length === 0, short(w.bad, 6));
-      check(A, `no horizontal scroll (scrollWidth <= ${s.iw})`, s.sw <= s.iw && s.bw <= s.iw, `scrollWidth=${s.sw} body=${s.bw}; widest overflowing elements: ${s.overflow.join(' | ')}`);
-      check(A, 'nav BETA badge visible', s.navBadge);
-      check(A, 'hero BETA badge visible', s.heroBadge, s.heroTag || 'no h1/hero found');
-      check(A, 'beta banner "Hindsight is in public beta" visible', s.bannerVisible, s.bannerVisible ? '' : (s.banner ? 'present but not visible' : 'text not found'));
-      check(A, '"Download beta" button exists', s.dl.length > 0);
-      if (s.dl.length) {
-        const badHref = s.dl.filter(d => d.href !== 'download/hindsight.zip' || !d.download);
-        check(A, 'all "Download beta" links: href="download/hindsight.zip" + download attr', badHref.length === 0, badHref);
-        check(A, 'a "Download beta" button is visible', s.dl.some(d => d.visible));
-        const sizeRe = /(\d+(?:[.,]\d+)?)\s?(KB|kB|MB|KiB|MiB)\b/;
-        const good = s.dl.filter(d => d.text.includes(VERSION) && sizeRe.test(d.text));
-        const near = s.dl.filter(d => d.parentText.includes(VERSION) && sizeRe.test(d.parentText));
-        check(A, `"Download beta" shows ${VERSION} and a size`, good.length > 0,
-          good.length ? '' : (near.length ? 'only in the surrounding text, not the button: ' + near[0].parentText : s.dl.map(d => d.text)));
-        const m = (good[0] || near[0] || {}).text && sizeRe.exec((good[0] || near[0]).text) || (near[0] && sizeRe.exec(near[0].parentText));
-        if (m) zipSizeShown = { n: parseFloat(m[1].replace(',', '.')), unit: m[2] };
-      }
-      await page.screenshot({ path: path.join(OUT, `${opts.viewport.width}-top.png`) });
-      const m1 = w.mark();
-      // scroll the whole page so lazy content/IntersectionObserver stuff loads, then full-page shot
-      await page.evaluate(async () => { for (let y = 0; y < document.documentElement.scrollHeight; y += innerHeight * 0.8) { scrollTo(0, y); await new Promise(r => setTimeout(r, 120)); } scrollTo(0, 0); });
-      await settle(page, 400);
-      const sw2 = await page.evaluate(VW => [document.documentElement.scrollWidth, VW, window.__qaOverflow(VW)], opts.viewport.width);
-      check(A, 'no horizontal scroll after scrolling through the page', sw2[0] <= sw2[1], `scrollWidth=${sw2[0]} viewport=${sw2[1]}; ${sw2[2].join(' | ')}`);
-      check(A, 'no NEW errors / 4xx after scrolling through the page', w.since(m1).length === 0, short(w.since(m1), 4));
-      await page.screenshot({ path: path.join(OUT, `${opts.viewport.width}-full.png`), fullPage: true }).catch(e => info(A, 'full screenshot failed ' + e.message));
-
-      /* ============ 8. performance (desktop first load) ============ */
-      if (name === 'desktop') {
-        const P = 'perf';
-        check(P, 'first-load bytes (non-zip) < 1 MB', firstLoadBytes < 1024 * 1024, `${(firstLoadBytes / 1024).toFixed(0)} KB first load, ${(w.bytes / 1024).toFixed(0)} KB after scrolling`);
-        const pr = await page.evaluate(() => ({
-          blocking: [...document.head.querySelectorAll('script[src]')].filter(s => !s.defer && !s.async && s.type !== 'module').map(s => s.getAttribute('src')),
-          inlineHead: [...document.head.querySelectorAll('script:not([src])')].filter(s => s.type !== 'application/ld+json').map(s => s.textContent.length),
-          imgs: [...document.querySelectorAll('img')].filter(i => !i.hasAttribute('alt') || !i.getAttribute('width') || !i.getAttribute('height')).map(i => (i.getAttribute('src') || '').slice(0, 60) + (i.hasAttribute('alt') ? '' : ' [no alt]') + (i.getAttribute('width') && i.getAttribute('height') ? '' : ' [no width/height]')),
-          nImgs: document.querySelectorAll('img').length,
-        }));
-        check(P, 'no render-blocking <script src> in <head> without defer/async', pr.blocking.length === 0, pr.blocking);
-        if (pr.inlineHead.length) info(P, `inline <script> blocks in <head> (bytes): ${pr.inlineHead.join(', ')}`);
-        check(P, `every <img> has alt + width/height (${pr.nImgs} imgs)`, pr.imgs.length === 0, short(pr.imgs, 5));
-      }
-
-      /* ============ 4. demo (desktop + phone) ============ */
-      if (name === 'desktop' || name === 'phone') await demoChecks(page, ctx, name);
-
-      /* ============ 5. unmerge (desktop) ============ */
-      if (name === 'desktop') {
-        const U = 'unmerge';
-        const um = await page.evaluate(() => {
-          const X = window.HindsightExtras && window.HindsightExtras.unmerge;
-          if (!X) return { missing: true };
-          const j = X.joinedAt(), n = X.steps(), p0 = X.pos();
-          const r = {};
-          X.goto(0); r.at0 = X.isJoined();
-          X.goto(j - 1); r.before = X.isJoined(); r.posBefore = X.pos();
-          X.goto(j); r.at = X.isJoined();
-          X.goto(n); r.end = X.isJoined(); r.posEnd = X.pos();
-          X.goto(p0);
-          return { j, n, ...r };
-        }).catch(e => ({ error: e.message }));
-        if (check(U, 'window.HindsightExtras.unmerge exists', !um.missing && !um.error, um.error)) {
-          check(U, 'joinedAt() is a step inside 1..steps()', um.j >= 1 && um.j <= um.n, um);
-          check(U, 'isJoined() false before joinedAt() (goto(joinedAt-1) and goto(0))', um.before === false && um.at0 === false, um);
-          check(U, 'isJoined() true at/after joinedAt() (goto(joinedAt) and goto(steps))', um.at === true && um.end === true, um);
+// ------------------------------------------------------------------------ browser checks
+async function pageChecks(name, browser, origin) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const external = [];
+  for (const p of PAGES) {
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on("console", (m) => { if (m.type() === "error" && !(p === "404.html" && /404/.test(m.text()))) errors.push(m.text()); });
+    page.on("pageerror", (e) => errors.push(String(e)));
+    page.on("request", (r) => { if (!r.url().startsWith(origin) && !r.url().startsWith("data:")) external.push(r.url()); });
+    const bad = [];
+    page.on("response", (r) => { if (r.status() >= 400 && !r.url().endsWith("404.html") && !r.url().includes("does-not-exist")) bad.push(r.status() + " " + r.url()); });
+    const url = origin + BASE + (p === "404.html" ? "does-not-exist/" : p);
+    await page.goto(url, { waitUntil: "load" });
+    await page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 600) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 60)); } });
+    await page.waitForTimeout(400);
+    check(name, `${p || "/"} no console errors`, errors.length === 0, errors.slice(0, 5));
+    if (p !== "404.html") check(name, `${p || "/"} no failed requests`, bad.length === 0, bad.slice(0, 5));
+    const hOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check(name, `${p || "/"} no horizontal scroll at 1440`, hOverflow <= 0, hOverflow);
+    if (name === "chromium") {
+      // internal links resolve
+      const links = await page.evaluate(() => [...document.querySelectorAll("a[href]")].map((a) => a.href));
+      for (const href of [...new Set(links)]) {
+        if (!href.startsWith(origin) || href.includes("does-not-exist")) continue;
+        const u = href.split("#")[0];
+        const r = await ctx.request.get(u);
+        check("links", `${p || "/"} -> ${u.replace(origin, "")}`, r.status() === 200, r.status());
+        const hash = href.split("#")[1];
+        if (hash && u === url.split("#")[0]) {
+          check("links", `${p || "/"} #${hash} exists`, await page.evaluate((h) => !!document.getElementById(h), hash));
         }
-        // a11y on desktop
-        await a11yChecks(page);
       }
-      check(A, 'no NEW console/page errors during the interaction tests', w.errors.slice(m1.e).length === 0, short(w.errors.slice(m1.e), 4));
-      await ctx.close();
+      // alt text and labels
+      const noAlt = await page.evaluate(() => [...document.images].filter((i) => !i.hasAttribute("alt")).map((i) => i.src));
+      check("a11y", `${p || "/"} every image has alt`, noAlt.length === 0, noAlt);
+      const unlabeled = await page.evaluate(() => [...document.querySelectorAll("button")].filter((b) => !(b.textContent.trim() || b.getAttribute("aria-label"))).length);
+      check("a11y", `${p || "/"} every button has a label`, unlabeled === 0, unlabeled);
+      const landmarks = await page.evaluate(() => ({ main: !!document.querySelector("main"), nav: !!document.querySelector("nav,header"), h1: document.querySelectorAll("h1").length }));
+      check("a11y", `${p || "/"} landmarks and one h1`, landmarks.main && landmarks.nav && landmarks.h1 === 1, landmarks);
     }
+    await page.close();
+  }
+  check(name, "no requests to other hosts", external.length === 0, [...new Set(external)].slice(0, 5));
+  await ctx.close();
+}
 
-    /* ============ 6. reduced motion ============ */
-    {
-      const R = 'reduced-motion';
-      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
-      await ctx.addInitScript(() => { window.__raf = 0; const o = window.requestAnimationFrame; window.requestAnimationFrame = f => { window.__raf++; return o.call(window, f); }; });
+async function weight(browser, origin) {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  let bytes = 0, media = 0;
+  const seen = [];
+  page.on("response", async (r) => {
+    try {
+      const b = (await r.body()).length;
+      const isMedia = /\.(webp|png|jpg|webm|mp4|avif)(\?|$)/.test(r.url());
+      if (isMedia) media += b; else { bytes += b; seen.push([r.url().replace(origin, ""), b]); }
+    } catch (e) { /* redirects */ }
+  });
+  await page.goto(origin + BASE, { waitUntil: "networkidle" });
+  await page.waitForTimeout(500);
+  check("perf", "landing page under 300 KB before media (at load)", bytes < 300 * 1024,
+    Math.round(bytes / 1024) + " KB: " + seen.map(([u, b]) => `${u} ${Math.round(b / 1024)}K`).join(", "));
+  console.log(`INFO [perf] media at load: ${Math.round(media / 1024)} KB`);
+  await ctx.close();
+}
+
+// ------------------------------------------------------------------------ demo
+async function demoChecks(name, browser, origin, opts = {}) {
+  const ctx = await browser.newContext(opts.mobile ? { ...pw.devices["Pixel 7"] } : { viewport: { width: 1280, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await page.goto(origin + BASE + "#demo-section", { waitUntil: "load" });
+  await page.waitForFunction(() => window.__hindsightDemo, null, { timeout: 15000 });
+  await page.locator("#demo").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  const tag = name + (opts.mobile ? " touch" : "");
+  const r = await page.evaluate(() => window.__hindsightDemo.stageRect());
+  const st = () => page.evaluate(() => window.__hindsightDemo.state());
+  const hash = () => page.evaluate(() => window.__hindsightDemo.hash());
+
+  async function stroke(k) {
+    const r = await page.evaluate(() => window.__hindsightDemo.stageRect());   // clicks may have scrolled the page
+    const x0 = r.x + r.w * (0.42 + 0.03 * (k % 5)), y0 = r.y + r.h * (0.45 + 0.03 * ((k * 7) % 5));
+    if (opts.mobile) {
+      const cdp = name === "chromium" ? await ctx.newCDPSession(page) : null;
+      if (cdp) {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x0, y: y0 }] });
+        for (let i = 1; i <= 10; i++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x0 + i * 7, y: y0 + i }] });
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await cdp.detach();
+        return;
+      }
+    }
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    for (let i = 1; i <= 10; i++) await page.mouse.move(x0 + i * 7, y0 + i);
+    await page.mouse.up();
+  }
+
+  const hashes = [await hash()];
+  for (let k = 0; k < 6; k++) { await stroke(k); hashes.push(await hash()); }
+  let s = await st();
+  check(tag, "demo: 6 strokes give 6 steps", s.steps === 6 && s.cursor === 6, s);
+  const distinct = new Set(hashes).size;
+  check(tag, "demo: each stroke changes the shape", distinct === 7, distinct);
+  let exact = true;
+  for (const p of [0, 6, 2, 5, 1, 3, 0, 6]) {
+    await page.evaluate((x) => window.__hindsightDemo.goto(x), p);
+    if ((await hash()) !== hashes[p]) exact = false;
+  }
+  check(tag, "demo: every jump is bit-exact", exact);
+  if (!opts.mobile) {
+    // drag the slider like a user
+    const tr = await page.locator("#demo .track").boundingBox();
+    await page.mouse.move(tr.x + tr.width - 1, tr.y + tr.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(tr.x + tr.width * 0.5, tr.y + tr.height / 2, { steps: 6 });
+    await page.mouse.up();
+    s = await st();
+    check(tag, "demo: dragging the slider moves through the history", s.cursor === 3 && (await hash()) === hashes[3], s);
+    // keyboard undo / redo
+    await page.locator("#demo .track").focus();
+    await page.keyboard.press("Control+z");
+    check(tag, "demo: Ctrl+Z steps back", (await st()).cursor === 2 && (await hash()) === hashes[2]);
+    await page.keyboard.press("Control+Shift+z");
+    check(tag, "demo: Ctrl+Shift+Z steps forward", (await st()).cursor === 3);
+    await page.keyboard.press("End");
+    check(tag, "demo: End goes to the last step", (await st()).cursor === 6 && (await hash()) === hashes[6]);
+    // morph target and Morph brush
+    await page.evaluate(() => window.__hindsightDemo.goto(2));
+    await page.click("#demo [data-act=menu]");
+    await page.click("#demo .menu [data-m=target]");
+    check(tag, "demo: morph target set", (await st()).target === 2);
+    await page.evaluate(() => window.__hindsightDemo.goto(6));
+    await page.click("#demo [data-tool=morph]");
+    const before = await hash();
+    check(tag, "demo: Morph tool selected", (await st()).tool === "morph");
+    await stroke(4);
+    s = await st();
+    check(tag, "demo: Morph brush paints and records a step", s.steps === 7 && (await hash()) !== before, s);
+    // Movie Mode
+    await page.click("#demo [data-tool=pull]");
+    await page.evaluate(() => window.__hindsightDemo.goto(0));
+    await page.click("#demo [data-act=play]");
+    await page.waitForTimeout(150);
+    const mid = await st();
+    await page.waitForFunction(() => !window.__hindsightDemo.state().movie, null, { timeout: 8000 });
+    s = await st();
+    check(tag, "demo: Movie Mode plays to the end", mid.movie && s.cursor === s.steps, { mid, end: s });
+    // hundreds of steps stay quick
+    if (!QUICK) {
+      const t0 = Date.now();
+      for (let k = 0; k < 150; k++) await stroke(k);
+      const t1 = Date.now();
+      await page.evaluate(() => window.__hindsightDemo.goto(0));
+      await page.evaluate(() => window.__hindsightDemo.goto(window.__hindsightDemo.state().steps));
+      const jump = Date.now() - t1;
+      s = await st();
+      check(tag, "demo: 150 more strokes stay responsive", s.steps >= 150 && jump < 1500,
+        { steps: s.steps, msPerStroke: Math.round((t1 - t0) / 150), fullJumpMs: jump });
+    }
+    // reset
+    await page.click("#demo [data-act=reset]");
+    s = await st();
+    check(tag, "demo: Reset clears the history and the shape", s.steps === 0 && (await hash()) === hashes[0], s);
+  }
+  if (name === "chromium" && !opts.mobile) {
+    // A mid-range machine: 4x CPU throttling. 60 fps needs the work for one pointer event plus one
+    // frame to fit in 16.7 ms; the test checks the 90th percentile stays under 18 ms.
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    await page.evaluate(() => { const w = window.__hindsightDemo.work(); w.input.length = 0; w.render.length = 0; });
+    const x0 = r.x + r.w * 0.4, y0 = r.y + r.h * 0.5;
+    const before = await page.evaluate(() => window.__hindsightDemo.work());
+    await page.mouse.move(x0, y0);
+    await page.mouse.down();
+    for (let i = 0; i < 60; i++) await page.mouse.move(x0 + i * 4, y0 + Math.sin(i / 6) * 24);
+    await page.mouse.up();
+    await page.waitForTimeout(100);
+    const w = await page.evaluate(() => window.__hindsightDemo.work());
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+    const inp = w.input.slice(-60).sort((a, b) => a - b), ren = w.render.slice(-60).sort((a, b) => a - b);
+    const pct = (a, q) => a[Math.min(a.length - 1, Math.floor(a.length * q))] || 0;
+    const total90 = pct(inp, 0.9) + pct(ren, 0.9);
+    check("perf", "demo: drag work per frame fits 60 fps with 4x CPU throttling (p90 input + render under 18 ms)",
+      total90 < 18, { inputP50: +pct(inp, 0.5).toFixed(2), inputP90: +pct(inp, 0.9).toFixed(2),
+        renderP50: +pct(ren, 0.5).toFixed(2), renderP90: +pct(ren, 0.9).toFixed(2), samples: inp.length });
+  }
+  check(tag, "demo: no console errors", errors.length === 0, errors.slice(0, 5));
+  await ctx.close();
+}
+
+// ------------------------------------------------------------------------ screenshots
+async function screenshots(name, browser, origin) {
+  fs.mkdirSync(OUT, { recursive: true });
+  const sizes = WIDTHS.map((w) => [w, w <= 400 ? 800 : 900]).concat([[844, 390]]);
+  for (const [w, h] of sizes) {
+    const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+    for (const p of PAGES) {
       const page = await ctx.newPage();
-      const w = watch(page);
-      await page.goto(BASE, { waitUntil: 'load' });
-      await settle(page);
-      await page.evaluate(async () => { for (let y = 0; y < document.documentElement.scrollHeight; y += innerHeight * 0.8) { scrollTo(0, y); await new Promise(r => setTimeout(r, 80)); } scrollTo(0, 0); });
+      await page.goto(origin + BASE + (p === "404.html" ? "nope/" : p), { waitUntil: "load" });
+      await page.evaluate(async () => { for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 40)); } window.scrollTo(0, 0); });
       await page.waitForTimeout(500);
-      const rm = await page.evaluate(async () => {
-        const inf = document.getAnimations().filter(a => a.playState === 'running' && a.effect && a.effect.getComputedTiming().iterations === Infinity)
-          .map(a => { const t = a.effect.target; return (a.animationName || a.constructor.name) + ' on ' + (t ? t.tagName.toLowerCase() + (t.id ? '#' + t.id : '') + (t.className && typeof t.className === 'string' ? '.' + t.className.trim().split(/\s+/).join('.') : '') : '?'); });
-        const r0 = window.__raf; await new Promise(r => setTimeout(r, 1500)); const raf = window.__raf - r0;
-        const h1 = document.querySelector('h1'); const hr = h1 && h1.getBoundingClientRect();
-        const videos = [...document.querySelectorAll('video')].filter(v => !v.paused).length;
-        return { inf, raf, h1: !!(hr && hr.width > 0 && hr.height > 0), bodyH: document.body.scrollHeight, videos };
-      });
-      check(R, 'no running infinite CSS animations', rm.inf.length === 0, short(rm.inf, 6));
-      check(R, 'page still renders (visible h1, non-trivial height)', rm.h1 && rm.bodyH > 1000, `bodyHeight=${rm.bodyH}`);
-      check(R, 'no errors / 4xx with reduced motion', w.errors.length === 0 && w.bad.length === 0, short(w.errors.concat(w.bad), 4));
-      info(R, `requestAnimationFrame calls during 1.5 s idle: ${rm.raf} (a continuous JS loop would be ~90); playing <video>s: ${rm.videos}`);
-      if (rm.raf > 45) check(R, 'no continuous JS animation loop while idle', false, `${rm.raf} rAF calls in 1.5 s`);
-      await page.screenshot({ path: path.join(OUT, 'reduced-motion-top.png') });
-      await ctx.close();
+      const over = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+      check(name, `${p || "/"} at ${w}x${h}: no horizontal scroll`, over <= 0, over);
+      const file = path.join(OUT, `${name}-${(p || "home").replace(/[\/.]/g, "_")}-${w}x${h}.png`);
+      await page.screenshot({ path: file, fullPage: true });
+      await page.close();
     }
-
-    /* ============ 2. links ============ */
-    {
-      const L = 'links';
-      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-      const page = await ctx.newPage();
-      const pages = ['', '404.html'];
-      const internal = new Map(), external = new Map(), absolute = [];
-      const idsByPage = {};
-      for (const pg of pages) {
-        const url = BASE + pg;
-        const r = await page.goto(url, { waitUntil: 'load' }).catch(() => null);
-        if (!r || r.status() !== 200) { check(L, `${pg || 'index.html'} reachable for link scan`, false, r ? r.status() : 'error'); continue; }
-        await settle(page, 300);
-        const d = await page.evaluate(() => ({
-          links: [...document.querySelectorAll('a[href]')].map(a => ({ raw: a.getAttribute('href'), abs: a.href })),
-          absolute: [...document.querySelectorAll('[href^="/"],[src^="/"],[srcset^="/"],[poster^="/"]')].map(e => e.outerHTML.slice(0, 90)),
-          ids: [...document.querySelectorAll('[id]')].map(e => e.id).concat([...document.querySelectorAll('a[name]')].map(e => e.name)),
-        }));
-        idsByPage[url.split('#')[0]] = new Set(d.ids);
-        absolute.push(...d.absolute.map(x => (pg || 'index') + ': ' + x));
-        for (const l of d.links) {
-          if (/^(mailto:|tel:|javascript:)/i.test(l.raw)) { external.set(l.raw, pg || 'index'); continue; }
-          if (l.abs.startsWith(BASE.replace(/\/Hindsight\/$/, ''))) internal.set(l.abs, { from: pg || 'index', raw: l.raw });
-          else external.set(l.abs, pg || 'index');
-        }
-      }
-      // raw source scan (HTML + CSS) for root-absolute URLs that would break under /Hindsight/
-      const srcFiles = fs.readdirSync(DOCS).filter(f => /\.html$/.test(f)).map(f => path.join(DOCS, f))
-        .concat(fs.existsSync(path.join(DOCS, 'assets')) ? fs.readdirSync(path.join(DOCS, 'assets')).filter(f => /\.(css|html|svg)$/.test(f)).map(f => path.join(DOCS, 'assets', f)) : []);
-      for (const f of srcFiles) {
-        const t = fs.readFileSync(f, 'utf8');
-        const re = /\b(?:href|src|poster|action)\s*=\s*["']\/(?!\/)[^"']*["']|url\(\s*["']?\/(?!\/)[^)"']*/g;
-        let m; while ((m = re.exec(t))) absolute.push(path.relative(DOCS, f) + ': ' + m[0].slice(0, 80));
-      }
-      check(L, 'no href/src starting with "/" (DOM + HTML/CSS sources)', absolute.length === 0, short(absolute, 6));
-      const broken = [];
-      for (const [u, meta] of internal) {
-        const [noHash, hash] = u.split('#');
-        let st;
-        try { st = (await fetch(noHash, { method: 'GET' })).status; } catch (e) { st = 'ERR'; }
-        if (st !== 200) { broken.push(`${meta.raw} (${meta.from}) -> ${st}`); continue; }
-        if (hash) {
-          let ids = idsByPage[noHash];
-          if (!ids && /\.html?$|\/$/.test(noHash)) {
-            const p2 = await ctx.newPage(); await p2.goto(noHash, { waitUntil: 'load' }).catch(() => {});
-            ids = new Set(await p2.evaluate(() => [...document.querySelectorAll('[id]')].map(e => e.id)).catch(() => []));
-            idsByPage[noHash] = ids; await p2.close();
-          }
-          if (ids && !ids.has(decodeURIComponent(hash))) broken.push(`${meta.raw} (${meta.from}) -> missing id "${hash}"`);
-        }
-      }
-      check(L, `internal links resolve (${internal.size} unique)`, broken.length === 0, short(broken, 8));
-      const badExt = [...external.keys()].filter(u => !EXTERNAL_OK.test(u));
-      check(L, `external links only to github.com/Min3scon/Hindsight* (${external.size} unique)`, badExt.length === 0, badExt);
-      info(L, 'external: ' + [...external.keys()].join(' '));
-      const want = ['/issues/new/choose', '/releases', 'LICENSE'];
-      for (const w0 of want) check(L, `has a link to the repo ${w0}`, [...external.keys()].some(u => EXTERNAL_OK.test(u) && u.includes(w0)));
-      await ctx.close();
-    }
-
-    /* ============ 3. download ============ */
-    {
-      const Z = 'download';
-      const r = await get(BASE + 'download/hindsight.zip');
-      check(Z, 'GET download/hindsight.zip -> 200', r.status === 200, r.status);
-      if (r.status === 200) {
-        check(Z, 'zip starts with "PK"', r.buf.slice(0, 2).toString('latin1') === 'PK');
-        try {
-          const z = readZip(r.buf);
-          const man = z.entries.find(e => e.name === 'blender_manifest.toml');
-          check(Z, 'blender_manifest.toml at zip root', !!man, short(z.entries.map(e => e.name), 6));
-          if (man) {
-            const toml = z.read(man).toString('utf8');
-            const v = (/^\s*version\s*=\s*"([^"]+)"/m.exec(toml) || [])[1];
-            check(Z, `manifest version == ${VERSION}`, v === VERSION, v);
-          }
-          info(Z, `${r.buf.length} bytes, ${z.entries.length} entries`);
-        } catch (e) { check(Z, 'zip central directory parses', false, e.message); }
-        if (zipSizeShown) {
-          const mult = /^M/i.test(zipSizeShown.unit) ? 1024 * 1024 : 1024;
-          const shown = zipSizeShown.n * mult, ratio = shown / r.buf.length;
-          check(Z, 'size shown on the button matches the real zip (+-20%)', ratio > 0.8 && ratio < 1.25, `shown ${zipSizeShown.n} ${zipSizeShown.unit}, real ${(r.buf.length / 1024).toFixed(1)} KB`);
-        }
-      }
-    }
-
-    /* ============ 7. meta ============ */
-    {
-      const M = 'meta';
-      const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-      const page = await ctx.newPage();
-      await page.goto(BASE, { waitUntil: 'load' });
-      const m = await page.evaluate(() => {
-        const c = s => { const e = document.querySelector(s); return e ? (e.getAttribute('content') || e.getAttribute('href')) : null; };
-        return { title: document.title, ogTitle: c('meta[property="og:title"]'), ogImage: c('meta[property="og:image"]'), ogUrl: c('meta[property="og:url"]'),
-          twCard: c('meta[name="twitter:card"]'), canonical: c('link[rel="canonical"]'), icon: c('link[rel~="icon"]'), apple: c('link[rel="apple-touch-icon"]'),
-          desc: c('meta[name="description"]'), lang: document.documentElement.lang, ogW: c('meta[property="og:image:width"]'), ogH: c('meta[property="og:image:height"]') };
-      });
-      check(M, '<title> contains "beta"', /beta/i.test(m.title || ''), m.title);
-      check(M, 'og:title contains "beta"', /beta/i.test(m.ogTitle || ''), m.ogTitle);
-      check(M, 'meta description present', !!(m.desc && m.desc.length > 30), m.desc && m.desc.slice(0, 60));
-      check(M, 'twitter:card present', !!m.twCard, m.twCard);
-      check(M, 'canonical link present (production URL)', !!m.canonical && m.canonical.startsWith(PROD), m.canonical);
-      check(M, 'og:image present and absolute https', !!m.ogImage && /^https:\/\//.test(m.ogImage), m.ogImage);
-      if (m.ogImage && m.ogImage.startsWith(PROD)) {
-        const local = BASE + m.ogImage.slice(PROD.length);
-        const r = await get(local);
-        check(M, 'og:image file exists on the site', r.status === 200, `${m.ogImage} -> ${r.status}`);
-        check(M, 'og:image is a PNG (SVG previews are ignored by most social sites)', /\.png$/i.test(m.ogImage), m.ogImage);
-      }
-      check(M, 'favicon link present', !!m.icon, m.icon);
-      if (m.icon) check(M, 'favicon resolves', (await get(new URL(m.icon, BASE).href)).status === 200, m.icon);
-      check(M, 'apple-touch-icon link present and resolves', !!m.apple && (await get(new URL(m.apple, BASE).href)).status === 200, m.apple);
-      check(M, '<html lang> set', !!m.lang, m.lang);
-      const og = await get(BASE + 'og.png');
-      if (check(M, 'og.png -> 200', og.status === 200, og.status)) {
-        const isPng = og.buf.slice(1, 4).toString('latin1') === 'PNG';
-        const W = isPng ? og.buf.readUInt32BE(16) : 0, H = isPng ? og.buf.readUInt32BE(20) : 0;
-        check(M, 'og.png is 1200x630', isPng && W === 1200 && H === 630, isPng ? `${W}x${H}` : 'not a PNG');
-      }
-      for (const f of ['sitemap.xml', 'robots.txt']) {
-        const r = await get(BASE + f);
-        check(M, `${f} -> 200`, r.status === 200, r.status);
-        if (r.status === 200 && f === 'sitemap.xml') check(M, 'sitemap.xml lists the production URL', r.buf.toString().includes(PROD), '');
-        if (r.status === 200 && f === 'robots.txt') check(M, 'robots.txt points to the sitemap', /sitemap:\s*https:\/\/min3scon\.github\.io\/Hindsight\/sitemap\.xml/i.test(r.buf.toString()), '');
-      }
-      const nf = await get(BASE + 'does-not-exist');
-      const has404 = fs.existsSync(path.join(DOCS, '404.html'));
-      check(M, 'GET /Hindsight/does-not-exist -> 404', nf.status === 404, nf.status);
-      check(M, 'custom docs/404.html served for missing paths', has404 && nf.buf.equals(fs.readFileSync(path.join(DOCS, '404.html'))), has404 ? '' : 'docs/404.html missing');
-      if (has404) {
-        const w = watch(page);
-        await page.goto(BASE + 'does-not-exist', { waitUntil: 'load' });
-        await settle(page, 300);
-        const d = await page.evaluate(() => ({ home: [...document.querySelectorAll('a[href]')].some(a => /^(\.\/|\/Hindsight\/|https:\/\/min3scon\.github\.io\/Hindsight\/?$|index\.html|\.\/index\.html)$/.test(a.getAttribute('href')) || a.href.replace(/index\.html$/, '') === location.origin + '/Hindsight/'),
-          title: document.title, sw: document.documentElement.scrollWidth, iw: innerWidth }));
-        check(M, '404 page renders without errors / 4xx subresources', w.errors.length === 0 && w.bad.filter(b => !/does-not-exist/.test(b)).length === 0, short(w.errors.concat(w.bad.filter(b => !/does-not-exist/.test(b))), 4));
-        check(M, '404 page links back to the home page', d.home, d.title);
-        await page.screenshot({ path: path.join(OUT, '404.png') });
-      }
-      await ctx.close();
-    }
-  } catch (e) {
-    check('suite', 'suite ran to completion', false, (e && e.stack || String(e)).split('\n').slice(0, 3).join(' | '));
-  } finally {
-    await browser.close().catch(() => {});
-    server.close();
+    await ctx.close();
   }
+}
+
+(async () => {
+  staticChecks();
+  const srv = await serve();
+  const origin = `http://127.0.0.1:${srv.address().port}`;
+  for (const name of BROWSERS) {
+    const browser = await pw[name].launch();
+    await pageChecks(name, browser, origin);
+    if (name === "chromium") await weight(browser, origin);
+    await demoChecks(name, browser, origin);
+    if (name === "chromium" || name === "webkit") await demoChecks(name, browser, origin, { mobile: true });
+    if (SHOTS) await screenshots(name, browser, origin);
+    await browser.close();
+  }
+  srv.close();
   console.log(`\n${passes} passed, ${fails} failed`);
-  if (fails) { console.log('\nFailures:'); failList.forEach(l => console.log('  ' + l)); }
-  process.exit(fails ? 1 : 0);
-
-  /* ------------------------------------------------------------- demo */
-  async function demoChecks(page, ctx, vp) {
-    const D = `demo ${vp}`;
-    const has = await page.evaluate(() => !!window.HindsightDemo && !!window.__qa.canvas());
-    if (!check(D, 'window.HindsightDemo exists and #hs-demo has a canvas', has)) return;
-    const box = await canvasBox(page);
-    if (!check(D, 'demo canvas has a size', !!box && box.width > 100 && box.height > 100, box)) return;
-    await page.evaluate(() => { const H = window.HindsightDemo; if (H.isPlaying()) H.pause && H.pause(); H.goto(H.steps()); });
-    const n0 = await page.evaluate(() => window.HindsightDemo.steps());
-    const snaps = [await page.evaluate(() => window.HindsightDemo.snapshot())];
-    const deltas = [];
-    // 4 real mouse drags along the outline of the clay
-    for (let k = 0; k < 4; k++) {
-      const b = await canvasBox(page);
-      const pts = await page.evaluate(k => window.__qa.pts(0.1 + k * 0.22, 10, 4, 3), k);
-      const before = await page.evaluate(() => window.HindsightDemo.steps());
-      await page.mouse.move(b.x + pts[0][0], b.y + pts[0][1]);
-      await page.mouse.down();
-      for (const p of pts.slice(1)) await page.mouse.move(b.x + p[0], b.y + p[1], { steps: 2 });
-      await page.mouse.up();
-      await page.waitForTimeout(120);
-      const after = await page.evaluate(() => window.HindsightDemo.steps());
-      deltas.push(after - before);
-      snaps.push(await page.evaluate(() => window.HindsightDemo.snapshot()));
-    }
-    check(D, '4 mouse drag strokes: steps +1 each', deltas.every(d => d === 1), `deltas ${deltas.join(',')} (start ${n0})`);
-    const changed = snaps.slice(1).map((s, i) => s.some((v, j) => v !== snaps[i][j]));
-    check(D, 'each mouse stroke changed the shape', changed.every(Boolean), changed);
-    if (vp === 'phone') {
-      const b = await canvasBox(page);
-      const pts = await page.evaluate(() => window.__qa.pts(0.5, 10, 4, 3));
-      const before = await page.evaluate(() => window.HindsightDemo.steps());
-      const cdp = await ctx.newCDPSession(page);
-      const tp = p => ({ x: b.x + p[0], y: b.y + p[1], id: 1, radiusX: 2, radiusY: 2, force: 1 });
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [tp(pts[0])] });
-      for (const p of pts.slice(1)) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [tp(p)] });
-      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await page.waitForTimeout(200);
-      const after = await page.evaluate(() => window.HindsightDemo.steps());
-      const sy = await page.evaluate(() => scrollY);
-      check(D, 'touch drag (CDP) on the canvas adds exactly one step', after - before === 1, `steps ${before} -> ${after}`);
-      info(D, `scrollY after touch drag: ${sy}`);
-      snaps.push(await page.evaluate(() => window.HindsightDemo.snapshot()));
-    }
-    // exact float equality going back and forth
-    const nS = snaps.length - 1;
-    const exact = await page.evaluate(({ n0, snaps }) => {
-      const H = window.HindsightDemo, bad = [];
-      const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i] || (v !== v && b[i] !== b[i]));
-      for (let k = snaps.length - 1; k >= 0; k--) { H.goto(n0 + k); if (!same(H.snapshot(), snaps[k])) bad.push('back ' + k); }
-      for (let k = 0; k < snaps.length; k++) { H.goto(n0 + k); if (!same(H.snapshot(), snaps[k])) bad.push('fwd ' + k); }
-      for (const k of [2, 0, snaps.length - 1, 1, 3]) { if (k < snaps.length) { H.goto(n0 + k); if (!same(H.snapshot(), snaps[k])) bad.push('jump ' + k); } }
-      return bad;
-    }, { n0, snaps });
-    check(D, `goto() back/forward/jumps reproduce snapshots exactly (${nS} strokes)`, exact.length === 0, exact);
-    // keyboard on the on-screen scrubber
-    const sel = await page.evaluate(() => {
-      const c = ['#hs-demo .hsd-track', '#hs-demo [role="slider"]', '#hs-demo input[type="range"][aria-label*="istory" i]', '#hs-demo input[type="range"][aria-label*="scrub" i]'];
-      return c.find(s => document.querySelector(s)) || null;
-    });
-    if (check(D, 'on-screen history scrubber found', !!sel, sel)) {
-      const kb = [];
-      await page.evaluate(() => { const H = window.HindsightDemo; H.goto(H.steps()); });
-      await page.focus(sel);
-      const posNow = () => page.evaluate(() => window.HindsightDemo.pos());
-      const total = await page.evaluate(() => window.HindsightDemo.steps());
-      const p0 = await posNow();
-      await page.keyboard.press('ArrowLeft'); const pL = await posNow();
-      await page.keyboard.press('ArrowLeft'); const pL2 = await posNow();
-      await page.keyboard.press('ArrowRight'); const pR = await posNow();
-      await page.keyboard.press('Home'); const pH = await posNow();
-      await page.keyboard.press('End'); const pE = await posNow();
-      kb.push({ p0, pL, pL2, pR, pH, pE, total });
-      check(D, 'scrubber keys: ArrowLeft -1, ArrowRight +1, Home -> 0, End -> last', pL === p0 - 1 && pL2 === p0 - 2 && pR === p0 - 1 && pH === 0 && pE === total, kb[0]);
-      await page.waitForTimeout(150);
-      const aria = await page.evaluate(s => { const e = document.querySelector(s); return { now: e.getAttribute('aria-valuenow') || e.value, max: e.getAttribute('aria-valuemax') || e.max }; }, sel);
-      check(D, 'scrubber exposes aria-valuenow/max matching pos()/steps()', +aria.now === pE && +aria.max === total, aria);
-      // scrub back with the keyboard, then stroke: future truncated
-      await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft');
-      const back = await posNow();
-      const b = await canvasBox(page);
-      const pts = await page.evaluate(() => window.__qa.pts(0.75, 8, 4, 3));
-      await page.mouse.move(b.x + pts[0][0], b.y + pts[0][1]); await page.mouse.down();
-      for (const p of pts.slice(1)) await page.mouse.move(b.x + p[0], b.y + p[1], { steps: 2 });
-      await page.mouse.up(); await page.waitForTimeout(120);
-      const tr = await page.evaluate(() => ({ steps: window.HindsightDemo.steps(), pos: window.HindsightDemo.pos() }));
-      check(D, 'stroke after scrubbing back truncates the future', tr.steps === back + 1 && tr.pos === back + 1, { back, ...tr, before: total });
-    }
-    // morph
-    const mr = await page.evaluate(() => {
-      const H = window.HindsightDemo, q = window.__qa;
-      H.goto(H.steps());
-      const okT = H.setMorphTarget();
-      const T = H.snapshot(), tStep = H.pos();
-      const s1 = H.stroke(q.pts(0.3, 10, 3, 3)); const s2 = H.stroke(q.pts(0.32, 10, -3, 2));
-      const S = H.snapshot(), before = H.steps();
-      const centre = q.outline(0.31);
-      const mpts = [[centre[0] - 4, centre[1] - 3], [centre[0], centre[1]], [centre[0] + 4, centre[1] + 3]];
-      const okM = H.morphStroke(mpts);
-      const A = H.snapshot(), after = H.steps();
-      const toC = (x, y) => (typeof H.toCanvas === 'function' ? H.toCanvas(x, y) : [x, y]);
-      const n = S.length / 2; let nearMoved = 0, nearCloser = 0, nearFarther = 0, farChanged = 0, farCount = 0;
-      const dT = (P, i) => Math.hypot(P[2 * i] - T[2 * i], P[2 * i + 1] - T[2 * i + 1]);
-      for (let i = 0; i < n; i++) {
-        const c = toC(S[2 * i], S[2 * i + 1]);
-        const dist = Math.min(...mpts.map(p => Math.hypot(p[0] - c[0], p[1] - c[1])));
-        const moved = A[2 * i] !== S[2 * i] || A[2 * i + 1] !== S[2 * i + 1];
-        if (dist > 160) { farCount++; if (moved) farChanged++; }
-        else if (moved && dT(S, i) > 1e-6) { nearMoved++; if (dT(A, i) < dT(S, i) - 1e-6) nearCloser++; else if (dT(A, i) > dT(S, i) + 1e-6) nearFarther++; }
-      }
-      return { okT, tStep, s1, s2, okM, before, after, nearMoved, nearCloser, nearFarther, farCount, farChanged, mt: H.morphTarget ? H.morphTarget() : null };
-    });
-    check(D, 'setMorphTarget + strokes + morphStroke: steps +1 for the morph stroke', mr.after === mr.before + 1, mr);
-    check(D, 'morph: points near the brush move toward the target', mr.nearMoved > 0 && mr.nearCloser >= mr.nearMoved * 0.8 && mr.nearFarther === 0, `near moved ${mr.nearMoved}, closer ${mr.nearCloser}, farther ${mr.nearFarther}`);
-    check(D, 'morph: points far from the brush unchanged', mr.farCount > 0 && mr.farChanged === 0, `far ${mr.farCount}, changed ${mr.farChanged}`);
-    // stats
-    const st = await page.evaluate(() => window.HindsightDemo.stats());
-    check(D, 'stats(): lastStepPoints < fullPoints (sparse step records)', st && st.lastStepPoints > 0 && st.lastStepPoints < st.fullPoints, st);
-    // play
-    const pl = await page.evaluate(async () => {
-      const H = window.HindsightDemo, n = H.steps();
-      H.framesPerStep(1); H.goto(0);
-      const started = H.play();
-      const t0 = performance.now(); let seenPlaying = H.isPlaying();
-      while (performance.now() - t0 < 20000) { await new Promise(r => setTimeout(r, 50)); if (H.isPlaying()) seenPlaying = true; if (!H.isPlaying() && H.pos() === n) break; }
-      return { n, after: H.steps(), pos: H.pos(), playing: H.isPlaying(), seenPlaying, ms: Math.round(performance.now() - t0), started };
-    });
-    check(D, 'play() reaches the last step with steps() unchanged', pl.pos === pl.n && pl.after === pl.n && !pl.playing, pl);
-    const shot = await canvasBox(page);
-    if (shot) await page.screenshot({ path: path.join(OUT, `demo-${vp}.png`) });
-  }
-
-  /* -------------------------------------------------------------- a11y */
-  async function a11yChecks(page) {
-    const A = 'a11y';
-    await page.evaluate(() => { const H = window.HindsightDemo; if (H && H.isPlaying()) H.pause && H.pause(); scrollTo(0, 0); });
-    const r = await page.evaluate(() => {
-      const name = el => {
-        if (el.getAttribute('aria-label')) return el.getAttribute('aria-label').trim();
-        const lb = el.getAttribute('aria-labelledby');
-        if (lb) return lb.split(/\s+/).map(id => (document.getElementById(id) || {}).textContent || '').join(' ').trim();
-        let t = '';
-        const walk = n => { for (const c of n.childNodes) { if (c.nodeType === 3) t += c.textContent; else if (c.nodeType === 1) { if (c.getAttribute('aria-hidden') === 'true') continue; if (c.tagName === 'IMG') t += c.getAttribute('alt') || ''; else if (c.tagName === 'svg' || c.tagName === 'SVG') { const ti = c.querySelector('title'); t += ti ? ti.textContent : (c.getAttribute('aria-label') || ''); } else walk(c); } } };
-        walk(el);
-        return (t.trim() || el.getAttribute('title') || '').trim();
-      };
-      const hidden = el => !!el.closest('[aria-hidden="true"],[hidden]') || getComputedStyle(el).display === 'none';
-      const imgs = [...document.querySelectorAll('img')].filter(i => !hidden(i) && i.getAttribute('role') !== 'presentation').filter(i => !i.hasAttribute('alt')).map(i => i.getAttribute('src'));
-      const roleImgs = [...document.querySelectorAll('[role="img"]')].filter(e => !hidden(e) && !name(e)).map(e => e.outerHTML.slice(0, 80));
-      const svgs = [...document.querySelectorAll('svg')].filter(s => !hidden(s) && !s.closest('a,button,[role="img"]') && s.getAttribute('role') !== 'img' && s.getAttribute('aria-hidden') !== 'true' && s.getBoundingClientRect().width > 0 && !s.querySelector('title'))
-        .map(s => (s.parentElement ? s.parentElement.tagName.toLowerCase() + '.' + s.parentElement.className + ' > ' : '') + 'svg.' + (s.getAttribute('class') || ''));
-      const buttons = [...document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]')].filter(b => !hidden(b) && !(b.value && b.tagName === 'INPUT') && !name(b)).map(b => b.outerHTML.slice(0, 90));
-      const links = [...document.querySelectorAll('a[href]')].filter(a => !hidden(a) && !name(a)).map(a => a.outerHTML.slice(0, 90));
-      const inputs = [...document.querySelectorAll('input:not([type="hidden"]), select, textarea')].filter(i => !hidden(i) && !i.getAttribute('aria-label') && !i.getAttribute('aria-labelledby') && !(i.labels && i.labels.length) && !i.title).map(i => i.outerHTML.slice(0, 90));
-      return { h1: document.querySelectorAll('h1').length, imgs, roleImgs, svgs, buttons, links, inputs };
-    });
-    check(A, 'exactly one <h1>', r.h1 === 1, `${r.h1} h1 elements`);
-    check(A, 'images have alt (img) / names (role=img)', r.imgs.length === 0 && r.roleImgs.length === 0, short(r.imgs.concat(r.roleImgs), 5));
-    check(A, 'buttons have accessible names', r.buttons.length === 0, short(r.buttons, 5));
-    check(A, 'links have accessible names', r.links.length === 0, short(r.links, 5));
-    check(A, 'form controls have labels', r.inputs.length === 0, short(r.inputs, 5));
-    if (r.svgs.length) info(A, `${r.svgs.length} visible standalone <svg> without aria-hidden/role=img/title (decorative ones should be aria-hidden): ${short(r.svgs, 4).join(' | ')}`);
-    // focus indicators: baseline unfocused styles of every focusable element, then Tab x30
-    await page.evaluate(() => {
-      if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
-      const sty = e => { const s = getComputedStyle(e); return { o: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 ? s.outlineStyle + ' ' + s.outlineWidth + ' ' + s.outlineColor : 'none', b: s.boxShadow }; };
-      window.__qaBase = new Map();
-      for (const e of document.querySelectorAll('a[href],button,input,select,textarea,summary,[tabindex],[contenteditable]')) window.__qaBase.set(e, sty(e));
-      window.__qaSty = sty;
-    });
-    await page.mouse.click(2, 2).catch(() => {});
-    await page.evaluate(() => { scrollTo(0, 0); if (document.activeElement) document.activeElement.blur(); });
-    const noRing = [], seen = [];
-    for (let i = 0; i < 30; i++) {
-      await page.keyboard.press('Tab');
-      await page.waitForTimeout(230);
-      const f = await page.evaluate(() => {
-        const e = document.activeElement;
-        if (!e || e === document.body) return null;
-        const base = window.__qaBase.get(e) || { o: 'none', b: 'none' };
-        const now = window.__qaSty(e);
-        // also accept a ring drawn by a wrapper via :focus-within (outline/box-shadow on the parent)
-        const p = e.parentElement, pb = p && window.__qaBase.get(p);
-        const ps = p ? window.__qaSty(p) : null;
-        const parentRing = !!(p && ps && (ps.o !== 'none' || (ps.b !== 'none')) && (!pb || ps.o !== pb.o || ps.b !== pb.b));
-        const r = e.getBoundingClientRect();
-        const label = (e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className ? '.' + e.className.trim().split(/\s+/)[0] : '') + ' "' + ((e.getAttribute('aria-label') || e.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 24)) + '"');
-        return { label, ring: (now.o !== 'none' && now.o !== base.o) || (now.b !== 'none' && now.b !== base.b) || (now.o !== 'none' && base.o === now.o && false), parentRing, visible: r.width > 0 && r.height > 0, now, base };
-      });
-      if (!f) continue;
-      seen.push(f.label);
-      if (!f.ring && !f.parentRing) noRing.push(f.label);
-    }
-    check(A, `visible focus indicator on the first ${seen.length} Tab stops`, seen.length >= 10 && noRing.length === 0, noRing.length ? short(noRing, 6) : (seen.length < 10 ? 'only ' + seen.length + ' tab stops reached' : ''));
-    info(A, 'tab order: ' + short(seen, 12).join(' | '));
-  }
-})().catch(e => { console.error('QA crashed', e); process.exit(2); });
+  if (fails) { console.log(failList.join("\n")); process.exit(1); }
+})();
