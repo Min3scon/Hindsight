@@ -185,16 +185,27 @@ class Driver:
         """One real sculpt stroke through bpy.ops.sculpt.brush_stroke (region coords)."""
         win, area, reg, ui, space = self.view3d()
         names = {p.identifier for p in bpy.types.OperatorStrokeElement.bl_rna.properties}
+        from bpy_extras import view3d_utils
+        rv3d = space.region_3d
+        ob = bpy.context.view_layer.objects.active
+        inv = ob.matrix_world.inverted()
         stroke = []
         t = 0.0
         for i, (x, y) in enumerate(pts):
-            e = {"name": "", "mouse": (x, y), "pressure": pressure, "time": t, "is_start": i == 0}
+            # The operator applies the brush at `location`: use the real surface point under (x, y).
+            o = view3d_utils.region_2d_to_origin_3d(reg, rv3d, (x, y))
+            v = view3d_utils.region_2d_to_vector_3d(reg, rv3d, (x, y))
+            lo, lv = inv @ o, (inv.to_3x3() @ v).normalized()
+            hit, loc, _n, _f = ob.ray_cast(lo, lv)
+            if not hit:
+                continue
+            e = {"name": "", "mouse": (x, y), "pressure": pressure, "time": t, "is_start": not stroke}
             if "mouse_event" in names:
                 e["mouse_event"] = (x, y)
             if "location" in names:
-                e["location"] = (0.0, 0.0, 0.0)
-            if "size" in names and size is not None:
-                e["size"] = size
+                e["location"] = tuple(ob.matrix_world @ loc)
+            if "size" in names:
+                e["size"] = float(size if size is not None else 50.0)
             if "pen_flip" in names:
                 e["pen_flip"] = False
             if "x_tilt" in names:
@@ -202,6 +213,8 @@ class Driver:
                 e["y_tilt"] = 0.0
             stroke.append(e)
             t += 0.01
+        if not stroke:
+            return {'CANCELLED'}
         with bpy.context.temp_override(window=win, screen=win.screen, area=area, region=reg):
             return bpy.ops.sculpt.brush_stroke(stroke=stroke, mode=mode)
 

@@ -448,13 +448,16 @@ def test_registry_roundtrip():
     empty = registry_from_bytes(registry_to_bytes(Registry()))
     assert empty.histories == {} and empty.by_object == {}
     # garbage -> ValueError
-    for bad in (b"", b"XXXX\x00\x00\x00\x00", b[: len(b) - 10]):
+    for bad in (b"", b"XXXX\x00\x00\x00\x00", b[:12]):
         try:
             registry_from_bytes(bad)
         except ValueError:
             pass
         else:
             raise AssertionError("expected ValueError")
+    # a cut-off tail keeps every complete step and reports the rest (format 2 salvage)
+    cut = registry_from_bytes(b[: len(b) - 10])
+    assert cut.load_report["damaged"], cut.load_report
 
 
 def test_sidecar():
@@ -472,7 +475,8 @@ def test_sidecar():
         assert sorted(os.listdir(folder)) == ["history.hsr", "index.json"]
         with open(os.path.join(folder, "index.json")) as fh:
             idx = json.load(fh)
-        assert idx["version"] == 1 and idx["blend"] == "my scene.blend" and isinstance(idx["saved_at"], float)
+        from hindsight.core.persist import FORMAT_VERSION
+        assert idx["format"] == FORMAT_VERSION and idx["blend"] == "my scene.blend" and isinstance(idx["saved_at"], float)
         assert sidecar_missing(blend, True) is False
         _assert_reg_matches(load_sidecar(blend), originals, reg)
         # save again (overwrite) -> still exactly two files

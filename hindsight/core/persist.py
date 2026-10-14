@@ -4,12 +4,21 @@ Registry blob (``history.hsr`` / embedded ID property):
 
     b"HSR1" | u32 json_len | JSON | for each history, for each entry: u64 len | Entry.to_bytes()
 
-JSON = {"version", "next_seq", "use_global", "preserve_modes", "by_object", "disabled",
-        "histories": [{"uid", "members", "cursor", "enabled", "morph_target", "n_entries",
-                       "metas": [entry.meta, ...]}]}
+JSON = {"version", "format", "writer", "next_seq", "use_global", "preserve_modes", "by_object",
+        "disabled", "histories": [{"uid", "members", "cursor", "enabled", "morph_target",
+                                   "n_entries", "metas": [entry.meta, ...], "crcs": [...]}]}
 
 Entry metas are stored in the JSON so loading never unpacks a step: entries come back as
 ``Entry(blob=..., meta=...)``.
+
+Format versions (``format``, falling back to ``version`` for files written before it existed):
+  1  beta 1. No checksums.
+  2  beta 2. Adds ``format``, ``writer`` and a CRC-32 per step (``crcs``). The binary layout is
+     unchanged, so beta 1 can still read format 2 files (it ignores the new keys).
+Loading format 1 needs no conversion: steps are read as they are and get checksums on the next save.
+A file with a format newer than FORMAT_VERSION is refused with NewerFormatError (nothing is
+guessed and nothing is overwritten). Damaged steps are never applied: a history keeps the steps
+before the first damaged one and the loss is listed in ``reg.load_report``.
 """
 from __future__ import annotations
 
@@ -17,6 +26,7 @@ import json
 import os
 import struct
 import time
+import zlib
 
 import numpy as np
 
@@ -24,7 +34,17 @@ from .journal import atomic_write, atomic_write_json
 from .types import Entry
 
 REG_MAGIC = b"HSR1"
-REG_VERSION = 1
+FORMAT_VERSION = 2
+REG_VERSION = FORMAT_VERSION   # kept for older imports
+WRITER = "Hindsight"            # replaced with "Hindsight <version>" by the add-on at register time
+
+
+class NewerFormatError(ValueError):
+    """The history was written by a newer Hindsight; this one must not guess at it."""
+
+    def __init__(self, found: int):
+        super().__init__(f"history format {found} is newer than this Hindsight understands ({FORMAT_VERSION})")
+        self.found = found
 HSR_NAME = "history.hsr"
 INDEX_NAME = "index.json"
 
@@ -74,8 +94,11 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
     hjson = []
     for h in hists:
         metas = []
+        crcs = []
         for e in h.entries:
-            blobs.append(e.to_bytes(codec))
+            b = e.to_bytes(codec)
+            blobs.append(b)
+            crcs.append(zlib.crc32(b) & 0xFFFFFFFF)
             metas.append(_meta_for_json(e.meta))
         mt = h.morph_target
         hjson.append({
@@ -86,9 +109,12 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
             "morph_target": None if mt is None else int(mt),
             "n_entries": len(h.entries),
             "metas": metas,
+            "crcs": crcs,
         })
     doc = {
-        "version": REG_VERSION,
+        "version": FORMAT_VERSION,
+        "format": FORMAT_VERSION,
+        "writer": WRITER,
         "next_seq": int(reg.next_seq),
         "use_global": bool(reg.use_global),
         "preserve_modes": bool(reg.preserve_modes),
@@ -105,6 +131,9 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
 
 
 def registry_from_bytes(b: bytes):
+    """Parse a registry blob. Raises ValueError if it is not a Hindsight blob at all, and
+    NewerFormatError for a format from the future. Damaged or missing steps are dropped (never
+    applied) and reported in ``reg.load_report``."""
     from .history import History
     from .registry import Registry
 
@@ -114,10 +143,18 @@ def registry_from_bytes(b: bytes):
     (jlen,) = _U32.unpack_from(mv, 4)
     pos = 8 + jlen
     if pos > len(mv):
-        raise ValueError("truncated Hindsight registry blob")
-    doc = json.loads(bytes(mv[8:pos]).decode("utf-8"))
+        raise ValueError("truncated Hindsight registry blob (header)")
+    try:
+        doc = json.loads(bytes(mv[8:pos]).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"damaged Hindsight registry header: {exc}") from exc
+    found = int(doc.get("format", doc.get("version", 1)) or 1)
+    if found > FORMAT_VERSION:
+        raise NewerFormatError(found)
 
     reg = Registry()
+    report = {"format": found, "writer": doc.get("writer", "Hindsight 1.0.0-beta.1 or older"),
+              "migrated": found < FORMAT_VERSION, "damaged": []}
     reg.next_seq = int(doc.get("next_seq", 1))
     reg.use_global = bool(doc.get("use_global", False))
     reg.preserve_modes = bool(doc.get("preserve_modes", True))
@@ -125,28 +162,48 @@ def registry_from_bytes(b: bytes):
     if hasattr(reg, "disabled"):
         reg.disabled = set(doc.get("disabled", []))
     max_seq = 0
+    truncated = False
     for hd in doc.get("histories", []):
         h = History(hd["uid"], list(hd.get("members", [])))
         metas = hd.get("metas", [])
+        crcs = hd.get("crcs")
+        want = int(hd.get("n_entries", 0))
         entries = []
-        for i in range(int(hd.get("n_entries", 0))):
-            if pos + 8 > len(mv):
-                raise ValueError("truncated Hindsight registry blob")
+        bad_at = None
+        for i in range(want):
+            if truncated or pos + 8 > len(mv):
+                truncated = True
+                bad_at = i if bad_at is None else bad_at
+                break
             (n,) = _U64.unpack_from(mv, pos)
             pos += 8
             if pos + n > len(mv):
-                raise ValueError("truncated Hindsight registry blob")
+                truncated = True
+                bad_at = i if bad_at is None else bad_at
+                break
             blob = bytes(mv[pos:pos + n])
             pos += n
+            if bad_at is not None:
+                continue   # keep reading past it so later histories stay aligned
+            if crcs is not None and i < len(crcs) and (zlib.crc32(blob) & 0xFFFFFFFF) != int(crcs[i]):
+                bad_at = i
+                continue
             meta = metas[i] if i < len(metas) else None
             if meta is None:
-                from .step import step_from_bytes
-                meta = step_from_bytes(blob).meta()
+                try:
+                    from .step import step_from_bytes
+                    meta = step_from_bytes(blob).meta()
+                except Exception:
+                    bad_at = i
+                    continue
             entries.append(Entry(blob=blob, meta=meta))
             try:
                 max_seq = max(max_seq, int(meta.get("seq", 0)))
             except (TypeError, ValueError):
                 pass
+        if bad_at is not None:
+            report["damaged"].append({"uid": h.uid, "members": list(h.members), "kept": len(entries),
+                                      "lost": want - len(entries)})
         h.entries = entries
         h.cursor = int(hd.get("cursor", len(entries)))
         h.enabled = bool(hd.get("enabled", True))
@@ -156,6 +213,7 @@ def registry_from_bytes(b: bytes):
         reg.histories[h.uid] = h
     if reg.next_seq <= max_seq:
         reg.next_seq = max_seq + 1
+    reg.load_report = report
     return reg
 
 
@@ -175,7 +233,9 @@ def save_sidecar(reg, blend_path: str) -> None:
     data = registry_to_bytes(reg, getattr(SETTINGS, "compression", "auto") or "auto")
     atomic_write(os.path.join(folder, HSR_NAME), data)
     atomic_write_json(os.path.join(folder, INDEX_NAME), {
-        "version": REG_VERSION,
+        "version": FORMAT_VERSION,
+        "format": FORMAT_VERSION,
+        "writer": WRITER,
         "blend": os.path.basename(blend_path),
         "saved_at": time.time(),
     })
@@ -188,6 +248,24 @@ def load_sidecar(blend_path: str):
     with open(path, "rb") as fh:
         data = fh.read()
     return registry_from_bytes(data)
+
+
+def sidecar_file(blend_path: str) -> str:
+    return os.path.join(sidecar_dir(blend_path), HSR_NAME)
+
+
+def set_aside(path: str) -> str | None:
+    """Rename an unreadable history file so the next save can't overwrite it. Returns the new name."""
+    if not os.path.isfile(path):
+        return None
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    dst = f"{path}.unreadable-{stamp}"
+    n = 1
+    while os.path.exists(dst):
+        n += 1
+        dst = f"{path}.unreadable-{stamp}-{n}"
+    os.replace(path, dst)
+    return dst
 
 
 def sidecar_missing(blend_path: str, expected: bool) -> bool:

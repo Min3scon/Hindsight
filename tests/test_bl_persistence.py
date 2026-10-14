@@ -114,17 +114,17 @@ def test_missing_sidecar_message():
     os.rename(path, moved)            # .blend moved without its folder
     ob = reopen(moved)
     msg = runtime.missing_message[0]
-    assert msg and "Undo History Not Found" in msg, msg
+    assert msg and "History folder missing" in msg, msg
     assert "renamed_hindsight" in msg, msg
     assert runtime.history_of(ob) is None
-    assert any("Undo History Not Found" in t for _s, t in runtime.warnings_for(C, ob))
+    assert any("History folder missing" in t for _s, t in runtime.warnings_for(C, ob))
     # deleted folder: same message
     path2 = os.path.join(TMP, "deleted.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path2)
     assert runtime.missing_message[0] is None, "saving clears the message"
     shutil.rmtree(persist.sidecar_dir(path2))
     reopen(path2)
-    assert "Undo History Not Found" in (runtime.missing_message[0] or "")
+    assert "History folder missing" in (runtime.missing_message[0] or "")
     # a file that never had a sidecar shows nothing
     setup("EMBED")
     path3 = os.path.join(TMP, "embedded_only.blend")

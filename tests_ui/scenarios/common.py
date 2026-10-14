@@ -60,9 +60,22 @@ def stroke_pts(reg, k=0, n=26, span=0.22):
             for i in range(n)]
 
 
+def warm_up(d):
+    """Generator: hover the viewport first. The first simulated press of a fresh window can be
+    eaten by the window itself (focus), which would make the first stroke miss."""
+    win, area, reg, ui, space = d.view3d()
+    for k in range(4):
+        d.ev("MOUSEMOVE", x=reg.x + reg.width // 2 + k * 5, y=reg.y + reg.height // 2)
+        yield 0.05
+    yield 0.2
+
+
 def real_stroke(d, k=0):
     """Generator: one stroke with simulated mouse input, then wait for the recorder to commit."""
     win, area, reg, ui, space = d.view3d()
+    if not getattr(d, "_warmed", False):
+        d._warmed = True
+        yield from warm_up(d)
     yield from d.drag(reg, stroke_pts(reg, k), step_wait=0.015)
     yield 0.45
 

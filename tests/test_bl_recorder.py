@@ -115,7 +115,8 @@ def test_native_undo_sync_and_f9_replace():
     # simulate native undo restoring the previous state
     from hindsight.bl import meshio
     meshio.write_changes(ob.data, st[2], ["position|POINT|FLOAT_VECTOR"])
-    assert H.commit(ob) is None and h.cursor == 2, "native undo must move the cursor, not add a step"
+    runtime.on_undo()                         # Blender calls this after its own undo
+    assert len(h.entries) == 3 and h.cursor == 2, "native undo must move the cursor, not add a step"
     # F9: operator re-executed with new settings -> replaces the same step silently
     SETTINGS.truncation_threshold = 1
     H.fake_stroke(ob, 77)

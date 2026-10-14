@@ -117,10 +117,11 @@ def _drop(h, n: int) -> int:
     return n if r is None else int(r)
 
 
-def enforce_caps(histories: list, settings) -> int:
+def enforce_caps(histories: list, settings, stats: dict | None = None) -> int:
     """Apply max_steps per history, then the global memory limit (oldest seq first).
 
-    Returns the number of entries dropped.
+    Returns the number of entries dropped. If `stats` is given it receives "memory_dropped"
+    (steps dropped because of the memory limit) and "total" (bytes after dropping).
     """
     dropped = 0
     max_steps = max(1, int(settings.max_steps))
@@ -131,6 +132,9 @@ def enforce_caps(histories: list, settings) -> int:
 
     limit = int(settings.memory_limit_mb) * (1 << 20)
     total = total_bytes(histories)
+    if stats is not None:
+        stats["memory_dropped"] = 0
+        stats["total"] = total
     if total <= limit:
         return dropped
     # plan: merge histories by seq of their oldest remaining entry; count drops per history
@@ -147,4 +151,7 @@ def enforce_caps(histories: list, settings) -> int:
             heapq.heappush(heap, (entries[j + 1].meta.get("seq", 0), i))
     for i, n in enumerate(plan):
         dropped += _drop(histories[i], n)
+    if stats is not None:
+        stats["memory_dropped"] = sum(plan)
+        stats["total"] = total
     return dropped

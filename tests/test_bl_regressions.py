@@ -115,7 +115,31 @@ def test_registration_survives_a_broken_module():
         H._registered[0] = True
 
 
-for fn in (test_handlers_survive_file_open, test_handlers_reinstalled_if_removed,
+def test_reversing_change_is_recorded_not_mistaken_for_undo():
+    """Round C, beta 2: filling a mask and then clearing it was taken for a native undo of the
+    fill, so the clear was never recorded and later jumps showed the wrong mask."""
+    H.fresh()
+    ob = H.make_mesh(800)
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 1)
+    H.commit(ob)
+    me = ob.data
+    a = me.attributes.new(".sculpt_mask", "FLOAT", "POINT")
+    a.data.foreach_set("value", [0.4] * len(me.vertices))
+    me.update()
+    H.commit(ob)                               # fill mask
+    me.attributes.remove(me.attributes[".sculpt_mask"])   # Blender removes the layer on clear
+    me.update()
+    H.commit(ob)                               # clear mask: a new step, not an undo
+    h = runtime.history_of(ob)
+    assert len(h.entries) == 3 and h.cursor == 3, (len(h.entries), h.cursor)
+    runtime.goto(bpy.context, 2)
+    assert ".sculpt_mask" in me.attributes
+    runtime.goto(bpy.context, 3)
+    assert ".sculpt_mask" not in me.attributes
+
+
+for fn in (test_reversing_change_is_recorded_not_mistaken_for_undo, test_handlers_survive_file_open, test_handlers_reinstalled_if_removed,
            test_slider_clears_asset_shelf_and_side_panels, test_slider_shows_empty_track_before_first_stroke,
            test_guard_switches_off_one_feature_and_logs_once, test_registration_survives_a_broken_module):
     H.run(fn)

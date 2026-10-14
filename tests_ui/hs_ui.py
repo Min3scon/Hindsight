@@ -202,6 +202,8 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
+    mm = sub.add_parser("models")
+    mm.add_argument("what", nargs="*", help="sizes shapes scene data awkward (default: all)")
     b = sub.add_parser("build")
     b.add_argument("--out", default=str(DEFAULT_ZIP))
     i = sub.add_parser("install")
@@ -228,6 +230,11 @@ def main(argv=None):
     if a.cmd == "build":
         build(blenders, Path(a.out))
         return 0
+    if a.cmd == "models":
+        exe = blenders[-1][1]
+        cmd = [str(exe), "-b", "--factory-startup", "--python-exit-code", "1", "--python",
+               str(HERE / "make_test_models.py"), "--", str(ROOT / "test_models")] + list(a.what)
+        return subprocess.run(cmd, env=sandbox_env("models")).returncode
     if a.cmd == "install":
         for tag, exe in select(blenders, a.blender):
             if a.fresh:

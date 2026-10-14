@@ -18,6 +18,7 @@ class Registry:
         self.use_global: bool = False
         self.preserve_modes: bool = True
         self.disabled: set = set()     # object uids with "Reset and Turn Off" applied
+        self.load_report = None        # set by persist.registry_from_bytes
 
     def new_seq(self) -> int:
         s = self.next_seq

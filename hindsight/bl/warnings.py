@@ -27,6 +27,9 @@ TXT_VGROUPS = "Vertex groups and weight paint are not stored"
 TXT_MATERIALS = "Materials are not stored in history"
 TXT_TRANSFORM = ("Object transforms are not recorded: moving the object can make older steps "
                  "play back in the wrong place")
+TXT_LARGE = ("Large mesh ({verts:.1f}M vertices). Steps that change most of it use a lot of memory; "
+             "the memory limit is {limit} MB")
+LARGE_VERTS = 1_500_000
 
 DEFORM_TYPES = frozenset({
     'ARMATURE', 'DISPLACE', 'LATTICE', 'CURVE', 'HOOK', 'MESH_DEFORM', 'SURFACE_DEFORM', 'CAST',
@@ -97,6 +100,10 @@ def collect(context, obj) -> list:
 
         data = getattr(obj, "data", None)
         if data is not None and getattr(obj, "type", 'MESH') == 'MESH':
+            nv = len(getattr(data, "vertices", ()))
+            if nv >= LARGE_VERTS:
+                from ..core.types import SETTINGS
+                out.append((WARNING, TXT_LARGE.format(verts=nv / 1e6, limit=int(SETTINGS.memory_limit_mb))))
             if getattr(data, "users", 1) > 1:
                 out.append((WARNING, TXT_LINKED))
             if getattr(data, "shape_keys", None) is not None:

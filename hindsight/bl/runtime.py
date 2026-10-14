@@ -27,9 +27,14 @@ _TRACK = {"name": None, "uid": None, "mode": None}
 _SUSPEND = [0]
 IN_HANDLER = [False]          # True while Movie Mode applies a step from a frame-change handler
 _LAST_UNDO_MATCH = [0.0]
+# Objects whose next commit may be a Blender undo/redo landing on a recorded neighbour. Set by the
+# undo_post/redo_post handler. Without it, a change that happens to reverse the previous step
+# (fill a mask, then clear it) would be mistaken for an undo and not recorded.
+_NATIVE_PENDING: set = set()
 _UID_CACHE: dict = {}
 _PENDING_TRUNCATE: dict = {}  # object uid -> number of future steps awaiting confirmation
-missing_message = [None]      # "Undo History Not Found" text, set by persistence
+missing_message = [None]      # history folder missing for this file, set by persistence
+load_notes = []               # [(severity, text)] problems found while loading this file
 
 journal_hook = None           # persistence sets: fn(rtype: str, header: dict, payload_fn or None)
 packer = None
@@ -43,9 +48,11 @@ def reg() -> Registry:
 def set_registry(r: Registry) -> None:
     global _REG
     _REG = r
+    MEMORY.update(estimate=0, evicted=0, warned=False)
     _STATES.clear()
     _DIRTY.clear()
     _UID_CACHE.clear()
+    _NATIVE_PENDING.clear()
     _TRACK.update(name=None, uid=None, mode=None)
 
 
@@ -376,9 +383,11 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         except Exception:
             pass
     step = _observe(obj, st, full, label, mode)
+    native = uid in _NATIVE_PENDING
+    _NATIVE_PENDING.discard(uid)
     if step is None:
         return None
-    if h is not None:
+    if h is not None and native:
         # Native undo / redo / F9 redo moved the mesh onto a neighbouring recorded state.
         if h.cursor > 0 and _inverse_matches(step, h.entries[h.cursor - 1].load()):
             h.cursor -= 1
@@ -393,6 +402,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
             _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
             tag_redraw_all()
             return None
+    if h is not None:
         fut = h.future_count()
         if fut > 0:
             replace = fut == 1 and time.time() - _LAST_UNDO_MATCH[0] < 3.0
@@ -457,15 +467,36 @@ def confirm_truncate(obj) -> int:
 
 
 _ENFORCE_COUNT = [0]
+# Memory accounting: "estimate" is an upper bound of the history size (new steps are added at their
+# unpacked size), so the exact (slower) check only runs when the limit might be crossed.
+MEMORY = {"estimate": 0, "evicted": 0, "warned": False}
+MEMORY_TEXT = ("Memory limit reached: the oldest steps are being dropped to stay under {limit} MB. "
+               "Raise the limit in Preferences if you want to keep more")
+
+
+def _note_eviction(n: int) -> None:
+    MEMORY["evicted"] += n
+    if not MEMORY["warned"]:
+        MEMORY["warned"] = True
+        text = MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
+        log.warn(text)
+        try:
+            from .selfcheck import flash_status
+            flash_status("Hindsight: " + text, 15.0)
+        except Exception:
+            pass
 
 
 def _enforce(h=None) -> None:
-    """Keep caps and tiers. Incremental per commit (O(1)); full rescans only every 64 commits,
-    so recording cost does not grow with history length."""
+    """Keep caps and tiers. Incremental per commit (O(1)); full rescans every 64 commits or when
+    the memory estimate crosses the limit, so recording cost does not grow with history length."""
     try:
         from ..core import store
         _ENFORCE_COUNT[0] += 1
-        if h is not None and _ENFORCE_COUNT[0] % 64:
+        if h is not None and h.entries:
+            MEMORY["estimate"] += h.entries[-1].nbytes()
+        over_limit = MEMORY["estimate"] > int(SETTINGS.memory_limit_mb) * (1 << 20)
+        if h is not None and _ENFORCE_COUNT[0] % 64 and not over_limit:
             excess = len(h.entries) - SETTINGS.max_steps
             if excess > 0:
                 h.drop_oldest(excess)
@@ -477,8 +508,12 @@ def _enforce(h=None) -> None:
                     h.entries[k].pack(SETTINGS.compression)
             return
         hs = _REG.all()
-        store.enforce_caps(hs, SETTINGS)
+        stats = {}
+        store.enforce_caps(hs, SETTINGS, stats)
+        if stats.get("memory_dropped"):
+            _note_eviction(int(stats["memory_dropped"]))
         store.enforce_tiers(hs, SETTINGS, packer)
+        MEMORY["estimate"] = store.total_bytes(hs)
     except Exception as e:
         log.error_once(("store", str(e)), f"history store error: {e}", e)
 
@@ -577,6 +612,7 @@ def tick() -> float:
 def on_undo(*_a) -> None:
     """After native undo/redo: compare the mesh with our state (commit() detects the match)."""
     _UID_CACHE.clear()
+    _NATIVE_PENDING.update(_STATES.keys())   # objects in other modes are checked on their next commit
     obj = _active()
     if obj is not None and obj.type == "MESH" and obj.mode in RECORD_MODES:
         if obj_uid(obj) in _STATES:
@@ -863,6 +899,10 @@ def warnings_for(context, obj) -> list:
     out = []
     if missing_message[0]:
         out.append(("ERROR", missing_message[0]))
+    out.extend(load_notes)
+    if MEMORY["evicted"]:
+        out.append(("WARNING", MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
+                    + f". Dropped so far: {MEMORY['evicted']} steps"))
     try:
         from .warnings import collect
         out.extend(collect(context, obj))

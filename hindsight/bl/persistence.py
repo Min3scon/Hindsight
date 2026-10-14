@@ -29,7 +29,18 @@ from . import guard, runtime
 TEXT_NAME = ".hindsight_history"
 DATA_PROP = "hindsight_data"
 SIDECAR_PROP = "sidecar"
-MISSING_TEXT = "Undo History Not Found: keep the '{folder}' folder next to the .blend"
+MISSING_TEXT = "History folder missing. Keep '{folder}' next to the .blend to see this file's history"
+NEWER_TEXT = ("This history was saved by a newer Hindsight (format {found}). Update Hindsight to see it. "
+              "It is left untouched until then")
+UNREADABLE_TEXT = ("The saved history could not be read, so it was not loaded. Your .blend is fine. "
+                   "The unreadable copy was kept as '{name}'")
+UNREADABLE_EMBED_TEXT = ("The history stored in this .blend could not be read, so it was not loaded. "
+                         "It is kept in the file in case it can be recovered")
+DAMAGED_TEXT = "{lost} damaged step{s} of '{obj}' could not be loaded. The {kept} steps before them are fine"
+UNREADABLE_PROP = "hindsight_data_unreadable"
+
+# Set while loading a file whose history this version must not overwrite (newer format).
+_PROTECT = {"sidecar": False, "embed": False}
 
 _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 
@@ -162,7 +173,9 @@ def on_save_pre(*args) -> None:
             text = bpy.data.texts.new(TEXT_NAME)
         text.use_fake_user = True
         text[SIDECAR_PROP] = mode in ("SIDECAR", "BOTH")
-        if mode in ("EMBED", "BOTH"):
+        if _PROTECT["embed"]:
+            pass   # history from a newer Hindsight: keep it exactly as it was
+        elif mode in ("EMBED", "BOTH"):
             data = persist.registry_to_bytes(runtime.reg(), _codec())
             text[DATA_PROP] = base64.b64encode(data).decode("ascii")
         elif DATA_PROP in text:
@@ -178,7 +191,9 @@ def on_save_post(*args) -> None:
     if not path:
         return
     mode = _mode()
-    if mode in ("SIDECAR", "BOTH"):
+    if mode in ("SIDECAR", "BOTH") and _PROTECT["sidecar"] and os.path.isfile(persist.sidecar_file(path)):
+        runtime.log.warn("history folder left untouched: it was saved by a newer Hindsight")
+    elif mode in ("SIDECAR", "BOTH"):
         try:
             _drain_packer()
             persist.save_sidecar(runtime.reg(), path)
@@ -201,39 +216,81 @@ def on_save_post(*args) -> None:
 def on_load_pre(*args) -> None:
     _close_journal(remove_untitled=True)
     runtime.missing_message[0] = None
+    runtime.load_notes.clear()
+    _PROTECT["sidecar"] = _PROTECT["embed"] = False
+
+
+def _note(sev, text):
+    runtime.load_notes.append((sev, text))
+    (runtime.log.warn if sev != "INFO" else runtime.log.info)(text)
 
 
 def _load_registry(path: str, text):
+    """The saved registry for this file, or None. Never raises; problems become sidebar notes."""
     mode = _mode()
-    reg = None
     embedded = text is not None and DATA_PROP in text
 
     def from_text():
         try:
             return persist.registry_from_bytes(base64.b64decode(text[DATA_PROP]))
+        except persist.NewerFormatError as e:
+            _PROTECT["embed"] = True
+            _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
-            guard.fail("loading", e, "embedded undo history unreadable")
-            return None
+            runtime.log.error_once(("embed_unreadable", str(e)), f"embedded history unreadable: {e}", e)
+            try:
+                text[UNREADABLE_PROP] = text[DATA_PROP]   # keep the bytes, out of the way
+                del text[DATA_PROP]
+            except Exception:
+                pass
+            _note("ERROR", UNREADABLE_EMBED_TEXT)
+        return None
 
     def from_sidecar():
         if not path:
             return None
         try:
             return persist.load_sidecar(path)
+        except persist.NewerFormatError as e:
+            _PROTECT["sidecar"] = True
+            _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
-            guard.fail("loading", e, "undo history folder unreadable")
-            return None
+            runtime.log.error_once(("sidecar_unreadable", str(e)), f"history file unreadable: {e}", e)
+            try:
+                moved = persist.set_aside(persist.sidecar_file(path))
+            except OSError:
+                moved = None
+            _note("ERROR", UNREADABLE_TEXT.format(name=os.path.basename(moved or persist.HSR_NAME)))
+        return None
 
     if mode == "EMBED":
-        if embedded:
-            reg = from_text()
+        reg = from_text() if embedded else None
         if reg is None:
             reg = from_sidecar()
     else:
         reg = from_sidecar()
         if reg is None and embedded:
             reg = from_text()
+    if reg is not None:
+        _report_load(reg)
     return reg
+
+
+def _report_load(reg) -> None:
+    rep = getattr(reg, "load_report", None) or {}
+    for d in rep.get("damaged", []):
+        obj = None
+        for m in d.get("members", []):
+            ob = runtime.find_object(m)
+            if ob is not None:
+                obj = ob.name
+                break
+        lost = int(d.get("lost", 0))
+        _note("ERROR", DAMAGED_TEXT.format(lost=lost, s="" if lost == 1 else "s", obj=obj or "an object",
+                                           kept=int(d.get("kept", 0))))
+    if rep.get("migrated"):
+        runtime.log.info(f"loaded history format {rep.get('format')} ({rep.get('writer')}); "
+                         f"it is saved as format {persist.FORMAT_VERSION} from now on")
 
 
 @bpy.app.handlers.persistent
@@ -291,6 +348,14 @@ def on_load_post(*args) -> None:
         except Exception as e:
             guard.fail("loading", e, "journal error on load")
     runtime.tag_redraw_all()
+    problems = ([runtime.missing_message[0]] if runtime.missing_message[0] else []) +         [t for sev, t in runtime.load_notes if sev == "ERROR"]
+    if problems:
+        more = f" ({len(problems) - 1} more in the Undo History tab)" if len(problems) > 1 else ""
+        try:
+            from .selfcheck import flash_status
+            flash_status("Hindsight: " + problems[0] + more, 15.0)
+        except Exception:
+            pass
 
 
 # ----------------------------------------------------------------------------- register
@@ -301,6 +366,11 @@ _HANDLERS = (
 
 
 def register() -> None:
+    try:
+        from .selfcheck import addon_version
+        persist.WRITER = f"Hindsight {addon_version()}"
+    except Exception:
+        pass
     for name, fn in _HANDLERS:
         hl = getattr(bpy.app.handlers, name)
         if fn not in hl:

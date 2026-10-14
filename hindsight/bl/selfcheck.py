@@ -351,6 +351,30 @@ WELCOME = "Hindsight is on. Press N and open the Undo History tab, or make a str
 _STATUS_WS = []
 
 
+def flash_status(text, seconds=12.0):
+    """Show one line in the status bar for a few seconds (from any context, never raises)."""
+    if bpy.app.background:
+        return
+
+    def _show():
+        try:
+            wm = bpy.context.window_manager
+            win = wm.windows[0] if wm and wm.windows else None
+            if win is None:
+                return 1.0
+            with bpy.context.temp_override(window=win, screen=win.screen):
+                ws = win.workspace
+                ws.status_text_set(text)
+                _STATUS_WS.append(ws)
+            if bpy.app.timers.is_registered(_clear_status):
+                bpy.app.timers.unregister(_clear_status)
+            bpy.app.timers.register(_clear_status, first_interval=seconds)
+        except Exception as exc:
+            log.error_once(("flash_status", str(exc)), f"status message failed: {exc}", exc)
+        return None
+    bpy.app.timers.register(_show, first_interval=0.05)
+
+
 def _clear_status():
     for ws in _STATUS_WS:
         try:
