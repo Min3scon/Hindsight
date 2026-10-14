@@ -130,9 +130,14 @@ def show_sidebar_tab(d, name="Undo History"):
     d.log("could not switch the sidebar to", name, "now", ui.active_panel_category)
 
 
+_DIGITS = ("ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE")
+
+
 def type_text(d, text):
     for ch in text:
         key = {" ": "SPACE", "-": "MINUS", ".": "PERIOD"}.get(ch, ch.upper())
+        if ch.isdigit():
+            key = _DIGITS[int(ch)]
         d.ev(key, "PRESS", unicode=ch)
         d.ev(key, "RELEASE")
 
