@@ -402,6 +402,10 @@
         res = commit(labelOverride || TOOL_INFO[st.tool].label);
         if (res) {
           flashStart(false);
+          if (morphTarget < 0 && tool === 'morph') {
+            tool = 'grab';
+            toast('The morph target was on the dropped branch, so it was cleared');
+          }
           if (res.dropped) toast('New branch: ' + res.dropped + ' later step' + (res.dropped === 1 ? '' : 's') + ' dropped');
           if (st.tool === 'morph') toast('Morph stroke recorded as step ' + cursor);
         }
@@ -777,7 +781,7 @@
       if (uiDirty) updateUI();
       var animating = flashStep >= 0 && !flashHold && !reducedMotion() && flashAlpha() > 0;
       if (needDraw || animating) draw();
-      if (playing || animating) rafId = requestAnimationFrame(frame);
+      if ((playing || animating) && !rafId) rafId = requestAnimationFrame(frame);
     }
 
     /* ------------------------------------------------------------ playback */
@@ -814,8 +818,9 @@
       var stepMs = framesPerStep * FRAME_MS;
       while (playAcc >= stepMs - 0.5) {
         playAcc -= stepMs;
-        if (cursor >= steps.length) { pause(true); return; }
+        if (cursor >= steps.length) { pause(true); flashStart(false); return; }
         seek(cursor + 1);
+        flashStep = cursor - 1; flashHold = true;
         uiDirty = true; needDraw = true;
       }
     }
@@ -1109,10 +1114,6 @@
     function toModelX(cx) { return (cx - ox) / scale; }
     function toModelY(cy) { return (cy - oy) / scale; }
 
-    function localXY(e) {
-      var r = canvas.getBoundingClientRect();
-      return [e.clientX - r.left, e.clientY - r.top];
-    }
     var canvasRect = null;
 
     canvas.addEventListener('pointerdown', function (e) {
@@ -1191,14 +1192,14 @@
     track.addEventListener('lostpointercapture', scrubEnd);
     track.addEventListener('keydown', function (e) {
       if (playing || !historyOn) return;
-      var t = -1;
+      var t;
       if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') t = cursor - 1;
       else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') t = cursor + 1;
       else if (e.key === 'PageDown') t = cursor - 10;
       else if (e.key === 'PageUp') t = cursor + 10;
       else if (e.key === 'Home') t = 0;
       else if (e.key === 'End') t = steps.length;
-      if (t === -1 && e.key !== 'ArrowLeft' && e.key !== 'ArrowDown') return;
+      else return;
       e.preventDefault();
       gotoStep(clamp(t, 0, steps.length));
     });
