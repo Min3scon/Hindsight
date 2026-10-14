@@ -78,6 +78,15 @@ killed). Real-stroke corpora: `tests_ui/scenarios/s_corpus.py` -> `.tmp/corpus` 
 reachable losslessly on real strokes (best: 7.9 KB at 100k, 2%; see PERF_LOG). Decode-ahead threads
 were removed: inside Blender they made long jumps slower.
 
+### Push log (verified with git ls-remote after each push)
+- 2026-10-14 d200842: tier 0 gate, default branch and hindsight-wip.
+- 2026-10-14 f0d94ef: compression (format 3), hindsight-wip. The owner then merged it into the
+  default branch on GitHub (PR #1, 934df91); that merge ran CI, which failed the copy check (a docs
+  paragraph over 55 words), so nothing deployed.
+- 2026-10-14 def2188 (merge of 934df91) and fc2b6d3 (copy fix): compression gate, both branches.
+  Pushes keep `[skip ci]` until the new site is ready to go live.
+- Work on Step 3B happens on branch `step3b` in the worktree `.tmp/wt3b` (git-ignored folder).
+
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
 adapter records, migration from 1-3) -> Tiers 1..6 -> website v2 -> final test passes -> ship.
