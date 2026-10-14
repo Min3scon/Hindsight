@@ -107,6 +107,27 @@ def enforce_caps(histories: list, settings: Settings) -> int
 def total_bytes(histories: list) -> int
 ```
 
+## 2b. Data records and adapters (Step 3B)
+
+```python
+# core/types.py
+DATA = "DATA"                                   # step kind with records only
+MISSING                                         # a path that doesn't exist on one side
+DataChange(adapter: str, target: str, changes: dict[path, (old, new)])   # JSON values, exact floats
+Step.records: list[DataChange]                  # on any step kind
+
+# core/history.py
+MeshState.values: dict[(adapter, path), value]  # recorded data of the datablock
+MeshState.apply_record(rec, forward) -> set     # changed keys ("@", adapter, path)
+
+# bl/adapters.py
+class Adapter: id, id_types, budget_ms; capture(idb) -> {path: value}; write(idb, values, recorded)
+ALLOWLIST: {ID type: ((path, "value" | "ref"), ...)}; DEPENDENTS: {path: (paths rewritten after it)}
+animated_paths(idb) -> set                      # never recorded by the generic adapter
+# bl/datarec.py: on_update (depsgraph), tick (boundaries), commit, write, push_undo, on_undo, prime
+# bl/idmap.py: uid_of, claim (copies get a new id), find, forget
+```
+
 ## 3. Restore engine — `core/history.py`
 
 ```python

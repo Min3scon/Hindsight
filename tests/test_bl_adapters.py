@@ -166,6 +166,27 @@ def test_capture_budget():
     assert per < a.budget_ms, per
 
 
+def test_animation_is_not_recorded():
+    """Animated and driven properties change with the frame, not the user: never recorded."""
+    ob = setup()
+    datarec.set_tracked(ob, True)
+    uid = runtime.obj_uid(ob)
+    ob.keyframe_insert("location", frame=1)
+    ob.location = (3, 2, 1)
+    ob.keyframe_insert("location", frame=20)
+    fc = ob.driver_add("scale", 0)
+    fc.driver.expression = "frame / 10"
+    datarec.baseline(ob, uid, refresh=True)
+    for f in (1, 5, 12, 20):
+        C.scene.frame_set(f)
+        assert not datarec.commit(uids=[uid]), f
+    assert "location" not in adapters.ADAPTERS["rna"].capture(ob)
+    assert "scale" not in adapters.ADAPTERS["rna"].capture(ob)
+    ob.rotation_euler = (0.5, 0, 0)                      # a property that isn't animated still records
+    steps = datarec.commit(uids=[uid])
+    assert len(steps) == 1 and set(steps[0].records[0].changes) == {"rotation_euler"}, steps
+
+
 def test_awkward_values_round_trip():
     ob = setup()
     datarec.set_tracked(ob, True)
@@ -205,7 +226,8 @@ def test_rotation_mode_switches():
 
 
 for t in (test_records_transforms_and_plays_back, test_rotation_mode_switches, test_packed_and_saved, test_scope_and_opt_in,
-          test_ids_survive_copies, test_capture_budget, test_awkward_values_round_trip):
+          test_ids_survive_copies, test_capture_budget, test_animation_is_not_recorded,
+          test_awkward_values_round_trip):
     H.run(t)
 datarec.FORCE_SCOPE[0] = None
 H.finish()

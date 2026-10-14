@@ -112,6 +112,11 @@ def on_update(depsgraph) -> None:
     uids = tracked_uids()
     if not uids:
         return
+    try:
+        if bpy.context.screen is not None and bpy.context.screen.is_animation_playing:
+            return            # playback changes animated values every frame; nothing to record
+    except Exception:
+        pass
     now = time.time()
     for u in depsgraph.updates:
         idv = u.id

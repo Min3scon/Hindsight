@@ -38,6 +38,40 @@ DEPENDENTS: dict = {
 }
 
 
+def _fcurve_paths(action, slot) -> set:
+    out = set()
+    if action is None:
+        return out
+    try:
+        from bpy_extras import anim_utils
+        cb = anim_utils.action_get_channelbag_for_slot(action, slot)
+        if cb is not None:
+            out.update(f.data_path for f in cb.fcurves)
+        return out
+    except Exception:
+        pass
+    try:                                                    # Blender 4.x: legacy actions
+        out.update(f.data_path for f in action.fcurves)
+    except Exception:
+        pass
+    return out
+
+
+def animated_paths(idb) -> set:
+    """RNA paths an animation, an NLA strip or a driver sets on this datablock. Their values change
+    with the frame, not with the user, so the generic adapter never records them (Tier 4 records
+    the animation itself)."""
+    ad = getattr(idb, "animation_data", None)
+    if ad is None:
+        return set()
+    out = {f.data_path for f in ad.drivers}
+    out |= _fcurve_paths(ad.action, getattr(ad, "action_slot", None))
+    for track in ad.nla_tracks:
+        for strip in track.strips:
+            out |= _fcurve_paths(strip.action, getattr(strip, "action_slot", None))
+    return out
+
+
 def normalise(v):
     """A property value as a JSON value (exact)."""
     if v is None or isinstance(v, (bool, int, float, str)):
@@ -95,7 +129,10 @@ class RNAAdapter(Adapter):
 
     def capture(self, idb) -> dict:
         out = {}
+        skip = animated_paths(idb)
         for path, _kind in self.rows(idb):
+            if path in skip:
+                continue
             try:
                 out[path] = normalise(idb.path_resolve(path))
             except Exception:

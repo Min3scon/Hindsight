@@ -128,6 +128,47 @@ def check_yaml_text(path):
             check_text(f"{path.relative_to(ROOT)}:{i}", text, MAX_WORDS_SITE)
 
 
+# --------------------------------------------------------------------------- coverage
+# A data type that COVERAGE.md doesn't list as supported or opt-in may only be named in a sentence
+# that says it isn't recorded (or is planned).
+NEGATIONS = ("not recorded", "isn't recorded", "aren't recorded", "not record", "doesn't record",
+             "don't record", "doesn't work with", "don't work with", "planned", "paused", "not yet",
+             "not supported", "aren't part of", "isn't part of", "not part of")
+
+
+def _coverage_terms():
+    path = ROOT / "COVERAGE.md"
+    if not path.is_file():
+        return []
+    terms = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|") or line.startswith("|---") or line.startswith("| Data "):
+            continue
+        cols = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cols) < 7 or cols[1].lower() in ("supported", "opt-in"):
+            continue
+        terms += [t.strip().lower() for t in cols[-1].split(";") if t.strip()]
+    return sorted(set(terms), key=len, reverse=True)
+
+
+COVERAGE_TERMS = _coverage_terms()
+_COVERAGE_SEEN = set()
+
+
+def check_coverage(where, text):
+    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(text.split())):
+        low = sentence.lower()
+        if any(n in low for n in NEGATIONS):
+            continue
+        for term in COVERAGE_TERMS:
+            if re.search(r"(?<![\w-])" + re.escape(term) + r"(?![\w-])", low):
+                key = (where.split(" ")[0], sentence)
+                if key not in _COVERAGE_SEEN:
+                    _COVERAGE_SEEN.add(key)
+                    report(where, "coverage", f"names \"{term}\", which COVERAGE.md doesn't list as supported: {sentence}")
+                break
+
+
 # --------------------------------------------------------------------------- html
 class _Html(html.parser.HTMLParser):
     BLOCK = {"p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "figcaption", "td", "th", "dt", "dd", "blockquote",
@@ -165,6 +206,7 @@ class _Html(html.parser.HTMLParser):
                     heading = t in ("h1", "h2", "h3", "h4", "h5", "h6", "title")
                     check_text(f"{self.where} <{t}>", text, MAX_WORDS_SITE, allow_question=self.faq > 0 or t == "summary",
                                heading=heading)
+                    check_coverage(f"{self.where} <{t}>", text)
                     if self.stack:
                         self.stack[-1][1] += " " + text
                     break
