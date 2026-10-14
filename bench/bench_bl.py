@@ -253,6 +253,14 @@ def environment():
                     break
     except OSError:
         pass
+    if cpu == "unknown" and sys.platform == "win32":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as k:
+                cpu = winreg.QueryValueEx(k, "ProcessorNameString")[0].strip()
+        except OSError:
+            cpu = platform.processor() or "unknown"
+    real = bool(getattr(bpy.app, "binary_path", ""))
     return {
         "cpu": cpu,
         "logical_cpus": os.cpu_count(),
@@ -263,7 +271,9 @@ def environment():
         "numpy": np.__version__,
         "codecs": codec.available(),
         "codec_used": codec.resolve("auto"),
-        "mode": "headless bpy module (pip bpy), background, no GPU/viewport; simulated strokes",
+        "mode": ("headless Blender, started with blender -b" if real else "headless bpy module (pip bpy)")
+                + ", background, no GPU/viewport; simulated strokes",
+        "blender_kind": "Blender" if real else "bpy module",
     }
 
 
@@ -274,17 +284,17 @@ def fmt(v, nd=1):
 def write_md(env, results):
     lines = ["# Hindsight benchmark results", "",
              "Measured with `bench/bench_core.py` (pure numpy storage engine) and `bench/bench_bl.py` "
-             "(real Blender). **The Blender numbers are from the headless bpy module "
-             f"(bpy {env['bpy']}, `import bpy` in Python {env['python']}), not the Blender GUI**: no viewport "
+             f"(real Blender). **The Blender numbers are from {env['mode'].rsplit(', background', 1)[0]} "
+             f"({env.get('blender_kind', 'bpy')} {env['bpy']}, Python {env['python']}), not the Blender GUI**: no viewport "
              "redraw, no sculpt PBVH rebuild cost, strokes simulated by writing vertex positions and calling "
              "`runtime.commit`. Expect the GUI to add its own redraw time on top of scrub latency. Test mesh: a "
              "lat/long quad grid on a sphere built with `foreach_set`, in Sculpt Mode.", "",
              "## Environment", "",
              f"- CPU: {env['cpu']} ({env['logical_cpus']} logical CPUs), {env['machine']}",
              f"- OS: {env['os']}",
-             f"- Python {env['python']}, bpy {env['bpy']}, numpy {env['numpy']}",
+             f"- Python {env['python']}, {env.get('blender_kind', 'bpy')} {env['bpy']}, numpy {env['numpy']}",
              f"- Codecs available: {', '.join(env['codecs'])} (used: {env['codec_used']})", "",
-             "## Blender (bpy module), one object, strokes of ~2% of the vertices", "",
+             "## Blender, headless, one object, strokes of ~2% of the vertices", "",
              "| Metric | " + " | ".join(f"{r['verts']:,} verts" for r in results) + " |",
              "|---|" + "---|" * len(results)]
 

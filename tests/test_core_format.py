@@ -62,19 +62,20 @@ def _blob_offsets(rest, n):
     return out
 
 
-def test_writes_format_2_with_checksums():
+def test_writes_format_3_with_checksums():
     blob = persist.registry_to_bytes(_reg())
     doc, rest = _split(blob)
-    assert doc["format"] == persist.FORMAT_VERSION == 2 and doc["version"] == 2
+    assert doc["format"] == persist.FORMAT_VERSION == 3 and doc["version"] == 3
     crcs = doc["histories"][0]["crcs"]
     offs = _blob_offsets(rest, 5)
     assert crcs == [zlib.crc32(rest[o:o + n]) & 0xFFFFFFFF for o, n in offs]
     reg = persist.registry_from_bytes(blob)
-    assert reg.load_report == {"format": 2, "writer": persist.WRITER, "migrated": False, "damaged": []}
+    assert reg.load_report == {"format": 3, "writer": persist.WRITER, "migrated": False, "damaged": []}
 
 
 def test_reads_format_1():
-    """Beta 1 files: no 'format', version 1, no checksums. They load as they are."""
+    """Beta 1 files: no 'format', version 1, no checksums. They load as they are. (Real files written
+    by beta 1's own code are checked step by step in test_core_migration.py.)"""
     blob = persist.registry_to_bytes(_reg())
     doc, rest = _split(blob)
     doc.pop("format"), doc.pop("writer")
@@ -86,9 +87,9 @@ def test_reads_format_1():
     assert len(h.entries) == 5 and h.cursor == 5
     assert reg.load_report["migrated"] and reg.load_report["format"] == 1
     assert not reg.load_report["damaged"]
-    # saving again writes format 2 with checksums
+    # saving again writes the current format with checksums
     doc2, _ = _split(persist.registry_to_bytes(reg))
-    assert doc2["format"] == 2 and len(doc2["histories"][0]["crcs"]) == 5
+    assert doc2["format"] == persist.FORMAT_VERSION and len(doc2["histories"][0]["crcs"]) == 5
 
 
 def test_damaged_step_is_never_applied():
@@ -109,10 +110,31 @@ def test_damaged_step_is_never_applied():
 
 def test_cut_off_file_keeps_complete_steps():
     blob = persist.registry_to_bytes(_reg())
+    trailer = len(persist.TRAILER) + 4
     for cut in (1, 30, 200):
-        reg = persist.registry_from_bytes(blob[:-cut])
+        reg = persist.registry_from_bytes(blob[:-(cut + trailer)])
         h = reg.histories["H1"]
         assert 0 < len(h.entries) < 5 and reg.load_report["damaged"][0]["lost"] == 5 - len(h.entries)
+
+
+def test_header_checksum_trailer():
+    blob = persist.registry_to_bytes(_reg())
+    assert blob[-8:-4] == persist.TRAILER
+    # losing only the trailer keeps every step
+    reg = persist.registry_from_bytes(blob[:-8])
+    assert len(reg.histories["H1"].entries) == 5 and not reg.load_report["damaged"]
+    # a header change that still parses as JSON (cursor 5 -> 4) is caught by the checksum
+    doc, _rest = _split(blob)
+    assert b'"cursor":5' in blob
+    bad = blob.replace(b'"cursor":5', b'"cursor":4', 1)
+    try:
+        persist.registry_from_bytes(bad)
+    except persist.NewerFormatError:
+        raise AssertionError("wrong error")
+    except ValueError as e:
+        assert "checksum" in str(e), e
+    else:
+        raise AssertionError("damaged header was accepted")
 
 
 def test_two_histories_stay_aligned_after_damage():
@@ -156,9 +178,9 @@ def test_not_a_history():
             raise AssertionError("expected ValueError for %r" % bad[:8])
 
 
-for fn in (test_writes_format_2_with_checksums, test_reads_format_1, test_damaged_step_is_never_applied,
-           test_cut_off_file_keeps_complete_steps, test_two_histories_stay_aligned_after_damage,
-           test_newer_format_is_refused, test_not_a_history):
+for fn in (test_writes_format_3_with_checksums, test_reads_format_1, test_damaged_step_is_never_applied,
+           test_cut_off_file_keeps_complete_steps, test_header_checksum_trailer,
+           test_two_histories_stay_aligned_after_damage, test_newer_format_is_refused, test_not_a_history):
     try:
         fn()
         print("PASS", fn.__name__)

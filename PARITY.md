@@ -25,7 +25,7 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 14 | Edit Mode changes grouped into one step when leaving | `check_mode_transition` EDIT exit | test_bl_recorder::test_edit_mode_grouping | [x] |
 | 15 | Shade Smooth/Flat in Edit Mode recorded | `sharp_face` channel in full diff | test_edit_mode_grouping | [x] |
 | 16 | Entering and leaving Edit Mode without changes records nothing | empty diff skipped | test_edit_mode_grouping | [x] |
-| 17 | Only changed vertices stored; full copies only on topology change | core/delta.py XOR deltas, TOPO snapshots | test_core_store, test_core_history | [~] |
+| 17 | Only changed vertices stored; full copies only on topology change | core/delta.py exact per-element deltas, TOPO snapshots | test_core_store, test_core_history | [~] |
 | 18 | Up to 10,000 steps per object | core/store.enforce_caps | test_core_store (10,050 -> 10,000), test_bl_stress | [x] |
 
 ## Undo behaviour

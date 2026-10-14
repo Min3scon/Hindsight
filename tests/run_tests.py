@@ -27,6 +27,7 @@ def _sandbox_env(tag):
         os.makedirs(p, exist_ok=True)
         env[key] = p
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    env["HINDSIGHT_VERIFY"] = "1"          # every written step is read back and compared
     return env
 
 
@@ -63,7 +64,7 @@ def main():
     failed = []
     if blender is None:
         py = os.environ.get("HINDSIGHT_PY") or sys.executable
-        failed = run_suite(lambda f: [py, f], dict(os.environ), files, os.path.basename(py))
+        failed = run_suite(lambda f: [py, f], dict(os.environ, HINDSIGHT_VERIFY="1"), files, os.path.basename(py))
     else:
         if blender == "all":
             sys.path.insert(0, os.path.join(ROOT, "tests_ui"))

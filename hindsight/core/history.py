@@ -4,21 +4,33 @@ Pure Python + numpy. No bpy imports.
 
 A ``History`` is a list of ``Entry`` slots plus a cursor; the mesh shows the
 state after ``entries[:cursor]``. ``goto`` walks the crossed entries and folds
-them into ``MeshState`` objects (one per object uid). DELTA steps are bit XORs,
-so the same record works for undo and redo; TOPO/JOIN steps carry full
-before/after snapshots.
+them into ``MeshState`` objects (one per object uid). DELTA steps hold exact
+per-element changes of the bit patterns (see delta.py), applied forwards or
+backwards; TOPO/JOIN steps carry full before/after snapshots.
 """
 from __future__ import annotations
 
 import numpy as np
 
+from . import delta as _delta
 from .types import (
     DELTA, JOIN,
     ChannelDelta, Entry, Snapshot, Step,
-    bits_dtype, key_dtype, key_width, split_key,
+    key_dtype, key_width, split_key,
 )
 
 TOPO_MARK = "__TOPO__"
+
+def _steps(entries: list, states: dict):
+    """Yield the Step of each entry in order, or None when its object isn't being moved.
+
+    Whether an object is being moved is checked when its step comes up, not before the jump: a
+    join step crossed backwards brings its members back (and into `states`) in the middle of it.
+    (Decoding ahead on worker threads was tried: faster in plain Python, but inside Blender the
+    threads compete with the main thread for the interpreter and long jumps got 70% slower.)
+    """
+    for e in entries:
+        yield e.load() if e.target in states else None
 
 
 class MeshState:
@@ -47,13 +59,8 @@ class MeshState:
         key = d.key
         arr = self._ensure(key)
         if len(d.idx):
-            width = key_width(key)
-            bits = arr.view(bits_dtype(arr.dtype)).reshape(-1, width)
-            xor = d.xor
-            if xor.ndim != 2 or xor.shape[1] != width:
-                xor = xor.reshape(-1, width)
-            # idx is unique, so fancy-index read/xor/write is exact
-            bits[d.idx] ^= xor
+            # idx is unique, so the fancy-index read/modify/write is exact
+            _delta.apply(arr, d, forward)
         exists = d.exists[1] if forward else d.exists[0]
         if exists:
             self.removed.discard(key)
@@ -136,22 +143,20 @@ class History:
         pos = max(0, min(int(pos), n))
         changed: dict = {}
         cur = self.cursor
-        if pos < cur:
-            for i in range(cur - 1, pos - 1, -1):
-                self._cross(self.entries[i], False, states, join_hook, changed)
-        elif pos > cur:
-            for i in range(cur, pos):
-                self._cross(self.entries[i], True, states, join_hook, changed)
+        if pos != cur:
+            forward = pos > cur
+            order = range(cur, pos) if forward else range(cur - 1, pos - 1, -1)
+            entries = [self.entries[i] for i in order]
+            for entry, step in zip(entries, _steps(entries, states)):
+                if step is not None:       # None: object not being moved, skipped without unpacking
+                    self._cross(entry, step, forward, states, join_hook, changed)
         self.cursor = pos
         return changed
 
     @staticmethod
-    def _cross(entry: Entry, forward: bool, states: dict, join_hook, changed: dict) -> None:
+    def _cross(entry: Entry, step: Step, forward: bool, states: dict, join_hook, changed: dict) -> None:
         target = entry.target
-        st = states.get(target)
-        if st is None:
-            return  # skipped without unpacking
-        step = entry.load()
+        st = states[target]
         kind = step.kind
         if kind == DELTA:
             if step.deltas:

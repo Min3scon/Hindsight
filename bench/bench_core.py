@@ -60,7 +60,7 @@ def bench(n):
     r["changed_verts"] = int(d.idx.size)
     r["diff_ms"] = t
     st = Step(1, "Stroke", "SCULPT", "obj", 0.0, DELTA, [d])
-    r["raw_bytes"] = int(d.idx.nbytes + d.xor.nbytes)
+    r["raw_bytes"] = int(d.idx.nbytes + d.vals.nbytes)
     r["raw_step_nbytes"] = st.nbytes()
     t, _ = med(lambda: delta.pack_delta(d))
     r["pack_delta_ms"] = t
@@ -106,7 +106,7 @@ def bench(n):
     def seq_undo():
         b = final.copy()
         for dd in reversed(deltas):
-            delta.apply(b, dd)
+            delta.apply(b, dd, forward=False)
         return b
     t, out = med(seq_raw)
     assert np.array_equal(out.view(np.uint32), final.view(np.uint32))

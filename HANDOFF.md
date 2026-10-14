@@ -66,6 +66,18 @@ background recompression. Round-trip property tests with adversarial floats, mut
 fuzzed corrupt inputs per codec, checksums per step and group, format tag with migration, no scenario
 more than 10% slower. Report in PERF_LOG.md (100k, 500k, 1M at 2/10/30% strokes).
 
+### Compression status (2026-10-14)
+Done in core, file format 3: wrapping differences instead of XOR, per-component prediction with zigzag
+and byte planes, binary step header with CRC, header CRC trailer in the file, quick form for the journal
+and saves, idle background recompression (zstd 19, verified), faster apply. Old beta files load as they
+are (fixtures in tests/fixtures, written by the old builds' own code). Tests: test_core_codec (adversarial
+round trips, 1,800 damaged blobs), test_core_migration, mutation testing (tools/mutation_test.py, all
+killed). Real-stroke corpora: `tests_ui/scenarios/s_corpus.py` -> `.tmp/corpus` (git-ignored); tables:
+`bench/perf_log.py`; speed: `bench/scrub_ab.py` (core, old vs new) and `.tmp/commit_probe.py` /
+`bench/bench_bl.py` in Blender. Results and what didn't help: PERF_LOG.md. The 4-6 KB target is not
+reachable losslessly on real strokes (best: 7.9 KB at 100k, 2%; see PERF_LOG). Decode-ahead threads
+were removed: inside Blender they made long jumps slower.
+
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
 adapter records, migration from 1-3) -> Tiers 1..6 -> website v2 -> final test passes -> ship.

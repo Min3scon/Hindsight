@@ -13,9 +13,13 @@ Entry metas are stored in the JSON so loading never unpacks a step: entries come
 
 Format versions (``format``, falling back to ``version`` for files written before it existed):
   1  beta 1. No checksums.
-  2  beta 2. Adds ``format``, ``writer`` and a CRC-32 per step (``crcs``). The binary layout is
-     unchanged, so beta 1 can still read format 2 files (it ignores the new keys).
-Loading format 1 needs no conversion: steps are read as they are and get checksums on the next save.
+  2  beta 2 work in progress. Adds ``format``, ``writer`` and a CRC-32 per step (``crcs``). The
+     binary layout is unchanged, so beta 1 can still read format 2 files (it ignores the new keys).
+  3  beta 2. New steps use the format 3 step blob (see step.py: smaller, with its own checksum), and
+     the file ends with b"HSRT" + u32 CRC-32 of the JSON header. Beta 1 can open these files but
+     can't play back format 3 steps; it saves them back unchanged.
+Loading formats 1 and 2 needs no conversion: their steps are read as they are (and re-packed in the
+background later, see store.Packer); every step gets a checksum on the next save.
 A file with a format newer than FORMAT_VERSION is refused with NewerFormatError (nothing is
 guessed and nothing is overwritten). Damaged steps are never applied: a history keeps the steps
 before the first damaged one and the loss is listed in ``reg.load_report``.
@@ -34,8 +38,9 @@ from .journal import atomic_write, atomic_write_json
 from .types import Entry
 
 REG_MAGIC = b"HSR1"
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 REG_VERSION = FORMAT_VERSION   # kept for older imports
+TRAILER = b"HSRT"
 WRITER = "Hindsight"            # replaced with "Hindsight <version>" by the add-on at register time
 
 
@@ -96,7 +101,7 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
         metas = []
         crcs = []
         for e in h.entries:
-            b = e.to_bytes(codec)
+            b = e.to_bytes(codec, 0)            # raw steps: the quick form (main thread)
             blobs.append(b)
             crcs.append(zlib.crc32(b) & 0xFFFFFFFF)
             metas.append(_meta_for_json(e.meta))
@@ -127,6 +132,7 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
     for b in blobs:
         parts.append(_U64.pack(len(b)))
         parts.append(bytes(b))
+    parts += [TRAILER, _U32.pack(zlib.crc32(js) & 0xFFFFFFFF)]
     return b"".join(parts)
 
 
@@ -151,6 +157,10 @@ def registry_from_bytes(b: bytes):
     found = int(doc.get("format", doc.get("version", 1)) or 1)
     if found > FORMAT_VERSION:
         raise NewerFormatError(found)
+    if found >= 3 and len(mv) >= pos + 8 and bytes(mv[-8:-4]) == TRAILER:
+        (want,) = _U32.unpack_from(mv, len(mv) - 4)
+        if zlib.crc32(mv[8:pos]) & 0xFFFFFFFF != want:
+            raise ValueError("damaged Hindsight registry header (checksum)")
 
     reg = Registry()
     report = {"format": found, "writer": doc.get("writer", "Hindsight 1.0.0-beta.1 or older"),
