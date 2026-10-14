@@ -19,6 +19,7 @@ import time
 import bpy
 
 from . import guard
+from .ctx import active_object as _ctx_active
 
 MENU_NAME = "HINDSIGHT_MT_history"
 THROTTLE = 1.0 / 60.0      # min seconds between live (final=False) gotos during a drag
@@ -354,7 +355,7 @@ def slider_info(context):
         return info
     if rt.use_global(context):
         return None
-    obj = getattr(context, "active_object", None)
+    obj = _ctx_active(context)
     if obj is None or getattr(obj, "type", None) != "MESH" or obj.mode not in rt.RECORD_MODES:
         return None
     if not rt.can_record(obj):

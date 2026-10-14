@@ -2,12 +2,13 @@
 import bpy
 
 from . import runtime
+from .ctx import active_object as _ctx_active
 
 
 def _fallback(op, context, native, edge_text):
     """At either end of the history. Blender's own undo/redo runs only when it is safe: when the
     object has no history, or Hindsight hasn't written its mesh since it entered this mode."""
-    obj = getattr(context, "active_object", None)
+    obj = _ctx_active(context)
     info = runtime.scrub_info(context)
     if op.native_fallback and (info is None or not info.get("len") or obj is None or not runtime.wrote(obj)):
         try:
@@ -75,7 +76,7 @@ class HINDSIGHT_OT_confirm_truncate(bpy.types.Operator):
         col.label(text="Your stroke was not applied. Click OK, then repeat it.")
 
     def execute(self, context):
-        n = runtime.confirm_truncate(context.active_object)
+        n = runtime.confirm_truncate(_ctx_active(context))
         self.report({'INFO'}, f"Dropped {n} steps. Repeat your stroke to continue.")
         return {'FINISHED'}
 
@@ -91,11 +92,11 @@ class HINDSIGHT_OT_record_everything(bpy.types.Operator):
 
     @classmethod
     def poll(cls, context):
-        return getattr(context, "active_object", None) is not None
+        return _ctx_active(context) is not None
 
     def execute(self, context):
         from . import datarec
-        datarec.set_tracked(context.active_object, self.on)
+        datarec.set_tracked(_ctx_active(context), self.on)
         from . import runtime
         runtime.tag_redraw_all()
         return {'FINISHED'}

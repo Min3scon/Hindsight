@@ -14,6 +14,7 @@ from ..core.types import (
     SETTINGS, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
 from . import guard, log, meshio
+from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
 RECORD_MODES = ("SCULPT", "VERTEX_PAINT")
@@ -531,6 +532,11 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     entry = h.entries[-1]
     _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
     _enforce(h)
+    try:
+        from . import datarec
+        datarec._JUMPS.clear()
+    except Exception:
+        pass
     tag_redraw_all()
     return step
 
@@ -914,7 +920,7 @@ def goto(context, pos: int, final: bool = True) -> None:
     if use_global(context):
         global_goto(context, pos, final)
     else:
-        h = history_of(context.active_object)
+        h = history_of(_ctx_active(context))
         if h is None:
             return
         _goto_history(h, pos, final)
@@ -974,7 +980,7 @@ def scrub_info(context):
                 return None
             return {"pos": globaltl.global_position(_REG, vis), "len": len(order),
                     "cap": SETTINGS.max_steps, "global": True, "locked": locked, "morph_target": None}
-        obj = context.active_object
+        obj = _ctx_active(context)
         h = history_of(obj)
         if h is None:
             return None
@@ -1012,7 +1018,7 @@ def set_preserve_modes(context, on: bool) -> None:
 
 
 def set_morph_target(context) -> None:
-    h = history_of(context.active_object)
+    h = history_of(_ctx_active(context))
     if h is not None:
         h.morph_target = h.cursor
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": h.enabled,
@@ -1101,7 +1107,7 @@ def memory_stats() -> dict:
     active_s = 0
     ah = None
     try:
-        ah = history_of(bpy.context.active_object)
+        ah = history_of(_ctx_active(bpy.context))
     except Exception:
         pass
     for h in _REG.all():

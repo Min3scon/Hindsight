@@ -220,20 +220,23 @@ def _last_label(default: str = "Change") -> str:
 
 
 def tick() -> None:
-    """Called from the runtime timer: commit when an operation has ended."""
-    if not _DIRTY:
-        _OPS["marker"] = _ops_marker()
-        return
+    """Called from the runtime timer: commit when an operation has ended. When an operator finishes,
+    every tracked datablock is compared (some operators, such as hiding in the viewport, don't send
+    the object an update); otherwise only those that changed, once changes settle."""
     rt = _rt()
     if rt._SUSPEND[0] or _operation_running():
         return
     marker = _ops_marker()
-    finished = marker is not None and marker != _OPS["marker"]
-    settled = time.time() - max(_DIRTY.values()) >= SETTLE
+    finished = marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
+    if marker is not None and _OPS["marker"] is None:
+        _OPS["marker"] = marker
+    if not _DIRTY and not finished:
+        return
+    settled = bool(_DIRTY) and time.time() - max(_DIRTY.values()) >= SETTLE
     if finished or settled:
         _OPS["marker"] = marker
         label = _last_label() if finished else "Change"
-        commit(label=label)
+        commit(label=label, uids=(tracked_uids() | set(_DIRTY)) if finished else None)
         if finished:
             _edit_step(label)
 
@@ -336,6 +339,7 @@ def commit(label: str = "Change", uids=None) -> list:
         rt._enforce(h)
         steps.append(step)
     if steps:
+        _JUMPS.clear()        # a new step: Blender's undo now undoes that, not an earlier jump
         rt.tag_redraw_all()
     return steps
 
@@ -392,9 +396,9 @@ def push_undo(message: str = "Hindsight jump") -> bool:
 
 def note_jump(h, before: int, after: int, values_before: dict, values_after: dict) -> None:
     """Remember a jump that was pushed onto Blender's undo stack (see on_undo)."""
-    _JUMPS.append({"hist": h.uid, "before": before, "after": after,
+    _JUMPS.clear()
+    _JUMPS.append({"hist": h.uid, "before": before, "after": after, "len": len(h.entries),
                    "vb": values_before, "va": values_after, "undone": False})
-    del _JUMPS[:-32]
 
 
 def on_undo() -> None:
@@ -410,15 +414,18 @@ def on_undo() -> None:
             seen[uid] = capture(idb)
     if not seen:
         return
-    for j in reversed(_JUMPS):
+    # Only the newest jump can be undone or redone by Blender, and only while nothing was recorded
+    # after it and the cursor is still where that jump left it.
+    for j in _JUMPS[-1:]:
         h = rt.reg().histories.get(j["hist"])
-        if h is None:
+        if h is None or len(h.entries) != j["len"]:
+            continue
+        if h.cursor != (j["after"] if not j["undone"] else j["before"]):
             continue
         want = j["vb"] if not j["undone"] else j["va"]
         if want and all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
             h.cursor = j["before"] if not j["undone"] else j["after"]
             j["undone"] = not j["undone"]
-            break
     for uid, vals in seen.items():
         st = _state(uid)
         h = rt.reg().history_for(uid)

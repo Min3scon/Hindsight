@@ -8,6 +8,7 @@ import bpy
 
 from . import guard
 from .ui_panel import _FAIL, _call, _operator, draw_help, draw_history_options, draw_main
+from .ctx import active_object as _ctx_active
 
 UNITS = 13
 
@@ -37,7 +38,7 @@ class VIEW3D_PT_hindsight_popover(bpy.types.Panel):
 
 @guard.guarded("header")
 def draw_header_button(self, context):
-    obj = getattr(context, "active_object", None)
+    obj = _ctx_active(context)
     if obj is None or getattr(obj, "type", None) != 'MESH':
         return
     info = _call("scrub_info", context)

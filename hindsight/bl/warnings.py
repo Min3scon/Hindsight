@@ -9,6 +9,7 @@ No GPU or blf calls happen at import or register time, so this module is safe he
 import bpy
 
 from . import guard
+from .ctx import active_object as _ctx_active
 
 ERROR = "ERROR"
 WARNING = "WARNING"
@@ -149,7 +150,7 @@ def _shares_with_tracked(obj):
 def linked_duplicate_check(context) -> None:
     """Show a popup if the active object shares mesh data with an object that has Hindsight history."""
     try:
-        obj = getattr(context, "active_object", None)
+        obj = _ctx_active(context)
         if obj is None or not _shares_with_tracked(obj):
             return None
 
@@ -193,7 +194,7 @@ def _draw_overlay():
         region = context.region
         if region is None or region.type != 'WINDOW':
             return
-        obj = context.active_object
+        obj = _ctx_active(context)
         if obj is None or obj.mode not in OVERLAY_MODES:
             return
         errors = [text for sev, text in collect(context, obj) if sev == ERROR]

@@ -14,6 +14,7 @@ import bpy
 from . import guard
 from .beta import ISSUES_URL
 from .prefs import draw_scrubber_props, get_prefs
+from .ctx import active_object as _ctx_active
 
 _FAIL = object()
 
@@ -101,7 +102,7 @@ def wrap(layout, context, text, icon='NONE', units=None):
 
 
 def _warnings(context):
-    obj = getattr(context, "active_object", None)
+    obj = _ctx_active(context)
     res = _call("warnings_for", context, obj)
     if res is _FAIL or not res:
         return []
@@ -145,7 +146,7 @@ def _draw_problems(layout, context, units=None):
 def draw_main(layout, context, units=None):
     """Status, slider, step counter, back and forward. Shared by the sidebar and the popover."""
     _draw_problems(layout, context, units)
-    obj = getattr(context, "active_object", None)
+    obj = _ctx_active(context)
     if obj is None:
         wrap(layout, context, "Select a mesh object to see its history.", 'INFO', units)
         return
@@ -221,7 +222,7 @@ def draw_history_options(layout, context):
     _operator(row, "hindsight.delete_past", "Delete earlier steps", 'TRASH')
     _operator(row, "hindsight.reset_history", "Clear history", 'FILE_REFRESH')
     row = col.row(align=True)
-    obj = getattr(context, "active_object", None)
+    obj = _ctx_active(context)
     recording = _call("is_recording", obj) if obj is not None else _FAIL
     if recording is False:
         _operator(row, "hindsight.turn_on", "Record this object", 'REC')
