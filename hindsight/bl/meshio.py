@@ -85,14 +85,24 @@ def write_channel(me, key: str, arr: np.ndarray | None) -> None:
     attr.data.foreach_set(prop, arr)
 
 
+def _corner_ints(me, attr_name: str, legacy: str, n: int) -> np.ndarray:
+    """Corner vertex or edge indices. The attribute (".corner_vert", ".corner_edge") reads about
+    twice as fast as the loops collection; the loops collection is the fallback."""
+    out = np.empty(n, np.int32)
+    a = me.attributes.get(attr_name)
+    if a is not None and a.domain == "CORNER" and a.data_type == "INT" and len(a.data) == n:
+        a.data.foreach_get("value", out)
+    else:
+        me.loops.foreach_get(legacy, out)
+    return out
+
+
 def read_topology(me) -> dict:
     c = counts(me)
     ev = np.empty(c["EDGE"] * 2, np.int32)
     me.edges.foreach_get("vertices", ev)
-    cv = np.empty(c["CORNER"], np.int32)
-    me.loops.foreach_get("vertex_index", cv)
-    ce = np.empty(c["CORNER"], np.int32)
-    me.loops.foreach_get("edge_index", ce)
+    cv = _corner_ints(me, ".corner_vert", "vertex_index", c["CORNER"])
+    ce = _corner_ints(me, ".corner_edge", "edge_index", c["CORNER"])
     fo = np.empty(c["FACE"] + 1, np.int32)
     me.polygons.foreach_get("loop_start", fo[:-1])
     fo[-1] = c["CORNER"]
@@ -108,16 +118,19 @@ def read_snapshot(me, sculpt_only: bool = False) -> Snapshot:
     return Snapshot(counts(me), arrays)
 
 
-def topology_equal(me, snap_counts: dict, snap_arrays: dict, deep: bool = False) -> bool:
+def topology_equal(me, snap_counts: dict, snap_arrays: dict, deep=False) -> bool:
+    """Same element counts; with deep, also the same corner vertices, and unless deep is "corners",
+    the same edges."""
     if counts(me) != snap_counts:
         return False
     if not deep:
         return True
-    cv = np.empty(snap_counts["CORNER"], np.int32)
-    me.loops.foreach_get("vertex_index", cv)
+    cv = _corner_ints(me, ".corner_vert", "vertex_index", snap_counts["CORNER"])
     ref = snap_arrays.get(CORNER_VERT_KEY)
     if ref is None or not np.array_equal(cv, ref):
         return False
+    if deep == "corners":
+        return True
     ev = np.empty(snap_counts["EDGE"] * 2, np.int32)
     me.edges.foreach_get("vertices", ev)
     ref = snap_arrays.get(EDGE_VERTS_KEY)

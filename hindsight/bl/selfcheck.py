@@ -248,6 +248,12 @@ def run_checks(retry_failed=True):
             scrubber.ensure_draw_handler()
         except Exception:
             pass
+        try:
+            # data recorded again from now on: what changed while it was off isn't one big step
+            from . import datarec
+            datarec.rebaseline()
+        except Exception:
+            pass
         log.info("Self-check switched these back on: " + ", ".join(names))
     results = []
     for fn in CHECKS:

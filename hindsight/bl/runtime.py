@@ -156,8 +156,18 @@ def _blocking(obj) -> bool:
         return False
 
 
+def any_uid(obj):
+    """The Hindsight id of any object (obj_uid is for meshes, which the sculpt recorder handles).
+    Empties and other object types have one once Record everything has recorded them."""
+    u = obj_uid(obj)
+    if u is None and obj is not None:
+        from . import idmap
+        u = idmap.uid_of(obj)
+    return u
+
+
 def history_of(obj):
-    uid = obj_uid(obj)
+    uid = any_uid(obj)
     if uid is None or is_excluded(obj):
         return None
     return _REG.history_for(uid)
@@ -250,12 +260,20 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
 def _visible_uids() -> set:
     out = set()
     for ob in bpy.data.objects:
-        u = obj_uid(ob)
+        u = any_uid(ob)
         if u is not None and not is_excluded(ob):
             out.add(u)
     try:
         from . import datarec
         out |= {u for u in datarec.tracked_uids() if datarec._is_scene_uid(u)}
+        if any(datarec._is_scene_uid(u) for u in datarec.tracked_uids()):
+            # with the scene recorded, a deleted object can come back: its history stays on the
+            # global timeline (so the timeline doesn't change length when objects come and go)
+            from . import idmap
+            for h in _REG.histories.values():
+                for m in h.members:
+                    if m not in out and idmap.find(m) is None:
+                        out.add(m)
     except Exception:
         pass
     return out
@@ -307,13 +325,14 @@ def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool
     return False
 
 
-def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None):
-    """Diff the mesh (or `me`, a copy of it) against the state. Returns an unsaved Step (seq=0) or None."""
+def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, deep=True):
+    """Diff the mesh (or `me`, a copy of it) against the state. Returns an unsaved Step (seq=0) or None.
+    With full, every attribute is compared, and the topology too (deep: see meshio.topology_equal)."""
     from ..core import delta as D
     me = me if me is not None else obj.data
     uid = obj_uid(obj)
     c = meshio.counts(me)
-    if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=True)):
+    if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=deep)):
         after = meshio.read_snapshot(me)
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
                     kind=TOPO, before=st.to_snapshot(), after=after)
@@ -834,7 +853,9 @@ def _find_any(uid):
         return None
 
 
-def _goto_history(h, pos: int, final: bool) -> dict:
+def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
+    """Move one history to pos and write what changed to Blender. With acc (a global jump), the
+    move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
     from . import datarec
     states = {}
     for m in list(h.members):
@@ -881,12 +902,20 @@ def _goto_history(h, pos: int, final: bool) -> dict:
         if reenter_edit:
             with suspended():
                 bpy.ops.object.mode_set(mode="EDIT")
-    if wrote_data and final and not IN_HANDLER[0]:
-        ob = find_object(h.members[0]) if h.members else None
-        if ob is None or ob.mode == "OBJECT":
-            if datarec.push_undo():
-                va = {m: dict(states[m].values) for m in tracked if m in states}
-                datarec.note_jump(h, before, h.cursor, vb, va)
+    ob = find_object(h.members[0]) if h.members else None
+    object_mode = ob is None or ob.mode == "OBJECT"
+    va = {m: dict(states[m].values) for m in tracked if m in states}
+    if acc is not None:
+        entry = acc["hists"].setdefault(h.uid, [before, h.cursor, len(h.entries)])
+        entry[1] = h.cursor
+        for k, v in vb.items():
+            acc["vb"].setdefault(k, v)
+        acc["va"].update(va)
+        acc["wrote"] = acc["wrote"] or wrote_data
+        acc["object_mode"] = acc["object_mode"] and object_mode
+    elif wrote_data and final and not IN_HANDLER[0] and object_mode:
+        if datarec.push_undo():
+            datarec.note_jump({h.uid: [before, h.cursor, len(h.entries)]}, vb, va)
     _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
     return changes
 
@@ -928,14 +957,20 @@ def goto(context, pos: int, final: bool = True) -> None:
 
 
 def global_goto(context, g: int, final: bool = True) -> None:
+    """Move the global timeline to position g. Steps are undone and redone across histories in
+    step-number order (globaltl.transition), and the whole jump is one entry on Blender's undo."""
+    from . import datarec
     vis = _visible_uids()
     old = globaltl.global_position(_REG, vis)
-    plan = globaltl.plan_global_goto(_REG, g, vis)
-    new_g = sum(plan.values())
-    for hid, cur in plan.items():
+    acc = {"hists": {}, "vb": {}, "va": {}, "wrote": False, "object_mode": True}
+    for hid, cur in globaltl.transition(_REG, g, vis):
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
-            _goto_history(h, cur, final)
+            _goto_history(h, cur, final, acc)
+    new_g = globaltl.global_position(_REG, vis)
+    if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
+        if datarec.push_undo():
+            datarec.note_jump(acc["hists"], acc["vb"], acc["va"])
     p = _scene_props(context)
     preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
     if preserve and final and new_g != old:
@@ -944,7 +979,9 @@ def global_goto(context, g: int, final: bool = True) -> None:
             h = _REG.histories.get(piv[0])
             e = h.entries[piv[1]] if h else None
             if e is not None:
-                _switch_to(context, find_object(e.target), e.meta.get("mode", "SCULPT"))
+                tgt = find_object(e.target) or _find_any(e.target)
+                if isinstance(tgt, bpy.types.Object):
+                    _switch_to(context, tgt, e.meta.get("mode", "SCULPT"))
 
 
 def _switch_to(context, ob, mode: str) -> None:

@@ -1,0 +1,117 @@
+00:00.593  reports          | ERROR Only empty objects support collection instances
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
+00:00.593  reports          | ERROR Only empty objects support collection instances
+00:00.703  reports          | ERROR Only empty objects support collection instances
+00:00.703  reports          | ERROR Only empty objects support collection instances
+00:00.812  reports          | ERROR Only empty objects support collection instances
+00:00.906  reports          | ERROR Only empty objects support collection instances
+00:00.906  reports          | ERROR Only empty objects support collection instances
+00:01.015  reports          | ERROR Only empty objects support collection instances
+00:01.015  reports          | ERROR Only empty objects support collection instances
+00:01.109  reports          | ERROR Only empty objects support collection instances
+Hindsight: Recording transforms, parenting, visibility and names failed in capture: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 132, in capture
+    vals = a.capture(idb)
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording transforms, parenting, visibility and names is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:rna
+Hindsight: Self-check: all 7 checks passed (23:44)
+Hindsight: Recording transforms, parenting, visibility and names failed in diff: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 315, in _diff
+    changed = a is MISSING or b is MISSING or adapters.ADAPTERS[aid].changed(k[1], a, b)
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording transforms, parenting, visibility and names is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:rna
+Hindsight: Self-check: all 7 checks passed (23:44)
+Hindsight: Recording transforms, parenting, visibility and names failed in apply: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 460, in write
+    a.write(idb, {p: st.values.get((aid, p), MISSING) for p in paths},
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            lambda path, aid=aid: _recorded(st, aid, path))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording transforms, parenting, visibility and names is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:rna
+Hindsight: Self-check: all 7 checks passed (23:44)
+PASS test_rna_adapter_faults
+Hindsight: Recording collections, hiding and constraints failed in capture: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 132, in capture
+    vals = a.capture(idb)
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording collections, hiding and constraints is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:object
+Hindsight: Self-check: all 7 checks passed (23:44)
+Hindsight: Recording collections, hiding and constraints failed in diff: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 315, in _diff
+    changed = a is MISSING or b is MISSING or adapters.ADAPTERS[aid].changed(k[1], a, b)
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording collections, hiding and constraints is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:object
+Hindsight: Self-check: all 7 checks passed (23:44)
+Hindsight: Recording collections, hiding and constraints failed in apply: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 460, in write
+    a.write(idb, {p: st.values.get((aid, p), MISSING) for p in paths},
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            lambda path, aid=aid: _recorded(st, aid, path))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording collections, hiding and constraints is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:object
+Hindsight: Self-check: all 7 checks passed (23:44)
+PASS test_object_adapter_faults
+Hindsight: Recording adding and deleting objects failed in capture: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 132, in capture
+    vals = a.capture(idb)
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording adding and deleting objects is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:scene
+Hindsight: Self-check: all 7 checks passed (23:44)
+Hindsight: Recording adding and deleting objects failed in diff: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 315, in _diff
+    changed = a is MISSING or b is MISSING or adapters.ADAPTERS[aid].changed(k[1], a, b)
+                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording adding and deleting objects is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:scene
+Hindsight: Self-check: all 7 checks passed (23:44)
+Hindsight: Recording adding and deleting objects failed in apply: RuntimeError: injected fault
+Traceback (most recent call last):
+  File "<repo>\hindsight\bl\datarec.py", line 460, in write
+    a.write(idb, {p: st.values.get((aid, p), MISSING) for p in paths},
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            lambda path, aid=aid: _recorded(st, aid, path))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<repo>\tests\test_bl_t1_faults.py", line 57, in boom
+    raise RuntimeError("injected fault")
+RuntimeError: injected fault
+Hindsight: Recording adding and deleting objects is switched off for this session. Run Self-check in the Undo History tab to retry.
+Hindsight: Self-check switched these back on: adapter:scene
+Hindsight: Self-check: all 7 checks passed (23:44)
+PASS test_scene_adapter_faults
+PASS test_animated_constraint_settings_are_not_steps

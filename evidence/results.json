@@ -1,3 +1,604 @@
 {
- "runs": {}
+ "runs": {
+  "headless|tests/test_bl_t1_faults.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-14T23:43:27",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_faults.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT"
+      ]
+     ],
+     "name": "test_rna_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "FAULT"
+      ],
+      [
+       "obj.collections",
+       "FAULT"
+      ]
+     ],
+     "name": "test_object_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "FAULT"
+      ]
+     ],
+     "name": "test_scene_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "STEPS"
+      ]
+     ],
+     "name": "test_animated_constraint_settings_are_not_steps",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_faults.py"
+  },
+  "headless|tests/test_bl_t1_faults.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-14T23:44:54",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_faults.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT"
+      ]
+     ],
+     "name": "test_rna_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "FAULT"
+      ],
+      [
+       "obj.collections",
+       "FAULT"
+      ]
+     ],
+     "name": "test_object_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "FAULT"
+      ]
+     ],
+     "name": "test_scene_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "STEPS"
+      ]
+     ],
+     "name": "test_animated_constraint_settings_are_not_steps",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_faults.py"
+  },
+  "headless|tests/test_bl_t1_faults.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-14T23:46:18",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_faults.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT"
+      ]
+     ],
+     "name": "test_rna_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "FAULT"
+      ],
+      [
+       "obj.collections",
+       "FAULT"
+      ]
+     ],
+     "name": "test_object_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "FAULT"
+      ]
+     ],
+     "name": "test_scene_adapter_faults",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "STEPS"
+      ]
+     ],
+     "name": "test_animated_constraint_settings_are_not_steps",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_faults.py"
+  },
+  "headless|tests/test_bl_t1_gate.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-14T23:43:31",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_gate.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "OPS"
+      ],
+      [
+       "obj.transforms",
+       "EXACT"
+      ],
+      [
+       "obj.transforms",
+       "ORACLE"
+      ],
+      [
+       "obj.transforms",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_transforms",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.parenting",
+       "OPS"
+      ],
+      [
+       "obj.parenting",
+       "EXACT"
+      ],
+      [
+       "obj.parenting",
+       "ORACLE"
+      ],
+      [
+       "obj.parenting",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_parenting",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "OPS"
+      ],
+      [
+       "obj.constraints",
+       "EXACT"
+      ],
+      [
+       "obj.constraints",
+       "ORACLE"
+      ],
+      [
+       "obj.constraints",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_constraints",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "OPS"
+      ],
+      [
+       "obj.collections",
+       "EXACT"
+      ],
+      [
+       "obj.collections",
+       "ORACLE"
+      ],
+      [
+       "obj.collections",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_collections",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "OPS"
+      ],
+      [
+       "obj.addremove",
+       "EXACT"
+      ],
+      [
+       "obj.addremove",
+       "ORACLE"
+      ],
+      [
+       "obj.addremove",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_addremove",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "OPS"
+      ],
+      [
+       "obj.editsteps",
+       "EXACT"
+      ],
+      [
+       "obj.editsteps",
+       "ORACLE"
+      ],
+      [
+       "obj.editsteps",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_editsteps",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_gate.py"
+  },
+  "headless|tests/test_bl_t1_gate.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-14T23:44:58",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_gate.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "OPS"
+      ],
+      [
+       "obj.transforms",
+       "EXACT"
+      ],
+      [
+       "obj.transforms",
+       "ORACLE"
+      ],
+      [
+       "obj.transforms",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_transforms",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.parenting",
+       "OPS"
+      ],
+      [
+       "obj.parenting",
+       "EXACT"
+      ],
+      [
+       "obj.parenting",
+       "ORACLE"
+      ],
+      [
+       "obj.parenting",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_parenting",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "OPS"
+      ],
+      [
+       "obj.constraints",
+       "EXACT"
+      ],
+      [
+       "obj.constraints",
+       "ORACLE"
+      ],
+      [
+       "obj.constraints",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_constraints",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "OPS"
+      ],
+      [
+       "obj.collections",
+       "EXACT"
+      ],
+      [
+       "obj.collections",
+       "ORACLE"
+      ],
+      [
+       "obj.collections",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_collections",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "OPS"
+      ],
+      [
+       "obj.addremove",
+       "EXACT"
+      ],
+      [
+       "obj.addremove",
+       "ORACLE"
+      ],
+      [
+       "obj.addremove",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_addremove",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "OPS"
+      ],
+      [
+       "obj.editsteps",
+       "EXACT"
+      ],
+      [
+       "obj.editsteps",
+       "ORACLE"
+      ],
+      [
+       "obj.editsteps",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_editsteps",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_gate.py"
+  },
+  "headless|tests/test_bl_t1_gate.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-14T23:46:23",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_gate.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "OPS"
+      ],
+      [
+       "obj.transforms",
+       "EXACT"
+      ],
+      [
+       "obj.transforms",
+       "ORACLE"
+      ],
+      [
+       "obj.transforms",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_transforms",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.parenting",
+       "OPS"
+      ],
+      [
+       "obj.parenting",
+       "EXACT"
+      ],
+      [
+       "obj.parenting",
+       "ORACLE"
+      ],
+      [
+       "obj.parenting",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_parenting",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "OPS"
+      ],
+      [
+       "obj.constraints",
+       "EXACT"
+      ],
+      [
+       "obj.constraints",
+       "ORACLE"
+      ],
+      [
+       "obj.constraints",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_constraints",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "OPS"
+      ],
+      [
+       "obj.collections",
+       "EXACT"
+      ],
+      [
+       "obj.collections",
+       "ORACLE"
+      ],
+      [
+       "obj.collections",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_collections",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "OPS"
+      ],
+      [
+       "obj.addremove",
+       "EXACT"
+      ],
+      [
+       "obj.addremove",
+       "ORACLE"
+      ],
+      [
+       "obj.addremove",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_addremove",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "OPS"
+      ],
+      [
+       "obj.editsteps",
+       "EXACT"
+      ],
+      [
+       "obj.editsteps",
+       "ORACLE"
+      ],
+      [
+       "obj.editsteps",
+       "REPLAY"
+      ]
+     ],
+     "name": "test_gate_editsteps",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_gate.py"
+  }
+ }
 }

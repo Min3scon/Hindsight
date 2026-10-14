@@ -198,6 +198,25 @@ Checklist items that were checked and are NOT the cause:
 - Step list (Steps sub-panel and the header popover): the steps around the cursor with their labels;
   clicking one jumps there.
 
+### Test guarantee decisions (Tier 1 gate)
+- Blender's own mesh operators don't give a stable element order. The UV sphere primitive after a file
+  reset, Extrude after one extra view-layer update, Fill: the same operations give edges, faces and
+  corners in a different order depending on memory allocation (shown without Hindsight). Fill and
+  Bridge also leave the UVs of the faces they make unset (different values each run). So the replay
+  oracle compares meshes in a canonical form (positions in order, edges and faces as sets, other values
+  sorted) and leaves out the corner values of faces Fill and Bridge make. Restores are still compared
+  bit for bit against the state recorded in the same run.
+- Test selections in Edit Mode pick faces and vertices by position, never by index (indices change with
+  that element order).
+- Child Of's set_inverse_pending is a one-shot request that the next evaluation consumes: it is not
+  recorded (putting it back would recompute the inverse instead of restoring the recorded one), and the
+  oracle doesn't compare it. Which constraint or modifier is highlighted ("active") is UI state.
+- Adapters fail on their own: an error in one adapter's capture, diff or apply switches off that adapter
+  only (guard feature "adapter:<id>", listed in the sidebar), and Self-check takes a fresh baseline when
+  it switches it back on.
+- With the scene recorded, the collection tree is recorded too (part of the Tier 6 row "collection
+  structure"), because M > New Collection is a Tier 1 operation and can't be undone without it.
+
 ### Step 5 decisions (website)
 - Hand-written HTML templates and a 300-line Python build (`site/build.py`) instead of a static site
   generator: no dependencies in CI, full control over the output, facts (version, size, numbers) injected

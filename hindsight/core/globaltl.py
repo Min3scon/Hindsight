@@ -33,6 +33,34 @@ def plan_global_goto(reg, g: int, visible=None) -> dict:
     return cur
 
 
+def transition(reg, g: int, visible=None) -> list:
+    """How to get every visible history to global position g, as moves [(history uid, cursor)] in
+    step-number order: the steps to undo newest first, then the steps to redo oldest first, so a
+    step is never applied before an earlier step of another history (an object brought back by the
+    scene history exists before its own steps are replayed). Consecutive moves of one history are
+    merged. Works from any starting point, also after histories were moved one by one."""
+    target = plan_global_goto(reg, g, visible)
+    undo, redo = [], []
+    for h in _visible_histories(reg, visible):
+        t = target.get(h.uid, h.cursor)
+        for i in range(t, h.cursor):
+            undo.append((h.entries[i].seq, h.uid, i))
+        for i in range(h.cursor, t):
+            redo.append((h.entries[i].seq, h.uid, i))
+    moves = []
+    for _seq, hid, i in sorted(undo, reverse=True):
+        if moves and moves[-1][0] == hid and moves[-1][2] == "u":
+            moves[-1] = (hid, i, "u")
+        else:
+            moves.append((hid, i, "u"))
+    for _seq, hid, i in sorted(redo):
+        if moves and moves[-1][0] == hid and moves[-1][2] == "r":
+            moves[-1] = (hid, i + 1, "r")
+        else:
+            moves.append((hid, i + 1, "r"))
+    return [(hid, cur) for hid, cur, _ in moves]
+
+
 def pivot_entry(reg, old_g: int, new_g: int, visible=None):
     """(hist_uid, entry_index) of the step that decides which object is 'current' after a move."""
     order = global_order(reg, visible)

@@ -47,6 +47,7 @@ KINDS = {
     "constraints": "Constraints",
     "edit_steps": "Edit Mode step by step",
     "objects": "Adding and deleting objects",
+    "scene_collections": "Making and deleting collections",
 }
 
 
@@ -153,6 +154,10 @@ class Adapter:
         recorded(path) gives the recorded value of any other path (for side effects)."""
         raise NotImplementedError
 
+    def changed(self, path: str, old, new) -> bool:
+        """True if a recorded value differs from the one read now (exact by default)."""
+        return not same(old, new)
+
 
 class RNAAdapter(Adapter):
     """Properties from ALLOWLIST, read and written by RNA path."""
@@ -211,28 +216,60 @@ def _split(idb, path: str):
 
 # ----------------------------------------------------------------------------- structs
 # Properties that are UI state, not data: never recorded.
-_UI_PROPS = {"rna_type", "show_expanded", "is_override_data_editable", "is_valid", "active",
-             "error_location", "error_rotation", "is_override_data", "show_in_editmode",
-             "show_on_cage", "show_viewport_toggle", "is_active"}
+# set_inverse_pending (Child Of) is a one-shot request Blender consumes on the next evaluation:
+# putting it back would recompute the inverse instead of restoring the recorded one.
+_UI_PROPS = frozenset({"rna_type", "show_expanded", "is_override_data_editable", "is_valid", "active",
+                       "error_location", "error_rotation", "is_override_data", "show_in_editmode",
+                       "show_on_cage", "show_viewport_toggle", "is_active", "set_inverse_pending"})
+_PROPS: dict = {}         # (struct type, skip set, skip prefixes) -> ((identifier, type, is_enum_flag), ...)
+ANIMATED = "~animated"    # stands in for a value an animation or driver sets (never written back)
 
 
-def struct_values(st) -> dict:
+def _props(st, skip, skip_prefix):
+    """The editable, recordable properties of a struct's type (cached: reading bl_rna.properties is
+    the slow part of reading a struct)."""
+    key = (st.bl_rna.identifier, id(skip), skip_prefix)
+    rows = _PROPS.get(key)
+    if rows is None:
+        rows = []
+        for prop in st.bl_rna.properties:
+            ident = prop.identifier
+            if ident in skip or prop.is_readonly or prop.type == "COLLECTION" or ident.startswith(skip_prefix):
+                continue
+            rows.append((ident, prop.type, bool(getattr(prop, "is_enum_flag", False))))
+        rows = _PROPS[key] = tuple(rows)
+    return rows
+
+
+def _anim_base(st, anim):
+    """The struct's RNA path prefix when its owner has animated paths, else None."""
+    if not anim:
+        return None
+    try:
+        return st.path_from_id()
+    except Exception:
+        return None
+
+
+def struct_values(st, skip=_UI_PROPS, skip_prefix: tuple = (), anim=None) -> dict:
     """Every editable value of an RNA struct (a constraint, a modifier, ...) as JSON values. ID
-    pointers become Hindsight ids. Nested structs and collections are left out."""
+    pointers become Hindsight ids. Nested structs and collections are left out. Values in `anim`
+    (RNA paths an animation or driver sets) are recorded as ANIMATED."""
     out = {}
-    for prop in st.bl_rna.properties:
-        ident = prop.identifier
-        if ident in _UI_PROPS or prop.is_readonly or prop.type == "COLLECTION":
+    base = _anim_base(st, anim)
+    for ident, ptype, is_flag in _props(st, skip, skip_prefix):
+        if base is not None and f"{base}.{ident}" in anim:
+            out[ident] = ANIMATED
             continue
         try:
             v = getattr(st, ident)
         except Exception:
             continue
-        if prop.type == "POINTER":
+        if ptype == "POINTER":
             if v is None or isinstance(v, bpy.types.ID):
                 out[ident] = {"ref": idmap.claim(v)} if v is not None else {"ref": None}
             continue
-        if prop.type == "ENUM" and getattr(prop, "is_enum_flag", False):
+        if is_flag:
             out[ident] = sorted(v)
             continue
         out[ident] = normalise(v)
@@ -243,6 +280,8 @@ def set_struct_values(st, values: dict) -> None:
     """Set recorded values back on a struct: ID pointers first (other values may depend on them)."""
     items = sorted(values.items(), key=lambda kv: 0 if isinstance(kv[1], dict) else 1)
     for ident, v in items:
+        if v == ANIMATED:
+            continue
         try:
             if isinstance(v, dict) and "ref" in v:
                 v = idmap.find(v["ref"]) if v["ref"] else None
@@ -269,7 +308,8 @@ class ObjectAdapter(Adapter):
             except Exception:
                 pass
         if kind_on("constraints"):
-            out["constraints"] = [{"type": c.type, "name": c.name, "values": struct_values(c)}
+            anim = animated_paths(idb)
+            out["constraints"] = [{"type": c.type, "name": c.name, "values": struct_values(c, anim=anim)}
                                   for c in idb.constraints]
         return out
 
@@ -285,7 +325,7 @@ class ObjectAdapter(Adapter):
                     except Exception as e:
                         log.error_once(("coll_link", str(e)), f"could not put the object back in a collection: {e}", e)
             for ref in set(have) - want:
-                if len(idb.users_collection) > 1 or want:
+                if len(idb.users_collection) > 1:      # never take an object out of its last collection
                     try:
                         have[ref].objects.unlink(idb)
                     except Exception:
@@ -329,9 +369,18 @@ def _write_constraints(ob, want: list) -> None:
         set_struct_values(c, w.get("values") or {})
 
 
+# Object settings a body leaves out: the name, data and parent are set on their own; matrices are
+# derived from location, rotation and scale (which are kept exactly).
+_BODY_SKIP = frozenset(_UI_PROPS | {"name", "data", "parent", "active_material", "active_material_index",
+                                    "matrix_world", "matrix_local", "matrix_basis", "matrix_parent_inverse",
+                                    "mode", "select", "active_shape_key_index"})
+
+
 def object_body(ob) -> dict:
-    """What it takes to bring a deleted object back (its mesh comes from the mesh datablock if it
-    still exists, otherwise from the snapshot stored with the step)."""
+    """What it takes to bring a deleted object back exactly: its settings as values (transforms with
+    their rotation mode, deltas, visibility, display, ...), its constraints and custom properties.
+    Its mesh comes from the mesh datablock if it still exists, otherwise from the snapshot stored
+    with the step."""
     data = ob.data
     return {
         "name": ob.name, "type": ob.type,
@@ -343,6 +392,10 @@ def object_body(ob) -> dict:
         "collections": sorted(_coll_ref(c) for c in ob.users_collection),
         "materials": [idmap.claim(s.material) if s.material is not None else None for s in ob.material_slots],
         "hide": [bool(ob.hide_viewport), bool(ob.hide_render), bool(ob.hide_select)],
+        "props": struct_values(ob, _BODY_SKIP),
+        "constraints": [{"type": c.type, "name": c.name, "values": struct_values(c)} for c in ob.constraints],
+        "custom": {k: (ob[k].to_list() if hasattr(ob[k], "to_list") else ob[k]) for k in ob.keys()
+                   if k != idmap.UID_PROP and isinstance(ob[k], (int, float, str)) or hasattr(ob[k], "to_list")},
     }
 
 
@@ -353,11 +406,16 @@ class SceneAdapter(Adapter):
     id_types = ("Scene",)
 
     def capture(self, idb) -> dict:
-        if not kind_on("objects"):
-            return {}
-        return {"objects": sorted(u for u in (idmap.claim(o) for o in idb.objects) if u)}
+        out = {}
+        if kind_on("scene_collections"):
+            out["collections"] = collection_tree(idb)
+        if kind_on("objects"):
+            out["objects"] = sorted(u for u in (idmap.claim(o) for o in idb.objects) if u)
+        return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
+        if "collections" in values and values["collections"] is not MISSING:
+            _write_collection_tree(idb, values["collections"])
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
             return
         want = set(values["objects"])
@@ -375,6 +433,61 @@ class SceneAdapter(Adapter):
                 if par is not None:
                     ob.parent = par
                     ob.matrix_parent_inverse = to_rna(body["parent_inverse"])
+
+
+def collection_tree(scene) -> list:
+    """The scene's collections as [[id, name, parent id or "scene"], ...] in tree order."""
+    rows = []
+
+    def walk(c, parent):
+        for ch in c.children:
+            u = idmap.claim(ch)
+            rows.append([u, ch.name, parent])
+            walk(ch, u)
+    walk(scene.collection, "scene")
+    return rows
+
+
+def _write_collection_tree(scene, want: list) -> None:
+    """Make the scene's collection tree match: collections taken out are only unlinked (their
+    objects and the datablock stay, so an object step can still put objects back in them),
+    collections that no longer exist are made again with their id and name."""
+    if collection_tree(scene) == want:
+        return
+
+    def coll(ref):
+        return scene.collection if ref == "scene" else idmap.find(ref)
+    want_links = {(u, p) for u, _n, p in want}
+    for u, _n, p in collection_tree(scene)[::-1]:            # children before parents
+        if (u, p) not in want_links:
+            par, ch = coll(p), idmap.find(u)
+            if par is not None and ch is not None and ch.name in par.children:
+                par.children.unlink(ch)
+    for u, name, p in want:
+        ch = idmap.find(u)
+        if ch is None:
+            ch = bpy.data.collections.new(name)
+            ch[idmap.UID_PROP] = u
+        if ch.name != name:
+            ch.name = name
+        par = coll(p)
+        if par is not None and ch.name not in par.children:
+            par.children.link(ch)
+    # child order: relink the children of a parent whose order differs
+    order = {}
+    for u, _n, p in want:
+        order.setdefault(p, []).append(u)
+    for p, kids in order.items():
+        par = coll(p)
+        if par is None:
+            continue
+        have = [idmap.uid_of(c) for c in par.children]
+        if [k for k in have if k in kids] != kids:
+            for k in kids:
+                c = idmap.find(k)
+                if c is not None and c.name in par.children:
+                    par.children.unlink(c)
+                    par.children.link(c)
 
 
 def _remove_object(ob) -> None:
@@ -416,6 +529,17 @@ def _recreate_object(scene, uid, body, snap):
             data.materials.append(idmap.find(mu) if mu else None)
     hv = body.get("hide") or [False, False, False]
     ob.hide_viewport, ob.hide_render, ob.hide_select = hv
+    props = dict(body.get("props") or {})
+    if "rotation_mode" in props:                 # the mode first: setting it converts the rotation
+        set_struct_values(ob, {"rotation_mode": props.pop("rotation_mode")})
+    set_struct_values(ob, props)                 # exact location, rotation, scale and the rest
+    if body.get("constraints"):
+        _write_constraints(ob, body["constraints"])
+    for k, v in (body.get("custom") or {}).items():
+        try:
+            ob[k] = v
+        except Exception:
+            pass
     return ob
 
 
@@ -426,7 +550,7 @@ _OBJECT_KINDS = {"collections": "collections", "hide": "visibility", "constraint
 def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
     if adapter_id == "scene":
-        return "objects"
+        return "scene_collections" if path == "collections" else "objects"
     if adapter_id == "object":
         return _OBJECT_KINDS.get(path)
     if adapter_id == "rna":

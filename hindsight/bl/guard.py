@@ -23,6 +23,10 @@ LABELS = {
     "loading": "Loading history",
     "morph": "Morph History brush",
     "dupsep": "Duplicate and separate tracking",
+    "datarec": "Recording other data (Record everything)",
+    "adapter:rna": "Recording transforms, parenting, visibility and names",
+    "adapter:object": "Recording collections, hiding and constraints",
+    "adapter:scene": "Recording adding and deleting objects",
 }
 
 # Features that are reported but never switched off (each call is independent, e.g. one file save).

@@ -9,7 +9,7 @@ Runs come from the runners' own output (never typed in):
   ui        .tmp/ui/<scenario>/<blender>/result.json      tests_ui/hs_ui.py; tags in each check
   tools     .tmp/results/tools/<tool>/<blender>/*.json    mutation, Hypothesis, soak, visual review
 The newest run of each (source, file or scenario, Blender) is kept in evidence/results.json, with
-its log (paths removed) and, for real-UI runs, its screenshots. A gate item counts on a Blender when
+its output (paths removed, in evidence/output) and, for real-UI runs, its screenshots. A gate item counts on a Blender when
 at least one tagged test passed there in its newest run and none failed. Rows may be `supported` or
 `partial` in COVERAGE.md only when every item counts on every Blender in tools/gate_spec.py
 (or is listed with a reason in evidence/not_applicable.json).
@@ -137,7 +137,7 @@ def _slug(s: str) -> str:
 
 
 def _copy_log(run, src: Path) -> str:
-    dst = EVID / "logs" / run["source"] / run["blender"] / (_slug(run["unit"]) + ".log")
+    dst = EVID / "output" / run["source"] / run["blender"] / (_slug(run["unit"]) + ".log")
     dst.parent.mkdir(parents=True, exist_ok=True)
     text = sanitise(src.read_text(encoding="utf-8", errors="replace"))
     if len(text) > LOG_CAP:

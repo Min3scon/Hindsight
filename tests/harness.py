@@ -20,15 +20,25 @@ _registered = [False]
 _failures = []
 
 
-def fresh():
+def fresh(register=True):
+    """Factory settings, empty scene. register=False leaves Hindsight off (the replay oracle runs
+    the same operations without it)."""
     if _registered[0]:
         hindsight.unregister()
         _registered[0] = False
     bpy.ops.wm.read_factory_settings(use_empty=True)
+    if not register:
+        return
     hindsight.register()
     _registered[0] = True
     runtime.set_registry(runtime.Registry())
     runtime.reg().disabled.clear()
+    from hindsight.bl import datarec, guard, idmap
+    datarec.forget()          # module state from an earlier test must not leak into this one
+    idmap.forget()
+    guard.reset()
+    datarec.FORCE_SCOPE[0] = None
+    datarec.FORCE_KINDS[0] = None
 
 
 def make_mesh(n_verts_approx=2000, name="Obj", location=(0, 0, 0)):
