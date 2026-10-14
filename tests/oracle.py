@@ -240,11 +240,14 @@ def object_state(ob, mesh: bool = True, derived: bool = True) -> dict:
 def read_mesh(ob, reader):
     """reader(mesh) on the object's mesh. In Edit Mode mesh.attributes are the edit-mode layers (no
     readable values): the edit mesh is written back and a plain copy is read, so Edit and Object
-    Mode readings compare."""
-    if ob.mode != "EDIT":
-        return reader(ob.data)
-    ob.update_from_editmode()
-    tmp = ob.data.copy()
+    Mode readings compare. The mesh can be in Edit Mode through another object that shares it
+    (a linked duplicate), so the mesh is asked, not the object."""
+    me = ob.data
+    if not me.is_editmode:
+        return reader(me)
+    editor = next((o for o in bpy.data.objects if o.data == me and o.mode == "EDIT"), ob)
+    editor.update_from_editmode()
+    tmp = me.copy()
     try:
         return reader(tmp)
     finally:

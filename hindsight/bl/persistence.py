@@ -37,6 +37,8 @@ UNREADABLE_TEXT = ("The saved history could not be read, so it was not loaded. Y
 UNREADABLE_EMBED_TEXT = ("The history stored in this .blend could not be read, so it was not loaded. "
                          "It is kept in the file in case it can be recovered")
 DAMAGED_TEXT = "{lost} damaged step{s} of '{obj}' could not be loaded. The {kept} steps before them are fine"
+DAMAGED_ALL_TEXT = ("The history of '{obj}' is damaged before the step it was saved at, so none of it could be "
+                    "kept ({lost} step{s}). '{obj}' itself is as you saved it")
 UNREADABLE_PROP = "hindsight_data_unreadable"
 
 # Set while loading a file whose history this version must not overwrite (newer format).
@@ -286,8 +288,9 @@ def _report_load(reg) -> None:
                 obj = ob.name
                 break
         lost = int(d.get("lost", 0))
-        _note("ERROR", DAMAGED_TEXT.format(lost=lost, s="" if lost == 1 else "s", obj=obj or "an object",
-                                           kept=int(d.get("kept", 0))))
+        text = DAMAGED_ALL_TEXT if d.get("before_saved") else DAMAGED_TEXT
+        _note("ERROR", text.format(lost=lost, s="" if lost == 1 else "s", obj=obj or "an object",
+                                   kept=int(d.get("kept", 0))))
     if rep.get("migrated"):
         runtime.log.info(f"loaded history format {rep.get('format')} ({rep.get('writer')}); "
                          f"it is saved as format {persist.FORMAT_VERSION} from now on")

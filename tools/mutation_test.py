@@ -60,6 +60,8 @@ MUTANTS = [
      "MISSING stored as null"),
     ("step.py", "        if flags & RECORDS_FLAG:\n            (info[\"records\"],) = _U32.unpack_from(h, off)",
      "        if False:\n            (info[\"records\"],) = _U32.unpack_from(h, off)", "record section ignored"),
+    ("persist.py", "            if bad_at < saved_cursor:", "            if False:",
+     "a damaged step before the saved one keeps unreachable steps (D27)"),
     ("history.py", "    for e in entries:\n        yield e.load() if e.target in states else None",
      "    for e, w in zip(entries, [x.target in states for x in entries]):\n        yield e.load() if w else None",
      "objects brought back mid-jump skipped"),

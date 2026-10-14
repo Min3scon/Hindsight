@@ -3,6 +3,8 @@
     python tests/run_tests.py [substring]                       # $HINDSIGHT_PY or this interpreter (needs bpy)
     python tests/run_tests.py --blender PATH [substring]        # inside real Blender: blender -b --python
     python tests/run_tests.py --blender all [substring]         # every Blender 4.2+ found on this machine
+    python tests/run_tests.py --blender all --skip t1_prop      # leave out files whose name has "t1_prop"
+                                                                # (quick loops only; gate runs run everything)
 
 With --blender the user's Blender settings are never read or written: BLENDER_USER_* point at a
 throwaway folder under .tmp/ and --factory-startup is passed.
@@ -81,8 +83,14 @@ def main():
         i = args.index("--blender")
         blender = args[i + 1]
         del args[i:i + 2]
+    skip = []
+    while "--skip" in args:
+        i = args.index("--skip")
+        skip.append(args[i + 1])
+        del args[i:i + 2]
     pat = args[0] if args else ""
-    files = sorted(f for f in glob.glob(os.path.join(HERE, "test_*.py")) if pat in os.path.basename(f))
+    files = sorted(f for f in glob.glob(os.path.join(HERE, "test_*.py"))
+                   if pat in os.path.basename(f) and not any(s in os.path.basename(f) for s in skip))
 
     failed = []
     if blender is None:

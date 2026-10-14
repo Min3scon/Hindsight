@@ -45,7 +45,13 @@ def uid_of(idb, create: bool = False) -> str | None:
 def claim(idb) -> str | None:
     """The datablock's id after resolving copies: if another datablock that still exists already
     owns this id in this session, this one gets a new id. Call when a datablock is about to be
-    recorded."""
+    recorded. Data linked from another file is read only: it never owns an id, so a linked copy of an
+    appended object can never take the local one's id away (D28)."""
+    if getattr(idb, "library", None) is not None:
+        try:
+            return idb.get(UID_PROP)
+        except Exception:
+            return None
     u = uid_of(idb, create=True)
     if u is None:
         return None
@@ -70,21 +76,23 @@ def _all_with(uid: str):
             continue
         for idb in col:
             try:
-                if idb.get(UID_PROP) == uid:
+                if idb.library is None and idb.get(UID_PROP) == uid:
                     yield idb
             except Exception:
                 continue
 
 
 def find(uid: str):
-    """The datablock with this id, or None (searches bpy.data; cached)."""
+    """The local datablock with this id, or None (searches bpy.data; cached). Data linked from
+    another file is never returned: it can't be changed, and a linked copy of an appended object
+    carries the same id (D28)."""
     if not uid:
         return None
     hit = _cache.get(uid)
     if hit is not None:
         col = getattr(bpy.data, hit[0], None)
         idb = col.get(hit[1]) if col is not None else None
-        if idb is not None and idb.get(UID_PROP) == uid:
+        if idb is not None and idb.library is None and idb.get(UID_PROP) == uid:
             return idb
     for c in COLLECTIONS:
         col = getattr(bpy.data, c, None)
@@ -92,7 +100,7 @@ def find(uid: str):
             continue
         for idb in col:
             try:
-                if idb.get(UID_PROP) == uid:
+                if idb.library is None and idb.get(UID_PROP) == uid:
                     _cache[uid] = (c, idb.name)
                     return idb
             except Exception:

@@ -216,11 +216,17 @@ def registry_from_bytes(b: bytes):
                 max_seq = max(max_seq, int(meta.get("seq", 0)))
             except (TypeError, ValueError):
                 pass
+        saved_cursor = int(hd.get("cursor", want))
         if bad_at is not None:
+            if bad_at < saved_cursor:
+                # The object was saved as it is after the damaged step: going back to any earlier
+                # step needs that step. Nothing before it can be reached exactly, so nothing is kept
+                # (keeping it would put together states that never existed).
+                entries = []
             report["damaged"].append({"uid": h.uid, "members": list(h.members), "kept": len(entries),
-                                      "lost": want - len(entries)})
+                                      "lost": want - len(entries), "before_saved": bad_at < saved_cursor})
         h.entries = entries
-        h.cursor = int(hd.get("cursor", len(entries)))
+        h.cursor = saved_cursor if bad_at is None or bad_at >= saved_cursor else 0
         h.enabled = bool(hd.get("enabled", True))
         mt = hd.get("morph_target")
         h.morph_target = None if mt is None else int(mt)

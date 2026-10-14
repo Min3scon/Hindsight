@@ -241,7 +241,13 @@ def edit_ops(name, seed):
         edit(name, "dissolve", lambda: bpy.ops.mesh.dissolve_verts(), s + 8, 0.05),
         edit(name, "delete", lambda: bpy.ops.mesh.delete(type="VERT"), s + 9, 0.05),
         edit_select(name, "fill the outline", _select_outline, lambda: bpy.ops.mesh.fill()),
+        edit_select(name, "sort the edges", _select_all, lambda: bpy.ops.mesh.sort_elements(
+            type="RANDOMIZE", elements={"EDGE"}, seed=s), False),
     ]
+
+
+def _select_all(ob):
+    bpy.ops.mesh.select_all(action="SELECT")
 
 
 def edit_select(name, label, select_fn, fn, unset_corners=True):
@@ -345,7 +351,7 @@ def sequences() -> dict:
                             link_to_collection("A", "Extra"), move_to_collection("A", "Props")],
         "obj.addremove": [add_primitive(k, (i * 2.5 - 10, -4, 0)) for i, k in enumerate(PRIMITIVES)]
                          + [add_primitive("empty", (0, -7, 0)), duplicate("A"), duplicate("B", linked=True),
-                            delete(["C"]), delete(["A", "Pivot"])],
+                            delete(["C"]), parent("B", "Pivot", True), delete(["A", "Pivot", "B"])],
         "obj.editsteps": edit_ops("E", 11) + [select_only_in_edit("E", 3)] + [leave_edit("E")]
                          + [o for o in edit_ops("B", 41) if o.label.split(": ")[1] in ("grab", "rotate", "scale", "extrude")] + [leave_edit("B")],
     }

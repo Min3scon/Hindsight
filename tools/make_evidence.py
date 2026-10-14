@@ -105,16 +105,18 @@ def collect_new() -> list:
                      "tests": tests, "_log": p.parent / r.get("log", ""), "_shots": []})
     for p in sorted((TMP / "ui").glob("*/*/result.json")):
         r = _load(p)
-        if not r or not re.match(r"^\d+\.\d+\.\d+$", p.parent.name):
+        m = re.match(r"^(\d+\.\d+\.\d+)(?:-([a-z0-9_]+))?$", p.parent.name)
+        if not r or not m:
             continue
-        scen = p.parent.parent.name
-        private = scen in PRIVATE_SCENARIOS
+        scen = p.parent.parent.name + (f"[{m.group(2)}]" if m.group(2) else "")
+        version = m.group(1)
+        private = scen.split("[")[0] in PRIVATE_SCENARIOS
         date = r.get("date") or time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(p.stat().st_mtime))
         tests = [{"name": c["name"], "ok": bool(c["ok"]), "covers": c.get("covers") or []}
                  for c in r.get("checks", [])]
         if r.get("error"):
             tests.append({"name": "scenario finished without an error", "ok": False, "covers": []})
-        runs.append({"source": "ui", "unit": scen, "blender": p.parent.name, "date": date, "tests": tests,
+        runs.append({"source": "ui", "unit": scen, "blender": version, "date": date, "tests": tests,
                      "_log": None if private else p.parent / "console.log",
                      "_shots": [] if private else sorted((p.parent / "shots").glob("*.png"))})
     for p in sorted((TMP / "results" / "tools").glob("*/*/*.json")):

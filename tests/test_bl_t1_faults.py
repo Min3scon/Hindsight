@@ -133,6 +133,62 @@ def test_scene_adapter_faults():
         check_fault("scene", where)
 
 
+@covers("obj.editsteps", "FAULT")
+def test_edit_steps_fault():
+    """Edit Mode step by step raising: only it switches off; the object's other data and sculpting
+    still record; the history plays back."""
+    setup()
+    for op in T.edit_ops("E", 3)[:2]:
+        op.run()
+        datarec._edit_step(op.label)
+    T.select()
+    tick("leave")
+    he = hist("E")
+    n = len(he.entries)
+    orig = runtime.commit_edit
+    runtime.commit_edit = boom
+    try:
+        op = T.edit_ops("E", 5)[0]
+        op.run()
+        datarec._edit_step(op.label)
+    finally:
+        runtime.commit_edit = orig
+    assert {f for f, _l, _e, _t in guard.failed()} == {"adapter:edit_steps"}, guard.failed()
+    T.select()                       # leaving Edit Mode: the edit is kept as one step per visit
+    labels = [e.meta.get("label") for e in hist("E").entries]
+    assert len(labels) == n + 1 and labels[-1] == "Edit Mode", labels
+    T.translate("E", (0, 0, 1)).run()
+    tick("move")
+    assert len(hist("E").entries) == n + 2, "the object's other changes still record"
+    for pos in (0, n, n + 1, n + 2):
+        runtime._goto_history(hist("E"), pos, True)
+    assert sculpt_still_records()
+    selfcheck.run_checks(retry_failed=True)
+    assert not guard.failed()
+
+
+@covers("obj.transforms", "FAULT")
+def test_object_mode_mesh_check_fault():
+    """The Object Mode mesh check (Apply, Shade Smooth) raising: only it switches off; transforms
+    still record."""
+    setup()
+    orig = datarec._mesh_step
+    datarec._mesh_step = boom
+    try:
+        T.shade("A", True).run()
+        tick("shade")
+    finally:
+        datarec._mesh_step = orig
+    assert {f for f, _l, _e, _t in guard.failed()} == {"adapter:object_mesh"}, guard.failed()
+    n = len(hist("A").entries) if hist("A") else 0
+    T.translate("A", (0, 1, 0)).run()
+    tick("move")
+    assert hist("A") is not None and len(hist("A").entries) == n + 1
+    assert sculpt_still_records()
+    selfcheck.run_checks(retry_failed=True)
+    assert not guard.failed()
+
+
 @covers("obj.constraints", "STEPS")
 def test_animated_constraint_settings_are_not_steps():
     """D15: keyframed or driven constraint settings change with the frame: never a step."""
@@ -160,7 +216,8 @@ def test_animated_constraint_settings_are_not_steps():
     assert len(hist("A").entries) == n + 1
 
 
-for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults,
+for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults, test_edit_steps_fault,
+           test_object_mode_mesh_check_fault,
            test_animated_constraint_settings_are_not_steps):
     H.run(fn)
 H.finish()

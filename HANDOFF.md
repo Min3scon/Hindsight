@@ -65,6 +65,48 @@ stop-loss (then push, update evidence, make the newest working site live). Websi
   severity and open count, per-adapter cost and memory per step, reviewer findings, MANUAL_TESTS
   items, and a table of all rows with their evidence lines.
 
+**No fake history (owner, 2026-10-15), for the "history from existing files" feature.** (The
+earlier message that described this feature never arrived in this session; it is built from this
+clarification, which overrides anything looser. Noted in NEEDS-JACK.md.) A .blend Hindsight never
+recorded has no history: show nothing, say so plainly, offer the honest alternative. Never invent
+steps, ticks, counters, thumbnails, labels or progress.
+- Empty state (no .blend1/.blend2, autosave, matching names or git history): Find saved versions
+  shows "No saved versions found for this file." and under it "Hindsight can only rebuild history
+  from versions that exist on disk. Start recording now and everything from here on is kept stroke
+  by stroke." Buttons: Start recording, Add file, Close. No list, previews, progress or "0 of 0".
+  Sidebar keeps "No history yet" with Start recording; the on-screen slider and editor scrubbers show
+  an empty track labelled 0 steps (or are hidden), never ticks or "1 / N"; checked in Object, Sculpt,
+  Vertex Paint and Edit Mode.
+- Walk the stack only when there is a real stack (2+ modifiers, shape keys, Geometry Nodes inputs,
+  Multires levels), otherwise hidden or disabled with a one-line reason; labelled "construction
+  order, not the order you worked in".
+- Imported steps only for real saved versions, one per version, with source file and time; never
+  interpolate, never split a version, never claim a time or action the file doesn't prove; identical
+  versions import nothing and say so. Label "Saved version, <date and time>" plus a plain summary of
+  what changed where known ("3 objects changed, topology changed"). No unmeasured speed or time
+  estimates, no result before the background read finishes, Cancel leaves no steps. Uncertain
+  matching is said to be uncertain.
+- Site, docs, FAQ, README, release notes and add-on strings follow the same rule; check_copy fails on
+  wording implying recovery of unsaved work, individual strokes, "go back on any file", and on any
+  caption showing a populated timeline for a file with no saved versions.
+- Tests (in the tier gate and TEST_EVIDENCE): untouched generated file, no siblings, all four modes,
+  three Blenders, with and without a stack: zero steps, empty-state text, no ticks or counters, no
+  files written anywhere, original byte-identical, no sidecar. Same with one .blend1, only an
+  autosave, only a git commit, and an unrelated similarly named file (not offered unless added).
+  Cancel before, during and after the read: zero steps, no temp files. Screenshots of every empty
+  state, looked at. A scan of add-on strings and the built site for the banned phrases.
+- METADATA.md (audit now): everything Hindsight writes into or next to a .blend (properties, custom
+  properties, scene and object data, files and folders) with name, type, when written, what removes
+  it; generated from the registered property names by a script, plus a test that fails when the
+  code writes something not listed. Verify and state: opening a file doesn't change it until
+  recording is enabled or the file is saved; importing never writes to the originals; a file saved
+  with Hindsight data opens fine without Hindsight (tested in a profile without the add-on).
+  Advanced gets "Remove Hindsight data from this file" (lists what goes, confirms, removes ids and
+  settings, the sidecar folder only if ticked, never geometry), tested. Docs and FAQ: "What does
+  Hindsight add to my file?" and "What happens if I only have one file?" (the one-file case first on
+  the "Using it on an existing file" page, with a real screenshot of the empty-state dialog).
+- Order: importer after the Tier 1 gate; website pieces with website v2; never delays tier gates.
+
 Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, SITE_PLAN.md, STYLE.md.
 
 ## Current job: beta 2 ("broken and sloppy" to polished), started 2026-10-14

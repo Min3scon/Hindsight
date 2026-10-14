@@ -54,9 +54,18 @@ def _rt():
     return runtime
 
 
+def is_linked(idb) -> bool:
+    """Linked from another file (not a local copy or an override): it can't be changed here, so
+    Hindsight could never put recorded values back. Such data is never recorded."""
+    return idb is not None and getattr(idb, "library", None) is not None
+
+
+LINKED_TEXT = "Linked from another file: it can't be changed here, so Hindsight doesn't record it."
+
+
 def is_tracked(idb) -> bool:
     """True if this datablock's data is recorded right now."""
-    if idb is None or not scope_everything() or not guard.ok("datarec"):
+    if idb is None or not scope_everything() or not guard.ok("datarec") or is_linked(idb):
         return False
     uid = idmap.uid_of(idb)
     rt = _rt()
@@ -74,8 +83,11 @@ def _adapter_failed(aid: str, exc, where: str) -> None:
 
 
 def set_tracked(idb, on: bool) -> None:
-    """Switch "Record everything on this object" (also used by tests)."""
+    """Switch "Record everything on this object" (also used by tests). Linked data is refused."""
     rt = _rt()
+    if on and is_linked(idb):
+        log.warn(LINKED_TEXT)
+        return
     uid = idmap.claim(idb)
     if uid is None:
         return
@@ -290,8 +302,12 @@ def _edit_step(label: str) -> None:
     """Edit Mode step by step: the operation that just finished on a tracked object in Edit Mode."""
     rt = _rt()
     obj = rt._active()
-    if obj is not None and getattr(obj, "mode", "") == "EDIT" and rt.edit_steps_on(obj):
-        rt.commit_edit(obj, label)
+    if obj is not None and getattr(obj, "mode", "") == "EDIT" and rt.edit_steps_on(obj) \
+            and adapter_ok("edit_steps"):
+        try:
+            rt.commit_edit(obj, label)
+        except Exception as e:
+            _adapter_failed("edit_steps", e, "capture")
 
 
 def _diff(old: dict, new: dict) -> dict:
@@ -349,17 +365,22 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
     # exists before an object's own step from the same operation is replayed (and is removed last)
     targets.sort(key=lambda u: (not _is_scene_uid(u), u))
     steps = []
+    op_first = None          # number of this operation's first step (global timeline: one position)
     for uid in targets:
         if uid not in tracked_uids():
             continue
         idb = idmap.find(uid)
-        if idb is None:
+        if idb is None or is_linked(idb):
             continue
         mesh_step = None
         if mesh and uid in _MESH_DIRTY:
             _MESH_DIRTY.discard(uid)
             if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT":
-                mesh_step = _mesh_step(idb, uid, label)
+                if adapter_ok("object_mesh"):
+                    try:
+                        mesh_step = _mesh_step(idb, uid, label)
+                    except Exception as e:
+                        _adapter_failed("object_mesh", e, "capture")
         st = _state(uid)
         is_scene = isinstance(idb, bpy.types.Scene)
         if is_scene and _BODY_DIRTY:
@@ -417,6 +438,10 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
             mode = getattr(idb, "mode", "OBJECT") or "OBJECT"
             step = Step(seq=rt.reg().new_seq(), label=label, mode=mode, target=uid, time=time.time(),
                         kind=DATA, records=records, extra=extra)
+        if op_first is None:
+            op_first = step.seq
+        else:
+            step.extra = dict(step.extra or {}, op=op_first)
         at = h.cursor
         removed = h.push(step)
         if mesh_step is not None:
@@ -498,7 +523,7 @@ def note_jump(hists: dict, values_before: dict, values_after: dict) -> None:
 
 
 @guard.guarded("datarec")
-def on_undo() -> None:
+def on_undo(direction: str = "undo") -> None:
     """After Blender's undo or redo: re-read tracked datablocks. If they now match the state before
     (undo) or after (redo) a Hindsight jump, the cursor follows; if they match a neighbouring step,
     the cursor moves one step; anything else becomes the new baseline (nothing is recorded)."""
@@ -536,11 +561,16 @@ def on_undo() -> None:
         idb = idmap.find(uid)
         mesh_step = None
         if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT" and st.counts:
-            mesh_step = rt._observe(idb, st, True, "Undo", "OBJECT", deep="corners")
+            # deep: an undone Edit Mode step can change the edges alone (Sort Mesh Elements)
+            mesh_step = rt._observe(idb, st, True, "Undo", "OBJECT", deep=True)
             rt._NATIVE_PENDING.discard(uid)
         diff = _diff(st.values, vals)
         if (diff or mesh_step is not None) and h is not None and h.uid not in moved:
-            for idx, inverse in ((h.cursor - 1, True), (h.cursor, False)):
+            # the direction Blender went first: after a step that returned to an earlier state,
+            # both neighbours can match
+            order = ((h.cursor, False), (h.cursor - 1, True)) if direction == "redo" else \
+                ((h.cursor - 1, True), (h.cursor, False))
+            for idx, inverse in order:
                 if 0 <= idx < len(h.entries) and _step_matches(h.entries[idx].load(), uid, diff, mesh_step,
                                                                st, inverse):
                     h.cursor += -1 if inverse else 1
@@ -571,6 +601,8 @@ def _records_match(step, uid, diff: dict, inverse: bool) -> bool:
         if r.target != uid:
             continue
         for p, (o, n) in r.changes.items():
+            if p.startswith("body:"):
+                continue        # stored with the step, never read back from Blender (see _diff)
             want[(r.adapter, p)] = (n, o) if inverse else (o, n)
     if set(want) != set(diff):
         return False

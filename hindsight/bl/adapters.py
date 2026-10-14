@@ -283,10 +283,17 @@ def set_struct_values(st, values: dict) -> None:
         if v == ANIMATED:
             continue
         try:
+            cur = getattr(st, ident)
             if isinstance(v, dict) and "ref" in v:
                 v = idmap.find(v["ref"]) if v["ref"] else None
+                if cur == v:
+                    continue          # unchanged: no write (Blender reports some writes as errors)
             elif isinstance(v, list) and getattr(st.bl_rna.properties.get(ident), "is_enum_flag", False):
+                if sorted(cur) == sorted(v):
+                    continue
                 v = set(v)
+            elif same(normalise(cur), v):
+                continue
             setattr(st, ident, to_rna(v))
         except Exception:
             continue
@@ -369,11 +376,12 @@ def _write_constraints(ob, want: list) -> None:
         set_struct_values(c, w.get("values") or {})
 
 
-# Object settings a body leaves out: the name, data and parent are set on their own; matrices are
+# Object settings a body leaves out: the name, data and parent are set on their own; matrices and
+# dimensions (D26: setting dimensions turns them into a scale from the mesh as it is now) are
 # derived from location, rotation and scale (which are kept exactly).
 _BODY_SKIP = frozenset(_UI_PROPS | {"name", "data", "parent", "active_material", "active_material_index",
                                     "matrix_world", "matrix_local", "matrix_basis", "matrix_parent_inverse",
-                                    "mode", "select", "active_shape_key_index"})
+                                    "mode", "select", "active_shape_key_index", "dimensions"})
 
 
 def object_body(ob) -> dict:
@@ -410,7 +418,8 @@ class SceneAdapter(Adapter):
         if kind_on("scene_collections"):
             out["collections"] = collection_tree(idb)
         if kind_on("objects"):
-            out["objects"] = sorted(u for u in (idmap.claim(o) for o in idb.objects) if u)
+            # linked objects are left out: bringing one back would make a local copy of it
+            out["objects"] = sorted(u for u in (idmap.claim(o) for o in idb.objects if o.library is None) if u)
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:

@@ -39,8 +39,8 @@ def fix_uids() -> list:
     The uid stays on the original. Returns the names of the objects that got a new uid."""
     groups: dict = {}
     for ob in bpy.data.objects:
-        if ob.type != "MESH":
-            continue
+        if ob.type != "MESH" or ob.library is not None:
+            continue        # linked data never holds a history here; it can't be the original (D28)
         try:
             u = ob.get(runtime.UID_PROP)
         except Exception:

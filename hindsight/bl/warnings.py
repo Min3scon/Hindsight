@@ -126,9 +126,62 @@ def collect(context, obj) -> list:
         if any(getattr(sl, "material", None) is not None for sl in getattr(obj, "material_slots", ())):
             out.append((INFO, TXT_MATERIALS))
 
+        out.extend(everything_notes(context, obj))
     except ReferenceError:
         return []
     out.sort(key=lambda it: _SEV_ORDER.get(it[0], 3))
+    return out
+
+
+# What Record everything leaves out, said where it applies (COVERAGE.md lists the same limits).
+TXT_EV_LINKED = "Linked from another file: it can't be changed here, so Hindsight doesn't record it"
+TXT_EV_NOT_ON = ("Only adding and deleting this object is recorded. Switch on Record everything on this "
+                 "object to record its changes too")
+TXT_EV_ANIMATED = "Animated or driven, so not recorded (they follow the animation): {names}"
+TXT_EV_LISTS = "Lists in constraint settings (such as Armature constraint targets) aren't recorded"
+TXT_EV_EDIT_BIG = "Over 300,000 vertices: Edit Mode is recorded as one step per visit on this mesh"
+TXT_EV_COMEBACK = ("A deleted {kind} comes back only while its data is still in this session "
+                   "(meshes and empties always come back)")
+TXT_EV_NEW_COLLECTIONS = ("Collections you make or delete are undone only when the scene is recorded "
+                          "(Record adding and deleting objects)")
+
+
+def everything_notes(context, obj) -> list:
+    """Limits of Record everything that apply to this object (only when Record is Everything)."""
+    try:
+        from . import adapters, datarec, runtime
+        if not datarec.scope_everything():
+            return []
+    except Exception:
+        return []
+    out = []
+    if datarec.is_linked(obj):
+        return [(INFO, TXT_EV_LINKED)]
+    tracked = datarec.is_tracked(obj)
+    scene_on = datarec.is_tracked(context.scene)
+    if scene_on and not tracked:
+        out.append((INFO, TXT_EV_NOT_ON))
+    if scene_on and getattr(obj, "type", "MESH") not in ("MESH", "EMPTY"):
+        out.append((INFO, TXT_EV_COMEBACK.format(kind=obj.type.lower().replace("_", " "))))
+    if not tracked:
+        return out
+    anim = adapters.animated_paths(obj)
+    if anim:
+        rows = {p for rows in adapters.ALLOWLIST.values() for p, _k, _c in rows}
+        # 'location' stays; 'constraints["Copy Location"].influence' reads as 'influence'
+        names = sorted({p if p in rows else p.rsplit(".", 1)[-1] for p in anim
+                        if p in rows or p.startswith("constraints[")})
+        if names:
+            out.append((INFO, TXT_EV_ANIMATED.format(names=", ".join(n.replace("_", " ") for n in names[:6]))))
+    for c in getattr(obj, "constraints", ()):
+        if any(p.type == "COLLECTION" and len(getattr(c, p.identifier, ())) for p in c.bl_rna.properties
+               if p.identifier != "rna_type"):
+            out.append((INFO, TXT_EV_LISTS))
+            break
+    if getattr(obj, "type", None) == "MESH" and len(obj.data.vertices) > runtime.EDIT_STEPS_MAX:
+        out.append((INFO, TXT_EV_EDIT_BIG))
+    if not scene_on:
+        out.append((INFO, TXT_EV_NEW_COLLECTIONS))
     return out
 
 

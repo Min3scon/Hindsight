@@ -96,7 +96,11 @@ class HINDSIGHT_OT_record_everything(bpy.types.Operator):
 
     def execute(self, context):
         from . import datarec
-        datarec.set_tracked(_ctx_active(context), self.on)
+        ob = _ctx_active(context)
+        if self.on and datarec.is_linked(ob):
+            self.report({'WARNING'}, datarec.LINKED_TEXT)
+            return {'CANCELLED'}
+        datarec.set_tracked(ob, self.on)
         from . import runtime
         runtime.tag_redraw_all()
         return {'FINISHED'}

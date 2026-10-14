@@ -123,10 +123,10 @@ def find_object(uid: str):
     name = _UID_CACHE.get(uid)
     if name is not None:
         ob = bpy.data.objects.get(name)
-        if ob is not None and ob.get(UID_PROP) == uid:
+        if ob is not None and ob.library is None and ob.get(UID_PROP) == uid:
             return ob
     for ob in bpy.data.objects:
-        if ob.type == "MESH" and ob.get(UID_PROP) == uid:
+        if ob.type == "MESH" and ob.library is None and ob.get(UID_PROP) == uid:   # never linked data
             _UID_CACHE[uid] = ob.name
             return ob
     return None
@@ -168,8 +168,8 @@ def any_uid(obj):
 
 def history_of(obj):
     uid = any_uid(obj)
-    if uid is None or is_excluded(obj):
-        return None
+    if uid is None or is_excluded(obj) or getattr(obj, "library", None) is not None:
+        return None                       # linked data never has a history here (D28)
     return _REG.history_for(uid)
 
 
@@ -508,20 +508,20 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     if step is None:
         return None
     if h is not None and native:
-        # Native undo / redo / F9 redo moved the mesh onto a neighbouring recorded state.
-        if h.cursor > 0 and _inverse_matches(step, h.entries[h.cursor - 1].load(), st, True):
-            h.cursor -= 1
-            _apply_to_state(st, step)
-            _LAST_UNDO_MATCH[0] = time.time()
-            _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
-            tag_redraw_all()
-            return None
-        if h.cursor < len(h.entries) and _inverse_matches(step, h.entries[h.cursor].load(), st, False):
-            h.cursor += 1
-            _apply_to_state(st, step)
-            _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
-            tag_redraw_all()
-            return None
+        # Native undo / redo / F9 redo moved the mesh onto a neighbouring recorded state. The
+        # direction Blender went is tried first: after a step that returned to an earlier state,
+        # both neighbours can match.
+        back = (h.cursor > 0, h.cursor - 1, True, -1)
+        fwd = (h.cursor < len(h.entries), h.cursor, False, 1)
+        for ok_, idx, inverse, move in ((fwd, back) if UNDO_DIRECTION[0] == "redo" else (back, fwd)):
+            if ok_ and _inverse_matches(step, h.entries[idx].load(), st, inverse):
+                h.cursor += move
+                _apply_to_state(st, step)
+                if inverse:
+                    _LAST_UNDO_MATCH[0] = time.time()
+                _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
+                tag_redraw_all()
+                return None
         if uid in _WROTE and mode in RECORD_MODES:
             # Blender's undo replayed stroke data recorded before a Hindsight jump: the result is
             # not a real state. Put the mesh back (never record it, never drop later steps).
@@ -782,10 +782,27 @@ def tick() -> float:
     return 0.02 if (_DIRTY or busy) else 0.1
 
 
+UNDO_DIRECTION = ["undo"]      # which way Blender's last undo or redo went (see commit, datarec.on_undo)
+
+
 @persistent
 @guard.guarded("undo_sync")
 def on_undo(*_a) -> None:
-    """After native undo/redo: compare the mesh with our state (commit() detects the match)."""
+    """After Blender's undo."""
+    UNDO_DIRECTION[0] = "undo"
+    _after_native_undo()
+
+
+@persistent
+@guard.guarded("undo_sync")
+def on_redo(*_a) -> None:
+    """After Blender's redo."""
+    UNDO_DIRECTION[0] = "redo"
+    _after_native_undo()
+
+
+def _after_native_undo() -> None:
+    """Compare the mesh with our state (commit() detects the match)."""
     _UID_CACHE.clear()
     _NATIVE_PENDING.update(_STATES.keys())   # objects in other modes are checked on their next commit
     obj = _active()
@@ -797,12 +814,12 @@ def on_undo(*_a) -> None:
             commit_edit(obj, "Edit")
     try:
         from . import datarec
-        datarec.on_undo()
+        datarec.on_undo(UNDO_DIRECTION[0])
     except Exception as e:
         log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
 
 
-_HANDLERS = (("depsgraph_update_post", on_depsgraph), ("undo_post", on_undo), ("redo_post", on_undo))
+_HANDLERS = (("depsgraph_update_post", on_depsgraph), ("undo_post", on_undo), ("redo_post", on_redo))
 
 
 def ensure_handlers() -> list:
@@ -1012,10 +1029,10 @@ def scrub_info(context):
         locked = _movie_locked(context)
         if use_global(context):
             vis = _visible_uids()
-            order = globaltl.global_order(_REG, vis)
-            if not order:
+            n = globaltl.global_length(_REG, vis)
+            if not n:
                 return None
-            return {"pos": globaltl.global_position(_REG, vis), "len": len(order),
+            return {"pos": globaltl.global_position(_REG, vis), "len": n,
                     "cap": SETTINGS.max_steps, "global": True, "locked": locked, "morph_target": None}
         obj = _ctx_active(context)
         h = history_of(obj)
@@ -1034,10 +1051,11 @@ def step_list(context, around: int = 12) -> list:
     try:
         if use_global(context):
             vis = _visible_uids()
-            order = globaltl.global_order(_REG, vis)
+            groups = globaltl.global_groups(_REG, vis)
             cur = globaltl.global_position(_REG, vis)
             labels = []
-            for _seq, hid, i in order:
+            for grp in groups:                       # one position per operation
+                _seq, hid, i = grp[0]
                 h = _REG.histories.get(hid)
                 labels.append(h.entries[i].meta.get("label", "Step") if h else "Step")
         else:

@@ -27,6 +27,8 @@ LABELS = {
     "adapter:rna": "Recording transforms, parenting, visibility and names",
     "adapter:object": "Recording collections, hiding and constraints",
     "adapter:scene": "Recording adding and deleting objects",
+    "adapter:edit_steps": "Recording Edit Mode step by step",
+    "adapter:object_mesh": "Recording mesh changes in Object Mode (Apply, Shade Smooth, Set Origin)",
 }
 
 # Features that are reported but never switched off (each call is independent, e.g. one file save).

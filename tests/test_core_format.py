@@ -93,6 +93,9 @@ def test_reads_format_1():
 
 
 def test_damaged_step_is_never_applied():
+    """D27: the object was saved as it is at the end (cursor 5). A damaged step 3 is needed to go back
+    from there to steps 1-2, so none of the history can be reached exactly: nothing is kept (keeping
+    steps 1-2 would rebuild states that never existed). The report says so."""
     blob = bytearray(persist.registry_to_bytes(_reg()))
     doc, rest = _split(bytes(blob))
     o, n = _blob_offsets(rest, 5)[2]
@@ -100,21 +103,43 @@ def test_damaged_step_is_never_applied():
     blob[start + n // 2] ^= 0xFF           # flip one byte inside step 3
     reg = persist.registry_from_bytes(bytes(blob))
     h = reg.histories["H1"]
-    assert len(h.entries) == 2, len(h.entries)        # steps 1-2 kept, 3-5 dropped
-    assert h.cursor == 2
+    assert len(h.entries) == 0 and h.cursor == 0, (len(h.entries), h.cursor)
     d = reg.load_report["damaged"]
-    assert d == [{"uid": "H1", "members": ["objA"], "kept": 2, "lost": 3}], d
+    assert d == [{"uid": "H1", "members": ["objA"], "kept": 0, "lost": 5, "before_saved": True}], d
+
+
+def test_damage_after_the_saved_step_keeps_what_comes_before():
+    """Saved at step 1 (the later steps are redo steps). Damage in step 3 only loses steps 3-5:
+    steps 1-2 are reachable from the saved state and decode fine; the cursor stays at 1."""
+    reg0 = _reg()
+    reg0.histories["H1"].cursor = 1
+    blob = bytearray(persist.registry_to_bytes(reg0))
+    doc, rest = _split(bytes(blob))
+    o, n = _blob_offsets(rest, 5)[2]
+    blob[len(blob) - len(rest) + o + n // 2] ^= 0xFF
+    reg = persist.registry_from_bytes(bytes(blob))
+    h = reg.histories["H1"]
+    assert len(h.entries) == 2 and h.cursor == 1, (len(h.entries), h.cursor)
+    assert reg.load_report["damaged"][0]["before_saved"] is False
     for e in h.entries:
         e.load()                                      # what is kept decodes fine
 
 
 def test_cut_off_file_keeps_complete_steps():
-    blob = persist.registry_to_bytes(_reg())
+    """A file cut off at the end: steps before the cut are kept only when the history was saved at a
+    step before the cut (otherwise nothing before it is reachable, D27)."""
     trailer = len(persist.TRAILER) + 4
+    reg0 = _reg()
+    reg0.histories["H1"].cursor = 1
+    blob = persist.registry_to_bytes(reg0)
     for cut in (1, 30, 200):
         reg = persist.registry_from_bytes(blob[:-(cut + trailer)])
         h = reg.histories["H1"]
         assert 0 < len(h.entries) < 5 and reg.load_report["damaged"][0]["lost"] == 5 - len(h.entries)
+        assert h.cursor == 1
+    blob = persist.registry_to_bytes(_reg())                    # saved at the end
+    reg = persist.registry_from_bytes(blob[:-(30 + trailer)])
+    assert len(reg.histories["H1"].entries) == 0 and reg.load_report["damaged"][0]["before_saved"]
 
 
 def test_header_checksum_trailer():
@@ -179,6 +204,7 @@ def test_not_a_history():
 
 
 for fn in (test_writes_current_format_with_checksums, test_reads_format_1, test_damaged_step_is_never_applied,
+           test_damage_after_the_saved_step_keeps_what_comes_before,
            test_cut_off_file_keeps_complete_steps, test_header_checksum_trailer,
            test_two_histories_stay_aligned_after_damage, test_newer_format_is_refused, test_not_a_history):
     try:
