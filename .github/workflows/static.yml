@@ -34,8 +34,8 @@ jobs:
           python-version: '3.11'
       - name: Core tests (no Blender needed)
         run: |
-          python -m pip install --quiet numpy
-          for t in tests/test_core_*.py tests/test_tools_precheck.py; do python "$t" || exit 1; done
+          python -m pip install --quiet numpy zstandard==0.23.0
+          for t in tests/test_core_*.py tests/test_tools_precheck.py; do HINDSIGHT_VERIFY=1 python "$t" || exit 1; done
       - name: Build the download zip
         run: python3 scripts/build_zip.py --blender-ext ""
       - name: Build the site

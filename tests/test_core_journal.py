@@ -208,7 +208,7 @@ def _steps_equal(a, b):
     for x, y in zip(da, db):
         if x.key != y.key or tuple(x.exists) != tuple(y.exists):
             return False
-        if not (_arr_eq(x.idx, y.idx) and _arr_eq(x.xor, y.xor)):
+        if not (_arr_eq(x.idx, y.idx) and _arr_eq(x.vals, y.vals)):
             return False
     return _snap_eq(a.before, b.before) and _snap_eq(a.after, b.after)
 

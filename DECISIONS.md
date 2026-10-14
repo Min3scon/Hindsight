@@ -104,6 +104,49 @@ Checklist items that were checked and are NOT the cause:
 - Removed the "object transforms are not recorded" note. Steps are stored in object space, so moving an
   object doesn't change how its history plays back. The note appeared on almost every object.
 
+### Compression decisions (format 3; numbers in PERF_LOG.md)
+- Measured on real strokes first. The 12.4 KB figure in the brief came from the old synthetic benchmark
+  (strokes with 5% random noise per vertex). Real mouse strokes recorded in Blender
+  (`tests_ui/scenarios/s_corpus.py`: 18 brushes, three sizes, five meshes) store about 9.9 KB per 2%
+  step at 100k on format 2. All decisions below were taken on that corpus.
+- One reversible array per step was already true (XOR). It is now the wrapping difference new - old of
+  the bit patterns: forward adds, backward subtracts, exact for every bit pattern. XOR can't be predicted
+  from neighbours (its low bits depend on the old value); the difference can. Steps from format 1 and 2
+  stay XOR and play back as they are.
+- Per component, the encoder picks a predictor (difference applied 0 to 3 times along the record) by
+  estimated bits, then zigzag-maps the residuals and stores byte planes. A higher order is used only for
+  an estimated 3% gain, since each order costs a pass when decoding. The estimate reads the float32
+  exponent of each value (one stacked array for all orders): trial compression picked within 0.2% of it
+  at several times the cost, and a sum-of-values estimate picked worse orders than none at all.
+- Kept off the main thread: packing (background thread, full encoder). The crash journal and saving
+  write the quick form (values as they are, smaller than format 2 already); those steps, and steps from
+  old files, are re-packed later by the idle packer.
+- Background recompression: when the packer has been idle for a second it re-packs one step at a time at
+  zstd level 19, using at most a quarter of one core, and swaps a blob only if it decodes to the same
+  step (`same_step`). Steps over 8 MB are left alone.
+- Step container: binary header (no JSON) with a CRC-32 of the whole blob; the file keeps its per-step
+  CRCs and gains a CRC of its JSON header (trailer `HSRT`). File format 3. Beta 1 opens format 3 files
+  but can't play the new steps back; opening and saving there keeps them intact (Round F checks this).
+- Decoding speed: decode work grew (zigzag and prediction undo), so the rest got faster to keep jumps
+  within budget: apply uses take/setitem (about 35% faster) and a plain slice for one contiguous run,
+  the index decoder has a one-operation path for single runs, and records are parsed once. Which
+  objects a jump moves is checked as each step comes up, because a join crossed backwards brings
+  objects back mid-jump (D12 was caught by test_bl_join when that was first got wrong).
+- The packer waits until no new step has arrived for 0.3 s before packing (unless a save is waiting
+  for it): packing right after a commit competed with the main thread for Python and slowed commits
+  fired back to back.
+- Not done, measured: grouped frames of 8-32 steps (at most 0.4% smaller), cross-step context and chunk
+  dedup (no gain beyond grouping), a trained zstd dictionary (plus or minus 0.5%), run-length and bitmap
+  index coding (under 1%, slower to decode; the reader accepts them), lzma (4% smaller, 10-15x slower to
+  decode), an offset instead of zigzag (12-47% bigger), rotation into the stroke direction (3-10%
+  estimated before storing the rotations),
+  Rice-style split coding (bigger than zstd on byte planes), prediction from mesh neighbours (an upper
+  bound of about a fifth on remeshed meshes and nothing on grid-like ones, at a large decode cost and
+  needing topology in the decoder),
+  decoding ahead on worker threads (faster in plain Python, 70% slower inside Blender: removed).
+- The 4-6 KB target at 100k for 2% strokes is not reachable losslessly on real strokes with these
+  techniques; what was reached is in PERF_LOG.md. Lossy storage, thinning and replay are out of scope.
+
 ### Step 5 decisions (website)
 - Hand-written HTML templates and a 300-line Python build (`site/build.py`) instead of a static site
   generator: no dependencies in CI, full control over the output, facts (version, size, numbers) injected

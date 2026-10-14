@@ -7,7 +7,7 @@ import traceback
 import numpy as np
 
 from hindsight.core import codec, delta, step as stepmod, store
-from hindsight.core.types import (CHANNEL_TYPES, DELTA, TOPO, JOIN, ChannelDelta, Entry, Settings,
+from hindsight.core.types import (ADD, XOR, CHANNEL_TYPES, DELTA, TOPO, JOIN, ChannelDelta, Entry, Settings,
                                   Snapshot, Step, POSITION_KEY, EDGE_VERTS_KEY, CORNER_VERT_KEY,
                                   CORNER_EDGE_KEY, FACE_OFFSETS_KEY, MASK_KEY, HIDE_VERT_KEY,
                                   bits_dtype, make_key)
@@ -61,8 +61,8 @@ def bits_equal(a, b):
 
 def deltas_equal(a: ChannelDelta, b: ChannelDelta):
     return (a.key == b.key and tuple(a.exists) == tuple(b.exists) and a.idx.dtype == b.idx.dtype == np.uint32
-            and np.array_equal(a.idx, b.idx) and a.xor.dtype == b.xor.dtype and a.xor.shape == b.xor.shape
-            and np.array_equal(a.xor, b.xor))
+            and np.array_equal(a.idx, b.idx) and a.vals.dtype == b.vals.dtype and a.vals.shape == b.vals.shape
+            and np.array_equal(a.vals, b.vals))
 
 
 def all_keys():
@@ -78,16 +78,23 @@ def test_diff_apply_all_types():
         new = mutate(old, w)
         d = delta.diff(key, old, new)
         assert d is not None, key
-        assert d.idx.dtype == np.uint32 and d.xor.dtype == bits_dtype(dt), (key, d.xor.dtype)
-        assert d.xor.shape == (d.idx.size, w)
+        assert d.idx.dtype == np.uint32 and d.vals.dtype == bits_dtype(dt), (key, d.vals.dtype)
+        assert d.vals.shape == (d.idx.size, w)
         assert np.all(np.diff(d.idx.astype(np.int64)) > 0)
         # exactly the changed elements
         ch = np.flatnonzero((delta.view_bits(old).reshape(-1, w) != delta.view_bits(new).reshape(-1, w)).any(1))
         assert np.array_equal(ch, d.idx), key
+        assert d.op == ADD
         buf = old.copy()
         delta.apply(buf, d)
         assert bits_equal(buf, new), key
-        delta.apply(buf, d)  # twice restores
+        delta.apply(buf, d, forward=False)  # backwards restores
+        assert bits_equal(buf, old), key
+        # format 2 deltas (XOR) still apply the same way in both directions
+        x = ChannelDelta(key, d.idx, delta.as_xor(d, old), d.exists, XOR)
+        delta.apply(buf, x)
+        assert bits_equal(buf, new), key
+        delta.apply(buf, x, forward=False)
         assert bits_equal(buf, old), key
         assert delta.diff(key, old, old.copy()) is None
     print("PASS test_diff_apply_all_types")
@@ -113,7 +120,7 @@ def test_exists_and_empty():
     key = MASK_KEY
     z = np.zeros(50, np.float32)
     d = delta.diff(key, z, z.copy(), exists=(False, True))
-    assert d is not None and d.idx.size == 0 and d.xor.shape == (0, 1) and d.exists == (False, True)
+    assert d is not None and d.idx.size == 0 and d.vals.shape == (0, 1) and d.exists == (False, True)
     d2 = delta.unpack_delta(delta.pack_delta(d))
     assert deltas_equal(d, d2)
     buf = z.copy(); delta.apply(buf, d2); assert bits_equal(buf, z)
@@ -219,7 +226,7 @@ def test_step_roundtrip_all_codecs():
     for name in names + ["auto"]:
         st = make_delta_step()
         b = stepmod.step_to_bytes(st, name)
-        assert b[:4] == b"HSS1"
+        assert b[:4] == b"HSS3"
         assert steps_equal(st, stepmod.step_from_bytes(b)), name
         topo = Step(2, "Voxel Remesh", "SCULPT", "obj-a", 1.5, TOPO, [], make_snapshot(), make_snapshot(300, 70))
         assert steps_equal(topo, stepmod.step_from_bytes(stepmod.step_to_bytes(topo, name)))
@@ -358,7 +365,7 @@ def test_enforce_tiers():
     finally:
         p.stop()
     assert [e.is_packed() for e in h3.entries] == [True] * 90 + [False] * 10
-    assert h3.entries[0].load().deltas[0].xor.sum() == 4
+    assert h3.entries[0].load().deltas[0].vals.sum() == 4
     print("PASS test_enforce_tiers")
 
 

@@ -2,17 +2,28 @@
 
 Histories are duck-typed: h.entries (list[Entry]), h.cursor (int), h.drop_oldest(n) -> int.
 Recent entries stay raw (fast undo); older ones are packed (compressed) by a background
-worker thread; caps drop the oldest entries.
+worker thread; caps drop the oldest entries. When the worker has nothing else to do it recompresses
+packed steps with a stronger setting, checked byte for byte, a few at a time.
 """
 from __future__ import annotations
 
+import collections
 import heapq
 import queue
 import threading
+import time
+import weakref
 
-from .step import step_to_bytes
+from .step import recompress, step_to_bytes
 
 _STOP = object()
+
+
+QUIET_S = 0.3         # pack only once no new step has arrived for this long (the main thread is
+                      # busy right after a commit; packing then would compete with it for Python)
+IDLE_S = 1.0          # recompress only after the packer has been idle this long
+DUTY = 0.25           # and then use at most this share of one core (sleep in between)
+STRONG_MAX_BYTES = 8 << 20   # larger steps are left at the normal setting (too slow to redo)
 
 
 class Packer:
@@ -20,9 +31,10 @@ class Packer:
 
     The worker only touches numpy + codec. The swap is atomic for readers:
     entry.blob is set first, then entry.step = None, so Entry.load() always finds one.
+    Recompression replaces entry.blob with a smaller blob that decodes to the same bytes.
     """
 
-    def __init__(self):
+    def __init__(self, recompress_idle: bool = True):
         self._q = queue.SimpleQueue()
         self._cond = threading.Condition()
         self._pending = 0
@@ -31,8 +43,23 @@ class Packer:
         self.errors = 0
         self.last_error = None
         self.packed = 0
+        self.recompressed = 0
+        self.saved_bytes = 0
+        self._strong = collections.deque()   # weak refs to packed entries not yet recompressed
+        self._recompress = recompress_idle
+        self._wake = threading.Event()        # set on stop, ends a pause early
+        self._last_submit = 0.0
+        self._hurry = 0                       # drains waiting: pack right away
         self._thread = threading.Thread(target=self._run, name="HindsightPacker", daemon=True)
         self._thread.start()
+
+    def queue_recompress(self, entries) -> None:
+        """Offer packed entries (for example after loading a file) for idle-time recompression."""
+        if not self._recompress:
+            return
+        for e in entries:
+            if e.blob is not None:
+                self._strong.append(weakref.ref(e))
 
     # main thread -----------------------------------------------------------
     def submit(self, entry, codec: str) -> None:
@@ -46,6 +73,7 @@ class Packer:
                 return
             self._inflight.add(id(entry))
             self._pending += 1
+        self._last_submit = time.monotonic()
         self._q.put((entry, codec))
 
     def pending(self) -> int:
@@ -54,22 +82,33 @@ class Packer:
 
     def drain(self, timeout: float | None = None) -> None:
         with self._cond:
-            self._cond.wait_for(lambda: self._pending == 0, timeout)
+            self._hurry += 1
+            try:
+                self._cond.wait_for(lambda: self._pending == 0, timeout)
+            finally:
+                self._hurry -= 1
 
     def stop(self) -> None:
         if self._stopped:
             return
         self._stopped = True
+        self._wake.set()
         self._q.put(_STOP)
         self._thread.join(timeout=10.0)
 
     # worker thread ---------------------------------------------------------
     def _run(self) -> None:
         while True:
-            item = self._q.get()
+            try:
+                item = self._q.get(timeout=IDLE_S if self._strong else None)
+            except queue.Empty:
+                self._recompress_one()
+                continue
             if item is _STOP:
                 return
             entry, codec = item
+            while not self._stopped and not self._hurry and time.monotonic() - self._last_submit < QUIET_S:
+                time.sleep(0.05)
             try:
                 step = entry.step
                 if step is not None:
@@ -78,6 +117,8 @@ class Packer:
                         entry.blob = blob
                         entry.step = None
                         self.packed += 1
+                        if self._recompress:
+                            self._strong.append(weakref.ref(entry))
             except Exception as e:            # keep the worker alive; entry stays raw
                 self.errors += 1
                 self.last_error = repr(e)
@@ -87,6 +128,29 @@ class Packer:
                     self._pending -= 1
                     if self._pending == 0:
                         self._cond.notify_all()
+
+    def _recompress_one(self) -> None:
+        """Idle work: recompress one packed step (oldest first), then rest in proportion."""
+        while self._strong and not self._stopped:
+            entry = self._strong.popleft()()
+            blob = getattr(entry, "blob", None)
+            if blob is None or len(blob) > STRONG_MAX_BYTES:
+                continue
+            t = time.perf_counter()
+            try:
+                new = recompress(blob)
+            except Exception as e:            # damaged or unexpected: leave the step as it is
+                self.errors += 1
+                self.last_error = repr(e)
+                return
+            if new is not None and entry.blob is blob:
+                entry.blob = new
+                self.recompressed += 1
+                self.saved_bytes += len(blob) - len(new)
+            dt = time.perf_counter() - t
+            if dt > 0:
+                self._wake.wait(min(1.0, dt * (1.0 - DUTY) / DUTY))
+            return
 
 
 def enforce_tiers(histories: list, settings, packer: Packer | None = None) -> None:

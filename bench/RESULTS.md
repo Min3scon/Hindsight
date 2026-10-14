@@ -1,33 +1,33 @@
 # Hindsight benchmark results
 
-Measured with `bench/bench_core.py` (pure numpy storage engine) and `bench/bench_bl.py` (real Blender). **The Blender numbers are from the headless bpy module (bpy 4.2.23 LTS, `import bpy` in Python 3.11.17), not the Blender GUI**: no viewport redraw, no sculpt PBVH rebuild cost, strokes simulated by writing vertex positions and calling `runtime.commit`. Expect the GUI to add its own redraw time on top of scrub latency. Test mesh: a lat/long quad grid on a sphere built with `foreach_set`, in Sculpt Mode.
+Measured with `bench/bench_core.py` (pure numpy storage engine) and `bench/bench_bl.py` (real Blender). **The Blender numbers are from headless Blender, started with blender -b (Blender 5.1.2, Python 3.13.9), not the Blender GUI**: no viewport redraw, no sculpt PBVH rebuild cost, strokes simulated by writing vertex positions and calling `runtime.commit`. Expect the GUI to add its own redraw time on top of scrub latency. Test mesh: a lat/long quad grid on a sphere built with `foreach_set`, in Sculpt Mode.
 
 ## Environment
 
-- CPU: Intel(R) Xeon(R) Processor @ 2.10GHz (4 logical CPUs), x86_64
-- OS: Linux-6.18.44-fc-v114-x86_64-with-glibc2.39
-- Python 3.11.17, bpy 4.2.23 LTS, numpy 2.4.6
-- Codecs available: zstd, lz4, zlib, none (used: zstd)
+- CPU: Intel(R) Core(TM) i5-10600KF CPU @ 4.10GHz (12 logical CPUs), AMD64
+- OS: Windows-10-10.0.19045-SP0
+- Python 3.13.9, Blender 5.1.2, numpy 2.3.4
+- Codecs available: zstd, zlib, none (used: zstd)
 
-## Blender (bpy module), one object, strokes of ~2% of the vertices
+## Blender, headless, one object, strokes of ~2% of the vertices
 
 | Metric | 99,904 verts | 500,000 verts |
 |---|---|---|
 | Stroke size (verts) | 1,998 | 10,000 |
 | Memory per step, raw (bytes) | 32,120 | 159,520 |
-| Memory per step, packed (bytes) | 12,361 | 58,760 |
+| Memory per step, packed (bytes) | 9,254 | 43,962 |
 | Full position array (bytes, for scale) | 1,198,848 | 6,000,000 |
-| Recording overhead: `runtime.commit` median (ms) | 1.07 | 3.58 |
-| Recording overhead: p90 (ms) | 1.44 | 4.57 |
-| Scrub 1 step: `runtime.goto` median (ms) | 0.39 | 1.51 |
-| Scrub 100 steps (ms) | 13.0 | 55.8 |
-| Scrub 300 steps = whole history (ms) | 36.3 | 161.1 |
-| Scrub 5,000 steps (ms) | 723.9 | not measured |
-| Save, 300 steps (ms) | 105.4 | 739.8 |
-| Load, 300 steps (ms) | 118.1 | 677.9 |
-| History file, 300 steps (bytes) | 3,788,806 | 18,061,546 |
+| Recording overhead: `runtime.commit` median (ms) | 1.13 | 6.80 |
+| Recording overhead: p90 (ms) | 1.61 | 9.36 |
+| Scrub 1 step: `runtime.goto` median (ms) | 0.30 | 1.33 |
+| Scrub 100 steps (ms) | 11.5 | 39.8 |
+| Scrub 300 steps = whole history (ms) | 26.8 | 100.4 |
+| Scrub 5,000 steps (ms) | 612.5 | not measured |
+| Save, 300 steps (ms) | 97.7 | 324.5 |
+| Load, 300 steps (ms) | 164.0 | 906.6 |
+| History file, 300 steps (bytes) | 2,859,757 | 13,489,195 |
 
-- 99,904 verts, 5,000 steps: history 62.5 MiB (13,102 B/step, newest 64 raw), save 723 ms, load 256 ms, file 64,310,319 B; recording 4,700 more strokes took 10 s including the simulated stroke writes.
+- 99,904 verts, 5,000 steps: history 45.6 MiB (9,559 B/step, newest 64 raw), save 248 ms, load 239 ms, file 46,485,186 B; recording 4,700 more strokes took 7 s including the simulated stroke writes.
 - 500,000 verts: 5,000-step jump not measured (only attempted at 100k).
 - Save/load method: bpy.ops.wm.save_as_mainfile + bpy.ops.wm.open_mainfile, save_mode=SIDECAR (includes writing/reading the .blend itself).
 

@@ -11,7 +11,7 @@ from ..core import globaltl
 from ..core.history import MeshState
 from ..core.registry import Registry, new_uid
 from ..core.types import (
-    SETTINGS, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width,
+    SETTINGS, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
 from . import guard, log, meshio
 
@@ -243,25 +243,28 @@ def prime_states() -> None:
 
 
 # ----------------------------------------------------------------------------- recording
-def _deltas_equal(a: Step, b: Step) -> bool:
-    if a.kind != b.kind:
+def _deltas_match(seen: Step, rec: Step, st: MeshState, inverse: bool) -> bool:
+    """True if the change `seen` (diffed from `st`) is exactly `rec` undone (inverse) or redone."""
+    from ..core import delta as D
+    if seen.kind != DELTA or rec.kind != DELTA or len(seen.deltas) != len(rec.deltas):
         return False
-    if a.kind == DELTA:
-        if len(a.deltas) != len(b.deltas):
+    by_key = {d.key: d for d in rec.deltas}
+    for d in seen.deltas:
+        e = by_key.get(d.key)
+        if e is None:
             return False
-        bd = {d.key: d for d in b.deltas}
-        for d in a.deltas:
-            e = bd.get(d.key)
-            if e is None or not np.array_equal(d.idx, e.idx) or not np.array_equal(d.xor, e.xor):
-                return False
-        return True
-    return False
+        before = st.arrays.get(d.key)
+        if before is None:
+            before = np.zeros(int(st.counts[split_key(d.key)[1]]) * key_width(d.key), dtype=key_dtype(d.key))
+        if not D.same_change(d, e, before, inverse):
+            return False
+    return True
 
 
-def _inverse_matches(new: Step, old: Step) -> bool:
-    """True if `new` (observed change) is exactly `old` undone (or redone, XOR is symmetric)."""
+def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool:
+    """True if `new` (observed change, diffed from `st`) is exactly `old` undone (inverse) or redone."""
     if new.kind == DELTA:
-        return _deltas_equal(new, old)
+        return _deltas_match(new, old, st, inverse)
     if new.kind == TOPO and old.kind == TOPO and old.before is not None:
         def same(s1, s2):
             if s1.counts != s2.counts:
@@ -424,14 +427,14 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         return None
     if h is not None and native:
         # Native undo / redo / F9 redo moved the mesh onto a neighbouring recorded state.
-        if h.cursor > 0 and _inverse_matches(step, h.entries[h.cursor - 1].load()):
+        if h.cursor > 0 and _inverse_matches(step, h.entries[h.cursor - 1].load(), st, True):
             h.cursor -= 1
             _apply_to_state(st, step)
             _LAST_UNDO_MATCH[0] = time.time()
             _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
             tag_redraw_all()
             return None
-        if h.cursor < len(h.entries) and _inverse_matches(step, h.entries[h.cursor].load()):
+        if h.cursor < len(h.entries) and _inverse_matches(step, h.entries[h.cursor].load(), st, False):
             h.cursor += 1
             _apply_to_state(st, step)
             _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
@@ -464,7 +467,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     if removed:
         _journal("TRUNC", {"hist": h.uid, "keep": at})
     entry = h.entries[-1]
-    _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression))
+    _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
     _enforce(h)
     tag_redraw_all()
     return step
@@ -1033,3 +1036,4 @@ def unregister() -> None:
         except Exception:
             pass
         packer = None
+

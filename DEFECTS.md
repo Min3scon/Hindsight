@@ -17,4 +17,5 @@ Exit criteria for a release: no open S1 or S2; every S3 either fixed or listed i
 | D9 | Round E | S3 | A slow modifier stack split one stroke into several steps | fixed | regress_stroke_split |
 | D10 | Round E | S3 | A file saved in Edit Mode got an "Edit Mode" step on leaving Edit Mode | fixed | test_bl_regressions |
 | D11 | Site | S2 | Demo Morph and Reset buttons swallowed by the sculpt stage's pointer capture | fixed | tests/site/site_qa.js |
+| D12 | Compression work (headless suite) | S1 | While adding decode-ahead for long jumps, the objects a jump moves were fixed at its start, so a join crossed backwards brought its member back without replaying the member's own earlier steps (it showed its state at the join). Caught before any commit by test_bl_join in all three Blenders | fixed: checked as each step comes up | test_core_history (test_member_brought_back_mid_jump), test_bl_join, tools/mutation_test.py (two mutants) |
 | B1 | Round D | n/a | Blender 5.1 crashes if a script switches mode mid-stroke (Blender bug, reproduced without Hindsight) | guarded: no jumps while a stroke runs | round_d |

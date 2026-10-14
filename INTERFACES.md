@@ -27,10 +27,12 @@ Read the file. Key points:
 - Channel key: `"name|DOMAIN|TYPE"`, e.g. `POSITION_KEY = "position|POINT|FLOAT_VECTOR"`.
   `CHANNEL_TYPES[TYPE] = (native numpy dtype, width, foreach prop)`. Channel values are ALWAYS flat
   native arrays of length `count*width` (float32 / int32 / int8 / bool).
-- `ChannelDelta(key, idx: uint32[k] sorted unique, xor: bits[k, width], exists=(before, after))`,
+- `ChannelDelta(key, idx: uint32[k] sorted unique, vals: bits[k, width], exists=(before, after), op)`,
   bits dtype = `bits_dtype(native)` (uint8 for bool/int8, uint32 for float32/int32).
-  `xor = view_bits(old) ^ view_bits(new)` at the changed elements. Applying = `bits[idx] ^= xor` (same
-  op for undo and redo).
+  `op == ADD` (every new step): `vals = view_bits(new) - view_bits(old)` at the changed elements,
+  wrapping; forward is `bits[idx] += vals`, backward `bits[idx] -= vals`.
+  `op == XOR` (steps from format 1 and 2 files): `vals = old ^ new`, the same op both ways.
+  Both are exact for every bit pattern (NaN payloads, -0, denormals).
 - `Snapshot(counts={"POINT","EDGE","FACE","CORNER"}, arrays={key: flat native array})` — full mesh,
   includes topology arrays `EDGE_VERTS_KEY, CORNER_VERT_KEY, CORNER_EDGE_KEY, FACE_OFFSETS_KEY`
   (face_offsets length = faces + 1).
@@ -50,30 +52,45 @@ Read the file. Key points:
 # core/codec.py
 def available() -> list[str]                    # subset of ["zstd", "lz4", "zlib", "none"], in preference order
 def resolve(name: str) -> str                    # "auto" -> best available; unknown/unavailable -> "zlib"
-def compress(data: bytes, codec: str = "auto") -> bytes   # first byte = codec id: 0 none, 1 zlib(level 1), 2 lz4, 3 zstd(level 3)
-def decompress(blob: bytes) -> bytes             # reads the codec id byte
+def compress(data: bytes, codec: str = "auto", strong: bool = False) -> bytes
+    # first byte = codec id: 0 none, 1 zlib(level 1), 2 lz4, 3 zstd(level 3), 4 zstd(level 19), 5 zlib(level 9)
+def decompress(blob: bytes, expected: int | None = None) -> bytes
+    # reads the codec id byte; with `expected`, the length is checked before any large allocation
+    # and damage raises CorruptBlob (a ValueError)
+def is_strong(blob) -> bool                      # already in the strong form (or stored as is)
 
 # core/delta.py
 def view_bits(arr: np.ndarray) -> np.ndarray     # flat native array -> same memory viewed as unsigned bits (bool -> uint8)
 def diff(key: str, old: np.ndarray, new: np.ndarray, exists=(True, True)) -> ChannelDelta | None
     # old/new: flat native arrays of equal length (count*width). None if bit-identical and exists[0]==exists[1].
     # Missing side: pass a zeros array and exists=(False, True) etc.
-def apply(arr: np.ndarray, d: ChannelDelta) -> None   # in place: view_bits(arr).reshape(-1, width)[d.idx] ^= d.xor
-def pack_delta(d: ChannelDelta) -> bytes         # uncompressed binary: header + indices delta-encoded (np.diff,
-                                                 # smallest uint dtype that fits) + byte-shuffled xor planes
-def unpack_delta(b: bytes) -> ChannelDelta
+def apply(arr: np.ndarray, d: ChannelDelta, forward: bool = True) -> None   # in place, see op above;
+                                                 # raises ValueError for indices past the end (array untouched)
+def pack_delta(d: ChannelDelta, effort: int = NORMAL) -> bytes
+    # format 3 record (b"HE", see the docstring in delta.py): header + key + indices (gaps, or one run)
+    # + per component a predictor tag and byte planes. effort QUICK stores values as they are (crash
+    # journal, saving: main thread); NORMAL picks a predictor per component (packer thread).
+    # Raises ValueError for unsorted or repeated indices.
+def unpack_delta(b: bytes) -> ChannelDelta       # reads format 3 and the old b"HD" records; CorruptDelta on damage
+def same_change(seen, rec, before, inverse) -> bool   # native undo/redo matching (runtime)
 
 # core/step.py
 def snapshot_to_bytes(s: Snapshot) -> bytes      # uncompressed
 def snapshot_from_bytes(b: bytes) -> Snapshot
-def step_to_bytes(step: Step, codec: str = "auto") -> bytes
-    # format: b"HSS1" + u32 json_len + json(meta + delta keys/exists + sizes) + codec.compress(body)
-def step_from_bytes(b: bytes) -> Step            # exact round trip (arrays bit-identical, dtypes identical)
+def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes
+    # format 3: b"HSS3" + u32 CRC-32 + u16 header length + binary header + codec.compress(body)
+def step_from_bytes(b: bytes) -> Step            # exact round trip; reads format 3 and the old b"HSS1" steps;
+                                                 # CorruptStep (a ValueError) on any damage
+def recompress(b: bytes) -> bytes | None         # smaller blob for the same step (strong codec, full re-pack of
+                                                 # quick and old-format steps), verified with same_step
+def same_step(a: Step, b: Step) -> bool
 
 # core/store.py  — tiering + caps (operates on History objects from core/history.py, duck-typed:
 #                  h.entries: list[Entry], h.cursor: int, h.drop_oldest(n) -> int)
-class Packer:                                    # background thread that packs entries off the main thread
-    def __init__(self): ...
+class Packer:                                    # background thread that packs entries off the main thread;
+                                                 # when idle, recompresses packed entries (throttled)
+    def __init__(self, recompress_idle: bool = True): ...
+    def queue_recompress(self, entries) -> None  # e.g. everything loaded from a file
     def submit(self, entry: Entry, codec: str) -> None   # packs in a worker thread (numpy+codec only);
                                                          # swap is atomic: sets entry.blob then entry.step=None
     def drain(self, timeout: float | None = None) -> None   # wait until queue empty (used by tests / save)
@@ -98,7 +115,7 @@ class MeshState:
     def __init__(self, counts: dict, arrays: dict): ...      # arrays: key -> flat native array (owned)
     counts: dict; arrays: dict
     def apply_delta(self, d: ChannelDelta, forward: bool) -> None
-        # XOR in place. If key missing from arrays: create zeros of the right size first
+        # delta.apply in place. If key missing from arrays: create zeros of the right size first
         # (size from counts[domain]*width). After applying, if the delta's exists flag for the destination
         # side (exists[1] if forward else exists[0]) is False: remove the key from arrays and add it to
         # self.removed (set). If True: discard from self.removed.

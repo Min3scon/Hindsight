@@ -455,9 +455,57 @@ def test_join_hook():
     assert_state(st, (c2, a2))
 
 
+def test_member_brought_back_mid_jump():
+    """Regression (format 3 work): a join crossed backwards adds its member to `states` in the
+    middle of a jump; the member's own earlier steps must still be applied, packed or not."""
+    from hindsight.core import delta as D
+    rng = np.random.default_rng(41)
+    cb, ab = make_mesh(rng, 120, 40)
+    b_states = [{k: v.copy() for k, v in ab.items()}]
+    entries = []
+    seq = 0
+    for i in range(6):                                 # B's own steps, then A's, interleaved
+        for target in ("B", "A"):
+            seq += 1
+            if target == "B":
+                cur = b_states[-1]
+                new = {k: v.copy() for k, v in cur.items()}
+                p = new[POSITION_KEY]
+                j = rng.choice(p.size, 40, replace=False)
+                p[j] += rng.standard_normal(40).astype(np.float32)
+                d = D.diff(POSITION_KEY, cur[POSITION_KEY], p)
+                b_states.append(new)
+                entries.append(Step(seq, "B", "SCULPT", "B", 0.0, DELTA, [d]))
+            else:
+                entries.append(Step(seq, "A", "SCULPT", "A", 0.0, DELTA, []))
+    ca, aa = make_mesh(rng, 80, 20)
+    join = Step(seq + 1, "Join", "OBJECT", "A", 0.0, JOIN, [], Snapshot(ca, aa), Snapshot(ca, aa),
+                extra={"members": [{"uid": "B"}]})
+    final_b = b_states[-1]
+
+    def hook(s, forward, states):
+        if not forward:
+            states["B"] = MeshState(dict(cb), {k: v.copy() for k, v in final_b.items()})
+        else:
+            states.pop("B", None)
+        return {"A": {"__TOPO__"}}
+
+    for packed in (False, True):
+        h = History("A", members=["A", "B"])
+        for st in entries + [join]:
+            h.push(st)
+        if packed:
+            for e in h.entries:
+                e.pack("zlib")
+        states = {"A": MeshState(dict(ca), {k: v.copy() for k, v in aa.items()})}
+        h.goto(0, states, join_hook=hook)
+        assert "B" in states
+        assert_state(states["B"], (cb, b_states[0]))
+
+
 TESTS = [test_random_goto_exact, test_full_jumps, test_topo_vertex_count, test_removed_tracking,
          test_branching, test_drop_oldest_delete_past, test_reset_and_morph_target,
-         test_targets_skipped_and_interleaved, test_join_hook]
+         test_targets_skipped_and_interleaved, test_join_hook, test_member_brought_back_mid_jump]
 
 
 if __name__ == "__main__":

@@ -199,7 +199,7 @@ def join_with_history(context) -> bool:
         runtime._journal("RESET", {"hist": hist.uid})
         for i, e in enumerate(hist.entries):
             runtime._journal("STEP", {"hist": hist.uid, "at": i},
-                             lambda e=e: e.to_bytes(SETTINGS.compression))
+                             lambda e=e: e.to_bytes(SETTINGS.compression, 0))
 
     # (7) the JOIN step
     step = Step(seq=R.new_seq(), label="Join", mode="OBJECT", target=a_uid, time=time.time(),
@@ -211,7 +211,7 @@ def join_with_history(context) -> bool:
     at = hist.cursor
     hist.push(step)
     entry = hist.entries[-1]
-    runtime._journal("STEP", {"hist": hist.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression))
+    runtime._journal("STEP", {"hist": hist.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
 
     # (8) baselines
     runtime.ensure_state(A, refresh=True)

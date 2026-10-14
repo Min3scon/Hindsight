@@ -30,7 +30,7 @@ CHANNEL_TYPES = {
     "QUATERNION": (np.float32, 4, "value"),
 }
 
-# numpy unsigned "bits" dtype used for XOR, by native itemsize
+# numpy unsigned "bits" dtype used for deltas, by native itemsize
 BITS_DTYPE = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}
 
 POSITION_KEY = "position|POINT|FLOAT_VECTOR"
@@ -72,26 +72,33 @@ def bits_dtype(native_dtype) -> type:
     return BITS_DTYPE[np.dtype(native_dtype).itemsize]
 
 
+# ChannelDelta.op: how vals relate the two states
+XOR = 0   # vals = old ^ new (format 1 and 2 histories); applying twice is a no-op
+ADD = 1   # vals = new - old, modular in the bit pattern; forward adds, backward subtracts
+
+
 @dataclass
 class ChannelDelta:
-    """Change of one channel between two states, stored as XOR of bit patterns.
+    """Change of one channel between two states, exact to the bit.
 
     idx:  sorted, unique element indices (np.uint32), shape (k,)
-    xor:  bit XOR (old ^ new) of the changed elements, shape (k, width),
-          dtype = bits_dtype(native dtype of the channel) (uint8 for BOOLEAN,
-          uint32 for float32/int32). Applying the same delta twice is a no-op,
-          so one record works for both undo and redo.
+    vals: per changed element, shape (k, width), dtype = bits_dtype(native dtype
+          of the channel) (uint8 for BOOLEAN, uint32 for float32/int32).
+          op ADD: new - old of the bit patterns, wrapping (what new steps store).
+          op XOR: old ^ new (steps recorded by format 1 and 2 histories).
+          Both are exact for every bit pattern (NaN, -0, denormals included).
     exists: (existed_before, exists_after). A missing attribute is treated as
           all-zeros; when stepping to a side where it does not exist the
           attribute is removed from the mesh.
     """
     key: str
     idx: np.ndarray
-    xor: np.ndarray
+    vals: np.ndarray
     exists: tuple = (True, True)
+    op: int = XOR
 
     def nbytes(self) -> int:
-        return int(self.idx.nbytes + self.xor.nbytes) + 64
+        return int(self.idx.nbytes + self.vals.nbytes) + 64
 
 
 @dataclass
@@ -155,7 +162,7 @@ class Entry:
     Exactly one of .step / .blob is not None at any time (both may briefly
     coexist while packing). .meta is always available without unpacking.
     """
-    __slots__ = ("meta", "step", "blob", "_nbytes")
+    __slots__ = ("meta", "step", "blob", "_nbytes", "__weakref__")
 
     def __init__(self, step: Optional[Step] = None, blob: Optional[bytes] = None,
                  meta: Optional[dict] = None):
@@ -198,11 +205,12 @@ class Entry:
         self.blob = step_to_bytes(self.step, codec)
         self.step = None
 
-    def to_bytes(self, codec: str = "auto") -> bytes:
+    def to_bytes(self, codec: str = "auto", effort: int = 1) -> bytes:
+        """Packed form. effort 0 (fast) for writes on the main thread; 1 (best) otherwise."""
         if self.blob is not None:
             return self.blob
         from .step import step_to_bytes
-        return step_to_bytes(self.step, codec)
+        return step_to_bytes(self.step, codec, effort)
 
 
 @dataclass

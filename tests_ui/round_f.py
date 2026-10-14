@@ -5,7 +5,8 @@
 
 Builds 1.0.0 and 1.0.0-beta.1 from git, records the same session with each build and with the
 current one (all three save modes, one file left mid-rewind), opens the old files with the new
-build, opens the new files with beta 1 (reverse), and compares the sessions step by step.
+build, opens and saves the new files with beta 1 and checks the new build still reads them (going
+back), and compares the sessions step by step.
 """
 import argparse
 import json
@@ -58,8 +59,13 @@ def main():
         for label in ("b1", "v100"):
             run(tag, exe, f"{tag}-new", zips["new"], "round_f_check", {"src": str(d), "label": label},
                 results, f"new opens {label} files")
-        run(tag, exe, f"{tag}-b1", zips["b1"], "round_f_check", {"src": str(d), "label": "new"},
-            results, "b1 opens new files")
+        # going back to beta 1: it can't play format 3 steps, but opening and saving must not
+        # destroy them (the new build then checks every position of the copies beta 1 saved)
+        down = d / "down"
+        run(tag, exe, f"{tag}-b1", zips["b1"], "round_f_downgrade", {"src": str(d), "out": str(down)},
+            results, "b1 opens and saves new files")
+        run(tag, exe, f"{tag}-new", zips["new"], "round_f_check", {"src": str(down), "label": "new"},
+            results, "new reads them back")
         # same scripted session on every build, compared step by step
         sessions = {}
         for label in ("b1", "v100", "new"):
