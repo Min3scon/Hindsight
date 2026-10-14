@@ -18,3 +18,14 @@
 ## Map
 - Contracts: INTERFACES.md. Parity: PARITY.md. Guesses, known issues, settings: DECISIONS.md.
 - Core (no bpy): hindsight/core. Blender layer: hindsight/bl. Tests: tests/. Benchmarks: bench/.
+
+## Beta job (1.0.0-beta.1), in progress
+- Done: manifest 1.0.0-beta.1 + "(beta)" tagline; BETA tag + Report a bug in sidebar/prefs
+  (bl/beta.py, tests/test_bl_beta.py); issue templates (.github/ISSUE_TEMPLATE); release workflow marks
+  `-` tags as pre-releases and uses .github/release-notes/<tag>.md; README beta notice; single Pages
+  workflow `.github/workflows/static.yml` (builds zip, publishes docs/).
+- Blocked (needs the owner): creating the GitHub Release / pushing tags (HTTP 403). See DECISIONS.md for
+  the click-path. Pages is enabled now.
+- Website rebuild: docs/index.html + assets/site.* (layout/content), assets/demo.* (live sculpt demo +
+  Movie Mode), assets/extras.* (unmerge demo, clips, delta diagram). QA script:
+  scratchpad qa/qa.js (serves docs/ under /Hindsight/ on 127.0.0.1:8765).
