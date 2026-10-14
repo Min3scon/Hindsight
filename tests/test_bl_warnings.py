@@ -120,19 +120,14 @@ def t_vertex_group():
 
 
 def t_transform():
+    """History is stored in object space: moving, rotating or scaling an object is not a problem
+    and must not produce a warning (beta 1 warned for every object away from the origin)."""
     obj = fresh_cube()
-    assert W.TXT_TRANSFORM not in texts(obj)
     obj.location = (1, 0, 0)
-    bpy.context.view_layer.update()
-    assert has(obj, "INFO", W.TXT_TRANSFORM)
-    obj.location = (0, 0, 0)
     obj.rotation_euler = (0, 0, 0.5)
+    obj.scale = (2, 1, 0.5)
     bpy.context.view_layer.update()
-    assert has(obj, "INFO", W.TXT_TRANSFORM)
-    obj.rotation_euler = (0, 0, 0)
-    obj.scale = (2, 2, 2)
-    bpy.context.view_layer.update()
-    assert has(obj, "INFO", W.TXT_TRANSFORM)
+    assert not texts(obj), texts(obj)
 
 
 def t_animation():

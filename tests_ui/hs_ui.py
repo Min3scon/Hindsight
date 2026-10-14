@@ -150,6 +150,31 @@ def build(blenders, out: Path = DEFAULT_ZIP) -> Path:
     return out
 
 
+def build_ref(blenders, commit: str, out: Path) -> Path:
+    """Build the add-on as it was at a git commit (for old-versus-new tests)."""
+    import zipfile
+    work = TMP / "refs" / commit
+    if work.exists():
+        shutil.rmtree(work)
+    work.mkdir(parents=True)
+    archive = work / "src.zip"
+    subprocess.run(["git", "archive", "--format=zip", "-o", str(archive), commit, "hindsight"], cwd=ROOT,
+                   check=True)
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(work)
+    exe = blenders[-1][1]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.unlink(missing_ok=True)
+    r = subprocess.run([str(exe), "--factory-startup", "--command", "extension", "build", "--source-dir",
+                        str(work / "hindsight"), "--output-filepath", str(out)], capture_output=True, text=True,
+                       env=sandbox_env("build"))
+    if r.returncode != 0 or not out.is_file():
+        print(r.stdout, r.stderr)
+        sys.exit(f"build of {commit} failed")
+    print("built", commit, "->", out)
+    return out
+
+
 def cli_install(tag: str, exe: Path, zip_path: Path) -> None:
     env = sandbox_env(tag)
     cmd = [str(exe), "--command", "extension", "install-file", "--repo", "user_default",
@@ -161,8 +186,8 @@ def cli_install(tag: str, exe: Path, zip_path: Path) -> None:
 
 
 # ----------------------------------------------------------------------------- run
-def run_one(tag, exe, scenario, args, zip_path, timeout, background, geometry):
-    out = TMP / "ui" / scenario / tag
+def run_one(tag, exe, scenario, args, zip_path, timeout, background, geometry, out_tag=None):
+    out = TMP / "ui" / scenario / (out_tag or tag)
     if out.exists():
         shutil.rmtree(out)
     (out / "shots").mkdir(parents=True)
@@ -204,6 +229,9 @@ def main(argv=None):
     sub.add_parser("list")
     mm = sub.add_parser("models")
     mm.add_argument("what", nargs="*", help="sizes shapes scene data awkward (default: all)")
+    br = sub.add_parser("build-ref")
+    br.add_argument("commit")
+    br.add_argument("out")
     b = sub.add_parser("build")
     b.add_argument("--out", default=str(DEFAULT_ZIP))
     i = sub.add_parser("install")
@@ -219,6 +247,8 @@ def main(argv=None):
     r.add_argument("--timeout", type=int, default=600)
     r.add_argument("--background", action="store_true")
     r.add_argument("--geometry", default="40,40,1600,900")
+    r.add_argument("--profile", default="", help="sandbox profile name (default: the Blender version)")
+    r.add_argument("--out-tag", default="", help="output folder name (default: the Blender version)")
     r.add_argument("--arg", action="append", default=[], help="key=value passed to the scenario")
     a = ap.parse_args(argv)
 
@@ -229,6 +259,9 @@ def main(argv=None):
         return 0
     if a.cmd == "build":
         build(blenders, Path(a.out))
+        return 0
+    if a.cmd == "build-ref":
+        build_ref(blenders, a.commit, Path(a.out))
         return 0
     if a.cmd == "models":
         exe = blenders[-1][1]
@@ -250,11 +283,13 @@ def main(argv=None):
     geometry = [int(x) for x in a.geometry.split(",")]
     all_ok = True
     for tag, exe in select(blenders, a.blender):
+        prof = a.profile or tag
         if a.fresh:
-            wipe_profile(tag)
+            wipe_profile(prof)
         if not a.no_install:
-            cli_install(tag, exe, Path(a.zip))
-        res, out = run_one(tag, exe, a.scenario, args, Path(a.zip), a.timeout, a.background, geometry)
+            cli_install(prof, exe, Path(a.zip))
+        res, out = run_one(prof, exe, a.scenario, args, Path(a.zip), a.timeout, a.background, geometry,
+                           out_tag=a.out_tag or tag)
         ok = bool(res.get("ok"))
         all_ok &= ok
         fails = [c for c in res.get("checks", []) if not c.get("ok")]

@@ -157,6 +157,10 @@ def draw_main(layout, context, units=None):
     if excluded is not _FAIL and excluded:
         wrap(layout, context, "Not recorded: this object is excluded by Collection Filtering.", 'FILTER', units)
         return
+    paused = _call("blocking_reason", obj)
+    if paused not in (None, _FAIL):
+        wrap(layout, context, f"Recording is paused: {paused}. Hindsight doesn't support that yet.",
+             'PAUSE', units)
     recording = _call("is_recording", obj)
     has_uid = _call("obj_uid", obj)
     if recording is False and has_uid not in (None, _FAIL):
@@ -168,7 +172,7 @@ def draw_main(layout, context, units=None):
         wrap(layout, context, "History unavailable. Run self-check.", 'ERROR', units)
         return
     if not info or not info.get("len"):
-        if recording is not False or has_uid in (None, _FAIL):
+        if paused in (None, _FAIL) and (recording is not False or has_uid in (None, _FAIL)):
             text = NO_HISTORY_EDIT if getattr(obj, "mode", "") == 'EDIT' else NO_HISTORY
             wrap(layout, context, text, 'INFO', units)
         return

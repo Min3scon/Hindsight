@@ -139,7 +139,24 @@ def test_reversing_change_is_recorded_not_mistaken_for_undo():
     assert ".sculpt_mask" not in me.attributes
 
 
-for fn in (test_reversing_change_is_recorded_not_mistaken_for_undo, test_handlers_survive_file_open, test_handlers_reinstalled_if_removed,
+def test_edit_mode_alone_starts_no_history():
+    """Round E, beta 2: a file saved in Edit Mode got an 'Edit Mode' step (and a history) as soon
+    as the user left Edit Mode, without editing anything."""
+    H.fresh()
+    ob = H.make_mesh(600)
+    H.enter(ob, "EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.transform.translate(value=(0.05, 0, 0))   # even a real edit does not start one
+    H.enter(ob, "OBJECT")
+    assert runtime.history_of(ob) is None, "Edit Mode must not start a history"
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 3)
+    H.commit(ob)
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == 1, "the first stroke starts it, with one step"
+
+
+for fn in (test_edit_mode_alone_starts_no_history, test_reversing_change_is_recorded_not_mistaken_for_undo, test_handlers_survive_file_open, test_handlers_reinstalled_if_removed,
            test_slider_clears_asset_shelf_and_side_panels, test_slider_shows_empty_track_before_first_stroke,
            test_guard_switches_off_one_feature_and_logs_once, test_registration_survives_a_broken_module):
     H.run(fn)

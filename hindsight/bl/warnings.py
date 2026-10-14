@@ -25,8 +25,6 @@ TXT_MODIFIERS = "Modifiers are not stored in history"
 TXT_ANIMATED = "Animated object: playback may differ from what was recorded"
 TXT_VGROUPS = "Vertex groups and weight paint are not stored"
 TXT_MATERIALS = "Materials are not stored in history"
-TXT_TRANSFORM = ("Object transforms are not recorded: moving the object can make older steps "
-                 "play back in the wrong place")
 TXT_LARGE = ("Large mesh ({verts:.1f}M vertices). Steps that change most of it use a lot of memory; "
              "the memory limit is {limit} MB")
 LARGE_VERTS = 1_500_000
@@ -64,15 +62,18 @@ def _has_multires(obj):
     return any(m.type == 'MULTIRES' for m in getattr(obj, "modifiers", ()))
 
 
-def _is_transformed(obj):
+def blocking_reason(context, obj):
+    """Why recording is paused for obj, or None."""
+    if obj is None:
+        return None
     try:
-        if abs(obj.matrix_world.determinant() - 1.0) > 1e-6:
-            return True
-        if obj.location.length > 0:
-            return True
-        return any(abs(r) > 0 for r in obj.rotation_euler)
+        if _has_dyntopo(obj):
+            return "Dyntopo is on"
+        if _has_multires(obj):
+            return "this object has a Multires modifier"
     except Exception:
-        return False
+        return None
+    return None
 
 
 def blocking(context, obj) -> bool:
@@ -124,8 +125,6 @@ def collect(context, obj) -> list:
         if any(getattr(sl, "material", None) is not None for sl in getattr(obj, "material_slots", ())):
             out.append((INFO, TXT_MATERIALS))
 
-        if _is_transformed(obj):
-            out.append((INFO, TXT_TRANSFORM))
     except ReferenceError:
         return []
     out.sort(key=lambda it: _SEV_ORDER.get(it[0], 3))

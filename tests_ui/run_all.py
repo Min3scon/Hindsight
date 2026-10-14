@@ -24,6 +24,7 @@ SUITE = [
     ("regress_slider_visible", False, False),
     ("regress_file_load", False, False),
     ("fail_inject", False, False),
+    ("regress_stroke_split", False, False),
 ]
 
 

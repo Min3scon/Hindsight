@@ -113,6 +113,14 @@ def is_excluded(obj) -> bool:
         return False
 
 
+def blocking_reason(obj):
+    try:
+        from .warnings import blocking_reason as _br
+        return _br(bpy.context, obj)
+    except Exception:
+        return None
+
+
 def _blocking(obj) -> bool:
     try:
         from .warnings import blocking
@@ -140,7 +148,7 @@ def can_record(obj) -> bool:
     """True if the next stroke on obj would be recorded. Safe to call while drawing."""
     if obj is None or getattr(obj, "type", None) != "MESH" or not guard.ok("recorder"):
         return False
-    if is_excluded(obj):
+    if is_excluded(obj) or _blocking(obj):
         return False
     uid = obj_uid(obj)
     if uid is None:
@@ -374,6 +382,11 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     h = _REG.history_for(uid)
     if h is not None and not h.enabled:
         return None
+    if h is None and mode not in RECORD_MODES:
+        # Only a sculpt or paint stroke starts a history. Leaving Edit Mode on an object without
+        # one (for example a file saved in Edit Mode) just takes a new baseline.
+        ensure_state(obj, refresh=True)
+        return None
     if label is None:
         label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "EDIT": "Edit Mode"}.get(mode, "Change")
         try:
@@ -587,6 +600,8 @@ def on_depsgraph(scene, depsgraph=None) -> None:
 @guard.guarded("recorder")
 def _tick_once() -> None:
     check_mode_transition()
+    if _DIRTY and stroke_running():
+        return   # a slow modifier stack can pause updates mid-stroke; wait for the release
     now = time.time()
     for uid, t in list(_DIRTY.items()):
         if now - t >= DEBOUNCE:
@@ -688,8 +703,31 @@ def _goto_history(h, pos: int, final: bool) -> dict:
     return changes
 
 
+# Modal operators that edit the mesh. A jump (which may switch modes for topology steps) must
+# never run while one of these is active: Blender 5.1 crashes in SculptPaintStroke::done if the
+# object leaves Sculpt Mode mid-stroke (reproduced without Hindsight, see DECISIONS.md).
+_STROKE_OPS = frozenset({
+    "SCULPT_OT_brush_stroke", "PAINT_OT_vertex_paint", "PAINT_OT_weight_paint", "SCULPT_OT_mesh_filter",
+    "SCULPT_OT_cloth_filter", "SCULPT_OT_color_filter", "HINDSIGHT_OT_morph_stroke",
+})
+
+
+def stroke_running() -> bool:
+    try:
+        for win in bpy.context.window_manager.windows:
+            for op in getattr(win, "modal_operators", ()):
+                if op.bl_idname in _STROKE_OPS:
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def goto(context, pos: int, final: bool = True) -> None:
     if _movie_locked(context) and not getattr(goto, "_movie", False):
+        return
+    if stroke_running():
+        log.warn("history jump skipped: a stroke is still in progress")
         return
     if use_global(context):
         global_goto(context, pos, final)
