@@ -1,8 +1,218 @@
 {
  "runs": {
+  "headless|tests/test_bl_t1_corrupt.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-15T00:45:56",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_corrupt.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.constraints",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.collections",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.addremove",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.editsteps",
+       "FAULT.CORRUPT"
+      ]
+     ],
+     "name": "test_damage_before_the_saved_step",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.constraints",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.collections",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.addremove",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.editsteps",
+       "FAULT.CORRUPT"
+      ]
+     ],
+     "name": "test_damage_after_the_saved_step",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_corrupt.py"
+  },
+  "headless|tests/test_bl_t1_corrupt.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-15T00:49:26",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_corrupt.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.constraints",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.collections",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.addremove",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.editsteps",
+       "FAULT.CORRUPT"
+      ]
+     ],
+     "name": "test_damage_before_the_saved_step",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.constraints",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.collections",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.addremove",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.editsteps",
+       "FAULT.CORRUPT"
+      ]
+     ],
+     "name": "test_damage_after_the_saved_step",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_corrupt.py"
+  },
+  "headless|tests/test_bl_t1_corrupt.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-15T00:53:16",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_corrupt.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.constraints",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.collections",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.addremove",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.editsteps",
+       "FAULT.CORRUPT"
+      ]
+     ],
+     "name": "test_damage_before_the_saved_step",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.parenting",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.constraints",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.collections",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.addremove",
+       "FAULT.CORRUPT"
+      ],
+      [
+       "obj.editsteps",
+       "FAULT.CORRUPT"
+      ]
+     ],
+     "name": "test_damage_after_the_saved_step",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_corrupt.py"
+  },
   "headless|tests/test_bl_t1_faults.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-14T23:43:27",
+   "date": "2026-10-15T00:45:58",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_faults.py.log",
    "shots": [],
    "source": "headless",
@@ -48,6 +258,26 @@
     {
      "covers": [
       [
+       "obj.editsteps",
+       "FAULT"
+      ]
+     ],
+     "name": "test_edit_steps_fault",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT"
+      ]
+     ],
+     "name": "test_object_mode_mesh_check_fault",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
        "obj.constraints",
        "STEPS"
       ]
@@ -60,7 +290,7 @@
   },
   "headless|tests/test_bl_t1_faults.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-14T23:44:54",
+   "date": "2026-10-15T00:49:28",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_faults.py.log",
    "shots": [],
    "source": "headless",
@@ -106,6 +336,26 @@
     {
      "covers": [
       [
+       "obj.editsteps",
+       "FAULT"
+      ]
+     ],
+     "name": "test_edit_steps_fault",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT"
+      ]
+     ],
+     "name": "test_object_mode_mesh_check_fault",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
        "obj.constraints",
        "STEPS"
       ]
@@ -118,7 +368,7 @@
   },
   "headless|tests/test_bl_t1_faults.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-14T23:46:18",
+   "date": "2026-10-15T00:53:18",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_faults.py.log",
    "shots": [],
    "source": "headless",
@@ -164,6 +414,26 @@
     {
      "covers": [
       [
+       "obj.editsteps",
+       "FAULT"
+      ]
+     ],
+     "name": "test_edit_steps_fault",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "FAULT"
+      ]
+     ],
+     "name": "test_object_mode_mesh_check_fault",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
        "obj.constraints",
        "STEPS"
       ]
@@ -176,7 +446,7 @@
   },
   "headless|tests/test_bl_t1_gate.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-14T23:43:31",
+   "date": "2026-10-15T00:46:02",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_gate.py.log",
    "shots": [],
    "source": "headless",
@@ -318,7 +588,7 @@
   },
   "headless|tests/test_bl_t1_gate.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-14T23:44:58",
+   "date": "2026-10-15T00:49:33",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_gate.py.log",
    "shots": [],
    "source": "headless",
@@ -460,7 +730,7 @@
   },
   "headless|tests/test_bl_t1_gate.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-14T23:46:23",
+   "date": "2026-10-15T00:53:23",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_gate.py.log",
    "shots": [],
    "source": "headless",
@@ -599,6 +869,2442 @@
     }
    ],
    "unit": "tests/test_bl_t1_gate.py"
+  },
+  "headless|tests/test_bl_t1_migrate.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-15T00:46:14",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_migrate.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.MIGRATE"
+      ]
+     ],
+     "name": "test_format3_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.MIGRATE"
+      ]
+     ],
+     "name": "test_beta1_file",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_migrate.py"
+  },
+  "headless|tests/test_bl_t1_migrate.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-15T00:49:46",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_migrate.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.MIGRATE"
+      ]
+     ],
+     "name": "test_format3_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.MIGRATE"
+      ]
+     ],
+     "name": "test_beta1_file",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_migrate.py"
+  },
+  "headless|tests/test_bl_t1_migrate.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-15T00:53:36",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_migrate.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.MIGRATE"
+      ]
+     ],
+     "name": "test_format3_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.MIGRATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.MIGRATE"
+      ]
+     ],
+     "name": "test_beta1_file",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_migrate.py"
+  },
+  "headless|tests/test_bl_t1_prop.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-15T00:20:08",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_prop.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "PROP"
+      ],
+      [
+       "obj.parenting",
+       "PROP"
+      ],
+      [
+       "obj.constraints",
+       "PROP"
+      ],
+      [
+       "obj.collections",
+       "PROP"
+      ],
+      [
+       "obj.addremove",
+       "PROP"
+      ],
+      [
+       "obj.editsteps",
+       "PROP"
+      ]
+     ],
+     "name": "test_t1_random_sequences",
+     "ok": false
+    }
+   ],
+   "unit": "tests/test_bl_t1_prop.py"
+  },
+  "headless|tests/test_bl_t1_prop.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-15T00:20:09",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_prop.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "PROP"
+      ],
+      [
+       "obj.parenting",
+       "PROP"
+      ],
+      [
+       "obj.constraints",
+       "PROP"
+      ],
+      [
+       "obj.collections",
+       "PROP"
+      ],
+      [
+       "obj.addremove",
+       "PROP"
+      ],
+      [
+       "obj.editsteps",
+       "PROP"
+      ]
+     ],
+     "name": "test_t1_random_sequences",
+     "ok": false
+    }
+   ],
+   "unit": "tests/test_bl_t1_prop.py"
+  },
+  "headless|tests/test_bl_t1_prop.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-15T00:20:10",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_prop.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "PROP"
+      ],
+      [
+       "obj.parenting",
+       "PROP"
+      ],
+      [
+       "obj.constraints",
+       "PROP"
+      ],
+      [
+       "obj.collections",
+       "PROP"
+      ],
+      [
+       "obj.addremove",
+       "PROP"
+      ],
+      [
+       "obj.editsteps",
+       "PROP"
+      ]
+     ],
+     "name": "test_t1_random_sequences",
+     "ok": false
+    }
+   ],
+   "unit": "tests/test_bl_t1_prop.py"
+  },
+  "headless|tests/test_bl_t1_reload.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-15T00:46:37",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_reload.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.SIDECAR"
+      ]
+     ],
+     "name": "test_reload_sidecar",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.EMBED"
+      ]
+     ],
+     "name": "test_reload_embed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.BOTH"
+      ]
+     ],
+     "name": "test_reload_both",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.RENAME"
+      ]
+     ],
+     "name": "test_renamed_object_keeps_its_history",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.PASTE"
+      ]
+     ],
+     "name": "test_copy_paste_same_and_other_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.APPEND"
+      ]
+     ],
+     "name": "test_append_and_link_from_a_recorded_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.DUPLICATE"
+      ]
+     ],
+     "name": "test_duplicates_shift_d_and_alt_d",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_reload.py"
+  },
+  "headless|tests/test_bl_t1_reload.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-15T00:50:09",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_reload.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.SIDECAR"
+      ]
+     ],
+     "name": "test_reload_sidecar",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.EMBED"
+      ]
+     ],
+     "name": "test_reload_embed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.BOTH"
+      ]
+     ],
+     "name": "test_reload_both",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.RENAME"
+      ]
+     ],
+     "name": "test_renamed_object_keeps_its_history",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.PASTE"
+      ]
+     ],
+     "name": "test_copy_paste_same_and_other_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.APPEND"
+      ]
+     ],
+     "name": "test_append_and_link_from_a_recorded_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.DUPLICATE"
+      ]
+     ],
+     "name": "test_duplicates_shift_d_and_alt_d",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_reload.py"
+  },
+  "headless|tests/test_bl_t1_reload.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-15T00:54:01",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_reload.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.SIDECAR"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.SIDECAR"
+      ]
+     ],
+     "name": "test_reload_sidecar",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.EMBED"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.EMBED"
+      ]
+     ],
+     "name": "test_reload_embed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.BOTH"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.BOTH"
+      ]
+     ],
+     "name": "test_reload_both",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.RENAME"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.RENAME"
+      ]
+     ],
+     "name": "test_renamed_object_keeps_its_history",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.PASTE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.PASTE"
+      ]
+     ],
+     "name": "test_copy_paste_same_and_other_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.APPEND"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.APPEND"
+      ]
+     ],
+     "name": "test_append_and_link_from_a_recorded_file",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.parenting",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.constraints",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.collections",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.addremove",
+       "RELOAD.DUPLICATE"
+      ],
+      [
+       "obj.editsteps",
+       "RELOAD.DUPLICATE"
+      ]
+     ],
+     "name": "test_duplicates_shift_d_and_alt_d",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_reload.py"
+  },
+  "headless|tests/test_bl_t1_warn.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-15T00:47:50",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_warn.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.constraints",
+       "WARN"
+      ]
+     ],
+     "name": "test_animated_values",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "WARN"
+      ]
+     ],
+     "name": "test_lists_in_constraint_settings",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ]
+     ],
+     "name": "test_objects_not_switched_on_and_other_types",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "WARN"
+      ]
+     ],
+     "name": "test_big_mesh_edit_mode",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "WARN"
+      ]
+     ],
+     "name": "test_new_collections_need_the_scene",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_linked_objects",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.constraints",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ],
+      [
+       "obj.editsteps",
+       "WARN"
+      ],
+      [
+       "obj.collections",
+       "WARN"
+      ]
+     ],
+     "name": "test_nothing_said_with_sculpting_only",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_warn.py"
+  },
+  "headless|tests/test_bl_t1_warn.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-15T00:51:37",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_warn.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.constraints",
+       "WARN"
+      ]
+     ],
+     "name": "test_animated_values",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "WARN"
+      ]
+     ],
+     "name": "test_lists_in_constraint_settings",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ]
+     ],
+     "name": "test_objects_not_switched_on_and_other_types",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "WARN"
+      ]
+     ],
+     "name": "test_big_mesh_edit_mode",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "WARN"
+      ]
+     ],
+     "name": "test_new_collections_need_the_scene",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_linked_objects",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.constraints",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ],
+      [
+       "obj.editsteps",
+       "WARN"
+      ],
+      [
+       "obj.collections",
+       "WARN"
+      ]
+     ],
+     "name": "test_nothing_said_with_sculpting_only",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_warn.py"
+  },
+  "headless|tests/test_bl_t1_warn.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-15T00:55:22",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_warn.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.constraints",
+       "WARN"
+      ]
+     ],
+     "name": "test_animated_values",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "WARN"
+      ]
+     ],
+     "name": "test_lists_in_constraint_settings",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ]
+     ],
+     "name": "test_objects_not_switched_on_and_other_types",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "WARN"
+      ]
+     ],
+     "name": "test_big_mesh_edit_mode",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "WARN"
+      ]
+     ],
+     "name": "test_new_collections_need_the_scene",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_linked_objects",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.constraints",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ],
+      [
+       "obj.editsteps",
+       "WARN"
+      ],
+      [
+       "obj.collections",
+       "WARN"
+      ]
+     ],
+     "name": "test_nothing_said_with_sculpting_only",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_t1_warn.py"
+  },
+  "tool|tools/mutation_bl.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-15T00:15:33",
+   "log": "evidence/output/tool/5.0.1/tools_mutation_bl.py.log",
+   "shots": [],
+   "source": "tool",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 1: RNA write skips location",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 2: rotation values not rewritten after the rotation mode",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 3: matrices written as nested lists (transposed)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 4: float values compared with == (-0.0 equals 0.0, NaN never equal)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 5: animated and driven paths recorded",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 6: collections an object was in not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 7: hidden state (H) not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 8: constraint settings not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 9: constraint stack not rebuilt",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 10: added objects not removed again",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 11: objects brought back without their exact settings (D18)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 12: collection tree not written (D19)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 13: parents of objects brought back not set",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 14: a data kind switched off read as removed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 15: Object Mode mesh changes not recorded (D14)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 16: one operation on several objects is several global positions (D16)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 17: Blender's undo matched to the wrong neighbour",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 18: Blender's redo matched as an undo when both neighbours match (D22)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 19: undo of an edges-only change not seen (D23)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 20: Blender's undo of adding or deleting objects not matched (D24)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 21: global jumps not in step order (D17)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 22: global jump one step short",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 23: empties left off the global timeline (D20)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 24: Edit Mode operations not recorded step by step",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ],
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 25: corner vertices read from the wrong array",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 26: deep topology check skips edges in Edit Mode",
+     "ok": true
+    }
+   ],
+   "unit": "tools/mutation_bl.py"
+  },
+  "tool|tools/mutation_bl.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-15T00:18:42",
+   "log": "evidence/output/tool/5.1.1/tools_mutation_bl.py.log",
+   "shots": [],
+   "source": "tool",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 1: RNA write skips location",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 2: rotation values not rewritten after the rotation mode",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 3: matrices written as nested lists (transposed)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 4: float values compared with == (-0.0 equals 0.0, NaN never equal)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 5: animated and driven paths recorded",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 6: collections an object was in not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 7: hidden state (H) not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 8: constraint settings not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 9: constraint stack not rebuilt",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 10: added objects not removed again",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 11: objects brought back without their exact settings (D18)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 12: collection tree not written (D19)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 13: parents of objects brought back not set",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 14: a data kind switched off read as removed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 15: Object Mode mesh changes not recorded (D14)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 16: one operation on several objects is several global positions (D16)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 17: Blender's undo matched to the wrong neighbour",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 18: Blender's redo matched as an undo when both neighbours match (D22)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 19: undo of an edges-only change not seen (D23)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 20: Blender's undo of adding or deleting objects not matched (D24)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 21: global jumps not in step order (D17)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 22: global jump one step short",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 23: empties left off the global timeline (D20)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 24: Edit Mode operations not recorded step by step",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ],
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 25: corner vertices read from the wrong array",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 26: deep topology check skips edges in Edit Mode",
+     "ok": true
+    }
+   ],
+   "unit": "tools/mutation_bl.py"
+  },
+  "tool|tools/mutation_bl.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-15T00:23:18",
+   "log": "evidence/output/tool/5.1.2/tools_mutation_bl.py.log",
+   "shots": [],
+   "source": "tool",
+   "tests": [
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 1: RNA write skips location",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 2: rotation values not rewritten after the rotation mode",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 3: matrices written as nested lists (transposed)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 4: float values compared with == (-0.0 equals 0.0, NaN never equal)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 5: animated and driven paths recorded",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 6: collections an object was in not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 7: hidden state (H) not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 8: constraint settings not put back",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.constraints",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 9: constraint stack not rebuilt",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 10: added objects not removed again",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 11: objects brought back without their exact settings (D18)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 12: collection tree not written (D19)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 13: parents of objects brought back not set",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 14: a data kind switched off read as removed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 15: Object Mode mesh changes not recorded (D14)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 16: one operation on several objects is several global positions (D16)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 17: Blender's undo matched to the wrong neighbour",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 18: Blender's redo matched as an undo when both neighbours match (D22)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 19: undo of an edges-only change not seen (D23)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.addremove",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 20: Blender's undo of adding or deleting objects not matched (D24)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 21: global jumps not in step order (D17)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ],
+      [
+       "obj.constraints",
+       "MUT"
+      ],
+      [
+       "obj.collections",
+       "MUT"
+      ],
+      [
+       "obj.addremove",
+       "MUT"
+      ],
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 22: global jump one step short",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.transforms",
+       "MUT"
+      ],
+      [
+       "obj.parenting",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 23: empties left off the global timeline (D20)",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 24: Edit Mode operations not recorded step by step",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ],
+      [
+       "obj.transforms",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 25: corner vertices read from the wrong array",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "obj.editsteps",
+       "MUT"
+      ]
+     ],
+     "name": "mutant 26: deep topology check skips edges in Edit Mode",
+     "ok": true
+    }
+   ],
+   "unit": "tools/mutation_bl.py"
   }
  }
 }

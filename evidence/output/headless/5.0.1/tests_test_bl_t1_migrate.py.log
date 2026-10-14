@@ -1,0 +1,109 @@
+00:00.563  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:00.625  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.000  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_transforms.blend"
+00:01.313  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.375  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.610  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_parenting.blend"
+00:01.829  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.891  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.125  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_constraints.blend"
+00:02.360  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.422  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.625  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_collections.blend"
+00:02.813  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.875  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:04.047  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_addremove.blend"
+00:04.860  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:04.922  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:05.641  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_editsteps.blend"
+00:06.282  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:06.329  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:06.672  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_transforms.blend"
+00:06.969  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:07.032  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:07.266  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_parenting.blend"
+00:07.500  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:07.547  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:07.782  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_constraints.blend"
+00:08.032  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:08.094  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:08.282  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_collections.blend"
+00:08.469  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:08.532  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:09.594  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_addremove.blend"
+00:10.422  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:10.485  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:11.235  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_editsteps.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_transforms.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_parenting.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_constraints.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "saved_obj_collections.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_addremove.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_editsteps.blend"
+PASS test_format3_file
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_transforms.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_parenting.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_constraints.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "saved_obj_collections.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_addremove.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Warning: File written by newer Blender binary (501.30), expect loss of data!
+Info: Saved as "saved_obj_editsteps.blend"
+PASS test_beta1_file
+Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:32:30)

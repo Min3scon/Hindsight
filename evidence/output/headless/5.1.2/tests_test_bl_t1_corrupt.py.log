@@ -1,0 +1,49 @@
+00:00.750  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\before_obj_transforms.blend"
+00:00.969  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\before_obj_parenting.blend"
+00:01.141  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\before_obj_constraints.blend"
+00:01.281  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\before_obj_collections.blend"
+00:01.734  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\before_obj_addremove.blend"
+00:02.047  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\before_obj_editsteps.blend"
+00:02.250  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\after_obj_transforms.blend"
+00:02.391  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\after_obj_parenting.blend"
+00:02.531  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\after_obj_constraints.blend"
+00:02.672  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\after_obj_collections.blend"
+00:03.078  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\after_obj_addremove.blend"
+00:03.375  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_corrupt_xnr6mtzi\after_obj_editsteps.blend"
+Info: Saved as "before_obj_transforms.blend"
+Hindsight: The history of 'A' is damaged before the step it was saved at, so none of it could be kept (6 steps). 'A' itself is as you saved it
+Info: Saved as "before_obj_parenting.blend"
+Hindsight: The history of 'A' is damaged before the step it was saved at, so none of it could be kept (3 steps). 'A' itself is as you saved it
+Info: Saved as "before_obj_constraints.blend"
+Hindsight: The history of 'A' is damaged before the step it was saved at, so none of it could be kept (6 steps). 'A' itself is as you saved it
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "before_obj_collections.blend"
+Hindsight: The history of 'A' is damaged before the step it was saved at, so none of it could be kept (3 steps). 'A' itself is as you saved it
+Info: Saved as "before_obj_addremove.blend"
+Hindsight: The history of 'an object' is damaged before the step it was saved at, so none of it could be kept (15 steps). 'an object' itself is as you saved it
+Info: Saved as "before_obj_editsteps.blend"
+Hindsight: The history of 'E' is damaged before the step it was saved at, so none of it could be kept (13 steps). 'E' itself is as you saved it
+PASS test_damage_before_the_saved_step
+Info: Saved as "after_obj_transforms.blend"
+Hindsight: 4 damaged steps of 'A' could not be loaded. The 2 steps before them are fine
+Info: Saved as "after_obj_parenting.blend"
+Hindsight: 1 damaged step of 'A' could not be loaded. The 2 steps before them are fine
+Info: Saved as "after_obj_constraints.blend"
+Hindsight: 4 damaged steps of 'A' could not be loaded. The 2 steps before them are fine
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "after_obj_collections.blend"
+Hindsight: 1 damaged step of 'A' could not be loaded. The 2 steps before them are fine
+Info: Saved as "after_obj_addremove.blend"
+Hindsight: 13 damaged steps of 'an object' could not be loaded. The 2 steps before them are fine
+Info: Saved as "after_obj_editsteps.blend"
+Hindsight: 11 damaged steps of 'E' could not be loaded. The 2 steps before them are fine
+PASS test_damage_after_the_saved_step
+Blender 5.1.2 (hash ec6e62d40fa9 built 2026-05-19 01:37:34)

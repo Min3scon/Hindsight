@@ -1,0 +1,163 @@
+00:00.718  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_transforms_sidecar.blend"
+00:01.140  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_parenting_sidecar.blend"
+00:01.484  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_constraints_sidecar.blend"
+00:01.796  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_collections_sidecar.blend"
+00:02.359  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_addremove_sidecar.blend"
+00:03.703  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_editsteps_sidecar.blend"
+00:04.500  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_transforms_embed.blend"
+00:04.921  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_parenting_embed.blend"
+00:05.265  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_constraints_embed.blend"
+00:05.593  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_collections_embed.blend"
+00:06.156  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_addremove_embed.blend"
+00:07.312  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_editsteps_embed.blend"
+00:08.109  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_transforms_both.blend"
+00:08.125  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_transforms_both.blend"
+00:08.546  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_parenting_both.blend"
+00:08.562  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_parenting_both.blend"
+00:08.921  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_constraints_both.blend"
+00:08.937  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_constraints_both.blend"
+00:09.265  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_collections_both.blend"
+00:09.265  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_collections_both.blend"
+00:09.843  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_addremove_both.blend"
+00:09.859  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_addremove_both.blend"
+00:11.000  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_editsteps_both.blend"
+00:11.015  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\obj_editsteps_both.blend"
+00:12.234  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\rename_obj_transforms.blend"
+00:13.125  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\rename_obj_parenting.blend"
+00:13.906  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\rename_obj_constraints.blend"
+00:14.687  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\rename_obj_collections.blend"
+00:16.234  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\rename_obj_addremove.blend"
+00:18.218  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\rename_obj_editsteps.blend"
+00:19.234  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_transforms.blend"
+00:19.312  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_transforms.blend"
+00:19.484  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_parenting.blend"
+00:19.562  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_parenting.blend"
+00:19.750  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_constraints.blend"
+00:19.812  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_constraints.blend"
+00:19.984  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_collections.blend"
+00:20.046  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_collections.blend"
+00:20.531  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_addremove.blend"
+00:20.609  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_addremove.blend"
+00:20.984  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_editsteps.blend"
+00:21.062  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\paste_obj_editsteps.blend"
+00:21.218  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\append_obj_transforms.blend"
+00:21.437  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\append_obj_parenting.blend"
+00:21.640  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\append_obj_constraints.blend"
+00:21.828  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\append_obj_collections.blend"
+00:22.312  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\append_obj_addremove.blend"
+00:22.671  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_t1_reload_l0_j5vxs\append_obj_editsteps.blend"
+Info: Saved as "obj_transforms_sidecar.blend"
+Info: Saved as "obj_parenting_sidecar.blend"
+Info: Saved as "obj_constraints_sidecar.blend"
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "obj_collections_sidecar.blend"
+Info: Saved as "obj_addremove_sidecar.blend"
+Info: Saved as "obj_editsteps_sidecar.blend"
+PASS test_reload_sidecar
+Info: Saved as "obj_transforms_embed.blend"
+Info: Saved as "obj_parenting_embed.blend"
+Info: Saved as "obj_constraints_embed.blend"
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "obj_collections_embed.blend"
+Info: Saved as "obj_addremove_embed.blend"
+Info: Saved as "obj_editsteps_embed.blend"
+PASS test_reload_embed
+Info: Saved as "obj_transforms_both.blend"
+Info: Saved as "obj_parenting_both.blend"
+Info: Saved as "obj_constraints_both.blend"
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "obj_collections_both.blend"
+Info: Saved as "obj_addremove_both.blend"
+Info: Saved as "obj_editsteps_both.blend"
+PASS test_reload_both
+Info: Saved as "rename_obj_transforms.blend"
+Info: Saved as "rename_obj_parenting.blend"
+Info: Saved as "rename_obj_constraints.blend"
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "rename_obj_collections.blend"
+Info: Saved as "rename_obj_addremove.blend"
+Info: Saved as "rename_obj_editsteps.blend"
+PASS test_renamed_object_keeps_its_history
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Saved as "paste_obj_transforms.blend"
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Copied 2 selected object(s)
+Info: 2 object(s) pasted
+Info: Saved as "paste_obj_parenting.blend"
+Info: Copied 2 selected object(s)
+Info: 2 object(s) pasted
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Saved as "paste_obj_constraints.blend"
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Saved as "paste_obj_collections.blend"
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Saved as "paste_obj_addremove.blend"
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+Info: Saved as "paste_obj_editsteps.blend"
+Info: Copied 1 selected object(s)
+Info: 1 object(s) pasted
+PASS test_copy_paste_same_and_other_file
+Info: Saved as "append_obj_transforms.blend"
+Hindsight: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Warning: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Info: Saved as "append_obj_parenting.blend"
+Hindsight: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Warning: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Info: Saved as "append_obj_constraints.blend"
+Hindsight: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Warning: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "append_obj_collections.blend"
+Hindsight: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Warning: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Info: Saved as "append_obj_addremove.blend"
+Hindsight: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Warning: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Info: Saved as "append_obj_editsteps.blend"
+Hindsight: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+Warning: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+PASS test_append_and_link_from_a_recorded_file
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+PASS test_duplicates_shift_d_and_alt_d
+Blender 5.1.2 (hash ec6e62d40fa9 built 2026-05-19 01:37:34)

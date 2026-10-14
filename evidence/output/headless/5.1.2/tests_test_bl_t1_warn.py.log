@@ -1,0 +1,9 @@
+PASS test_animated_values
+PASS test_lists_in_constraint_settings
+PASS test_objects_not_switched_on_and_other_types
+PASS test_big_mesh_edit_mode
+PASS test_new_collections_need_the_scene
+Info: Saved as "lib.blend"
+PASS test_linked_objects
+PASS test_nothing_said_with_sculpting_only
+Blender 5.1.2 (hash ec6e62d40fa9 built 2026-05-19 01:37:34)

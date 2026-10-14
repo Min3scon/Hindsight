@@ -62,6 +62,16 @@ def headless_tags() -> dict:
     for f in sorted((ROOT / "tests").glob("test_*.py")):
         tree = ast.parse(f.read_text(encoding="utf-8"))
         tags = {}
+        consts = {}                       # module-level NAME = <literal> (e.g. ROWS = ("obj.transforms", ...))
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                try:
+                    consts[node.targets[0].id] = ast.literal_eval(node.value)
+                except ValueError:
+                    pass
+
+        def value(n):
+            return consts[n.id] if isinstance(n, ast.Name) and n.id in consts else ast.literal_eval(n)
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef):
                 continue
@@ -72,9 +82,9 @@ def headless_tags() -> dict:
                 name = dec.func.attr if isinstance(dec.func, ast.Attribute) else getattr(dec.func, "id", "")
                 if name != "covers" or not dec.args:
                     continue
-                first = ast.literal_eval(dec.args[0])
+                first = value(dec.args[0])
                 rows = [first] if isinstance(first, str) else list(first)
-                items = [ast.literal_eval(a) for a in dec.args[1:]]
+                items = [value(a) for a in dec.args[1:]]
                 pairs += [[r, i] for r in rows for i in items]
             if pairs:
                 tags[node.name] = pairs

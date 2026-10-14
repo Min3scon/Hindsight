@@ -1,64 +1,3 @@
-00:02.515  reports          | ERROR Only empty objects support collection instances
-Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
-00:02.515  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.546  reports          | ERROR Only empty objects support collection instances
-00:02.578  reports          | ERROR Only empty objects support collection instances
-00:02.578  reports          | ERROR Only empty objects support collection instances
-00:02.593  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.609  reports          | ERROR Only empty objects support collection instances
-00:02.625  reports          | ERROR Only empty objects support collection instances
-00:02.625  reports          | ERROR Only empty objects support collection instances
-00:02.656  reports          | ERROR Only empty objects support collection instances
-00:02.656  reports          | ERROR Only empty objects support collection instances
-00:02.656  reports          | ERROR Only empty objects support collection instances
-00:02.656  reports          | ERROR Only empty objects support collection instances
-00:02.687  reports          | ERROR Only empty objects support collection instances
-00:02.687  reports          | ERROR Only empty objects support collection instances
-00:02.687  reports          | ERROR Only empty objects support collection instances
-00:02.687  reports          | ERROR Only empty objects support collection instances
-00:02.734  reports          | ERROR Only empty objects support collection instances
-00:02.734  reports          | ERROR Only empty objects support collection instances
-00:02.734  reports          | ERROR Only empty objects support collection instances
-00:02.750  reports          | ERROR Only empty objects support collection instances
-00:02.750  reports          | ERROR Only empty objects support collection instances
-00:02.765  reports          | ERROR Only empty objects support collection instances
-00:02.781  reports          | ERROR Only empty objects support collection instances
-00:02.781  reports          | ERROR Only empty objects support collection instances
-00:02.796  reports          | ERROR Only empty objects support collection instances
-00:02.812  reports          | ERROR Only empty objects support collection instances
-00:02.828  reports          | ERROR Only empty objects support collection instances
-00:02.859  reports          | ERROR Only empty objects support collection instances
-00:02.890  reports          | ERROR Only empty objects support collection instances
-00:02.953  reports          | ERROR Only empty objects support collection instances
-00:02.968  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
-00:03.140  reports          | ERROR Only empty objects support collection instances
 PASS test_gate_transforms
 PASS test_gate_parenting
 PASS test_gate_constraints
@@ -75,3 +14,4 @@ Info: A moved to Props
 PASS test_gate_collections
 PASS test_gate_addremove
 PASS test_gate_editsteps
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)

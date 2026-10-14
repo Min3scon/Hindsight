@@ -1,0 +1,26 @@
+mutant 1: RNA write skips location: killed by test_bl_t1_gate.py
+mutant 2: rotation values not rewritten after the rotation mode: killed by test_bl_adapters.py
+mutant 3: matrices written as nested lists (transposed): killed by test_bl_t1_gate.py
+mutant 4: float values compared with == (-0.0 equals 0.0, NaN never equal): killed by test_bl_t1_gate.py
+mutant 5: animated and driven paths recorded: killed by test_bl_t1_faults.py
+mutant 6: collections an object was in not put back: killed by test_bl_t1_gate.py
+mutant 7: hidden state (H) not put back: killed by test_bl_tier1.py
+mutant 8: constraint settings not put back: killed by test_bl_tier1.py
+mutant 9: constraint stack not rebuilt: killed by test_bl_t1_gate.py
+mutant 10: added objects not removed again: killed by test_bl_t1_gate.py
+mutant 11: objects brought back without their exact settings (D18): killed by test_bl_t1_gate.py
+mutant 12: collection tree not written (D19): killed by test_bl_t1_gate.py
+mutant 13: parents of objects brought back not set: killed by test_bl_t1_gate.py
+mutant 14: a data kind switched off read as removed: killed by test_bl_tier1.py
+mutant 15: Object Mode mesh changes not recorded (D14): killed by test_bl_t1_gate.py
+mutant 16: one operation on several objects is several global positions (D16): killed by test_bl_t1_gate.py
+mutant 17: Blender's undo matched to the wrong neighbour: killed by test_bl_t1_gate.py
+mutant 18: Blender's redo matched as an undo when both neighbours match (D22): killed by test_bl_t1_gate.py
+mutant 19: undo of an edges-only change not seen (D23): killed by test_bl_t1_gate.py
+mutant 20: Blender's undo of adding or deleting objects not matched (D24): killed by test_bl_t1_gate.py
+mutant 21: global jumps not in step order (D17): killed by test_bl_t1_gate.py
+mutant 22: global jump one step short: killed by test_bl_t1_gate.py
+mutant 23: empties left off the global timeline (D20): killed by test_bl_t1_gate.py
+mutant 24: Edit Mode operations not recorded step by step: killed by test_bl_t1_gate.py
+mutant 25: corner vertices read from the wrong array: killed by test_bl_t1_gate.py
+mutant 26: deep topology check skips edges in Edit Mode: killed by test_bl_t1_gate.py

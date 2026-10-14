@@ -1,0 +1,85 @@
+00:00.562  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:00.625  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.000  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_transforms.blend"
+00:01.312  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.375  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.609  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_parenting.blend"
+00:01.844  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:01.906  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.172  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_constraints.blend"
+00:02.422  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.484  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.687  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_collections.blend"
+00:02.922  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:02.969  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:04.078  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_addremove.blend"
+00:04.984  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:05.047  blend            | Read blend: "<repo>\.tmp\migrate\format3\scene.blend"
+00:05.797  blend            | Read blend: "<repo>\.tmp\migrate\format3\saved_obj_editsteps.blend"
+00:06.469  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:06.531  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:06.906  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_transforms.blend"
+00:07.250  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:07.328  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:07.578  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_parenting.blend"
+00:07.812  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:07.875  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:08.141  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_constraints.blend"
+00:08.391  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:08.453  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:08.656  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_collections.blend"
+00:08.859  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:08.922  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:10.031  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_addremove.blend"
+00:10.891  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:10.953  blend            | Read blend: "<repo>\.tmp\migrate\beta1\scene.blend"
+00:11.719  blend            | Read blend: "<repo>\.tmp\migrate\beta1\saved_obj_editsteps.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Info: Saved as "saved_obj_transforms.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Info: Saved as "saved_obj_parenting.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Info: Saved as "saved_obj_constraints.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "saved_obj_collections.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Info: Saved as "saved_obj_addremove.blend"
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Hindsight: loaded history format 3 (Hindsight 1.0.0-beta.1); it is saved as format 4 from now on
+Info: Saved as "saved_obj_editsteps.blend"
+PASS test_format3_file
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Info: Saved as "saved_obj_transforms.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Info: Saved as "saved_obj_parenting.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Info: Saved as "saved_obj_constraints.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Info: A moved to Props
+Info: B linked to Props
+Info: C moved to Extra
+Info: A linked to Extra
+Info: A moved to Props
+Info: Saved as "saved_obj_collections.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Info: Saved as "saved_obj_addremove.blend"
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Hindsight: loaded history format 1 (Hindsight 1.0.0-beta.1 or older); it is saved as format 4 from now on
+Info: Saved as "saved_obj_editsteps.blend"
+PASS test_beta1_file
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
