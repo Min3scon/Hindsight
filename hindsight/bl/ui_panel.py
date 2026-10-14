@@ -94,6 +94,10 @@ class VIEW3D_PT_hindsight(bpy.types.Panel):
     bl_category = "Undo History"
     bl_label = "Undo History"
 
+    def draw_header(self, context):
+        from .beta import draw_header_tag
+        draw_header_tag(self.layout)
+
     def draw(self, context):
         layout = self.layout
         obj = getattr(context, "active_object", None)
@@ -125,6 +129,9 @@ class VIEW3D_PT_hindsight(bpy.types.Panel):
 
         if hasattr(bpy.types, "HINDSIGHT_MT_history"):
             layout.menu("HINDSIGHT_MT_history", text="History Menu", icon='COLLAPSEMENU')
+
+        from .beta import draw_note
+        draw_note(layout.column())
 
 
 class _SubPanel:

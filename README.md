@@ -1,4 +1,11 @@
-# Hindsight
+# Hindsight (public beta)
+
+> **Beta — version 1.0.0-beta.1.** Hindsight works, but it's new: so far it has been tested headlessly
+> (125 automated tests on Blender 4.2 and 5.2), not yet widely in the real Blender interface.
+> Back up your .blend files and keep saving versions of important work.
+> Found a bug? [Report it on GitHub](https://github.com/Min3scon/Hindsight/issues/new/choose) with your
+> Blender version, OS and the steps to reproduce. What's tested and what still needs testing:
+> [Beta status](https://min3scon.github.io/Hindsight/#beta).
 
 Drag a slider along the bottom of the 3D Viewport and travel back through every stroke of your sculpt.
 
@@ -18,7 +25,7 @@ Hindsight is a free Blender extension for Blender 4.2 and newer, released under 
 
 ## Install
 
-1. Download `hindsight.zip` from https://min3scon.github.io/Hindsight/download/hindsight.zip, or from the [GitHub Releases page](https://github.com/Min3scon/Hindsight/releases).
+1. Download the beta `hindsight.zip` from https://min3scon.github.io/Hindsight/download/hindsight.zip, or from the [1.0.0-beta.1 release](https://github.com/Min3scon/Hindsight/releases/tag/v1.0.0-beta.1) ([all releases](https://github.com/Min3scon/Hindsight/releases)).
 2. In Blender, go to **Edit > Preferences > Get Extensions > Install from Disk** and pick the zip.
 3. In the 3D Viewport, press **N** and open the **Undo History** tab.
 

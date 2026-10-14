@@ -1,0 +1,78 @@
+name: Bug report
+description: Something in Hindsight (beta) doesn't work as expected
+title: "[Bug] "
+labels: ["bug", "beta"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing the Hindsight beta. Please back up your .blend before trying to reproduce a problem.
+  - type: input
+    id: blender
+    attributes:
+      label: Blender version
+      placeholder: "e.g. 4.2.3 LTS"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "e.g. Windows 11, macOS 14 (Apple Silicon), Ubuntu 24.04"
+    validations:
+      required: true
+  - type: input
+    id: hindsight
+    attributes:
+      label: Hindsight version
+      description: Shown in Edit > Preferences > Add-ons / Get Extensions.
+      placeholder: "1.0.0-beta.1"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a new file, add a UV sphere
+        2. Enter Sculpt Mode and make 3 strokes
+        3. Drag the scrubber back...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include any error text from Window > Toggle System Console (Windows) or the terminal.
+    validations:
+      required: true
+  - type: dropdown
+    id: survived
+    attributes:
+      label: Did the history survive saving and reopening the file?
+      options:
+        - "Yes"
+        - "No"
+        - "Didn't try"
+    validations:
+      required: true
+  - type: dropdown
+    id: savemode
+    attributes:
+      label: Save Mode (Add-on Preferences)
+      options:
+        - Sidecar
+        - Embed
+        - Both
+        - Not sure
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Mesh size, Dyntopo/Multires/modifiers in use, screenshots or a small .blend if you can share one.

@@ -139,6 +139,10 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
+        from .beta import draw_note
+        head = layout.row()
+        head.label(text="Hindsight BETA")
+        draw_note(layout.column())
         layout.use_property_split = True
         layout.use_property_decorate = False
 

@@ -50,7 +50,12 @@ jobs:
       - name: List zip contents
         run: python3 -m zipfile -l dist/hindsight.zip
 
+      # Tags with a pre-release suffix (v1.0.0-beta.1, v1.1.0-rc.1) become GitHub pre-releases and are
+      # never marked "latest". If the release already exists (created with notes), only the asset is
+      # added/replaced; its notes are kept.
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/hindsight.zip
           fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
