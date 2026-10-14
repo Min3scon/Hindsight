@@ -234,8 +234,8 @@
 
 .hsd-root .hsd-hint {
   position: absolute;
-  left: 50%;
-  top: 46%;
+  left: 47%;
+  top: 34%;
   z-index: 3;
   display: inline-flex;
   align-items: center;
@@ -320,8 +320,8 @@
 .hsd-root .hsd-track:focus-visible { outline-offset: 1px; }
 .hsd-root .hsd-rail {
   position: absolute;
-  left: 0;
-  right: 0;
+  left: 7px;
+  right: 7px;
   top: 50%;
   height: 6px;
   margin-top: -3px;
@@ -610,8 +610,12 @@
   .hsd-root .hsd-tool { flex-direction: column; gap: 4px; min-height: 50px; padding: 7px 2px 6px; font-size: 11px; justify-content: center; white-space: normal; text-align: center; }
   .hsd-root .hsd-tool .hsd-ico { width: 19px; height: 19px; }
   .hsd-root .hsd-hide-sm { display: none; }
-  .hsd-root .hsd-sliders { flex: 1 1 100%; max-width: none; gap: 14px; padding: 0 4px; }
-  .hsd-root .hsd-slider { grid-template-columns: auto 1fr 2.6em; gap: 7px; }
+  .hsd-root .hsd-sliders { flex: 1 1 100%; max-width: none; gap: 16px; padding: 0 4px; }
+  .hsd-root .hsd-slider { grid-template-columns: 1fr auto; grid-template-areas: "name val" "range range"; gap: 0 6px; }
+  .hsd-root .hsd-slider-name { grid-area: name; }
+  .hsd-root .hsd-slider-val { grid-area: val; }
+  .hsd-root .hsd-range { grid-area: range; }
+  .hsd-root .hsd-hint { top: 30%; font-size: 13px; padding: 8px 14px 8px 10px; }
   .hsd-root .hsd-scrub { bottom: 8px; width: calc(100% - 14px); padding-right: 11px; gap: 4px; }
   .hsd-root .hsd-count { font-size: 11.5px; min-width: 9.6ch; }
   .hsd-root .hsd-menu { left: 7px; bottom: 54px; }

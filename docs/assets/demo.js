@@ -21,13 +21,18 @@
   var VW = 410, VH = 430;   // model-space box that must stay in view
   var VIEW_CX = 10, VIEW_CY = 24; // model point at the centre of the view
   var FLOOR_Y = 214;        // model y of the grid floor
-  var BX = 330, BY0 = -270, BY1 = 262; // points are kept inside this box
+  var BX = 330, BY0 = -270, BY1 = 214; // points are kept inside this box (the floor is the bottom)
   var FRAME_MS = 1000 / 60;
-  // Soft lighting: the shape minus a copy of itself shifted by each offset leaves a band along the
-  // edges that face the light. Stacking a few faint bands gives a smooth falloff with no seams.
-  var KEY_DIR = [0.55, 0.835], KEY_OFF = [2, 5, 9, 14, 21, 30, 42];
-  var SHADE_DIR = [-0.55, -0.835], SHADE_OFF = [3, 7, 12, 19, 28, 40, 56];
-  var RIM_DIR = [-0.93, 0.37], RIM_OFF = [1.2, 2.6, 4.6, 7.6, 12];
+  // Soft lighting: inner shadows cast by the area outside the shape. Each light is
+  // [offset x, offset y, blur, colour] in model units; the offset points away from the edges it lights.
+  var LIGHTS = [
+    [12, 18, 40, 'rgba(255,246,232,0.7)'],       // key light, upper left (wide)
+    [2, 3, 6, 'rgba(255,251,242,0.5)'],          // key light (tight)
+    [-14, -21, 54, 'rgba(50,24,8,0.78)'],        // shade, lower right (wide)
+    [-2.6, -3.8, 8, 'rgba(30,14,5,0.55)'],       // shade (tight)
+    [-9, 3.5, 18, ''],                           // rim light, right (wide), colour from --accent-2
+    [-3.4, 1.3, 5, '']                           // rim light (tight)
+  ];
 
   var TOOL_INFO = {
     grab: { label: 'Push/Pull', hint: 'Drag across the outline: drag outwards to pull clay out, inwards to push it in.' },
@@ -424,17 +429,19 @@
     function scripted() {
       var R = rng(20241014);
       var plan = [
-        ['grab', 'Pull: neck', 72, 1, [[-22, 138], [-24, 168], [-26, 196], [-28, 222]]],
-        ['grab', 'Pull: jaw', 54, 0.9, [[84, 104], [92, 114], [100, 124], [106, 131]]],
+        ['grab', 'Pull: neck', 110, 1, [[-10, 140], [-10, 180], [-10, 220], [-10, 262]]],
+        ['grab', 'Pull: lower face', 80, 1, [[100, 85], [108, 87], [116, 90], [124, 92]]],
         ['grab', 'Pull: nose', 30, 1, [[127, 6], [140, 12], [153, 19], [166, 27]]],
         ['grab', 'Push: eye socket', 22, 0.9, [[131, -24], [125, -23], [119, -22]]],
         ['grab', 'Pull: brow', 26, 0.8, [[124, -50], [129, -51], [134, -51]]],
         ['inflate', 'Inflate: skull', 74, 0.85, [[-30, -168], [-80, -140], [-118, -98], [-140, -40]]],
-        ['grab', 'Pull: chin', 30, 0.9, [[106, 118], [112, 121], [118, 122]]],
-        ['deflate', 'Deflate: throat', 46, 0.8, [[78, 150], [62, 162], [44, 176]]],
-        ['grab', 'Pull: lips', 15, 0.8, [[124, 46], [128, 47], [132, 48]]],
-        ['grab', 'Push: mouth', 12, 0.8, [[126, 63], [122, 63], [118, 63]]],
+        ['grab', 'Pull: chin', 26, 0.9, [[114, 104], [119, 106], [124, 108], [128, 109]]],
+        ['grab', 'Push: nape', 40, 0.9, [[-92, 110], [-82, 114], [-72, 118]]],
+        ['deflate', 'Deflate: throat', 40, 0.8, [[70, 140], [55, 150], [45, 165]]],
+        ['grab', 'Pull: lips', 15, 0.8, [[126, 46], [130, 47], [134, 48]]],
+        ['grab', 'Push: mouth', 12, 0.8, [[128, 60], [124, 60], [120, 60]]],
         ['smooth', 'Smooth: back of head', 58, 0.7, [[-132, -70], [-136, -20], [-126, 40], [-104, 96]]],
+        ['smooth', 'Smooth: neck', 40, 0.8, [[-100, 90], [-84, 120], [-74, 150], [-70, 190]]],
         ['smooth', 'Smooth: face', 22, 0.35, [[132, -64], [134, -40], [146, 20], [128, 60], [116, 100]]]
       ];
       for (var p = 0; p < plan.length; p++) {
@@ -456,7 +463,6 @@
     var bgCtx = bgCanvas.getContext('2d');
     var dashGhost = [6, 5];
     var COL = {};
-    var LIGHT = { key: 'rgba(255,246,232,0.075)', shade: 'rgba(38,22,12,0.1)', rim: '' };
     var gradBase, gradSpec, gradShadow;
     var hover = { on: false, x: 0, y: 0 };
     var flashStep = -1, flashT0 = 0, flashHold = false, flashTimer = 0;
@@ -496,14 +502,15 @@
       COL.ghost = 'rgba(' + COL.accent3 + ',0.9)';
       COL.ghostFill = 'rgba(' + COL.accent3 + ',0.07)';
 
-      LIGHT.rim = 'rgba(' + COL.accent2 + ',0.2)';
+      LIGHTS[4][3] = 'rgba(' + COL.accent2 + ',0.32)';
+      LIGHTS[5][3] = 'rgba(' + COL.accent2 + ',0.8)';
 
       // Gradients in unit space, mapped onto the shape's bounds when drawn.
       gradBase = ctx.createRadialGradient(0.34, 0.26, 0.02, 0.4, 0.34, 0.92);
-      gradBase.addColorStop(0, '#efe1cf');
-      gradBase.addColorStop(0.32, '#d2bba3');
-      gradBase.addColorStop(0.72, '#a68c75');
-      gradBase.addColorStop(1, '#6f5948');
+      gradBase.addColorStop(0, '#ecdac4');
+      gradBase.addColorStop(0.34, '#c9ae94');
+      gradBase.addColorStop(0.74, '#987c65');
+      gradBase.addColorStop(1, '#5e4939');
       gradSpec = ctx.createRadialGradient(0.33, 0.2, 0, 0.33, 0.2, 0.3);
       gradSpec.addColorStop(0, 'rgba(255,252,246,0.42)');
       gradSpec.addColorStop(1, 'rgba(255,252,246,0)');
@@ -601,18 +608,17 @@
       ctx.closePath();
     }
 
-    // Fill (shape minus shape shifted by d*dir) inside the current clip, for each offset d.
-    function bands(dir, offs, color, x0, y0, x1, y1) {
-      ctx.fillStyle = color;
-      for (var i = 0; i < offs.length; i++) {
-        var dx = dir[0] * offs[i], dy = dir[1] * offs[i];
-        ctx.beginPath();
-        ctx.rect(x0, y0, x1 - x0, y1 - y0);
-        ctx.translate(dx, dy);
-        tracePath(pos);
-        ctx.translate(-dx, -dy);
-        ctx.fill('evenodd');
-      }
+    // Inner shadow: fill everything outside the shape (clipped away) and let only its blurred,
+    // offset shadow fall inside the edges. Shadow offset and blur are in device pixels.
+    function innerLight(L, k, x0, y0, x1, y1) {
+      ctx.beginPath();
+      ctx.rect(x0, y0, x1 - x0, y1 - y0);
+      tracePath(pos);
+      ctx.shadowColor = L[3];
+      ctx.shadowOffsetX = L[0] * k;
+      ctx.shadowOffsetY = L[1] * k;
+      ctx.shadowBlur = L[2] * k;
+      ctx.fill('evenodd');
     }
 
     function draw() {
@@ -649,10 +655,10 @@
       ctx.fillStyle = gradSpec;
       ctx.fillRect(0, 0, 1, 1);
       ctx.setTransform(k, 0, 0, k, dpr * ox, dpr * oy);
-      var bx0 = minX - 80, by0 = minY - 80, bx1 = maxX + 80, by1 = maxY + 80;
-      bands(KEY_DIR, KEY_OFF, LIGHT.key, bx0, by0, bx1, by1);
-      bands(SHADE_DIR, SHADE_OFF, LIGHT.shade, bx0, by0, bx1, by1);
-      bands(RIM_DIR, RIM_OFF, LIGHT.rim, bx0, by0, bx1, by1);
+      ctx.fillStyle = '#000';
+      for (i = 0; i < LIGHTS.length; i++) innerLight(LIGHTS[i], k, minX - 160, minY - 160, maxX + 160, maxY + 160);
+      ctx.shadowColor = 'rgba(0,0,0,0)';
+      ctx.shadowBlur = 0;
       ctx.restore();
 
       ctx.setTransform(k, 0, 0, k, dpr * ox, dpr * oy);
@@ -924,18 +930,18 @@
       scrub.classList.toggle('hsd-locked', playing);
       scrub.classList.toggle('hsd-off', !historyOn);
       fillEl.style.transform = 'scaleX(' + frac + ')';
-      handle.style.left = (frac * 100) + '%';
+      handle.style.left = 'calc(7px + (100% - 14px) * ' + frac + ')';
       if (len > 0 && len <= 140) { ticksEl.style.backgroundSize = (100 / len) + '% 100%'; ticksEl.hidden = false; }
       else ticksEl.hidden = true;
       if (morphTarget >= 0 && historyOn) {
         mtick.hidden = false;
-        mtick.style.left = (len ? morphTarget / len * 100 : 0) + '%';
+        mtick.style.left = 'calc(7px + (100% - 14px) * ' + (len ? morphTarget / len : 0) + ')';
       } else mtick.hidden = true;
 
       var rec = cursor > 0 ? steps[cursor - 1] : null;
-      hudLabel.textContent = !historyOn ? 'History off' : rec ? 'Step ' + cursor + ' · ' + rec.label : 'Step 0 · Starting shape';
+      hudLabel.textContent = !historyOn ? 'History off' : rec ? 'Step ' + cursor + ' \u00b7 ' + rec.label : 'Step 0 \u00b7 Starting shape';
       flag.hidden = historyOn && !playing;
-      flag.textContent = playing ? 'Movie Mode · scrubber locked' : 'Undo history off · strokes are not recorded';
+      flag.textContent = playing ? 'Movie Mode \u00b7 scrubber locked' : 'Undo history off \u00b7 strokes are not recorded';
       flag.classList.toggle('hsd-flag-warn', !historyOn);
 
       undoBtn.disabled = !historyOn || cursor === 0;
@@ -963,19 +969,19 @@
       progFill.style.transform = 'scaleX(' + frac + ')';
       var sps = 60 / framesPerStep;
       movieInfo.textContent = (playing ? 'Playing step ' + cursor + ' of ' + len : len ? 'Replays steps 0 to ' + len : 'No steps to play yet') +
-        ' · ' + (sps >= 10 ? Math.round(sps) : sps.toFixed(1)) + ' steps/s at 60 fps. History is not changed.';
+        ' \u00b7 ' + (sps >= 10 ? Math.round(sps) : sps.toFixed(1)) + ' steps/s at 60 fps. History is not changed.';
 
       // Memory readout
       var full = N * 8;
       if (rec) {
-        readStep.innerHTML = 'This step stored <b class="hsd-em">' + fmtInt(rec.stored) + ' points</b> (' + fmtBytes(rec.bytes) +
-          ') — a full copy would be <b>' + fmtInt(N) + ' points</b> (' + fmtBytes(full) + ').';
+        readStep.innerHTML = 'This step stored <b class="hsd-em">' + fmtInt(rec.stored) + ' points</b> (' + fmtInt(rec.bytes) +
+          ' bytes) \u2014 a full copy would be <b>' + fmtInt(N) + ' points</b> (' + fmtInt(full) + ' bytes).';
         var pf = rec.bytes / full;
         meterStep.style.width = Math.max(0.6, Math.min(100, pf * 100)) + '%';
         pctStep.textContent = Math.max(1, Math.round(pf * 100)) + '%';
       } else {
         readStep.innerHTML = 'Step 0 is the starting shape, so nothing is stored for it. A full copy would be <b>' +
-          fmtInt(N) + ' points</b> (' + fmtBytes(full) + ').';
+          fmtInt(N) + ' points</b> (' + fmtInt(full) + ' bytes).';
         meterStep.style.width = '0%';
         pctStep.textContent = '0%';
       }
@@ -983,7 +989,7 @@
       if (len) {
         var ratio = fullAll / Math.max(1, totalBytes);
         readTotal.innerHTML = 'Whole history: <b>' + len + ' step' + (len === 1 ? '' : 's') + '</b> in <b class="hsd-em">' + fmtBytes(totalBytes) +
-          '</b>. Full copies of every step would take <b>' + fmtBytes(fullAll) + '</b> (' + (ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)) + '× more).';
+          '</b>. Full copies of every step would take <b>' + fmtBytes(fullAll) + '</b> (' + (ratio >= 10 ? Math.round(ratio) : ratio.toFixed(1)) + '\u00d7 more).';
         meterTotal.style.width = Math.max(0.6, Math.min(100, totalBytes / fullAll * 100)) + '%';
         pctTotal.textContent = Math.max(1, Math.round(totalBytes / fullAll * 100)) + '%';
       } else {
