@@ -146,3 +146,8 @@ Headless bpy 4.2.23 module, 4-core 2.1 GHz Xeon, strokes touching ~2% of vertice
     the tag starts `.github/workflows/release.yml`, which builds `hindsight.zip`, attaches it, keeps it a
     pre-release and uses the notes file. If the zip doesn't appear within a few minutes, attach
     `docs/download/hindsight.zip` by hand (Edit release > drag the file in).
+- Pages got enabled during this job (has_pages became true) together with a new
+  `.github/workflows/static.yml` ("Deploy static content to Pages") that uploaded the whole repo root,
+  which has no index.html and raced with the existing `pages` workflow (same concurrency group). Fixed by
+  keeping `static.yml` as the single deploy workflow: it now rebuilds `docs/download/hindsight.zip`,
+  publishes only `docs/`, and also runs on `v*` tags. The duplicate `pages.yml` was removed.
