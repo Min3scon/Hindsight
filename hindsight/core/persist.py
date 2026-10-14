@@ -15,9 +15,11 @@ Format versions (``format``, falling back to ``version`` for files written befor
   1  beta 1. No checksums.
   2  beta 2 work in progress. Adds ``format``, ``writer`` and a CRC-32 per step (``crcs``). The
      binary layout is unchanged, so beta 1 can still read format 2 files (it ignores the new keys).
-  3  beta 2. New steps use the format 3 step blob (see step.py: smaller, with its own checksum), and
-     the file ends with b"HSRT" + u32 CRC-32 of the JSON header. Beta 1 can open these files but
-     can't play back format 3 steps; it saves them back unchanged.
+  3  beta 2 work in progress. New steps use the format 3 step blob (see step.py: smaller, with its
+     own checksum), and the file ends with b"HSRT" + u32 CRC-32 of the JSON header. Beta 1 can open
+     these files but can't play back format 3 steps; it saves them back unchanged.
+  4  beta 2. Steps may carry data records (adapters other than the mesh recorder; step blob
+     version 4). Otherwise the same as format 3.
 Loading formats 1 and 2 needs no conversion: their steps are read as they are (and re-packed in the
 background later, see store.Packer); every step gets a checksum on the next save.
 A file with a format newer than FORMAT_VERSION is refused with NewerFormatError (nothing is
@@ -38,7 +40,7 @@ from .journal import atomic_write, atomic_write_json
 from .types import Entry
 
 REG_MAGIC = b"HSR1"
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 REG_VERSION = FORMAT_VERSION   # kept for older imports
 TRAILER = b"HSRT"
 WRITER = "Hindsight"            # replaced with "Hindsight <version>" by the add-on at register time

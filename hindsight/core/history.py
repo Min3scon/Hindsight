@@ -2,11 +2,12 @@
 
 Pure Python + numpy. No bpy imports.
 
-A ``History`` is a list of ``Entry`` slots plus a cursor; the mesh shows the
+A ``History`` is a list of ``Entry`` slots plus a cursor; the datablock shows the
 state after ``entries[:cursor]``. ``goto`` walks the crossed entries and folds
-them into ``MeshState`` objects (one per object uid). DELTA steps hold exact
-per-element changes of the bit patterns (see delta.py), applied forwards or
-backwards; TOPO/JOIN steps carry full before/after snapshots.
+them into ``MeshState`` objects (one per recorded datablock uid). DELTA steps hold
+exact per-element changes of the bit patterns (see delta.py), applied forwards or
+backwards; TOPO/JOIN steps carry full before/after snapshots; data records
+(DataChange, any step kind) set recorded values from adapters other than the mesh.
 """
 from __future__ import annotations
 
@@ -14,12 +15,13 @@ import numpy as np
 
 from . import delta as _delta
 from .types import (
-    DELTA, JOIN,
-    ChannelDelta, Entry, Snapshot, Step,
+    DATA, DELTA, JOIN, MISSING,
+    ChannelDelta, DataChange, Entry, Snapshot, Step,
     key_dtype, key_width, split_key,
 )
 
 TOPO_MARK = "__TOPO__"
+DATA_MARK = "@"       # changed-key tuples ("@", adapter, path) for data records
 
 def _steps(entries: list, states: dict):
     """Yield the Step of each entry in order, or None when its object isn't being moved.
@@ -34,14 +36,31 @@ def _steps(entries: list, states: dict):
 
 
 class MeshState:
-    """Current channel values of ONE object (the baseline shown at the cursor)."""
+    """Current recorded state of ONE datablock (the baseline shown at the cursor): mesh channels
+    for meshes, plus the values data adapters record ((adapter, path) -> value)."""
 
-    __slots__ = ("counts", "arrays", "removed")
+    __slots__ = ("counts", "arrays", "removed", "values")
 
-    def __init__(self, counts: dict, arrays: dict):
+    def __init__(self, counts: dict, arrays: dict, values: dict | None = None):
         self.counts = dict(counts)
         self.arrays = arrays          # key -> flat native array (owned, not copied)
         self.removed = set()          # keys whose attribute must be deleted from the mesh
+        self.values = dict(values or {})   # (adapter, path) -> value; absent = MISSING
+
+    # ------------------------------------------------------------------ data records
+    def apply_record(self, rec: DataChange, forward: bool) -> set:
+        """Set the recorded values to the side of the change we move to. Returns the changed keys."""
+        out = set()
+        a = rec.adapter
+        for path, (old, new) in rec.changes.items():
+            v = new if forward else old
+            k = (a, path)
+            if v is MISSING:
+                self.values.pop(k, None)
+            else:
+                self.values[k] = v
+            out.add((DATA_MARK, a, path))
+        return out
 
     # ------------------------------------------------------------------ deltas
     def _ensure(self, key: str) -> np.ndarray:
@@ -158,6 +177,30 @@ class History:
         target = entry.target
         st = states[target]
         kind = step.kind
+        if step.records:
+            # data records: applied before the mesh part going forward, after it going back, so a
+            # step is undone in the reverse order of how it was done
+            if forward:
+                History._records(step, True, states, changed)
+            else:
+                History._mesh(entry, step, False, st, states, join_hook, changed)
+                History._records(step, False, states, changed)
+                return
+        History._mesh(entry, step, forward, st, states, join_hook, changed)
+
+    @staticmethod
+    def _records(step: Step, forward: bool, states: dict, changed: dict) -> None:
+        for rec in (step.records if forward else reversed(step.records)):
+            rs = states.get(rec.target)
+            if rs is not None:
+                changed.setdefault(rec.target, set()).update(rs.apply_record(rec, forward))
+
+    @staticmethod
+    def _mesh(entry: Entry, step: Step, forward: bool, st, states: dict, join_hook, changed: dict) -> None:
+        target = entry.target
+        kind = step.kind
+        if kind == DATA:
+            return
         if kind == DELTA:
             if step.deltas:
                 keys = changed.setdefault(target, set())
