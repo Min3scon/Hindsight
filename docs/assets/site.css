@@ -531,6 +531,7 @@ code { padding: .1em .38em; border-radius: 6px; background: rgba(255, 255, 255, 
 /* ---------- Hero ---------- */
 .hero {
   position: relative;
+  overflow-x: clip;
   padding-top: clamp(40px, 6vw, 92px);
   padding-bottom: clamp(56px, 7vw, 100px);
 }
@@ -541,7 +542,7 @@ code { padding: .1em .38em; border-radius: 6px; background: rgba(255, 255, 255, 
   align-items: center;
 }
 @media (min-width: 1000px) {
-  .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); }
+  .hero-grid { grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); }
 }
 .hero-eyebrow {
   display: inline-flex;
@@ -563,7 +564,7 @@ code { padding: .1em .38em; border-radius: 6px; background: rgba(255, 255, 255, 
   margin: 0 0 18px;
 }
 .hero-name {
-  font: 800 clamp(3.4rem, 1.4rem + 8.2vw, 7.6rem)/.88 var(--font-display);
+  font: 800 clamp(3.3rem, 1.3rem + 7.4vw, 6.9rem)/.88 var(--font-display);
   letter-spacing: -.055em;
   padding-right: .04em;
   /* Onion skin: faint copies of earlier positions trail behind the word. */
@@ -750,7 +751,7 @@ code { padding: .1em .38em; border-radius: 6px; background: rgba(255, 255, 255, 
 .demo-note { margin: 16px 4px 0; color: var(--muted); font-size: .88rem; text-align: center; }
 
 /* ---------- Stories (What it does) ---------- */
-.stories { display: grid; gap: clamp(72px, 9vw, 128px); }
+.stories { display: grid; gap: clamp(64px, 8vw, 112px); }
 .story {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -759,8 +760,9 @@ code { padding: .1em .38em; border-radius: 6px; background: rgba(255, 255, 255, 
 }
 @media (min-width: 920px) {
   .story { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(40px, 5vw, 80px); }
+  .story--flip { grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); }
   .story--flip .story-text { order: 2; }
-  .story--wide { grid-template-columns: minmax(0, 4fr) minmax(0, 7fr); }
+  .story--wide { grid-template-columns: minmax(0, 7fr) minmax(0, 4fr); }
 }
 .story-label {
   display: inline-flex;
@@ -1343,14 +1345,14 @@ code { padding: .1em .38em; border-radius: 6px; background: rgba(255, 255, 255, 
 .quick ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; counter-reset: q; }
 .quick ol li {
   counter-increment: q;
-  display: flex;
-  gap: 14px;
-  align-items: baseline;
+  position: relative;
+  padding-left: 36px;
   color: var(--text-2);
 }
 .quick ol li::before {
   content: counter(q, decimal-leading-zero);
-  flex: none;
+  position: absolute;
+  left: 0; top: .32em;
   color: var(--accent-2);
   font: 700 .82rem/1 var(--font-mono);
 }

@@ -1,10 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
 <title>Hindsight</title>
-<defs><radialGradient id="c" cx=".38" cy=".3" r=".8"><stop offset="0" stop-color="#f6ddc6"/><stop offset=".6" stop-color="#b79b86"/><stop offset="1" stop-color="#5a4a3f"/></radialGradient></defs>
-<rect width="32" height="32" rx="7" fill="#0e0f12"/>
-<rect x=".75" y=".75" width="30.5" height="30.5" rx="6.3" fill="none" stroke="#383e4b" stroke-width="1.5"/>
-<circle cx="16" cy="12.5" r="7.5" fill="url(#c)"/>
-<rect x="5" y="24" width="22" height="3" rx="1.5" fill="#2c313c"/>
-<rect x="5" y="24" width="14" height="3" rx="1.5" fill="#ff9a3c"/>
-<rect x="17.2" y="21" width="4" height="9" rx="1.5" fill="#ffd2a1" stroke="#ff9a3c" stroke-width="1.2"/>
+<style>
+.edge{stroke:#2a2f3a}
+@media (prefers-color-scheme:dark){.edge{stroke:#3a414f}}
+</style>
+<defs>
+<radialGradient id="clay" cx=".36" cy=".32" r=".78">
+<stop offset="0" stop-color="#ffd0a8"/>
+<stop offset=".45" stop-color="#ff8a3d"/>
+<stop offset="1" stop-color="#b24d12"/>
+</radialGradient>
+</defs>
+<rect width="32" height="32" rx="7.5" fill="#0b0c0f"/>
+<rect class="edge" x=".5" y=".5" width="31" height="31" rx="7" fill="none" stroke-width="1"/>
+<path d="M15.9 9.3c1.5.2 2.3 1.4 3.4 2.3 1.7 1.3 3.2 2.6 3.2 5 0 3.2-2.8 5.6-6.5 5.6-3.7 0-6.6-2.3-6.6-5.5 0-2.4 1.5-3.9 3.2-4.9 1.2-.7 1.9-2.6 3.3-2.5Z" fill="url(#clay)"/>
+<path d="M13.4 13.6c2.3.7 4.6 2.6 5.6 5.4" fill="none" stroke="#8a3509" stroke-width="1.3" stroke-linecap="round" opacity=".8"/>
+<path d="M12.4 15c2 .8 3.7 2.4 4.6 4.6" fill="none" stroke="#ffd9b8" stroke-width=".7" stroke-linecap="round" opacity=".7"/>
+<path d="M10.4 25.7A11.2 11.2 0 1 0 5.6 12.2" fill="none" stroke="#5fd0ff" stroke-width="2.7" stroke-linecap="round"/>
+<path d="M1.9 11.3 9.2 13.4 4.4 18.4Z" fill="#5fd0ff" stroke="#5fd0ff" stroke-width=".9" stroke-linejoin="round"/>
 </svg>

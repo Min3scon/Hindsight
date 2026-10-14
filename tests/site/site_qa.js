@@ -100,7 +100,7 @@ function readZip(buf) {
 function watch(page) {
   const w = { errors: [], bad: [], bytes: 0, urls: [] };
   page.on('pageerror', e => w.errors.push('pageerror: ' + String(e).slice(0, 200)));
-  page.on('console', m => { if (m.type() === 'error') w.errors.push('console: ' + m.text().slice(0, 200)); });
+  page.on('console', m => { if (m.type() === 'error' && !/^Failed to load resource/.test(m.text())) w.errors.push('console: ' + m.text().slice(0, 200)); });
   page.on('requestfailed', r => { if (!/^data:|^blob:/.test(r.url())) w.bad.push('failed ' + r.url() + ' ' + (r.failure() || {}).errorText); });
   page.on('response', async r => {
     w.urls.push(r.url());
@@ -108,6 +108,8 @@ function watch(page) {
     if (/\.zip(\?|$)/.test(r.url())) return;
     try { w.bytes += (await r.body()).length; } catch (e) { /* redirects etc. */ }
   });
+  w.mark = () => ({ e: w.errors.length, b: w.bad.length });
+  w.since = m => w.errors.slice(m.e).concat(w.bad.slice(m.b));
   return w;
 }
 async function settle(page, ms = 600) {
@@ -118,6 +120,19 @@ async function settle(page, ms = 600) {
 /* The demo helpers run in the page. They find a point on the clay outline (via the
  * optional toCanvas() helper) so strokes really touch the shape. */
 const PAGE_HELPERS = () => {
+  window.__qaOverflow = VW => {
+    const out = [];
+    for (const e of document.body.querySelectorAll('*')) {
+      const r = e.getBoundingClientRect();
+      if (r.right <= VW + 1 || r.width === 0) continue;
+      const p = e.parentElement; const pr = p && p.getBoundingClientRect();
+      if (p && p !== document.body && pr.right > VW + 1) continue; // report the outermost overflowing element only
+      let clip = false; for (let a = p; a && a !== document.body; a = a.parentElement) { const ox = getComputedStyle(a).overflowX; if (ox !== 'visible') { clip = true; break; } }
+      if (clip) continue;
+      out.push(e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).join('.') : '') + ` right=${Math.round(r.right)}`);
+    }
+    return out.slice(0, 5);
+  };
   window.__qa = {
     canvas() {
       return document.querySelector('#hs-demo canvas.hsd-canvas') || document.querySelector('#hs-demo canvas') || document.querySelector('#demo canvas');
@@ -166,14 +181,14 @@ async function canvasBox(page) {
       await settle(page);
       check(A, 'index.html loads with 200', resp.status() === 200, String(resp.status()));
       const firstLoadBytes = w.bytes;
-      const s = await page.evaluate(VER => {
+      const s = await page.evaluate(VW => {
         const vis = el => { if (!el) return false; const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
           return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity > 0.05 && r.right > 0 && r.left < innerWidth; };
         const ownText = el => (el.textContent || '').replace(/\s+/g, ' ').trim();
         const h1 = document.querySelector('h1');
         const nav = document.querySelector('nav');
         const navRoot = nav ? (nav.closest('header') || nav) : (document.querySelector('header'));
-        const hero = h1 ? (h1.closest('.hero, #hero, [class*="hero"], section, header') || h1.parentElement) : null;
+        const hero = h1 ? ((h1.parentElement && h1.parentElement.closest('.hero, #hero, [class~="hero"], section, header')) || h1.parentElement) : null;
         const badgeIn = (root, notIn) => root ? [...root.querySelectorAll('*')].filter(e => !(notIn && notIn !== root && notIn.contains(e)) && /^(public\s+)?beta$/i.test(ownText(e)) && vis(e)) : [];
         const navBadges = badgeIn(navRoot, hero && hero !== navRoot && !hero.contains(navRoot) ? hero : null);
         const heroBadges = hero && !hero.contains(navRoot) ? badgeIn(hero) : (hero ? badgeIn(hero, navRoot) : []);
@@ -182,16 +197,16 @@ async function canvasBox(page) {
         const dls = [...document.querySelectorAll('a')].filter(a => /download\s+beta/i.test(a.textContent || '') || /download\s+beta/i.test(a.getAttribute('aria-label') || ''));
         const dl = dls.map(a => ({ href: a.getAttribute('href'), download: a.hasAttribute('download'), text: ownText(a).slice(0, 90),
           parentText: ownText(a.parentElement).slice(0, 200), visible: vis(a) }));
-        return { sw: document.documentElement.scrollWidth, bw: document.body.scrollWidth, iw: innerWidth,
+        return { sw: document.documentElement.scrollWidth, bw: document.body.scrollWidth, iw: VW, overflow: window.__qaOverflow(VW),
           navBadge: navBadges.length > 0, heroBadge: heroBadges.length > 0, heroTag: hero ? hero.tagName + '.' + hero.className : null,
           banner: !!banner, bannerVisible: vis(banner), dl };
-      }, VERSION);
+      }, opts.viewport.width);
       check(A, 'no console errors / page errors', w.errors.length === 0, short(w.errors, 4));
       check(A, 'no HTTP 4xx/5xx or failed requests', w.bad.length === 0, short(w.bad, 6));
-      check(A, 'no horizontal scroll (scrollWidth <= innerWidth)', s.sw <= s.iw && s.bw <= s.iw, `scrollWidth=${s.sw} body=${s.bw} innerWidth=${s.iw}`);
+      check(A, `no horizontal scroll (scrollWidth <= ${s.iw})`, s.sw <= s.iw && s.bw <= s.iw, `scrollWidth=${s.sw} body=${s.bw}; widest overflowing elements: ${s.overflow.join(' | ')}`);
       check(A, 'nav BETA badge visible', s.navBadge);
       check(A, 'hero BETA badge visible', s.heroBadge, s.heroTag || 'no h1/hero found');
-      check(A, 'beta banner "Hindsight is in public beta" visible', s.bannerVisible, s.banner ? 'present but not visible' : 'text not found');
+      check(A, 'beta banner "Hindsight is in public beta" visible', s.bannerVisible, s.bannerVisible ? '' : (s.banner ? 'present but not visible' : 'text not found'));
       check(A, '"Download beta" button exists', s.dl.length > 0);
       if (s.dl.length) {
         const badHref = s.dl.filter(d => d.href !== 'download/hindsight.zip' || !d.download);
@@ -206,12 +221,13 @@ async function canvasBox(page) {
         if (m) zipSizeShown = { n: parseFloat(m[1].replace(',', '.')), unit: m[2] };
       }
       await page.screenshot({ path: path.join(OUT, `${opts.viewport.width}-top.png`) });
+      const m1 = w.mark();
       // scroll the whole page so lazy content/IntersectionObserver stuff loads, then full-page shot
       await page.evaluate(async () => { for (let y = 0; y < document.documentElement.scrollHeight; y += innerHeight * 0.8) { scrollTo(0, y); await new Promise(r => setTimeout(r, 120)); } scrollTo(0, 0); });
       await settle(page, 400);
-      const sw2 = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
-      check(A, 'no horizontal scroll after scrolling through the page', sw2[0] <= sw2[1], `scrollWidth=${sw2[0]} innerWidth=${sw2[1]}`);
-      check(A, 'no errors / 4xx after scrolling through the page', w.errors.length === 0 && w.bad.length === 0, short(w.errors.concat(w.bad), 4));
+      const sw2 = await page.evaluate(VW => [document.documentElement.scrollWidth, VW, window.__qaOverflow(VW)], opts.viewport.width);
+      check(A, 'no horizontal scroll after scrolling through the page', sw2[0] <= sw2[1], `scrollWidth=${sw2[0]} viewport=${sw2[1]}; ${sw2[2].join(' | ')}`);
+      check(A, 'no NEW errors / 4xx after scrolling through the page', w.since(m1).length === 0, short(w.since(m1), 4));
       await page.screenshot({ path: path.join(OUT, `${opts.viewport.width}-full.png`), fullPage: true }).catch(e => info(A, 'full screenshot failed ' + e.message));
 
       /* ============ 8. performance (desktop first load) ============ */
@@ -255,7 +271,7 @@ async function canvasBox(page) {
         // a11y on desktop
         await a11yChecks(page);
       }
-      check(A, 'no console/page errors after interaction tests', w.errors.length === 0, short(w.errors, 4));
+      check(A, 'no NEW console/page errors during the interaction tests', w.errors.slice(m1.e).length === 0, short(w.errors.slice(m1.e), 4));
       await ctx.close();
     }
 
@@ -513,6 +529,7 @@ async function canvasBox(page) {
       await page.keyboard.press('End'); const pE = await posNow();
       kb.push({ p0, pL, pL2, pR, pH, pE, total });
       check(D, 'scrubber keys: ArrowLeft -1, ArrowRight +1, Home -> 0, End -> last', pL === p0 - 1 && pL2 === p0 - 2 && pR === p0 - 1 && pH === 0 && pE === total, kb[0]);
+      await page.waitForTimeout(150);
       const aria = await page.evaluate(s => { const e = document.querySelector(s); return { now: e.getAttribute('aria-valuenow') || e.value, max: e.getAttribute('aria-valuemax') || e.max }; }, sel);
       check(D, 'scrubber exposes aria-valuenow/max matching pos()/steps()', +aria.now === pE && +aria.max === total, aria);
       // scrub back with the keyboard, then stroke: future truncated
