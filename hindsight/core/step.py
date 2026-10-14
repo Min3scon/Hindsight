@@ -10,7 +10,7 @@ Step blob, formats 3 and 4 (written since beta 2):
            uid (u8 length + utf-8) and u32 size, when flagged), records (u32 size, when flagged)
   body   = codec.compress(packed deltas, then before / after / extra snapshot blobs, then the data
            records as JSON: [[adapter, target, [[path, old, new], ...]], ...], with {"$": "missing"}
-           for MISSING)
+           for MISSING and {"$d": {...}} for a dictionary value)
   A damaged blob fails its checksum and is never applied. Steps written quickly (journal, save)
   and steps from older formats are re-packed in the background by recompress().
 
@@ -100,10 +100,10 @@ def snapshot_from_bytes(b) -> Snapshot:
 def _enc_value(v):
     if v is MISSING:
         return _MISSING_JSON
-    if isinstance(v, tuple):
+    if isinstance(v, (tuple, list)):
         return [_enc_value(x) for x in v]
-    if isinstance(v, list):
-        return [_enc_value(x) for x in v]
+    if isinstance(v, dict):
+        return {"$d": {str(k): _enc_value(x) for k, x in v.items()}}
     return v
 
 
@@ -111,6 +111,8 @@ def _dec_value(v):
     if isinstance(v, dict):
         if v == _MISSING_JSON:
             return MISSING
+        if len(v) == 1 and isinstance(v.get("$d"), dict):
+            return {k: _dec_value(x) for k, x in v["$d"].items()}
         raise ValueError("records: unexpected object value")
     if isinstance(v, list):
         return [_dec_value(x) for x in v]

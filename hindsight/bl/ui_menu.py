@@ -6,6 +6,7 @@ None of these operators carries 'UNDO': they must never create native undo steps
 """
 
 import bpy
+from .ctx import active_object as _ctx_active
 
 MORPH_TOOL_ID = "hindsight.morph_history"
 
@@ -21,7 +22,7 @@ def _settings(context):
 
 
 def _active_mesh(context):
-    obj = getattr(context, "active_object", None)
+    obj = _ctx_active(context)
     if obj is not None and obj.type == 'MESH':
         return obj
     return None

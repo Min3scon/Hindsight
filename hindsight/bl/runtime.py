@@ -14,6 +14,7 @@ from ..core.types import (
     SETTINGS, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
 from . import guard, log, meshio
+from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
 RECORD_MODES = ("SCULPT", "VERTEX_PAINT")
@@ -219,13 +220,28 @@ def _sync_edit(obj) -> None:
             pass
 
 
+def read_mesh_snapshot(obj):
+    """The object's mesh as a Snapshot. In Edit Mode the mesh attributes are the edit-mode layers,
+    so the edit mesh is written back first and a plain copy is read instead."""
+    if obj.mode != "EDIT":
+        return meshio.read_snapshot(obj.data)
+    with suspended():
+        obj.update_from_editmode()
+        tmp = obj.data.copy()
+    try:
+        return meshio.read_snapshot(tmp)
+    finally:
+        with suspended():
+            bpy.data.meshes.remove(tmp)
+
+
 def ensure_state(obj, refresh: bool = False) -> MeshState:
     uid = obj_uid(obj, create=True)
     st = _STATES.get(uid)
-    if obj.mode == "EDIT" and st is not None:
+    if obj.mode == "EDIT" and st is not None and st.counts:
         return st  # mesh arrays are not readable in Edit Mode; keep the pre-edit baseline
     if st is None or refresh or not st.counts:
-        snap = meshio.read_snapshot(obj.data)
+        snap = read_mesh_snapshot(obj)
         st = MeshState(snap.counts, snap.arrays, st.values if st is not None else None)
         _STATES[uid] = st
     return st
@@ -237,6 +253,11 @@ def _visible_uids() -> set:
         u = obj_uid(ob)
         if u is not None and not is_excluded(ob):
             out.add(u)
+    try:
+        from . import datarec
+        out |= {u for u in datarec.tracked_uids() if datarec._is_scene_uid(u)}
+    except Exception:
+        pass
     return out
 
 
@@ -286,10 +307,10 @@ def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool
     return False
 
 
-def _observe(obj, st: MeshState, full: bool, label: str, mode: str):
-    """Diff the mesh against the state. Returns an unsaved Step (seq=0) or None."""
+def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None):
+    """Diff the mesh (or `me`, a copy of it) against the state. Returns an unsaved Step (seq=0) or None."""
     from ..core import delta as D
-    me = obj.data
+    me = me if me is not None else obj.data
     uid = obj_uid(obj)
     c = meshio.counts(me)
     if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=True)):
@@ -391,14 +412,39 @@ def _sculpt_refresh(obj) -> None:
         pass
 
 
-def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False):
+def commit_edit(obj, label: str = "Edit"):
+    """Edit Mode step by step (Record everything on this object): record what the operation that
+    just finished changed, as one step. Without it, Edit Mode is one step per visit."""
+    if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
+        return None
+    st = _STATES.get(obj_uid(obj))
+    if st is None or not st.counts:
+        return None
+    with suspended():
+        obj.update_from_editmode()
+    return commit(obj, label=label, mode="EDIT", full=True, _edit=True)
+
+
+EDIT_STEPS_MAX = 300_000   # vertices; above this an Edit Mode step (about 55 ms per 100k) is too slow
+
+
+def edit_steps_on(obj) -> bool:
+    try:
+        from . import adapters, datarec
+        return (datarec.is_tracked(obj) and adapters.kind_on("edit_steps")
+                and len(obj.data.vertices) <= EDIT_STEPS_MAX)
+    except Exception:
+        return False
+
+
+def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False):
     """Record what changed on obj since the last commit as ONE step. Returns the Step or None."""
     if obj is None or obj.type != "MESH":
         return None
     uid = obj_uid(obj, create=True)
     _DIRTY.pop(uid, None)
     _STROKE_SEEN.discard(uid)
-    if obj.mode == "EDIT":
+    if obj.mode == "EDIT" and not _edit:
         return None  # Edit Mode changes are grouped and recorded when leaving Edit Mode
     if uid in _REG.disabled or is_excluded(obj):
         return None
@@ -413,7 +459,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     h = _REG.history_for(uid)
     if h is not None and not h.enabled:
         return None
-    if h is None and mode not in RECORD_MODES:
+    if h is None and mode not in RECORD_MODES and not _edit:
         # Only a sculpt or paint stroke starts a history. Leaving Edit Mode on an object without
         # one (for example a file saved in Edit Mode) just takes a new baseline.
         ensure_state(obj, refresh=True)
@@ -426,7 +472,18 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
                 label = ops[-1].bl_label or label
         except Exception:
             pass
-    step = _observe(obj, st, full, label, mode)
+    src = None
+    if _edit and obj.mode == "EDIT":
+        # In Edit Mode the mesh's attributes are the edit-mode layers ("position" isn't one of them):
+        # read a plain copy of the mesh instead (update_from_editmode has made it current).
+        with suspended():
+            src = obj.data.copy()
+    try:
+        step = _observe(obj, st, full, label, mode, me=src)
+    finally:
+        if src is not None:
+            with suspended():
+                bpy.data.meshes.remove(src)
     native = uid in _NATIVE_PENDING
     _NATIVE_PENDING.discard(uid)
     if step is None:
@@ -475,6 +532,11 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     entry = h.entries[-1]
     _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
     _enforce(h)
+    try:
+        from . import datarec
+        datarec._JUMPS.clear()
+    except Exception:
+        pass
     tag_redraw_all()
     return step
 
@@ -601,8 +663,12 @@ def _enter(obj) -> None:
     h = _REG.history_for(uid)
     st = _STATES.get(uid)
     if obj.mode == "EDIT":
-        if st is None:
+        if st is None or not st.counts:
             ensure_state(obj)
+        elif h is not None and h.enabled and edit_steps_on(obj):
+            # Edit Mode step by step: changes made outside the history are their own step first,
+            # so the first Edit Mode step holds only that operation.
+            commit(obj, label="Changes Outside History", mode="OBJECT", full=True, _edit=True)
         return
     if h is not None and st is not None and h.enabled and uid not in _REG.disabled:
         # Anything changed while the object was not being tracked becomes one step.
@@ -707,6 +773,9 @@ def on_undo(*_a) -> None:
     if obj is not None and obj.type == "MESH" and obj.mode in RECORD_MODES:
         if obj_uid(obj) in _STATES:
             commit(obj)
+    elif obj is not None and obj.type == "MESH" and obj.mode == "EDIT" and edit_steps_on(obj):
+        if obj_uid(obj) in _STATES:
+            commit_edit(obj, "Edit")
     try:
         from . import datarec
         datarec.on_undo()
@@ -753,10 +822,28 @@ def _join_hook(step, forward, states):
         return None
 
 
+def _find_any(uid):
+    """An object by uid, or any other recorded datablock (a scene, ...)."""
+    ob = find_object(uid)
+    if ob is not None:
+        return ob
+    try:
+        from . import idmap
+        return idmap.find(uid)
+    except Exception:
+        return None
+
+
 def _goto_history(h, pos: int, final: bool) -> dict:
+    from . import datarec
     states = {}
     for m in list(h.members):
         ob = find_object(m)
+        if ob is None:
+            other = _find_any(m)
+            if other is not None:
+                states[m] = datarec.baseline(other, m)
+            continue
         if ob is not None:
             if ob.mode == "EDIT":
                 with suspended():
@@ -765,18 +852,22 @@ def _goto_history(h, pos: int, final: bool) -> dict:
                 with suspended():
                     bpy.ops.object.mode_set(mode="EDIT")
             states[m] = ensure_state(ob)
-    from . import datarec
     tracked = [m for m in h.members if m in datarec.tracked_uids()]
     vb = {m: dict(states[m].values) for m in tracked if m in states}
     before = h.cursor
     changes = h.goto(pos, states, join_hook=_join_hook)
     wrote_data = False
     for target, keys in changes.items():
-        ob = find_object(target)
+        ob = _find_any(target)
         st = states.get(target) or _STATES.get(target)
         if ob is None or st is None:
             continue
         mesh_keys, data_keys = datarec.split_keys(keys)
+        if not isinstance(ob, bpy.types.Object):
+            if data_keys:
+                datarec.write(ob, st, data_keys)
+                wrote_data = True
+            continue
         if data_keys:
             datarec.write(ob, st, data_keys)
             wrote_data = True
@@ -829,7 +920,7 @@ def goto(context, pos: int, final: bool = True) -> None:
     if use_global(context):
         global_goto(context, pos, final)
     else:
-        h = history_of(context.active_object)
+        h = history_of(_ctx_active(context))
         if h is None:
             return
         _goto_history(h, pos, final)
@@ -889,7 +980,7 @@ def scrub_info(context):
                 return None
             return {"pos": globaltl.global_position(_REG, vis), "len": len(order),
                     "cap": SETTINGS.max_steps, "global": True, "locked": locked, "morph_target": None}
-        obj = context.active_object
+        obj = _ctx_active(context)
         h = history_of(obj)
         if h is None:
             return None
@@ -897,6 +988,36 @@ def scrub_info(context):
                 "locked": locked, "morph_target": h.morph_target}
     except Exception:
         return None
+
+
+def step_list(context, around: int = 12) -> list:
+    """Steps near the cursor for the step list: [(position after the step, label, current)], newest
+    first, plus the start (position 0). Uses the global timeline when global history is on."""
+    out = []
+    try:
+        if use_global(context):
+            vis = _visible_uids()
+            order = globaltl.global_order(_REG, vis)
+            cur = globaltl.global_position(_REG, vis)
+            labels = []
+            for _seq, hid, i in order:
+                h = _REG.histories.get(hid)
+                labels.append(h.entries[i].meta.get("label", "Step") if h else "Step")
+        else:
+            h = history_of(_ctx_active(context))
+            if h is None:
+                return []
+            cur = h.cursor
+            labels = [e.meta.get("label", "Step") for e in h.entries]
+        n = len(labels)
+        lo, hi = max(0, cur - around), min(n, cur + around)
+        for i in range(hi, lo, -1):
+            out.append((i, labels[i - 1], i == cur))
+        if lo == 0:
+            out.append((0, "Start", cur == 0))
+    except Exception:
+        return []
+    return out
 
 
 def step(context, delta: int) -> bool:
@@ -927,7 +1048,7 @@ def set_preserve_modes(context, on: bool) -> None:
 
 
 def set_morph_target(context) -> None:
-    h = history_of(context.active_object)
+    h = history_of(_ctx_active(context))
     if h is not None:
         h.morph_target = h.cursor
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": h.enabled,
@@ -1016,7 +1137,7 @@ def memory_stats() -> dict:
     active_s = 0
     ah = None
     try:
-        ah = history_of(bpy.context.active_object)
+        ah = history_of(_ctx_active(bpy.context))
     except Exception:
         pass
     for h in _REG.all():

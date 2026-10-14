@@ -26,6 +26,8 @@ _PASSIVE_PREFIXES = ("VIEW3D_OT_rotate", "VIEW3D_OT_move", "VIEW3D_OT_zoom", "VI
                      "GRAPH_OT_view", "ACTION_OT_view", "ANIM_OT_change_frame")
 
 _DIRTY: dict = {}            # uid -> time of the last update seen
+_BODIES: dict = {}           # object uid -> its latest body (to bring it back if it gets deleted)
+_BODY_DIRTY: set = set()     # object uids whose body must be read again
 _OPS = {"marker": None}      # (count, pointer of the newest) of window_manager.operators
 _JUMPS: list = []            # Hindsight jumps pushed onto Blender's undo stack (see on_undo)
 
@@ -88,8 +90,26 @@ def _state(uid: str) -> MeshState:
     return st
 
 
+def enabled_kinds():
+    """Data kinds switched on in the preferences (None: all)."""
+    if FORCE_KINDS[0] is not None:
+        return set(FORCE_KINDS[0])
+    try:
+        from .prefs import get_prefs
+        p = get_prefs()
+        if p is not None and hasattr(p, "record_kinds"):
+            return {k.lower() for k in p.record_kinds}
+    except Exception:
+        pass
+    return None
+
+
+FORCE_KINDS = [None]          # tests: a set of kind ids
+
+
 def capture(idb) -> dict:
     """(adapter, path) -> value for every adapter that handles this datablock."""
+    adapters.ENABLED_KINDS[0] = enabled_kinds()
     out = {}
     for a in adapters.for_datablock(idb):
         for path, v in a.capture(idb).items():
@@ -103,6 +123,8 @@ def baseline(idb, uid: str | None = None, refresh: bool = False) -> MeshState:
     st = _state(uid)
     if refresh or not st.values:
         st.values = capture(idb)
+        if isinstance(idb, bpy.types.Scene):
+            refresh_bodies(idb)
     return st
 
 
@@ -118,12 +140,53 @@ def on_update(depsgraph) -> None:
     except Exception:
         pass
     now = time.time()
+    scenes = [u for u in uids if _is_scene_uid(u)]
     for u in depsgraph.updates:
         idv = u.id
         orig = getattr(idv, "original", idv)
         uid = idmap.uid_of(orig)
         if uid in uids:
             _DIRTY[uid] = now
+        if scenes and isinstance(orig, (bpy.types.Object, bpy.types.Collection, bpy.types.Scene)):
+            for su in scenes:
+                _DIRTY[su] = now
+            if isinstance(orig, bpy.types.Object) and uid is not None:
+                _BODY_DIRTY.add(uid)
+
+
+_SCENE_UIDS: set = set()
+
+
+def _is_scene_uid(uid: str) -> bool:
+    if uid in _SCENE_UIDS:
+        return True
+    idb = idmap.find(uid)
+    if isinstance(idb, bpy.types.Scene):
+        _SCENE_UIDS.add(uid)
+        return True
+    return False
+
+
+def refresh_bodies(scene, only=None) -> None:
+    """Keep the bodies of the scene's objects current (all of them, or the given uids)."""
+    for ob in scene.objects:
+        u = idmap.claim(ob)
+        if u and (only is None or u in only):
+            try:
+                _BODIES[u] = adapters.object_body(ob)
+            except Exception as e:
+                log.error_once(("body", str(e)), f"could not read an object's details: {e}", e)
+
+
+def _mesh_snapshot(body):
+    """A snapshot of the mesh behind a body, while the mesh datablock still exists."""
+    if not isinstance(body, dict) or body.get("type") != "MESH" or not body.get("data"):
+        return None
+    me = idmap.find(body["data"])
+    if me is None:
+        return None
+    from . import meshio
+    return meshio.read_snapshot(me)
 
 
 def _operation_running() -> bool:
@@ -157,19 +220,33 @@ def _last_label(default: str = "Change") -> str:
 
 
 def tick() -> None:
-    """Called from the runtime timer: commit when an operation has ended."""
-    if not _DIRTY:
-        _OPS["marker"] = _ops_marker()
-        return
+    """Called from the runtime timer: commit when an operation has ended. When an operator finishes,
+    every tracked datablock is compared (some operators, such as hiding in the viewport, don't send
+    the object an update); otherwise only those that changed, once changes settle."""
     rt = _rt()
     if rt._SUSPEND[0] or _operation_running():
         return
     marker = _ops_marker()
-    finished = marker is not None and marker != _OPS["marker"]
-    settled = time.time() - max(_DIRTY.values()) >= SETTLE
+    finished = marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
+    if marker is not None and _OPS["marker"] is None:
+        _OPS["marker"] = marker
+    if not _DIRTY and not finished:
+        return
+    settled = bool(_DIRTY) and time.time() - max(_DIRTY.values()) >= SETTLE
     if finished or settled:
         _OPS["marker"] = marker
-        commit(label=_last_label() if finished else "Change")
+        label = _last_label() if finished else "Change"
+        commit(label=label, uids=(tracked_uids() | set(_DIRTY)) if finished else None)
+        if finished:
+            _edit_step(label)
+
+
+def _edit_step(label: str) -> None:
+    """Edit Mode step by step: the operation that just finished on a tracked object in Edit Mode."""
+    rt = _rt()
+    obj = rt._active()
+    if obj is not None and getattr(obj, "mode", "") == "EDIT" and rt.edit_steps_on(obj):
+        rt.commit_edit(obj, label)
 
 
 def _diff(old: dict, new: dict) -> dict:
@@ -179,6 +256,10 @@ def _diff(old: dict, new: dict) -> dict:
         a, b = old.get(k, MISSING), new.get(k, MISSING)
         if a is MISSING and b is MISSING:
             continue
+        if k[1].startswith("body:"):
+            continue        # stored with creation and deletion steps, never read back from Blender
+        if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or ""):
+            continue        # a kind switched off isn't read; that isn't a removal
         if a is MISSING or b is MISSING or not adapters.same(a, b):
             out[k] = (a, b)
     return out
@@ -199,16 +280,42 @@ def commit(label: str = "Change", uids=None) -> list:
         if idb is None:
             continue
         st = _state(uid)
+        is_scene = isinstance(idb, bpy.types.Scene)
+        if is_scene and _BODY_DIRTY:
+            refresh_bodies(idb, only=set(_BODY_DIRTY))
         if not st.values:
             st.values = capture(idb)          # first sight: just a baseline
+            if is_scene:
+                refresh_bodies(idb)
             continue
         new = capture(idb)
         changes = _diff(st.values, new)
         if not changes:
+            if is_scene:
+                _BODY_DIRTY.clear()
             continue
         by_adapter: dict = {}
         for (a, path), ch in changes.items():
             by_adapter.setdefault(a, {})[path] = ch
+        extra = {}
+        if is_scene and "scene" in by_adapter and "objects" in by_adapter["scene"]:
+            old_objs, new_objs = by_adapter["scene"]["objects"]
+            old_set = set(old_objs) if old_objs is not MISSING else set()
+            new_set = set(new_objs) if new_objs is not MISSING else set()
+            refresh_bodies(idb, only=new_set - old_set)
+            snaps = {}
+            for ou in sorted(old_set ^ new_set):
+                body = _BODIES.get(ou)
+                if ou in new_set:
+                    by_adapter["scene"][f"body:{ou}"] = (MISSING, body if body is not None else MISSING)
+                else:
+                    by_adapter["scene"][f"body:{ou}"] = (body if body is not None else MISSING, MISSING)
+                snap = _mesh_snapshot(body)
+                if snap is not None:
+                    snaps[ou] = snap
+            if snaps:
+                extra["_snapshots"] = snaps
+            _BODY_DIRTY.clear()
         records = [DataChange(a, uid, ch) for a, ch in sorted(by_adapter.items())]
         h = rt.reg().history_for(uid)
         if h is not None and not h.enabled:
@@ -219,11 +326,12 @@ def commit(label: str = "Change", uids=None) -> list:
                                  "morph_target": None})
         mode = getattr(idb, "mode", "OBJECT") or "OBJECT"
         step = Step(seq=rt.reg().new_seq(), label=label, mode=mode, target=uid, time=time.time(),
-                    kind=DATA, records=records)
+                    kind=DATA, records=records, extra=extra)
         at = h.cursor
         removed = h.push(step)
         for r in records:
             st.apply_record(r, True)
+        st.snaps.update(extra.get("_snapshots") or {})
         if removed:
             rt._journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
@@ -231,6 +339,7 @@ def commit(label: str = "Change", uids=None) -> list:
         rt._enforce(h)
         steps.append(step)
     if steps:
+        _JUMPS.clear()        # a new step: Blender's undo now undoes that, not an earlier jump
         rt.tag_redraw_all()
     return steps
 
@@ -256,12 +365,18 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
             if a is None:
                 continue
             a.write(idb, {p: st.values.get((aid, p), MISSING) for p in paths},
-                    lambda path, aid=aid: st.values.get((aid, path), MISSING))
+                    lambda path, aid=aid: _recorded(st, aid, path))
     try:
         idb.update_tag()
     except Exception:
         pass
     _DIRTY.pop(idmap.uid_of(idb), None)
+
+
+def _recorded(st: MeshState, aid: str, path: str):
+    if path.startswith("snapshot:"):
+        return st.snaps.get(path[9:])
+    return st.values.get((aid, path), MISSING)
 
 
 def push_undo(message: str = "Hindsight jump") -> bool:
@@ -281,9 +396,9 @@ def push_undo(message: str = "Hindsight jump") -> bool:
 
 def note_jump(h, before: int, after: int, values_before: dict, values_after: dict) -> None:
     """Remember a jump that was pushed onto Blender's undo stack (see on_undo)."""
-    _JUMPS.append({"hist": h.uid, "before": before, "after": after,
+    _JUMPS.clear()
+    _JUMPS.append({"hist": h.uid, "before": before, "after": after, "len": len(h.entries),
                    "vb": values_before, "va": values_after, "undone": False})
-    del _JUMPS[:-32]
 
 
 def on_undo() -> None:
@@ -299,15 +414,18 @@ def on_undo() -> None:
             seen[uid] = capture(idb)
     if not seen:
         return
-    for j in reversed(_JUMPS):
+    # Only the newest jump can be undone or redone by Blender, and only while nothing was recorded
+    # after it and the cursor is still where that jump left it.
+    for j in _JUMPS[-1:]:
         h = rt.reg().histories.get(j["hist"])
-        if h is None:
+        if h is None or len(h.entries) != j["len"]:
+            continue
+        if h.cursor != (j["after"] if not j["undone"] else j["before"]):
             continue
         want = j["vb"] if not j["undone"] else j["va"]
         if want and all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
             h.cursor = j["before"] if not j["undone"] else j["after"]
             j["undone"] = not j["undone"]
-            break
     for uid, vals in seen.items():
         st = _state(uid)
         h = rt.reg().history_for(uid)
@@ -339,6 +457,16 @@ def _records_match(step, uid, diff: dict, inverse: bool) -> bool:
     return True
 
 
+def rebaseline() -> None:
+    """Re-read every tracked datablock without recording (after the data kinds change)."""
+    for uid in tracked_uids():
+        idb = idmap.find(uid)
+        if idb is not None:
+            st = _state(uid)
+            st.values.update(capture(idb))
+    _DIRTY.clear()
+
+
 def prime() -> None:
     """Read baselines for every tracked datablock (after a file is loaded)."""
     for uid in tracked_uids():
@@ -349,5 +477,8 @@ def prime() -> None:
 
 def forget() -> None:
     _DIRTY.clear()
+    _BODIES.clear()
+    _BODY_DIRTY.clear()
+    _SCENE_UIDS.clear()
     _JUMPS.clear()
     _OPS["marker"] = None
