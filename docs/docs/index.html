@@ -426,7 +426,7 @@ section { padding: 80px 0; }
 
       <h2 id="install">Install</h2>
       <ol>
-        <li>Download <a href="../download/hindsight.zip" download>hindsight.zip</a> (87 KB). Keep it zipped.</li>
+        <li>Download <a href="../download/hindsight.zip" download>hindsight.zip</a> (97 KB). Keep it zipped.</li>
         <li>In Blender, open <strong>Edit &gt; Preferences &gt; Get Extensions</strong>. Click the small arrow at the top right and choose <strong>Install from Disk</strong>.</li>
         <li>Pick the zip. Hindsight is switched on straight away, and the status bar says so once.</li>
       </ol>
@@ -507,7 +507,8 @@ section { padding: 80px 0; }
 
       <h2 id="memory">Memory</h2>
       <p>All histories together are kept under a limit, 4096 MB by default. When it's reached, the oldest steps go first and the tab says so. Each object keeps at most 10,000 steps.</p>
-      <p>Recent steps stay uncompressed for instant scrubbing. Older ones are compressed with Zstandard. The Memory panel in the tab shows what each object uses.</p>
+      <p>Recent steps stay uncompressed for instant scrubbing. Older ones are packed: Hindsight stores how much each changed value moved, predicts that from the values next to it, and compresses what is left with Zstandard. Nothing is rounded, so every step comes back exactly as it was.</p>
+      <p>On the meshes we tested, a typical stroke takes 16 to 47% less memory than in beta 1. The Memory panel in the tab shows what each object uses.</p>
 
       <h2 id="shortcuts">Shortcuts</h2>
       <table>
