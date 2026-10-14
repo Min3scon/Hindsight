@@ -320,10 +320,33 @@ class VIEW3D_PT_hindsight_warnings(_SubPanel, bpy.types.Panel):
             wrap(col, context, text, 'ERROR' if sev == "ERROR" else 'INFO')
 
 
+def draw_step_list(layout, context, around=12):
+    """The steps around the cursor, newest first; click one to jump there."""
+    rows = _call("step_list", context, around)
+    if rows is _FAIL or not rows:
+        return False
+    col = layout.column(align=True)
+    for pos, label, current in rows:
+        op = col.operator("hindsight.goto", text=f"{pos}  {label}", depress=current,
+                          icon='RIGHTARROW_THIN' if current else 'BLANK1', emboss=current)
+        op.position = pos
+    return True
+
+
+class VIEW3D_PT_hindsight_steps(_SubPanel, bpy.types.Panel):
+    bl_label = "Steps"
+    bl_options = {'DEFAULT_CLOSED'}
+    bl_order = 2
+
+    def draw(self, context):
+        if not draw_step_list(self.layout, context):
+            wrap(self.layout, context, "No steps yet.")
+
+
 class VIEW3D_PT_hindsight_history(_SubPanel, bpy.types.Panel):
     bl_label = "History options"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 2
+    bl_order = 3
 
     def draw(self, context):
         draw_history_options(self.layout, context)
@@ -332,7 +355,7 @@ class VIEW3D_PT_hindsight_history(_SubPanel, bpy.types.Panel):
 class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
     bl_label = "Movie Mode"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 3
+    bl_order = 4
 
     @classmethod
     def poll(cls, context):
@@ -362,7 +385,7 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
 class VIEW3D_PT_hindsight_filter(_SubPanel, bpy.types.Panel):
     bl_label = "Collection Filtering"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 4
+    bl_order = 5
 
     @classmethod
     def poll(cls, context):
@@ -395,7 +418,7 @@ class VIEW3D_PT_hindsight_filter(_SubPanel, bpy.types.Panel):
 class VIEW3D_PT_hindsight_memory(_SubPanel, bpy.types.Panel):
     bl_label = "Memory"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 5
+    bl_order = 6
 
     def draw(self, context):
         layout = self.layout
@@ -420,7 +443,7 @@ class VIEW3D_PT_hindsight_memory(_SubPanel, bpy.types.Panel):
 class VIEW3D_PT_hindsight_scrubber(_SubPanel, bpy.types.Panel):
     bl_label = "On-screen slider"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 6
+    bl_order = 7
 
     def draw(self, context):
         layout = self.layout
@@ -439,7 +462,7 @@ class VIEW3D_PT_hindsight_scrubber(_SubPanel, bpy.types.Panel):
 class VIEW3D_PT_hindsight_advanced(_SubPanel, bpy.types.Panel):
     bl_label = "Advanced"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 7
+    bl_order = 8
 
     @classmethod
     def poll(cls, context):
@@ -463,7 +486,7 @@ class VIEW3D_PT_hindsight_advanced(_SubPanel, bpy.types.Panel):
 class VIEW3D_PT_hindsight_help(_SubPanel, bpy.types.Panel):
     bl_label = "Help"
     bl_options = {'DEFAULT_CLOSED'}
-    bl_order = 8
+    bl_order = 9
 
     def draw(self, context):
         draw_help(self.layout, context)
@@ -472,6 +495,7 @@ class VIEW3D_PT_hindsight_help(_SubPanel, bpy.types.Panel):
 classes = (
     VIEW3D_PT_hindsight,
     VIEW3D_PT_hindsight_warnings,
+    VIEW3D_PT_hindsight_steps,
     VIEW3D_PT_hindsight_history,
     VIEW3D_PT_hindsight_movie,
     VIEW3D_PT_hindsight_filter,

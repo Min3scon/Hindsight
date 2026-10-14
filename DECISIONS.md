@@ -171,6 +171,33 @@ Checklist items that were checked and are NOT the cause:
 - COVERAGE.md is the list of what may be claimed; check_copy fails when the built site names a data
   type that isn't supported or opt-in, outside a sentence that says it isn't recorded or is planned.
 
+### Tier 1 decisions (objects)
+- Parenting, transforms, visibility flags and names are allowlist rows of the generic adapter, written
+  in allowlist order (parent first). Matrices are written as `mathutils.Matrix`: Blender reads a nested
+  list assigned to a matrix property column by column (found by test: restored parent inverses came
+  back transposed).
+- The object adapter records the collections an object is in (scene collections as "scene:<id>"), the
+  view-layer hide state (H, Alt+H; these don't send the object an update, so every tracked datablock is
+  compared when an operator finishes) and the constraint stack as a list of {type, name, values}. A
+  changed stack shape is rebuilt; otherwise only values are set.
+- Per-kind switches (Advanced panel, preference `record_kinds`): a kind switched off is not read, and a
+  path that is no longer read is not taken as removed.
+- Edit Mode step by step: each operator that finishes in Edit Mode is a step, read with
+  `update_from_editmode` and a plain copy of the mesh (in Edit Mode `mesh.attributes` are the edit-mode
+  layers and have no positions; found by test). About 55 ms per step at 100k vertices, so above 300,000
+  vertices Edit Mode stays one step per visit. Blender's Ctrl+Z in Edit Mode moves the cursor (checked
+  in the real UI).
+- Adding, deleting and duplicating objects are steps of a scene history ("Record adding and deleting
+  objects"): the scene records which objects exist; a creation or deletion step also stores the
+  object's details and a copy of its mesh, so it can come back after a reload with the same id (its own
+  history reconnects). The original mesh is reused while it still exists.
+- Only the newest Hindsight jump can be undone with Blender's undo, and only while nothing was recorded
+  after it (an older jump matched by coincidence once moved the cursor: found in the real UI).
+- A hidden active object stays reachable: Blender's `context.active_object` is None for hidden objects,
+  so Hindsight falls back to the view layer's active object (found in the real UI after H).
+- Step list (Steps sub-panel and the header popover): the steps around the cursor with their labels;
+  clicking one jumps there.
+
 ### Step 5 decisions (website)
 - Hand-written HTML templates and a 300-line Python build (`site/build.py`) instead of a static site
   generator: no dependencies in CI, full control over the output, facts (version, size, numbers) injected

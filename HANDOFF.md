@@ -109,6 +109,13 @@ rows, data recorder with operation boundaries, playback, Blender undo interplay,
 per-object opt-in, COVERAGE.md and its copy-check rule). Tests: test_core_records, test_bl_adapters,
 tests_ui s_adapters (15 checks, all three Blenders), mutation testing 28/28. Next: Tier 1.
 
+### Tier 1 status (2026-10-14)
+Done: transforms, parenting, constraints, collections, visibility, names, Edit Mode step by step,
+adding/deleting/duplicating objects with the scene history and the global timeline, step list,
+Advanced panel. Tests: test_bl_tier1 (11), s_tier1 (17 checks, all three Blenders), run_all 30/30.
+COVERAGE rows filled. Known: tests_ui round_b_features fails 6 checks on main and tier1 alike (never
+passed); being debugged next.
+
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
 adapter records, migration from 1-3) -> Tiers 1..6 -> website v2 -> final test passes -> ship.

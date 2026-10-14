@@ -26,6 +26,8 @@ SUITE = [
     ("fail_inject", False, False),
     ("regress_stroke_split", False, False),
     ("regress_native_undo", False, False),
+    ("adapters", False, False),
+    ("tier1", False, False),
 ]
 
 

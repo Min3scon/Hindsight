@@ -261,14 +261,14 @@ def test_panels_registered():
     for name in ("VIEW3D_PT_hindsight", "VIEW3D_PT_hindsight_movie", "VIEW3D_PT_hindsight_scrubber",
                  "VIEW3D_PT_hindsight_memory", "VIEW3D_PT_hindsight_filter", "VIEW3D_PT_hindsight_history",
                  "VIEW3D_PT_hindsight_help", "VIEW3D_PT_hindsight_warnings", "HINDSIGHT_UL_collections",
-                 "VIEW3D_PT_hindsight_advanced"):
+                 "VIEW3D_PT_hindsight_advanced", "VIEW3D_PT_hindsight_steps"):
         assert hasattr(bpy.types, name), name
     main = ui_panel.VIEW3D_PT_hindsight
     assert main.bl_category == "Undo History" and main.bl_label == "Undo History"
     assert main.bl_space_type == 'VIEW_3D' and main.bl_region_type == 'UI'
     assert not hasattr(main, "poll"), "the main panel must show in every mode, with or without history"
     labels = [c.bl_label for c in ui_panel.classes[1:]]
-    assert labels == ["Warnings", "History options", "Movie Mode", "Collection Filtering", "Memory",
+    assert labels == ["Warnings", "Steps", "History options", "Movie Mode", "Collection Filtering", "Memory",
                       "On-screen slider", "Advanced", "Help"], labels
     assert all(c.bl_parent_id == "VIEW3D_PT_hindsight" for c in ui_panel.classes[1:])
     orders = [c.bl_order for c in ui_panel.classes]

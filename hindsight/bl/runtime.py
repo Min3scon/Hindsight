@@ -990,6 +990,36 @@ def scrub_info(context):
         return None
 
 
+def step_list(context, around: int = 12) -> list:
+    """Steps near the cursor for the step list: [(position after the step, label, current)], newest
+    first, plus the start (position 0). Uses the global timeline when global history is on."""
+    out = []
+    try:
+        if use_global(context):
+            vis = _visible_uids()
+            order = globaltl.global_order(_REG, vis)
+            cur = globaltl.global_position(_REG, vis)
+            labels = []
+            for _seq, hid, i in order:
+                h = _REG.histories.get(hid)
+                labels.append(h.entries[i].meta.get("label", "Step") if h else "Step")
+        else:
+            h = history_of(_ctx_active(context))
+            if h is None:
+                return []
+            cur = h.cursor
+            labels = [e.meta.get("label", "Step") for e in h.entries]
+        n = len(labels)
+        lo, hi = max(0, cur - around), min(n, cur + around)
+        for i in range(hi, lo, -1):
+            out.append((i, labels[i - 1], i == cur))
+        if lo == 0:
+            out.append((0, "Start", cur == 0))
+    except Exception:
+        return []
+    return out
+
+
 def step(context, delta: int) -> bool:
     info = scrub_info(context)
     if info is None or info["locked"]:

@@ -7,7 +7,7 @@ Blender's F3 search finds anything that is in a menu.
 import bpy
 
 from . import guard
-from .ui_panel import _FAIL, _call, _operator, draw_help, draw_history_options, draw_main
+from .ui_panel import _FAIL, _call, _operator, draw_help, draw_history_options, draw_main, draw_step_list
 from .ctx import active_object as _ctx_active
 
 UNITS = 13
@@ -27,6 +27,9 @@ class VIEW3D_PT_hindsight_popover(bpy.types.Panel):
         sub.alignment = 'RIGHT'
         sub.label(text="BETA")
         draw_main(layout, context, units=UNITS)
+        box = layout.column()
+        if draw_step_list(box, context, around=6):
+            layout.separator()
         layout.separator()
         draw_history_options(layout, context)
         layout.separator()

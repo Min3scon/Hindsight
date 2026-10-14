@@ -379,6 +379,23 @@ def test_deleted_object_back_after_reload():
     assert ha is not None and len(ha.entries) == 1, "and its own history is still there"
 
 
+def test_step_list():
+    a, b, c = setup()
+    uid = runtime.obj_uid(b)
+    for i, label in enumerate(("Move", "Rotate", "Scale")):
+        b.location.x += 1.0 + i
+        datarec.commit(label=label, uids=[uid])
+    rows = runtime.step_list(C)
+    assert [(p, l, cur) for p, l, cur in rows] == [(3, "Scale", True), (2, "Rotate", False), (1, "Move", False),
+                                                   (0, "Start", False)], rows
+    assert bpy.ops.hindsight.goto(position=1) == {'FINISHED'}
+    rows = runtime.step_list(C)
+    assert [r[2] for r in rows] == [False, False, True, False], rows
+    assert F.pack(b.location.x) == F.pack(1.0)                 # after the first step: 0 + 1
+    rows = runtime.step_list(C, around=1)
+    assert [r[0] for r in rows] == [2, 1, 0], rows
+
+
 EDIT_STEP_BUDGET_MS = {100_000: 120.0}
 
 
@@ -406,7 +423,7 @@ def test_edit_step_cost():
 
 for t in (test_parenting, test_constraints, test_collections_visibility_names, test_kinds_switch_off_and_on,
           test_random_mix, test_edit_mode_steps, test_edit_mode_default_unchanged, test_edit_step_cost,
-          test_objects_added_deleted, test_deleted_object_back_after_reload):
+          test_objects_added_deleted, test_deleted_object_back_after_reload, test_step_list):
     H.run(t)
 datarec.FORCE_SCOPE[0] = None
 datarec.FORCE_KINDS[0] = None
