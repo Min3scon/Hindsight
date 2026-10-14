@@ -18,12 +18,16 @@
 
   var N = 384;              // points on the outline
   var CAP = 10000;          // step cap shown on the counter (the add-on's default)
-  var VW = 470, VH = 430;   // model-space box that must stay in view
-  var VIEW_CY = 22;         // model y at the centre of the view
+  var VW = 410, VH = 430;   // model-space box that must stay in view
+  var VIEW_CX = 10, VIEW_CY = 24; // model point at the centre of the view
   var FLOOR_Y = 214;        // model y of the grid floor
   var BX = 330, BY0 = -270, BY1 = 262; // points are kept inside this box
   var FRAME_MS = 1000 / 60;
-  var KEY_LEVELS = 21, RIM_LEVELS = 13;
+  // Soft lighting: the shape minus a copy of itself shifted by each offset leaves a band along the
+  // edges that face the light. Stacking a few faint bands gives a smooth falloff with no seams.
+  var KEY_DIR = [0.55, 0.835], KEY_OFF = [2, 5, 9, 14, 21, 30, 42];
+  var SHADE_DIR = [-0.55, -0.835], SHADE_OFF = [3, 7, 12, 19, 28, 40, 56];
+  var RIM_DIR = [-0.93, 0.37], RIM_OFF = [1.2, 2.6, 4.6, 7.6, 12];
 
   var TOOL_INFO = {
     grab: { label: 'Push/Pull', hint: 'Drag across the outline: drag outwards to pull clay out, inwards to push it in.' },
@@ -237,8 +241,6 @@
     var acc = new Uint32Array(2 * N);           // scrub accumulator: all XORs folded here, then written once
     var touched = new Uint16Array(N);
     var mark = new Uint8Array(N);
-    var keyLev = new Uint8Array(N);
-    var rimLev = new Uint8Array(N);
 
     (function makeBlob() {
       for (var i = 0; i < N; i++) {
@@ -454,7 +456,7 @@
     var bgCtx = bgCanvas.getContext('2d');
     var dashGhost = [6, 5];
     var COL = {};
-    var keyPal = [[], []], rimPal = [[], []];
+    var LIGHT = { key: 'rgba(255,246,232,0.075)', shade: 'rgba(38,22,12,0.1)', rim: '' };
     var gradBase, gradSpec, gradShadow;
     var hover = { on: false, x: 0, y: 0 };
     var flashStep = -1, flashT0 = 0, flashHold = false, flashTimer = 0;
@@ -494,20 +496,7 @@
       COL.ghost = 'rgba(' + COL.accent3 + ',0.9)';
       COL.ghostFill = 'rgba(' + COL.accent3 + ',0.07)';
 
-      // Key light (warm, upper left) and rim light (cool, right) palettes, built once.
-      var widthsA = [0.34, 0.62], q2, v, a;
-      for (var w = 0; w < 2; w++) {
-        for (q2 = 0; q2 < KEY_LEVELS; q2++) {
-          v = (q2 / (KEY_LEVELS - 1)) * 2 - 1;
-          if (v >= 0) { a = Math.pow(v, 1.5) * 0.5 * widthsA[w]; keyPal[w][q2] = a < 0.004 ? null : 'rgba(255,243,226,' + a.toFixed(3) + ')'; }
-          else { a = Math.pow(-v, 1.05) * 0.78 * widthsA[w]; keyPal[w][q2] = a < 0.004 ? null : 'rgba(38,24,16,' + a.toFixed(3) + ')'; }
-        }
-        for (q2 = 0; q2 < RIM_LEVELS; q2++) {
-          v = q2 / (RIM_LEVELS - 1);
-          a = v * v * (w === 0 ? 0.32 : 0.85);
-          rimPal[w][q2] = a < 0.004 ? null : 'rgba(' + COL.accent2 + ',' + a.toFixed(3) + ')';
-        }
-      }
+      LIGHT.rim = 'rgba(' + COL.accent2 + ',0.2)';
 
       // Gradients in unit space, mapped onto the shape's bounds when drawn.
       gradBase = ctx.createRadialGradient(0.34, 0.26, 0.02, 0.4, 0.34, 0.92);
@@ -535,7 +524,7 @@
       var topPad = 44, bottomPad = scrub.offsetHeight + 22;
       var availH = Math.max(80, h - topPad - bottomPad);
       scale = Math.min((w - 24) / VW, availH / VH);
-      ox = w / 2;
+      ox = w / 2 - VIEW_CX * scale;
       oy = topPad + availH / 2 - VIEW_CY * scale;
       dashGhost[0] = 6 / scale; dashGhost[1] = 5 / scale;
       buildBackground();
@@ -612,55 +601,34 @@
       ctx.closePath();
     }
 
-    function strokeRuns(lev, pal, width) {
-      ctx.lineWidth = width;
-      var i = 0, start, qv, j, nx, pv;
-      while (i < N) {
-        qv = lev[i]; start = i;
-        while (i + 1 < N && lev[i + 1] === qv) i++;
-        if (pal[qv] !== null) {
-          pv = start === 0 ? N - 1 : start - 1;
-          ctx.beginPath();
-          ctx.moveTo((pos[2 * pv] + pos[2 * start]) * 0.5, (pos[2 * pv + 1] + pos[2 * start + 1]) * 0.5);
-          for (j = start; j <= i; j++) {
-            nx = j + 1 === N ? 0 : j + 1;
-            ctx.quadraticCurveTo(pos[2 * j], pos[2 * j + 1], (pos[2 * j] + pos[2 * nx]) * 0.5, (pos[2 * j + 1] + pos[2 * nx + 1]) * 0.5);
-          }
-          ctx.strokeStyle = pal[qv];
-          ctx.stroke();
-        }
-        i++;
+    // Fill (shape minus shape shifted by d*dir) inside the current clip, for each offset d.
+    function bands(dir, offs, color, x0, y0, x1, y1) {
+      ctx.fillStyle = color;
+      for (var i = 0; i < offs.length; i++) {
+        var dx = dir[0] * offs[i], dy = dir[1] * offs[i];
+        ctx.beginPath();
+        ctx.rect(x0, y0, x1 - x0, y1 - y0);
+        ctx.translate(dx, dy);
+        tracePath(pos);
+        ctx.translate(-dx, -dy);
+        ctx.fill('evenodd');
       }
     }
 
     function draw() {
       needDraw = false;
       if (!cssW) return;
-      var W = canvas.width, H = canvas.height, i, a, b, tx, ty, len, nx, ny, kd, rd;
+      var i;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(bgCanvas, 0, 0);
 
       // Bounds and lighting levels.
-      var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9, area = 0;
+      var minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
       for (i = 0; i < N; i++) {
         var x = pos[2 * i], y = pos[2 * i + 1];
         if (x < minX) minX = x; if (x > maxX) maxX = x;
         if (y < minY) minY = y; if (y > maxY) maxY = y;
-        b = i + 1 === N ? 0 : i + 1;
-        area += x * pos[2 * b + 1] - pos[2 * b] * y;
       }
-      var orient = area >= 0 ? 1 : -1;
-      for (i = 0; i < N; i++) {
-        a = i === 0 ? N - 1 : i - 1; b = i + 1 === N ? 0 : i + 1;
-        tx = pos[2 * b] - pos[2 * a]; ty = pos[2 * b + 1] - pos[2 * a + 1];
-        len = Math.sqrt(tx * tx + ty * ty) || 1;
-        nx = orient * ty / len; ny = -orient * tx / len;
-        kd = nx * -0.55 + ny * -0.835;           // key light from the upper left
-        rd = nx * 0.93 + ny * -0.37;             // rim light from the right
-        keyLev[i] = Math.round((kd + 1) * 0.5 * (KEY_LEVELS - 1));
-        rimLev[i] = rd > 0 ? Math.round(rd * (RIM_LEVELS - 1)) : 0;
-      }
-
       var k = dpr * scale, bw = maxX - minX, bh = maxY - minY;
 
       // Contact shadow on the floor.
@@ -681,12 +649,10 @@
       ctx.fillStyle = gradSpec;
       ctx.fillRect(0, 0, 1, 1);
       ctx.setTransform(k, 0, 0, k, dpr * ox, dpr * oy);
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'butt';
-      strokeRuns(keyLev, keyPal[0], 46);
-      strokeRuns(keyLev, keyPal[1], 18);
-      strokeRuns(rimLev, rimPal[0], 16);
-      strokeRuns(rimLev, rimPal[1], 5);
+      var bx0 = minX - 80, by0 = minY - 80, bx1 = maxX + 80, by1 = maxY + 80;
+      bands(KEY_DIR, KEY_OFF, LIGHT.key, bx0, by0, bx1, by1);
+      bands(SHADE_DIR, SHADE_OFF, LIGHT.shade, bx0, by0, bx1, by1);
+      bands(RIM_DIR, RIM_OFF, LIGHT.rim, bx0, by0, bx1, by1);
       ctx.restore();
 
       ctx.setTransform(k, 0, 0, k, dpr * ox, dpr * oy);
