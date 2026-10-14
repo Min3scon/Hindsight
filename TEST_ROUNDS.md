@@ -62,3 +62,14 @@ Pass 1 (2026-10-14, 48 minutes): 67 of 72 runs passed on 5.0.1, 5.1.1 and 5.1.2.
   ("Shape Keys", "Global history"). Tests updated to the new strings; 19/19 pass on all three.
 
 No product defects found in pass 1. Under the v2 scope the clean-pass count starts after the last tier.
+
+## Compression check (file format 3), not a counted pass
+
+2026-10-14, 41 minutes: Rounds C, D and F on 5.0.1, 5.1.1 and 5.1.2 with the format 3 build: 51 of
+51 runs passed. Round C: every jump bit-exact on 10k, 100k and 500k meshes, the 1,000-step session on
+10k, and the stroke-split, file-load and native-undo regressions. Round D: awkward models (43 checks)
+and fault injection (13). Round F: the new build opens beta 1 and 1.0.0 files bit-exact at every
+position; beta 1 opens the new files without crashing, shows their length and cursor, can't play the
+format 3 steps back (it reports "step blob: bad magic"), and a file opened and saved again in beta 1
+still plays back bit-exact in the new build. Headless suite: all files on all three Blenders. Under
+the v2 scope, counted passes start after the last tier.

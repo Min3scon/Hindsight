@@ -1036,4 +1036,3 @@ def unregister() -> None:
         except Exception:
             pass
         packer = None
-

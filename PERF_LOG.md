@@ -140,7 +140,13 @@ from two alternated `bench/bench_bl.py` runs.
 
 Real strokes, storage engine only (`bench/scrub_ab.py`, whole corpus packed, `History.goto`):
 
-SCRUB_TABLE
+| Corpus (about 100 steps) | Whole history back (ms) | Forward (ms) | One step (ms) | Stored |
+|---|---|---|---|---|
+| 100k grid | 38.7 -> 31.4 (-19%) | 38.7 -> 32.0 (-17%) | 0.28 -> 0.25 (-9%) | 3.03 -> 2.31 MB |
+| 140k remesh | 51.8 -> 44.8 (-14%) | 53.9 -> 45.0 (-16%) | 0.38 -> 0.36 (-6%) | 4.66 -> 3.92 MB |
+| 400k subdivided | 131.0 -> 115.3 (-12%) | 131.6 -> 114.0 (-13%) | 0.90 -> 0.87 (-4%) | 11.92 -> 9.70 MB |
+| 500k grid | 156.5 -> 137.7 (-12%) | 157.2 -> 139.2 (-11%) | 1.07 -> 1.02 (-5%) | 13.94 -> 9.65 MB |
+| 1M grid | 292.8 -> 256.4 (-12%) | 308.5 -> 251.6 (-18%) | 1.98 -> 1.88 (-5%) | 24.80 -> 16.14 MB |
 
 Per step, real 2% strokes at 100k (`.tmp/onestep.py`): decoding 79 µs before, 76 µs now; applying 55
 µs before, 40 µs now. At 500k: decoding 218 to 214 µs, applying 254 to 167 µs.
