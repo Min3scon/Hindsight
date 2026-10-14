@@ -14,10 +14,10 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 3 | Opening a file records nothing | persistence load_post (no commit) | test_bl_persistence (history length after load) | [x] |
 | 4 | Switching modes records nothing | runtime `_enter` / `check_mode_transition` | test_bl_recorder::test_first_stroke_starts_history, test_edit_mode_grouping | [x] |
 | 5 | Each stroke is one step | runtime `tick` debounce + `commit` | test_bl_recorder (all); stroke-end timing **MANUAL** | [~] |
-| 6 | Records sculpt strokes (all brushes incl. Cloth) | position channel | test_bl_recorder::test_all_channels_scrub_exact | [x] |
+| 6 | Records sculpt strokes (all brushes incl. Cloth) | position channel | test_bl_recorder::test_all_channels_scrub_exact | [~] |
 | 7 | Records masks | `.sculpt_mask` channel | test_all_channels_scrub_exact | [x] |
 | 8 | Records Face Sets | `.sculpt_face_set` channel | test_all_channels_scrub_exact | [x] |
-| 9 | Records visibility (hide/show) | `.hide_vert/.hide_edge/.hide_poly` | test_all_channels_scrub_exact | [x] |
+| 9 | Records visibility (hide/show) | `.hide_vert/.hide_edge/.hide_poly` | test_all_channels_scrub_exact | [~] |
 | 10 | Records vertex colours | colour attribute channels (float + byte) | test_all_channels_scrub_exact, test_vertex_paint_starts_history | [x] |
 | 11 | Records filters | any change diffed after the operator | covered by channel tests; real filter ops **MANUAL** | [~] |
 | 12 | Topology tools (Voxel Remesh, Trim) recorded as full snapshot | TOPO step (`meshio.read_snapshot`) | test_bl_recorder::test_topology_snapshot | [x] |
@@ -25,7 +25,7 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 14 | Edit Mode changes grouped into one step when leaving | `check_mode_transition` EDIT exit | test_bl_recorder::test_edit_mode_grouping | [x] |
 | 15 | Shade Smooth/Flat in Edit Mode recorded | `sharp_face` channel in full diff | test_edit_mode_grouping | [x] |
 | 16 | Entering and leaving Edit Mode without changes records nothing | empty diff skipped | test_edit_mode_grouping | [x] |
-| 17 | Only changed vertices stored; full copies only on topology change | core/delta.py XOR deltas, TOPO snapshots | test_core_store, test_core_history | [x] |
+| 17 | Only changed vertices stored; full copies only on topology change | core/delta.py XOR deltas, TOPO snapshots | test_core_store, test_core_history | [~] |
 | 18 | Up to 10,000 steps per object | core/store.enforce_caps | test_core_store (10,050 -> 10,000), test_bl_stress | [x] |
 
 ## Undo behaviour
@@ -59,7 +59,7 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 36 | Reset Undo History (current mesh = new start) | runtime.reset_history | test_turn_off_on_and_reset | [x] |
 | 37 | Turn Off Undo History (pause, keep steps) | runtime.turn_off | test_turn_off_on_and_reset | [x] |
 | 38 | Changes while off become the new start when turned back on | runtime.turn_on bridging step | test_turn_off_on_and_reset | [x] |
-| 39 | Reset and Turn Off (permanent, asks first) | runtime.reset_and_turn_off | test_turn_off_on_and_reset, test_bl_menu | [x] |
+| 39 | Reset and Turn Off (permanent, asks first) | runtime.reset_and_turn_off | test_turn_off_on_and_reset, test_bl_menu | [~] |
 | 40 | Turn On Undo History | runtime.turn_on | test_turn_off_on_and_reset | [x] |
 
 ## Object and global history
@@ -77,14 +77,14 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 46 | Paints brushed areas back toward the target; rest stays put | core/morph.py, bl/morph.apply_morph_at | test_bl_morph | [x] |
 | 47 | Light strokes = subtle change, several passes move closer | strength blend | test_bl_morph (strength 0.5) | [x] |
 | 48 | Each Morph stroke is one normal undo step | runtime.commit on release | test_bl_morph | [x] |
-| 49 | Not with Shape Keys, Dyntopo or Multires | morph.begin refuses | test_bl_morph (shape keys) | [x] |
+| 49 | Not with Shape Keys, Dyntopo or Multires | morph.begin refuses | test_bl_morph (shape keys) | [~] |
 | 50 | After remeshing set a new target; target survives normal sculpting | core/morph.target_positions | test_bl_morph | [x] |
 
 ## Movie Mode
 | # | Original behaviour | Where | Test | Status |
 |---|---|---|---|---|
 | 51 | Only works with Global history | bl/movie.py | test_bl_movie | [x] |
-| 52 | Sidebar Undo History > Movie Mode, header checkbox turns it on | ui_panel Movie Mode sub-panel | test_bl_panels | [x] |
+| 52 | Sidebar Undo History > Movie Mode, header checkbox turns it on | ui_panel Movie Mode sub-panel | test_bl_panels | [~] |
 | 53 | Quick Auto Key keys first and last steps on the Timeline | movie.quick_auto_key | test_bl_movie | [x] |
 | 54 | Step can be keyframed manually | scene.hindsight.movie_step (animatable) | test_bl_movie | [x] |
 | 55 | Frames per Step controls playback speed | props frames_per_step | test_bl_movie | [x] |
@@ -97,7 +97,7 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 |---|---|---|---|---|
 | 59 | N panel tab "Undo History" | ui_panel VIEW3D_PT_hindsight | test_bl_panels | [x] |
 | 60 | Reset history for this object or all objects | ui_panel buttons | test_bl_panels, test_bl_menu | [x] |
-| 61 | Set memory limits | ui_panel Memory sub-panel (prefs) | test_bl_panels | [x] |
+| 61 | Set memory limits | ui_panel Memory sub-panel (prefs) | test_bl_panels | [~] |
 | 62 | Live memory and step readout | runtime.memory_stats | test_bl_panels | [x] |
 | 63 | Collection Filtering: Blacklist / Whitelist | bl/filtering.py | test_bl_panels, test_excluded_objects | [x] |
 | 64 | Excluded objects record nothing; history hidden, not deleted; returns when moved back | runtime.history_of / commit | test_excluded_objects | [x] |
@@ -120,9 +120,9 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 73 | Dyntopo and Multires not supported; warning in the viewport | bl/warnings.py (overlay + pause) | test_bl_warnings; overlay **MANUAL** | [x] |
 | 74 | Object transforms not recorded (old steps may play back misplaced) | warnings (info) | test_bl_warnings | [x] |
 | 75 | Modifiers, Shape Keys, Materials, Vertex Groups, Weight Paint not stored; deform modifiers unpredictable | warnings | test_bl_warnings | [x] |
-| 76 | Join (Ctrl+J): asks first, merges histories | bl/joinsep.py | test_bl_join | [x] |
+| 76 | Join (Ctrl+J): asks first, merges histories | bl/joinsep.py | test_bl_join | [~] |
 | 77 | Unmerge: scrub back past the join restores the separate objects; forward re-merges | joinsep.join_hook | test_bl_join | [x] |
-| 78 | Separate (P) / Mask Extract: asks first, new object starts its own history | bl/dupsep.py | test_bl_dupsep | [x] |
+| 78 | Separate (P) / Mask Extract: asks first, new object starts its own history | bl/dupsep.py | test_bl_dupsep | [~] |
 | 79 | Alt+D linked duplicate warns about shared mesh data; Shift+D independent history | dupsep + warnings | test_bl_dupsep, test_bl_warnings | [x] |
 | 80 | Animated objects may play back differently (warning) | warnings | test_bl_warnings | [x] |
 | 81 | Global Undo must be enabled (warning) | warnings | test_bl_warnings | [x] |
@@ -130,5 +130,16 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 ## Install
 | # | Original behaviour | Where | Test | Status |
 |---|---|---|---|---|
-| 82 | Blender 4.2+, Install from Disk (zip) | blender_manifest.toml, scripts/build_zip.py | test_bl_install | [ ] pending |
+| 82 | Blender 4.2+, Install from Disk (zip) | blender_manifest.toml, scripts/build_zip.py | test_bl_install (built zip validated and installed with extensions.package_install_files) | [x] |
 | 83 | Add-on Preferences: save mode, crash recovery, truncation threshold, step cap, memory limit, tier sizes, compression | bl/prefs.py | test_bl_panels | [x] |
+
+## Audit (independent pass over every row)
+An audit agent checked each row against the code and the named test: 64 OK, 19 WEAK, 0 MISSING.
+Fixed after the audit: rows 5 (debounce test added), 20/21 (all four key combos and the Vertex Paint
+keymap asserted), 72 (saved size asserted), 75 (materials warning added + test).
+Still [~] = code done and partly tested; the remaining part needs a Blender UI or a real brush:
+6 (real brush/Cloth strokes), 9 (.hide_edge is diffed but the fake stroke only writes vert/face hide),
+11 (real filter operators), 17 (no explicit "no full copy" assertion; sizes in bench/RESULTS.md show it),
+28/29 (counter text drawing, dot click opening the menu), 34/45 (tool activation and toolbar placement),
+39/76/78 (the "asks first" confirmation dialogs; the operations themselves are tested), 49 (Dyntopo
+refusal: Dyntopo cannot be enabled headless), 52/61 (panel contents only drawn, not asserted).

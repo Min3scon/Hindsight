@@ -354,7 +354,7 @@ footer{border-top:1px solid var(--line);background:#0a0b0d;padding-block:44px 52
       <div class="dl-block">
         <div class="dl-row">
           <a class="btn-download" href="download/hindsight.zip" download="hindsight.zip">Download Hindsight</a>
-          <span class="dl-meta">v<!--HS_VERSION-->1.0.0<!--/HS_VERSION--> · <!--HS_SIZE-->50 KB<!--/HS_SIZE--></span>
+          <span class="dl-meta">v<!--HS_VERSION-->1.0.0<!--/HS_VERSION--> · <!--HS_SIZE-->66 KB<!--/HS_SIZE--></span>
         </div>
         <p class="dl-alt"><a href="https://github.com/Min3scon/Hindsight/releases">Other versions on GitHub Releases</a></p>
       </div>
@@ -570,7 +570,11 @@ footer{border-top:1px solid var(--line);background:#0a0b0d;padding-block:44px 52
       <table id="bench-table">
         <caption>Benchmark results will appear here once they have been measured.</caption>
         <thead><tr><th scope="col">Vertices</th><th scope="col">Memory per step</th><th scope="col">Record a stroke</th><th scope="col">Scrub 100 steps</th></tr></thead>
-        <tbody id="bench-body"><tr><td colspan="4">Benchmarks are being measured.</td></tr></tbody>
+        <tbody id="bench-body">
+<tr><td>99,904</td><td>12.4 KB packed (32.1 KB raw)</td><td>1.1 ms</td><td>13 ms</td></tr>
+<tr><td>500,000</td><td>58.8 KB packed (159.5 KB raw)</td><td>3.6 ms</td><td>56 ms</td></tr>
+<tr><td colspan="4">Strokes touching ~2% of the vertices. A 5,000-step jump on the 100k mesh: 724 ms; 5,000 steps of history there: 62.5 MiB. Measured headless with Blender 4.2's bpy module on a 4-core 2.1 GHz Xeon (viewport redraw not included). Full table: bench/RESULTS.md in the repository.</td></tr>
+</tbody>
       </table>
     </div>
   </div>

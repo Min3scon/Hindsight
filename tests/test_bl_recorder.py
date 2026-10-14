@@ -76,6 +76,10 @@ def test_step_back_forward_ops():
     ids = [(k.idname, k.ctrl, k.oskey, k.shift) for k in km.keymap_items] if km else []
     assert ("hindsight.step_back", True, False, False) in ids
     assert ("hindsight.step_forward", False, True, True) in ids
+    assert ("hindsight.step_back", False, True, False) in ids
+    assert ("hindsight.step_forward", True, False, True) in ids
+    km = C.window_manager.keyconfigs.addon.keymaps.get("Vertex Paint")
+    assert km is not None and any(k.idname == "hindsight.step_back" for k in km.keymap_items)
 
 
 def test_branch_silent_and_confirm():
@@ -206,7 +210,10 @@ def test_delete_past_keeps_later():
     st = record(ob, ["position"] * 6, range(6))
     h = runtime.history_of(ob)
     runtime.goto(C, 3)
+    from hindsight.core.persist import registry_to_bytes
+    size_before = len(registry_to_bytes(runtime.reg()))
     assert runtime.delete_past(C, ob) == 3
+    assert len(registry_to_bytes(runtime.reg())) < size_before, "saved history must shrink"
     assert len(h.entries) == 3 and h.cursor == 0
     runtime.goto(C, 3)
     H.assert_same(H.snapshot(ob), st[6])
@@ -280,7 +287,32 @@ def test_cap_and_memory_eviction():
     runtime.goto(C, 5)
 
 
-for f in [test_first_stroke_starts_history, test_all_channels_scrub_exact, test_vertex_paint_starts_history,
+def test_stroke_end_debounce():
+    import time
+    H.fresh()
+    ob = H.make_mesh(1000)
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 1)
+    uid = runtime.obj_uid(ob)
+    runtime._DIRTY[uid] = time.time()          # an update just arrived: stroke may still be running
+    runtime.tick()
+    assert runtime.history_of(ob) is None, "must wait for the debounce"
+    runtime._DIRTY[uid] = time.time() - 1.0    # quiet for a while: stroke finished
+    runtime.tick()
+    assert len(runtime.history_of(ob).entries) == 1, "one step per finished stroke"
+    runtime.tick()
+    assert len(runtime.history_of(ob).entries) == 1
+
+
+def test_materials_warning():
+    H.fresh()
+    ob = H.make_mesh(500)
+    ob.data.materials.append(bpy.data.materials.new("M"))
+    from hindsight.bl import warnings
+    assert any("Materials" in t for _s, t in warnings.collect(C, ob))
+
+
+for f in [test_stroke_end_debounce, test_materials_warning, test_first_stroke_starts_history, test_all_channels_scrub_exact, test_vertex_paint_starts_history,
           test_step_back_forward_ops, test_branch_silent_and_confirm, test_native_undo_sync_and_f9_replace,
           test_edit_mode_grouping, test_topology_snapshot, test_turn_off_on_and_reset,
           test_delete_past_keeps_later, test_per_object_and_global, test_excluded_objects,

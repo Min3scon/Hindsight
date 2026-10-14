@@ -42,7 +42,8 @@ def check(a, b, states, g, msg=""):
 def step_fcurve(scene):
     ad = scene.animation_data
     assert ad is not None and ad.action is not None, "no action"
-    fc = ad.action.fcurves.find("hindsight.movie_step")
+    from hindsight.bl.movie import action_fcurves
+    fc = action_fcurves(ad).find("hindsight.movie_step")
     assert fc is not None, "no Step F-Curve"
     return fc
 

@@ -94,3 +94,27 @@
   render of that exact frame may show the previous topology. Keep objects in Object Mode when rendering
   a timelapse.
 - Linked-duplicate (Alt+D) popup and Mask Extract confirmation are untested in a real UI.
+
+## Benchmarks (real, measured; see bench/RESULTS.md)
+Headless bpy 4.2.23 module, 4-core 2.1 GHz Xeon, strokes touching ~2% of vertices:
+- 100k verts: 12.4 KB/step packed (32.1 KB raw), record 1.07 ms, scrub 1/100/300 steps 0.4/13/36 ms,
+  5,000-step jump 724 ms; save/load of 300 steps 105/118 ms.
+- 500k verts: 58.8 KB/step packed (159.5 KB raw), record 3.58 ms, scrub 1/100/300 steps 1.5/56/161 ms;
+  save/load of 300 steps 740/678 ms.
+- Stress: 10,000 steps on a 99.5k-vertex mesh, all jumps bit-exact, 25.8 MiB of history, ~0.95 ms per
+  commit flat across the whole run.
+- Not measured (scope cut to 100k/500k): 1M vertices and the "6,000 steps at 1M <= 1.8 GB" target.
+  At 500k the packed size per 2% stroke is 58.8 KB.
+- Profiling fix (once, as flagged): commit cost grew from ~1 ms to ~2.6 ms over 10,000 steps because cap
+  and tier checks rescanned every entry on each commit. Made incremental (full rescan every 64 commits):
+  now flat at ~0.95 ms; stress test 36 s -> 28 s.
+
+## Agents used
+- Haiku: R1 and R2 research, README, PARITY audit (4 completed). Two early haiku website/CI agents were
+  stopped by the plan change before producing anything.
+- Sonnet: website, build/publish/Pages workflows (2).
+- Opus: storage engine, restore engine, journal/persistence core, scrubber UI, History Menu,
+  prefs/sidebar/filtering, warnings, save/load glue, Movie Mode, Morph History, Join/Unmerge,
+  Separate/Duplicate, stress/benchmark/install tests (13).
+- The main session wrote the shared types, registry, global timeline, mesh I/O, runtime/recorder,
+  operators/keymaps, props, add-on init, test harness and runner, and integrated everything.

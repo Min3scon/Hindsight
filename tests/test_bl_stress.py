@@ -61,7 +61,7 @@ def test_stress_10k_steps():
         st = runtime.commit(ob)
         t_commit += time.perf_counter() - tc
         assert st is not None, f"stroke {i} not recorded"
-        if i == 1 or i % SNAP_EVERY == 0:
+        if i in (1, 4999) or i % SNAP_EVERY == 0:   # 4999: one step before a snapshot, for the 1-step jump
             truth[i] = co.tobytes()
         if i % 2000 == 0:
             print(f"  {i} strokes, {time.perf_counter() - t0:.1f}s (commit total {t_commit:.1f}s)")
@@ -81,13 +81,7 @@ def test_stress_10k_steps():
         runtime.goto(C, pos)
         jt.append((time.perf_counter() - tj) * 1000)
         assert h.cursor == pos, (h.cursor, pos)
-        if pos in truth:
-            want = truth[pos]
-        else:
-            # 4999 is not a stored snapshot: derive it from 5000 by stepping the recorded stroke back is
-            # what we test, so compare against an independent replay of the same RNG instead.
-            want = truth_4999[0]
-        assert _read_pos(me).tobytes() == want, f"positions differ after goto {pos}"
+        assert _read_pos(me).tobytes() == truth[pos], f"positions differ after goto {pos}"
     # ---- step 10,001 evicts the oldest step
     _stroke(co, rng, nv)
     _write_pos(me, co)
@@ -107,27 +101,6 @@ def test_stress_10k_steps():
           f" {mem['total_bytes'] / 2**20:.1f} MiB history, {mem['ram_bytes'] / 2**20:.1f} MiB incl. baseline)")
 
 
-truth_4999 = [None]
-
-
-def _precompute_4999():
-    """Replay the stroke RNG on plain numpy to get the exact positions after stroke 4999."""
-    ob = H.make_mesh(100_000, name="Ref")
-    co = _read_pos(ob.data)
-    nv = co.size // 3
-    bpy.data.objects.remove(ob, do_unlink=True)
-    rng = np.random.default_rng(1234)
-    for _ in range(4999):
-        _stroke(co, rng, nv)
-    truth_4999[0] = co.tobytes()
-
-
-def test_stress():
-    H.fresh()
-    _precompute_4999()
-    test_stress_10k_steps()
-
-
 if __name__ == "__main__":
-    H.run(test_stress)
+    H.run(test_stress_10k_steps)
     H.finish()

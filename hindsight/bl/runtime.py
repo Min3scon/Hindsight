@@ -399,7 +399,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         _journal("TRUNC", {"hist": h.uid, "keep": at})
     entry = h.entries[-1]
     _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression))
-    _enforce()
+    _enforce(h)
     tag_redraw_all()
     return step
 
@@ -440,9 +440,26 @@ def confirm_truncate(obj) -> int:
     return n
 
 
-def _enforce() -> None:
+_ENFORCE_COUNT = [0]
+
+
+def _enforce(h=None) -> None:
+    """Keep caps and tiers. Incremental per commit (O(1)); full rescans only every 64 commits,
+    so recording cost does not grow with history length."""
     try:
         from ..core import store
+        _ENFORCE_COUNT[0] += 1
+        if h is not None and _ENFORCE_COUNT[0] % 64:
+            excess = len(h.entries) - SETTINGS.max_steps
+            if excess > 0:
+                h.drop_oldest(excess)
+            k = len(h.entries) - max(0, SETTINGS.raw_steps) - 1
+            if k >= 0 and not h.entries[k].is_packed():
+                if packer is not None:
+                    packer.submit(h.entries[k], SETTINGS.compression)
+                else:
+                    h.entries[k].pack(SETTINGS.compression)
+            return
         hs = _REG.all()
         store.enforce_caps(hs, SETTINGS)
         store.enforce_tiers(hs, SETTINGS, packer)

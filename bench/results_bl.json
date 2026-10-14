@@ -1,0 +1,94 @@
+{
+ "environment": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "machine": "x86_64",
+  "os": "Linux-6.18.44-fc-v114-x86_64-with-glibc2.39",
+  "python": "3.11.17",
+  "bpy": "4.2.23 LTS",
+  "numpy": "2.4.6",
+  "codecs": [
+   "zstd",
+   "lz4",
+   "zlib",
+   "none"
+  ],
+  "codec_used": "zstd",
+  "mode": "headless bpy module (pip bpy), background, no GPU/viewport; simulated strokes"
+ },
+ "results": [
+  {
+   "verts_requested": 100000,
+   "verts": 99904,
+   "faces": 99456,
+   "mesh_build_ms": 88.58103499960635,
+   "stroke_verts": 1998,
+   "mem_raw_bytes_per_step": 32120.0,
+   "baseline_bytes": 6374148,
+   "pack_50_ms": 4.637252000065928,
+   "mem_packed_bytes_per_step": 12360.76,
+   "full_positions_bytes": 1198848,
+   "commit_ms_median": 1.0657995001110976,
+   "commit_ms_p90": 1.4369372001056036,
+   "commit_samples": 300,
+   "goto1_ms": 0.3900740000517544,
+   "goto1_samples": 30,
+   "goto100_ms": 13.028808999933972,
+   "goto100_samples": 18,
+   "goto300_ms": 36.3480565001737,
+   "goto300_samples": 8,
+   "save_load_300": {
+    "save_ms": 105.3550679998807,
+    "sidecar_bytes": 3788806,
+    "blend_bytes": 7181680,
+    "load_ms": 118.12425900006929,
+    "roundtrip_ok": true,
+    "method": "bpy.ops.wm.save_as_mainfile + bpy.ops.wm.open_mainfile, save_mode=SIDECAR (includes writing/reading the .blend itself)"
+   },
+   "goto5000_ms": 723.8805165000031,
+   "record_to_5000_s": 10.184173616999942,
+   "goto5000_samples": 4,
+   "mem_5000_total_bytes": 65511839,
+   "mem_5000_bytes_per_step": 13102.3678,
+   "commit_ms_median_5000": 1.6824315000576462,
+   "save_load_5000": {
+    "save_ms": 722.884552999858,
+    "sidecar_bytes": 64310319,
+    "blend_bytes": 7182176,
+    "load_ms": 255.79759299989746,
+    "roundtrip_ok": true,
+    "method": "bpy.ops.wm.save_as_mainfile + bpy.ops.wm.open_mainfile, save_mode=SIDECAR (includes writing/reading the .blend itself)"
+   }
+  },
+  {
+   "verts_requested": 500000,
+   "verts": 500000,
+   "faces": 499000,
+   "mesh_build_ms": 625.5491960000654,
+   "stroke_verts": 10000,
+   "mem_raw_bytes_per_step": 159519.68,
+   "baseline_bytes": 31956004,
+   "pack_50_ms": 16.91911300031279,
+   "mem_packed_bytes_per_step": 58760.06,
+   "full_positions_bytes": 6000000,
+   "commit_ms_median": 3.584824999961711,
+   "commit_ms_p90": 4.5652419000816735,
+   "commit_samples": 300,
+   "goto1_ms": 1.5076929998940614,
+   "goto1_samples": 30,
+   "goto100_ms": 55.79948600006901,
+   "goto100_samples": 18,
+   "goto300_ms": 161.11271249997117,
+   "goto300_samples": 8,
+   "save_load_300": {
+    "save_ms": 739.8453209998479,
+    "sidecar_bytes": 18061546,
+    "blend_bytes": 34362816,
+    "load_ms": 677.8685589997622,
+    "roundtrip_ok": true,
+    "method": "bpy.ops.wm.save_as_mainfile + bpy.ops.wm.open_mainfile, save_mode=SIDECAR (includes writing/reading the .blend itself)"
+   },
+   "goto5000_ms": "not measured"
+  }
+ ]
+}

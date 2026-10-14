@@ -22,6 +22,7 @@ TXT_DEFORM = "Deform modifiers (Armature, Displace...) can make playback unpredi
 TXT_MODIFIERS = "Modifiers are not stored in history"
 TXT_ANIMATED = "Animated object: playback may differ from what was recorded"
 TXT_VGROUPS = "Vertex groups and weight paint are not stored"
+TXT_MATERIALS = "Materials are not stored in history"
 TXT_TRANSFORM = ("Object transforms are not recorded: moving the object can make older steps "
                  "play back in the wrong place")
 
@@ -111,6 +112,8 @@ def collect(context, obj) -> list:
 
         if len(getattr(obj, "vertex_groups", ())) > 0:
             out.append((INFO, TXT_VGROUPS))
+        if any(getattr(sl, "material", None) is not None for sl in getattr(obj, "material_slots", ())):
+            out.append((INFO, TXT_MATERIALS))
 
         if _is_transformed(obj):
             out.append((INFO, TXT_TRANSFORM))

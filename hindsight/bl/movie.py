@@ -95,8 +95,21 @@ def _step_fcurve(scene):
     act = ad.action if ad is not None else None
     if act is None:
         return None
+    return action_fcurves(ad).find(DATA_PATH) if action_fcurves(ad) is not None else None
+
+
+def action_fcurves(ad):
+    """F-Curves of an AnimData's action: legacy Action.fcurves (<= 4.x) or the slot's channel bag (5.x)."""
+    act = ad.action if ad is not None else None
+    if act is None:
+        return None
+    fcs = getattr(act, "fcurves", None)
+    if fcs is not None:
+        return fcs
     try:
-        return act.fcurves.find(DATA_PATH)
+        from bpy_extras.anim_utils import action_get_channelbag_for_slot
+        cb = action_get_channelbag_for_slot(act, ad.action_slot)
+        return cb.fcurves if cb is not None else None
     except Exception:
         return None
 
