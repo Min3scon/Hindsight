@@ -102,6 +102,8 @@ were removed: inside Blender they made long jumps slower.
 - 2026-10-14 def2188 (merge of 934df91) and fc2b6d3 (copy fix): compression gate, both branches.
   Pushes keep `[skip ci]` until the new site is ready to go live.
 - Work on Step 3B happens on branch `step3b` in the worktree `.tmp/wt3b` (git-ignored folder).
+- 2026-10-14 b3f25c7: Step 3B gate (merge), both branches.
+- 2026-10-14 9e8bf7a: Tier 1 gate (merge), both branches.
 
 ### Step 3B status (2026-10-14)
 Done: adapter layer (core records, format 4, ids, RNA adapter with object transforms as the first
@@ -113,8 +115,9 @@ tests_ui s_adapters (15 checks, all three Blenders), mutation testing 28/28. Nex
 Done: transforms, parenting, constraints, collections, visibility, names, Edit Mode step by step,
 adding/deleting/duplicating objects with the scene history and the global timeline, step list,
 Advanced panel. Tests: test_bl_tier1 (11), s_tier1 (17 checks, all three Blenders), run_all 30/30.
-COVERAGE rows filled. Known: tests_ui round_b_features fails 6 checks on main and tier1 alike (never
-passed); being debugged next.
+COVERAGE rows filled. round_b_features now 18/18 on all three Blenders: it found D13 (Morph History
+brush broken in Blender 5.x, fixed) and a test-setup gap (an object kept Sculpt Mode after another
+object was added, so Ctrl+J ran in Sculpt Mode). Next: Tier 2.
 
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds

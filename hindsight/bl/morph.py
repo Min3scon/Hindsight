@@ -152,9 +152,17 @@ def active() -> bool:
 
 
 # ----------------------------------------------------------------------------- viewport helpers
+def unified_settings(ts):
+    """Sculpt Mode's unified paint settings: per mode since Blender 5.0 (`tool_settings.sculpt`),
+    on the tool settings before that."""
+    sculpt = getattr(ts, "sculpt", None)
+    ups = getattr(sculpt, "unified_paint_settings", None)
+    return ups if ups is not None else getattr(ts, "unified_paint_settings", None)
+
+
 def _brush_settings(context):
     ts = context.tool_settings
-    ups = ts.unified_paint_settings
+    ups = unified_settings(ts)
     brush = getattr(getattr(ts, "sculpt", None), "brush", None)
 
     def pick(unified_flag, name, default):
@@ -309,7 +317,9 @@ class HINDSIGHT_TOOL_morph_history(bpy.types.WorkSpaceTool):
     )
 
     def draw_settings(context, layout, tool):
-        ups = context.tool_settings.unified_paint_settings
+        ups = unified_settings(context.tool_settings)
+        if ups is None:
+            return
         layout.prop(ups, "size", text="Radius")
         layout.prop(ups, "strength", text="Strength")
 

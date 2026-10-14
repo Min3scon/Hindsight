@@ -33,6 +33,7 @@ Also fixed:
 - Removed the note about object transforms that appeared on almost every object. History is stored in object space, so moving an object doesn't affect it.
 - A part of the add-on that fails now switches off on its own and says so, instead of printing the same error on every redraw. A module that fails to start no longer takes the whole add-on down with it.
 - Ctrl+Z at the start of the history no longer falls through to Blender's undo once Hindsight has moved the mesh.
+- The Morph History brush showed an error on every stroke in Blender 5.0 and newer, and its radius and strength settings were missing from the tool header.
 
 Changed:
 

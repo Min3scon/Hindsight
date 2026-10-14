@@ -24,8 +24,11 @@ def activate(d, ob, mode="OBJECT"):
         for o in bpy.context.view_layer.objects:
             o.select_set(o == ob)
         bpy.context.view_layer.objects.active = ob
-        if mode != "OBJECT":
+        # an object can keep a mode it was in when another object was added (Movie Mode playback with
+        # "Follow object and mode" puts A back in Sculpt Mode before B is added)
+        if ob.mode != mode:
             bpy.ops.object.mode_set(mode=mode)
+    assert ob.mode == mode, (ob.name, ob.mode, mode)
 
 
 def run(d):

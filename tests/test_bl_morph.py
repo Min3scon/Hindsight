@@ -193,8 +193,26 @@ def test_tool_registered_or_skipped():
         assert BM.TOOL_ID in ids, ids
 
 
+def test_brush_settings_readable():
+    """D13: the brush reads radius and strength from Sculpt Mode's paint settings (moved in Blender 5.0)."""
+    H.fresh()
+    ups = BM.unified_settings(C.tool_settings)
+    assert ups is not None and hasattr(ups, "size") and hasattr(ups, "strength")
+    if bpy.app.version >= (5, 0, 0):
+        assert ups == C.tool_settings.sculpt.unified_paint_settings
+    old = (ups.size, ups.strength, ups.use_unified_size, ups.use_unified_strength)
+    try:
+        ups.use_unified_size = ups.use_unified_strength = True
+        ups.size, ups.strength = 77, 0.25
+        size, strength, _unproj = BM._brush_settings(C)
+        assert abs(size - 77 * C.preferences.system.ui_scale) < 1e-6, size
+        assert abs(strength - 0.25) < 1e-6, strength
+    finally:
+        ups.size, ups.strength, ups.use_unified_size, ups.use_unified_strength = old
+
+
 for fn in (test_core_falloff_blend, test_morph_full_strength, test_morph_half_strength_and_passes,
            test_target_in_past_after_scrub_and_mask, test_refusals, test_topology_change_invalidates_target,
-           test_target_positions_pure, test_tool_registered_or_skipped):
+           test_target_positions_pure, test_tool_registered_or_skipped, test_brush_settings_readable):
     H.run(fn)
 H.finish()
