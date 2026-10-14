@@ -1,5 +1,21 @@
 # Handoff
 
+**TOP PRIORITY (owner, 2026-10-14): whenever work stops for any reason (everything finished,
+stop-loss, rate limit, low usage, an error that can't be got past), the LAST thing done is making the
+newest working site live:**
+1. **Before deploying, check the site is safe to show:** no placeholder or empty screenshot slots (hide
+   any section whose real media isn't captured yet); every claim matches what is actually tested and
+   shipped (COVERAGE.md supported rows only); `python tools/check_copy.py` and the link check pass on
+   the built site; version and release notes match. If it isn't all safe, deploy the parts that are and
+   report what was left out.
+2. **Deploy:** remove `[skip ci]` from the final commit (or run the Pages workflow), wait for the run
+   to finish.
+3. **Verify live:** the live URL serves the new site, and `download/hindsight.zip` is the new build
+   (compare its size and the manifest version with the local build).
+4. If this happens before all tiers are done, the report says plainly which tiers landed and labels
+   the rest as planned.
+Until then: keep the current order of work and keep `[skip ci]` on every commit.
+
 Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, SITE_PLAN.md, STYLE.md.
 
 ## Current job: beta 2 ("broken and sloppy" to polished), started 2026-10-14
