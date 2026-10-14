@@ -422,6 +422,8 @@ section { padding: 80px 0; }
 <li>Run self-check tests the add-on inside your session, including a record and jump round trip on a throwaway mesh. Copy diagnostics puts versions, settings and recent log lines on the clipboard for a bug report, with your paths removed.</li>
 <li>A one-line message in the status bar the first time Hindsight is switched on.</li>
 <li>History files now have a format version and a checksum per step. Damaged steps are never applied: the steps before them still load and the tab says what was lost. A file saved by a newer Hindsight is left untouched. Beta 1 files load as they are.</li>
+<li>History takes less memory and disk space: a typical stroke is stored 16 to 47% smaller, depending on the mesh, and still comes back exactly. Jumping through older steps is faster too.</li>
+<li>Beta 1 can open files saved by beta 2 but can&#x27;t play back the steps recorded in beta 2. Don&#x27;t go back to beta 1 with those files.</li>
 <li>A warning when the memory limit starts dropping old steps, and one for meshes over 1.5 million vertices.</li>
 </ul>
 <p>Also fixed:</p>
