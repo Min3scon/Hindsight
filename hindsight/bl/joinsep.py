@@ -19,7 +19,7 @@ from ..core.types import JOIN, SETTINGS, Step, split_key
 from . import log, meshio, runtime
 
 MAP_ATTR = "_hs_src"
-CONFIRM_MESSAGE = "Join and merge undo histories?"
+CONFIRM_MESSAGE = "Join these objects and merge their histories?"
 
 
 # ----------------------------------------------------------------------------- helpers
@@ -329,7 +329,7 @@ def join_hook(step, forward, states) -> dict:
 class HINDSIGHT_OT_join(bpy.types.Operator):
     bl_idname = "hindsight.join"
     bl_label = "Join"
-    bl_description = "Join selected objects into the active object and merge their undo histories"
+    bl_description = "Join the selection into the active object and merge their histories. Scrubbing back past the join separates them again"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod

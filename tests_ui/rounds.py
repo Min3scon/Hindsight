@@ -29,7 +29,7 @@ GEOM = [40, 40, 1600, 900]
 
 ROUNDS = {
     "A": [("install_gui", {}, "fresh-gui"), ("audit_register", {}, ""), ("lifecycle", {}, "fresh")],
-    "B": [("ui_tour", {}, "fresh-gui"), ("round_b", {}, ""), ("regress_slider_visible", {}, "")],
+    "B": [("ui_tour", {}, "fresh-gui"), ("round_b", {}, ""), ("round_b_features", {}, ""), ("regress_slider_visible", {}, "")],
     "C": [("round_c", {"model": "size_10k.blend", "obj": "Blob_10k", "jumps": "80"}, "", "10k"),
           ("round_c", {"model": "size_10k.blend", "obj": "Blob_10k", "ops": "0", "mouse": "4", "jumps": "20",
                        "session": "1000"}, "", "10k-1000"),

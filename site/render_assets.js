@@ -15,9 +15,9 @@ const IMG = path.join(ROOT, "site", "assets", "img");
 const CARD = "file:///" + path.join(ROOT, "site", "og", "card.html").replace(/\\/g, "/");
 
 const CARDS = [
-  { out: path.join(IMG, "og.png"), w: 1200, h: 630, vars: { safe: "64px 72px", title: "86px", tw: "11.5ch", sub: "30px" } },
-  { out: path.join(IMG, "og-square.png"), w: 1200, h: 1200, vars: { safe: "96px", title: "116px", tw: "8.5ch", sub: "36px" } },
-  { out: path.join(ROOT, ".github", "social-preview.png"), w: 1280, h: 640, vars: { safe: "72px 88px", title: "88px", tw: "12ch", sub: "30px" } },
+  { out: path.join(IMG, "og.png"), w: 1200, h: 630, vars: { safe: "64px 72px", title: "86px", tw: "11.5ch", sub: "30px" }, art: { r: "-40px", t: "-10px", w: "640px", h: "650px" } },
+  { out: path.join(IMG, "og-square.png"), w: 1200, h: 1200, vars: { safe: "96px", title: "116px", tw: "8.5ch", sub: "36px" }, art: { r: "-60px", t: "160px", w: "760px", h: "760px" } },
+  { out: path.join(ROOT, ".github", "social-preview.png"), w: 1280, h: 640, vars: { safe: "72px 88px", title: "88px", tw: "12ch", sub: "30px" }, art: { r: "-30px", t: "-10px", w: "680px", h: "660px" } },
 ];
 const ICONS = [["favicon-32.png", 32], ["icon-192.png", 192], ["icon-512.png", 512], ["apple-touch-icon.png", 180]];
 
@@ -32,6 +32,16 @@ const ICONS = [["favicon-32.png", 32], ["icon-192.png", 192], ["icon-512.png", 5
       s.setProperty("--h", h + "px");
       for (const [k, val] of Object.entries(v)) s.setProperty("--" + k, val);
     }, [c.w, c.h, c.vars]);
+    const art = path.join(ROOT, "site", "og", "art.png");
+    if (fs.existsSync(art)) {
+      await page.evaluate(([src, a]) => {
+        const img = document.querySelector(".art");
+        img.src = src;
+        img.classList.add("on");
+        for (const [k, v] of Object.entries(a)) document.documentElement.style.setProperty("--art-" + k, v);
+      }, ["file:///" + art.split(path.sep).join("/"), c.art || {}]);
+      await page.waitForFunction(() => document.querySelector(".art").complete);
+    }
     await page.evaluate(() => document.fonts.ready);
     await page.screenshot({ path: c.out, type: "png" });
     console.log(path.relative(ROOT, c.out), Math.round(fs.statSync(c.out).size / 1024) + " KB");

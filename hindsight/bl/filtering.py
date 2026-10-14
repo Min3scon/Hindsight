@@ -84,7 +84,7 @@ def _after_change() -> None:
 
 
 class HINDSIGHT_UL_collections(bpy.types.UIList):
-    """Collections used by Hindsight's collection filtering."""
+    """Collections listed in Collection Filtering"""
 
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname,
                   index=0, flt_flag=0):
@@ -97,7 +97,7 @@ class HINDSIGHT_UL_collections(bpy.types.UIList):
 
 class HINDSIGHT_OT_filter_add(bpy.types.Operator):
     bl_idname = "hindsight.filter_add"
-    bl_label = "Add Collection"
+    bl_label = "Add collection"
     bl_description = "Add a collection to the filter list (the active collection by default)"
     bl_options = {'REGISTER', 'INTERNAL'}
 
@@ -139,7 +139,7 @@ class HINDSIGHT_OT_filter_add(bpy.types.Operator):
 
 class HINDSIGHT_OT_filter_remove(bpy.types.Operator):
     bl_idname = "hindsight.filter_remove"
-    bl_label = "Remove Collection"
+    bl_label = "Remove collection"
     bl_description = "Remove the selected collection from the filter list"
     bl_options = {'REGISTER', 'INTERNAL'}
 

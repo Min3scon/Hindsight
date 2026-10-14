@@ -111,9 +111,9 @@ def action_fcurves(ad):
 
 
 class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
-    """Keyframe the first and last steps of the global history on the Timeline"""
+    """Keyframe the global history on the timeline, Frames per step apart, so it plays as a timelapse"""
     bl_idname = "hindsight.quick_auto_key"
-    bl_label = "Quick Auto Key"
+    bl_label = "Quick auto key"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -122,7 +122,7 @@ class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
         if sh is None:
             return False
         if not sh.use_global:
-            cls.poll_message_set("Movie Mode needs Global Undo History")
+            cls.poll_message_set("Movie Mode needs global history. Turn it on in the History Menu")
             return False
         return True
 
@@ -132,7 +132,7 @@ class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
         info = runtime.scrub_info(context)
         n = int(info["len"]) if info is not None and info.get("global") else 0
         if n <= 0:
-            self.report({'WARNING'}, "No global undo history to key")
+            self.report({'WARNING'}, "No global history to keyframe yet")
             return {'CANCELLED'}
         f0 = scene.frame_start
         f1 = f0 + n * sh.frames_per_step

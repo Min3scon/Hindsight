@@ -212,23 +212,23 @@ def draw_history_options(layout, context):
         col.prop(sh, "use_global", text="Global history (all objects)")
         sub = col.row()
         sub.active = bool(sh.use_global)
-        sub.prop(sh, "preserve_modes", text="Preserve modes")
+        sub.prop(sh, "preserve_modes", text="Follow object and mode")
     col = layout.column(align=True)
     row = col.row(align=True)
     _operator(row, "hindsight.set_morph_target", "Set morph target", 'PINNED')
-    _operator(row, "hindsight.morph_brush", "Morph brush", 'BRUSH_DATA')
+    _operator(row, "hindsight.morph_brush", "Morph History brush", 'BRUSH_DATA')
     row = col.row(align=True)
-    _operator(row, "hindsight.delete_past", "Delete past steps", 'TRASH')
-    _operator(row, "hindsight.reset_history", "Reset history", 'FILE_REFRESH')
+    _operator(row, "hindsight.delete_past", "Delete earlier steps", 'TRASH')
+    _operator(row, "hindsight.reset_history", "Clear history", 'FILE_REFRESH')
     row = col.row(align=True)
     obj = getattr(context, "active_object", None)
     recording = _call("is_recording", obj) if obj is not None else _FAIL
     if recording is False:
-        _operator(row, "hindsight.turn_on", "Turn recording on", 'REC')
+        _operator(row, "hindsight.turn_on", "Record this object", 'REC')
     else:
-        _operator(row, "hindsight.turn_off", "Turn recording off", 'PAUSE')
-    _operator(row, "hindsight.reset_and_turn_off", "Reset and turn off", 'CANCEL')
-    _operator(layout, "hindsight.reset_all", "Reset all objects", 'TRASH')
+        _operator(row, "hindsight.turn_off", "Pause recording", 'PAUSE')
+    _operator(row, "hindsight.reset_and_turn_off", "Clear and stop", 'CANCEL')
+    _operator(layout, "hindsight.reset_all", "Clear all histories", 'TRASH')
 
 
 def draw_help(layout, context):
@@ -327,7 +327,7 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
         if sh is None:
             return
         if not sh.use_global:
-            wrap(layout, context, "Movie Mode plays the global history. Turn on Global history first.", 'INFO')
+            wrap(layout, context, "Movie Mode plays the global history. Turn on global history first.", 'INFO')
         col = layout.column()
         col.active = bool(sh.movie_mode)
         col.use_property_split = True

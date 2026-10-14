@@ -350,7 +350,7 @@ def test_panel_draw_with_fake_layout():
             draw_panel(cls, ctx)
         draw_panel(ui_panel.VIEW3D_PT_hindsight_movie, ctx, header=True)
         scene.hindsight.use_global = False
-        assert "Turn on Global history first." in _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight_movie, ctx))
+        assert "Turn on global history first." in _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight_movie, ctx))
         scene.hindsight.use_global = True
         assert "Global history first" not in _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight_movie, ctx))
         scene.hindsight.filter_mode = 'WHITELIST'

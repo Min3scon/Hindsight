@@ -32,20 +32,20 @@ class HINDSIGHT_PG_coll_item(bpy.types.PropertyGroup):
 
 class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
     use_global: bpy.props.BoolProperty(
-        name="Use Global Undo History", default=False, update=_upd_global,
-        description="One timeline with every object's steps instead of one per object")
+        name="Global history", default=False, update=_upd_global,
+        description="Put every object's steps on one timeline instead of one history per object")
     preserve_modes: bpy.props.BoolProperty(
-        name="Preserve Modes", default=True, update=_upd_preserve,
-        description="When global history switches objects, also switch to the object and the mode it was in")
+        name="Follow object and mode", default=True, update=_upd_preserve,
+        description="When global history moves to another object's step, select that object and enter its mode")
     movie_mode: bpy.props.BoolProperty(
         name="Movie Mode", default=False, update=_upd_redraw,
-        description="Play the global history back from the Timeline (never changes the history)")
+        description="Play the global history on the timeline. The history itself can't change while this is on")
     movie_step: bpy.props.IntProperty(
         name="Step", default=0, min=0, update=_upd_movie_step, options={'ANIMATABLE'},
-        description="Global history step shown in Movie Mode (can be keyframed)")
+        description="The global history step Movie Mode shows. Keyframe it to make a timelapse")
     frames_per_step: bpy.props.IntProperty(
-        name="Frames per Step", default=2, min=1, max=1000,
-        description="Playback speed used by Quick Auto Key")
+        name="Frames per step", default=2, min=1, max=1000,
+        description="How many frames each step lasts when you use Quick auto key")
     filter_mode: bpy.props.EnumProperty(
         name="Collection Filtering",
         items=[("NONE", "Off", "Record every object"),

@@ -14,17 +14,17 @@ ERROR = "ERROR"
 WARNING = "WARNING"
 INFO = "INFO"
 
-TXT_DYNTOPO = "Dyntopo is not supported: history is paused"
-TXT_MULTIRES = "Multires is not supported: history is paused"
-TXT_GLOBAL_UNDO = "Enable Global Undo in Preferences > System"
-TXT_LINKED = ("Mesh data is shared with other objects (linked duplicate): history affects all of them. "
-              "Use Shift+D for independent history")
-TXT_SHAPE_KEYS = "Shape keys are not stored in history"
-TXT_DEFORM = "Deform modifiers (Armature, Displace...) can make playback unpredictable"
-TXT_MODIFIERS = "Modifiers are not stored in history"
-TXT_ANIMATED = "Animated object: playback may differ from what was recorded"
-TXT_VGROUPS = "Vertex groups and weight paint are not stored"
-TXT_MATERIALS = "Materials are not stored in history"
+TXT_DYNTOPO = "Dyntopo is on, so recording is paused on this object"
+TXT_MULTIRES = "Multires modifier: recording is paused on this object"
+TXT_GLOBAL_UNDO = "Global Undo is off. Turn it on in Preferences > System"
+TXT_LINKED = ("This mesh is shared with other objects (a linked duplicate), so they share one history. "
+              "Shift+D makes copies with their own history")
+TXT_SHAPE_KEYS = "Shape keys aren't part of the history"
+TXT_DEFORM = "Deform modifiers such as Armature and Displace can make older steps look different"
+TXT_MODIFIERS = "Modifiers aren't part of the history"
+TXT_ANIMATED = "This object is animated, so older steps can look different on other frames"
+TXT_VGROUPS = "Vertex groups and weight paint aren't part of the history"
+TXT_MATERIALS = "Materials aren't part of the history"
 TXT_LARGE = ("Large mesh ({verts:.1f}M vertices). Steps that change most of it use a lot of memory; "
              "the memory limit is {limit} MB")
 LARGE_VERTS = 1_500_000
@@ -155,9 +155,8 @@ def linked_duplicate_check(context) -> None:
 
         def draw_fn(menu, _context):
             col = menu.layout.column()
-            col.label(text="Mesh data is shared with other objects (linked duplicate).")
-            col.label(text="History affects all of them.")
-            col.label(text="Use Shift+D for independent history.")
+            col.label(text="This mesh is shared with other objects, so they share one history.")
+            col.label(text="Shift+D makes copies with their own history.")
 
         context.window_manager.popup_menu(draw_fn, title="Hindsight", icon='ERROR')
     except Exception as exc:

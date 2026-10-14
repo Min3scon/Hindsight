@@ -830,7 +830,7 @@ def _switch_to(context, ob, mode: str) -> None:
             if mode in ("SCULPT", "VERTEX_PAINT", "EDIT") and ob.mode != mode:
                 bpy.ops.object.mode_set(mode=mode)
         except Exception as e:
-            log.error_once(("preserve", str(e)), f"Preserve Modes could not switch objects: {e}", e)
+            log.error_once(("preserve", str(e)), f"Follow object and mode could not switch objects: {e}", e)
     _TRACK.update(name=ob.name, uid=obj_uid(ob), mode=ob.mode)
     if ob.mode in TRACK_MODES:
         ensure_state(ob)

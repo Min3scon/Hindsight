@@ -81,6 +81,41 @@ Checklist items that were checked and are NOT the cause:
 - Entering Vertex Paint on a mesh without colour attributes makes Blender add one; Hindsight records
   that as a step. Kept: it is a real change to the mesh and scrubbing back removes the layer again.
 
+### Step 4 decisions (hardening)
+- History file format 2: a `format` number, the writer's version, and a CRC-32 per step. The binary layout
+  is unchanged, so beta 1 reads format 2 (it ignores the new keys; Round F checks this both ways).
+  Loading never applies a damaged step: a history keeps the steps before the first bad one and the tab
+  says what was lost. An unreadable file is renamed to `history.hsr.unreadable-<time>` instead of being
+  overwritten by the next save. A newer format is refused and protected from overwrite until the file is
+  reopened by a version that understands it.
+- Stroke end: Blender 5 exposes `Window.modal_operators`, so a stroke is committed the moment its operator
+  ends (tick every 20 ms while changes are pending). The 0.15 s debounce stays only for changes made
+  without a stroke operator (menu filters, scripts). This fixed both merged quick strokes and split slow
+  strokes. On a Blender without `modal_operators` the old debounce still applies.
+- Native undo: Hindsight writes the mesh directly, which Blender's sculpt undo doesn't know about. After
+  Hindsight has written an object's mesh in its current mode session, Ctrl+Z never falls back to Blender's
+  undo, and a Blender undo that lands outside the history is reversed (from a timer, never inside the
+  handler) with a status message. Re-entering the mode clears this, because Blender pushes a full undo
+  step on mode change. Alternative considered: push an undo step after every jump; rejected, because a
+  generic undo push in Sculpt Mode stores no geometry and would not help.
+- No jump while a stroke operator runs: a mode switch mid-stroke crashes Blender 5.1 itself.
+- Memory: a cheap running estimate (new steps added at their unpacked size) triggers the exact check, so
+  a memory overrun is noticed right away instead of on the 64th commit.
+- Removed the "object transforms are not recorded" note. Steps are stored in object space, so moving an
+  object doesn't change how its history plays back. The note appeared on almost every object.
+
+### Step 5 decisions (website)
+- Hand-written HTML templates and a 300-line Python build (`site/build.py`) instead of a static site
+  generator: no dependencies in CI, full control over the output, facts (version, size, numbers) injected
+  from the build. CSS is inlined on every page (about 25 KB), so there is no render-blocking request.
+- Type: Fraunces (variable, optical size and weight) for headings, Inter (variable weight) for text, both
+  subset to Basic Latin: 42 KB and 23 KB. Accent: the slider's own orange.
+- The demo is plain WebGL 1 with an icosphere of 10,242 vertices. It stores each stroke as moved-vertex
+  indices with before and after values, the same idea as the add-on, so jumps are exact. Normals and
+  screen positions are updated only around moved vertices. WebGL starts only when the demo is about to
+  scroll into view (Lighthouse mobile went from 68 to 99 for the home page).
+- Social cards are HTML rendered by Playwright, not screenshots of the page.
+
 ## Earlier jobs (cloud session, headless bpy only)
 
 ### Timing

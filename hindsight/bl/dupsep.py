@@ -16,8 +16,8 @@ from bpy.app.handlers import persistent
 from ..core.registry import new_uid
 from . import guard, log, runtime, warnings
 
-MSG_SEPARATE = "The separated part becomes a new object that starts its own, empty undo history"
-MSG_EXTRACT = "The extracted mesh becomes a new object that starts its own, empty undo history"
+MSG_SEPARATE = "The separated part becomes a new object with its own, empty history"
+MSG_EXTRACT = "The extracted mesh becomes a new object with its own, empty history"
 
 _NAMES: dict = {}       # uid -> object name seen most recently for it (the original)
 _LAST_COUNT = [-1]      # len(bpy.data.objects) at the last handler run
@@ -114,7 +114,7 @@ def _result(r) -> set:
 
 
 class HINDSIGHT_OT_separate(bpy.types.Operator):
-    """Separate selected geometry into a new object (it starts its own undo history)"""
+    """Separate the selection into a new object with its own history"""
     bl_idname = "hindsight.separate"
     bl_label = "Separate"
 
@@ -145,7 +145,7 @@ class HINDSIGHT_OT_separate(bpy.types.Operator):
 
 
 class HINDSIGHT_OT_mask_extract(bpy.types.Operator):
-    """Extract the masked area into a new object (it starts its own undo history)"""
+    """Extract the masked area into a new object with its own history"""
     bl_idname = "hindsight.mask_extract"
     bl_label = "Mask Extract"
 
@@ -182,7 +182,7 @@ def _deferred_linked_warning():
 
 
 class HINDSIGHT_OT_duplicate_linked(bpy.types.Operator):
-    """Duplicate selected objects, sharing their mesh data (history affects all of them)"""
+    """Duplicate the selection, sharing mesh data, so the copies share one history"""
     bl_idname = "hindsight.duplicate_linked"
     bl_label = "Duplicate Linked"
 

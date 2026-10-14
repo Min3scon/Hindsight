@@ -10,7 +10,7 @@ from . import guard, log, meshio, runtime
 
 TOOL_ID = "hindsight.morph_history"
 STROKE_LABEL = "Morph History"
-MSG_REMESH = "Set a new Morph Target after remeshing"
+MSG_REMESH = "The mesh was remeshed since the morph target. Set a new one"
 
 _SESSION: dict = {}          # object uid -> stroke data (see begin)
 last_message = [None]        # reason the last begin() refused
@@ -21,13 +21,13 @@ _tool_registered = [False]
 def unsupported_reason(obj):
     """Text if Morph History cannot work on obj (shape keys / dyntopo / multires), else None."""
     if obj is None or getattr(obj, "type", None) != "MESH":
-        return "Morph History needs an active mesh object"
+        return "Morph History needs a mesh object"
     if obj.data.shape_keys is not None:
-        return "Morph History is not supported with Shape Keys"
+        return "Morph History doesn't work on objects with shape keys"
     if getattr(obj, "use_dynamic_topology_sculpting", False):
-        return "Morph History is not supported with Dyntopo"
+        return "Morph History doesn't work with Dyntopo on"
     if any(m.type == 'MULTIRES' for m in obj.modifiers):
-        return "Morph History is not supported with Multires"
+        return "Morph History doesn't work with a Multires modifier"
     return None
 
 
@@ -49,13 +49,13 @@ def begin(obj) -> bool:
         return _refuse(reason)
     h = runtime.history_of(obj)
     if h is None or h.morph_target is None:
-        return _refuse("No Morph Target set (History menu > Set Morph Target Here)")
+        return _refuse("No morph target yet. Set one in the History Menu first")
     uid = runtime.obj_uid(obj)
     # Anything sculpted but not yet recorded becomes its own step first.
     runtime.commit(obj)
     h = runtime.history_of(obj)
     if h is None or h.morph_target is None:
-        return _refuse("No Morph Target set (History menu > Set Morph Target Here)")
+        return _refuse("No morph target yet. Set one in the History Menu first")
     st = runtime.ensure_state(obj)
     target = M.target_positions(h, st, uid)
     me = obj.data

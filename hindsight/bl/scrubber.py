@@ -612,7 +612,7 @@ class HINDSIGHT_GT_scrubber(bpy.types.Gizmo):
 
 class HINDSIGHT_GGT_scrubber(bpy.types.GizmoGroup):
     bl_idname = "HINDSIGHT_GGT_scrubber"
-    bl_label = "Hindsight Scrubber"
+    bl_label = "Hindsight slider"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'WINDOW'
     bl_options = {'PERSISTENT', 'SHOW_MODAL_ALL'}
@@ -630,8 +630,8 @@ class HINDSIGHT_GGT_scrubber(bpy.types.GizmoGroup):
 
 class HINDSIGHT_OT_scrub(bpy.types.Operator):
     bl_idname = "hindsight.scrub"
-    bl_label = "Scrub History"
-    bl_description = "Drag along the undo history scrubber"
+    bl_label = "Scrub the history"
+    bl_description = "Drag along the on-screen slider to move through the history"
 
     @classmethod
     def poll(cls, context):

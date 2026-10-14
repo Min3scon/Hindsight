@@ -147,6 +147,9 @@ def run(d):
     d.check("every change recorded, nothing recorded twice", not problems, problems[:10])
     d.check("most operator strokes changed the mesh (test sanity)", recorded() >= n_mouse + n_ops * 0.5,
             (recorded(), n_mouse + n_ops))
+    st = rt.memory_stats()
+    d.note("history_bytes_per_step", int(st["total_bytes"] / max(1, recorded())))
+    d.note("steps_after_ops", recorded())
     d.note("tool_failures", tool_fail)
     d.note("op_results", op_results)
     d.note("ops_steps", recorded())

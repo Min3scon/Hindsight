@@ -124,7 +124,7 @@ def test_refusals():
     ob, _t = setup(800)
     ob.shape_key_add(name="Basis")
     assert not BM.begin(ob)
-    assert "Shape Keys" in BM.last_message[0]
+    assert "shape keys" in BM.last_message[0]
     assert not BM._SESSION
     # no morph target
     H.fresh()
@@ -132,7 +132,7 @@ def test_refusals():
     H.enter(ob, "SCULPT")
     H.fake_stroke(ob, 1)
     H.commit(ob)
-    assert not BM.begin(ob) and "Morph Target" in BM.last_message[0]
+    assert not BM.begin(ob) and "morph target" in BM.last_message[0]
     # multires
     runtime.set_morph_target(C)
     ob.modifiers.new("M", "MULTIRES")
@@ -153,7 +153,7 @@ def test_topology_change_invalidates_target():
     st = runtime.ensure_state(ob)
     assert CM.target_positions(h, st, runtime.obj_uid(ob)) is None
     assert not BM.begin(ob)
-    assert BM.last_message[0] == "Set a new Morph Target after remeshing"
+    assert BM.last_message[0] == "The mesh was remeshed since the morph target. Set a new one"
     # a new target after the remesh works again
     runtime.set_morph_target(C)
     H.fake_stroke(ob, 9, n=100000)
