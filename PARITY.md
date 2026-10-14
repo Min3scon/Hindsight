@@ -74,23 +74,23 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | # | Original behaviour | Where | Test | Status |
 |---|---|---|---|---|
 | 45 | Morph History tool in the Sculpt Mode toolbar | bl/morph.py WorkSpaceTool | **MANUAL** (toolbar) | [~] |
-| 46 | Paints brushed areas back toward the target; rest stays put | core/morph.py, bl/morph.apply_morph_at | test_bl_morph | see test |
-| 47 | Light strokes = subtle change, several passes move closer | strength blend | test_bl_morph (strength 0.5) | see test |
-| 48 | Each Morph stroke is one normal undo step | runtime.commit on release | test_bl_morph | see test |
-| 49 | Not with Shape Keys, Dyntopo or Multires | morph.begin refuses | test_bl_morph (shape keys) | see test |
-| 50 | After remeshing set a new target; target survives normal sculpting | core/morph.target_positions | test_bl_morph | see test |
+| 46 | Paints brushed areas back toward the target; rest stays put | core/morph.py, bl/morph.apply_morph_at | test_bl_morph | [x] |
+| 47 | Light strokes = subtle change, several passes move closer | strength blend | test_bl_morph (strength 0.5) | [x] |
+| 48 | Each Morph stroke is one normal undo step | runtime.commit on release | test_bl_morph | [x] |
+| 49 | Not with Shape Keys, Dyntopo or Multires | morph.begin refuses | test_bl_morph (shape keys) | [x] |
+| 50 | After remeshing set a new target; target survives normal sculpting | core/morph.target_positions | test_bl_morph | [x] |
 
 ## Movie Mode
 | # | Original behaviour | Where | Test | Status |
 |---|---|---|---|---|
-| 51 | Only works with Global history | bl/movie.py | test_bl_movie | see test |
+| 51 | Only works with Global history | bl/movie.py | test_bl_movie | [x] |
 | 52 | Sidebar Undo History > Movie Mode, header checkbox turns it on | ui_panel Movie Mode sub-panel | test_bl_panels | [x] |
-| 53 | Quick Auto Key keys first and last steps on the Timeline | movie.quick_auto_key | test_bl_movie | see test |
-| 54 | Step can be keyframed manually | scene.hindsight.movie_step (animatable) | test_bl_movie | see test |
-| 55 | Frames per Step controls playback speed | props frames_per_step | test_bl_movie | see test |
-| 56 | Scrubber locked while on; Timeline drives playback | runtime._movie_locked, movie frame handler | test_bl_movie | see test |
-| 57 | Only plays back, never changes history | suspended playback | test_bl_movie | see test |
-| 58 | Turning off pauses, keyframes stay | movie handler | test_bl_movie | see test |
+| 53 | Quick Auto Key keys first and last steps on the Timeline | movie.quick_auto_key | test_bl_movie | [x] |
+| 54 | Step can be keyframed manually | scene.hindsight.movie_step (animatable) | test_bl_movie | [x] |
+| 55 | Frames per Step controls playback speed | props frames_per_step | test_bl_movie | [x] |
+| 56 | Scrubber locked while on; Timeline drives playback | runtime._movie_locked, movie frame handler | test_bl_movie | [x] |
+| 57 | Only plays back, never changes history | suspended playback | test_bl_movie | [x] |
+| 58 | Turning off pauses, keyframes stay | movie handler | test_bl_movie | [x] |
 
 ## Sidebar
 | # | Original behaviour | Where | Test | Status |
@@ -105,13 +105,13 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 ## Saving
 | # | Original behaviour | Where | Test | Status |
 |---|---|---|---|---|
-| 65 | Save Mode in Add-on Preferences: Sidecar / Embed / Both | prefs.save_mode, bl/persistence.py | test_bl_persistence | see test |
-| 66 | Sidecar: history folder beside the .blend | core/persist.save_sidecar | test_core_journal, test_bl_persistence | see test |
-| 67 | Embed: inside the .blend (one file to share) | persistence Text ID property | test_bl_persistence | see test |
-| 68 | Both | persistence | test_bl_persistence | see test |
-| 69 | Renamed/moved .blend without folder -> "Undo History Not Found" | persistence missing_message | test_bl_persistence | see test |
-| 70 | Crash Recovery: Last Saved (default) / Interrupted Session | core/journal + persist.replay | test_core_journal, test_bl_persistence | see test |
-| 71 | History persists between sessions | persistence load_post | test_bl_persistence | see test |
+| 65 | Save Mode in Add-on Preferences: Sidecar / Embed / Both | prefs.save_mode, bl/persistence.py | test_bl_persistence | [x] |
+| 66 | Sidecar: history folder beside the .blend | core/persist.save_sidecar | test_core_journal, test_bl_persistence | [x] |
+| 67 | Embed: inside the .blend (one file to share) | persistence Text ID property | test_bl_persistence | [x] |
+| 68 | Both | persistence | test_bl_persistence | [x] |
+| 69 | Renamed/moved .blend without folder -> "Undo History Not Found" | persistence missing_message | test_bl_persistence | [x] |
+| 70 | Crash Recovery: Last Saved (default) / Interrupted Session | core/journal + persist.replay | test_core_journal, test_bl_persistence | [x] |
+| 71 | History persists between sessions | persistence load_post | test_bl_persistence | [x] |
 | 72 | Delete Past Undo Steps reduces the saved size | registry serialisation of remaining entries | test_delete_past_keeps_later (+ size) | [x] |
 
 ## Warnings and data handling
@@ -120,15 +120,15 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 73 | Dyntopo and Multires not supported; warning in the viewport | bl/warnings.py (overlay + pause) | test_bl_warnings; overlay **MANUAL** | [x] |
 | 74 | Object transforms not recorded (old steps may play back misplaced) | warnings (info) | test_bl_warnings | [x] |
 | 75 | Modifiers, Shape Keys, Materials, Vertex Groups, Weight Paint not stored; deform modifiers unpredictable | warnings | test_bl_warnings | [x] |
-| 76 | Join (Ctrl+J): asks first, merges histories | bl/joinsep.py | test_bl_join | see test |
-| 77 | Unmerge: scrub back past the join restores the separate objects; forward re-merges | joinsep.join_hook | test_bl_join | see test |
-| 78 | Separate (P) / Mask Extract: asks first, new object starts its own history | bl/dupsep.py | test_bl_dupsep | see test |
-| 79 | Alt+D linked duplicate warns about shared mesh data; Shift+D independent history | dupsep + warnings | test_bl_dupsep, test_bl_warnings | see test |
+| 76 | Join (Ctrl+J): asks first, merges histories | bl/joinsep.py | test_bl_join | [x] |
+| 77 | Unmerge: scrub back past the join restores the separate objects; forward re-merges | joinsep.join_hook | test_bl_join | [x] |
+| 78 | Separate (P) / Mask Extract: asks first, new object starts its own history | bl/dupsep.py | test_bl_dupsep | [x] |
+| 79 | Alt+D linked duplicate warns about shared mesh data; Shift+D independent history | dupsep + warnings | test_bl_dupsep, test_bl_warnings | [x] |
 | 80 | Animated objects may play back differently (warning) | warnings | test_bl_warnings | [x] |
 | 81 | Global Undo must be enabled (warning) | warnings | test_bl_warnings | [x] |
 
 ## Install
 | # | Original behaviour | Where | Test | Status |
 |---|---|---|---|---|
-| 82 | Blender 4.2+, Install from Disk (zip) | blender_manifest.toml, scripts/build_zip.py | test_bl_install | see test |
+| 82 | Blender 4.2+, Install from Disk (zip) | blender_manifest.toml, scripts/build_zip.py | test_bl_install | [ ] pending |
 | 83 | Add-on Preferences: save mode, crash recovery, truncation threshold, step cap, memory limit, tier sizes, compression | bl/prefs.py | test_bl_panels | [x] |

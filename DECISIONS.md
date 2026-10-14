@@ -82,3 +82,15 @@
   `claude/lucid-brahmagupta-9gsdsn` became the default branch. There is no other branch to open a pull
   request against, so no PR was created. The Pages workflow deploys from whatever the default branch is.
 - If the `github-pages` environment has deployment branch rules, allow the default branch and `v*` tags.
+
+## Known issues
+- Morph target set on a step that later gets dropped by branching (scrub back, sculpt) is cleared; set a
+  new target after branching.
+- A stroke that exactly reverses the previous step bit-for-bit is treated like a native undo (the
+  cursor moves back instead of adding a step). Practically only possible with a full-strength Morph
+  History stroke over the whole changed area.
+- Movie Mode playback that crosses a topology step while the object is in Sculpt Mode applies that
+  step from a timer right after the frame change (operators can't run inside the frame handler), so a
+  render of that exact frame may show the previous topology. Keep objects in Object Mode when rendering
+  a timelapse.
+- Linked-duplicate (Alt+D) popup and Mask Extract confirmation are untested in a real UI.
