@@ -20,7 +20,7 @@ import zlib
 
 MAGIC = b"HSJ1"
 
-RTYPES = {"STEP": 1, "CURSOR": 2, "TRUNC": 3, "DROP": 4, "RESET": 5, "META": 6, "SAVE": 7}
+RTYPES = {"STEP": 1, "CURSOR": 2, "TRUNC": 3, "DROP": 4, "RESET": 5, "META": 6, "SAVE": 7, "META_EVERYTHING": 8}
 RTYPE_NAMES = {v: k for k, v in RTYPES.items()}
 
 _HEAD = struct.Struct("<4sBIQ")

@@ -103,6 +103,12 @@ were removed: inside Blender they made long jumps slower.
   Pushes keep `[skip ci]` until the new site is ready to go live.
 - Work on Step 3B happens on branch `step3b` in the worktree `.tmp/wt3b` (git-ignored folder).
 
+### Step 3B status (2026-10-14)
+Done: adapter layer (core records, format 4, ids, RNA adapter with object transforms as the first
+rows, data recorder with operation boundaries, playback, Blender undo interplay, Record preference and
+per-object opt-in, COVERAGE.md and its copy-check rule). Tests: test_core_records, test_bl_adapters,
+tests_ui s_adapters (15 checks, all three Blenders), mutation testing 28/28. Next: Tier 1.
+
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
 adapter records, migration from 1-3) -> Tiers 1..6 -> website v2 -> final test passes -> ship.

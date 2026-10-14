@@ -5,7 +5,7 @@ Registry blob (``history.hsr`` / embedded ID property):
     b"HSR1" | u32 json_len | JSON | for each history, for each entry: u64 len | Entry.to_bytes()
 
 JSON = {"version", "format", "writer", "next_seq", "use_global", "preserve_modes", "by_object",
-        "disabled", "histories": [{"uid", "members", "cursor", "enabled", "morph_target",
+        "disabled", "everything", "histories": [{"uid", "members", "cursor", "enabled", "morph_target",
                                    "n_entries", "metas": [entry.meta, ...], "crcs": [...]}]}
 
 Entry metas are stored in the JSON so loading never unpacks a step: entries come back as
@@ -15,9 +15,11 @@ Format versions (``format``, falling back to ``version`` for files written befor
   1  beta 1. No checksums.
   2  beta 2 work in progress. Adds ``format``, ``writer`` and a CRC-32 per step (``crcs``). The
      binary layout is unchanged, so beta 1 can still read format 2 files (it ignores the new keys).
-  3  beta 2. New steps use the format 3 step blob (see step.py: smaller, with its own checksum), and
-     the file ends with b"HSRT" + u32 CRC-32 of the JSON header. Beta 1 can open these files but
-     can't play back format 3 steps; it saves them back unchanged.
+  3  beta 2 work in progress. New steps use the format 3 step blob (see step.py: smaller, with its
+     own checksum), and the file ends with b"HSRT" + u32 CRC-32 of the JSON header. Beta 1 can open
+     these files but can't play back format 3 steps; it saves them back unchanged.
+  4  beta 2. Steps may carry data records (adapters other than the mesh recorder; step blob
+     version 4). Otherwise the same as format 3.
 Loading formats 1 and 2 needs no conversion: their steps are read as they are (and re-packed in the
 background later, see store.Packer); every step gets a checksum on the next save.
 A file with a format newer than FORMAT_VERSION is refused with NewerFormatError (nothing is
@@ -38,7 +40,7 @@ from .journal import atomic_write, atomic_write_json
 from .types import Entry
 
 REG_MAGIC = b"HSR1"
-FORMAT_VERSION = 3
+FORMAT_VERSION = 4
 REG_VERSION = FORMAT_VERSION   # kept for older imports
 TRAILER = b"HSRT"
 WRITER = "Hindsight"            # replaced with "Hindsight <version>" by the add-on at register time
@@ -125,6 +127,7 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
         "preserve_modes": bool(reg.preserve_modes),
         "by_object": dict(reg.by_object),
         "disabled": sorted(getattr(reg, "disabled", ()) or ()),
+        "everything": sorted(getattr(reg, "everything", ()) or ()),
         "histories": hjson,
     }
     js = json.dumps(doc, separators=(",", ":"), default=_json_default).encode("utf-8")
@@ -171,6 +174,8 @@ def registry_from_bytes(b: bytes):
     reg.by_object = dict(doc.get("by_object", {}))
     if hasattr(reg, "disabled"):
         reg.disabled = set(doc.get("disabled", []))
+    if hasattr(reg, "everything"):
+        reg.everything = set(doc.get("everything", []))
     max_seq = 0
     truncated = False
     for hd in doc.get("histories", []):
@@ -363,6 +368,10 @@ def replay(reg, records: list) -> int:
             h.entries = []
             h.cursor = 0
             h.morph_target = None
+        elif rtype == "META_EVERYTHING":
+            t = header.get("uid")
+            if t and hasattr(reg, "everything"):
+                (reg.everything.add if header.get("on") else reg.everything.discard)(t)
         elif rtype == "META":
             if not uid:
                 continue

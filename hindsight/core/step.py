@@ -1,13 +1,16 @@
 """Step (de)serialisation. Pure Python + numpy, no bpy.
 
-Step blob, format 3 (written since beta 2):
+Step blob, formats 3 and 4 (written since beta 2):
   b"HSS3" | u32 CRC-32 of everything after this field | u16 header length | header | body
-  header = <BBBBQdI>: version (3), kind, flags (1 before, 2 after, 4 snaps, 8 written quickly,
-           values stored as they are), reserved, seq, time, raw body length; then label (u16 length + utf-8), mode and target
+  header = <BBBBQdI>: version (3, or 4 when the step has data records), kind, flags (1 before,
+           2 after, 4 snaps, 8 written quickly, values stored as they are, 16 data records),
+           reserved, seq, time, raw body length; then label (u16 length + utf-8), mode and target
            (u8 length + utf-8 each), extra (u32 length + JSON, 0 when empty), deltas (u16 count),
            before / after sizes (u32 each, when flagged), snaps (u16 count, then per snapshot
-           uid (u8 length + utf-8) and u32 size, when flagged)
-  body   = codec.compress(packed deltas, then before / after / extra snapshot blobs)
+           uid (u8 length + utf-8) and u32 size, when flagged), records (u32 size, when flagged)
+  body   = codec.compress(packed deltas, then before / after / extra snapshot blobs, then the data
+           records as JSON: [[adapter, target, [[path, old, new], ...]], ...], with {"$": "missing"}
+           for MISSING)
   A damaged blob fails its checksum and is never applied. Steps written quickly (journal, save)
   and steps from older formats are re-packed in the background by recompress().
 
@@ -28,7 +31,7 @@ import numpy as np
 
 from . import codec as _codec
 from .delta import NORMAL, QUICK, CorruptDelta, pack_delta, unpack_at, unpack_delta
-from .types import DELTA, JOIN, TOPO, Snapshot, Step
+from .types import DATA, DELTA, JOIN, MISSING, TOPO, DataChange, Snapshot, Step
 
 STEP_MAGIC_V1 = b"HSS1"
 STEP_MAGIC = b"HSS3"
@@ -36,7 +39,9 @@ SNAP_MAGIC = b"HSN1"
 _U32 = struct.Struct("<I")
 _FIXED = struct.Struct("<BBBBQdI")
 SNAPSHOTS_KEY = "_snapshots"
-_KINDS = {DELTA: 0, TOPO: 1, JOIN: 2}
+_KINDS = {DELTA: 0, TOPO: 1, JOIN: 2, DATA: 3}
+RECORDS_FLAG = 16
+_MISSING_JSON = {"$": "missing"}
 QUICK_FLAG = 8
 # Tests set this (or HINDSIGHT_VERIFY=1): every written step is read back and compared.
 VERIFY = bool(os.environ.get("HINDSIGHT_VERIFY"))
@@ -91,6 +96,42 @@ def snapshot_from_bytes(b) -> Snapshot:
     return Snapshot(dict(head["counts"]), arrays)
 
 
+# --------------------------------------------------------------------------- data records
+def _enc_value(v):
+    if v is MISSING:
+        return _MISSING_JSON
+    if isinstance(v, tuple):
+        return [_enc_value(x) for x in v]
+    if isinstance(v, list):
+        return [_enc_value(x) for x in v]
+    return v
+
+
+def _dec_value(v):
+    if isinstance(v, dict):
+        if v == _MISSING_JSON:
+            return MISSING
+        raise ValueError("records: unexpected object value")
+    if isinstance(v, list):
+        return [_dec_value(x) for x in v]
+    return v
+
+
+def records_to_bytes(records: list) -> bytes:
+    out = [[r.adapter, r.target, [[p, _enc_value(o), _enc_value(n)] for p, (o, n) in r.changes.items()]]
+           for r in records]
+    return json.dumps(out, separators=(",", ":"), allow_nan=True).encode("utf-8")
+
+
+def records_from_bytes(b) -> list:
+    out = []
+    for adapter, target, changes in json.loads(bytes(b).decode("utf-8")):
+        if not isinstance(adapter, str) or not isinstance(target, str):
+            raise ValueError("records: bad adapter or target")
+        out.append(DataChange(adapter, target, {str(p): (_dec_value(o), _dec_value(n)) for p, o, n in changes}))
+    return out
+
+
 # --------------------------------------------------------------------------- writing
 def _str8(s: str) -> bytes:
     b = s.encode("utf-8")
@@ -138,12 +179,18 @@ def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong:
         for uid, blob in snap_parts:
             body_parts.append(blob)
             tail += _str8(uid) + _U32.pack(len(blob))
+    if step.records:
+        flags |= RECORDS_FLAG
+        rec_b = records_to_bytes(step.records)
+        body_parts.append(rec_b)
+        tail += _U32.pack(len(rec_b))
     if effort == QUICK and step.deltas:
         flags |= QUICK_FLAG
     raw = b"".join(body_parts)
     extra_b = _dumps(extra) if extra else b""
     head = b"".join((
-        _FIXED.pack(3, _KINDS[step.kind], flags, 0, int(step.seq), float(step.time or 0.0), len(raw)),
+        _FIXED.pack(4 if step.records else 3, _KINDS[step.kind], flags, 0, int(step.seq),
+                    float(step.time or 0.0), len(raw)),
         _str16(step.label or ""), _str8(step.mode or ""), _str8(step.target or ""),
         _U32.pack(len(extra_b)), extra_b, struct.pack("<H", len(parts)), tail))
     body = _codec.compress(raw, codec, strong=strong)
@@ -169,7 +216,7 @@ def _parse_v3(b):
         if len(h) != hl:
             raise CorruptStep("step blob: header cut short")
         ver, kind, flags, _r, seq, t, raw_len = _FIXED.unpack_from(h, 0)
-        if ver != 3 or kind not in _KIND_NAMES or flags & ~15:
+        if ver not in (3, 4) or kind not in _KIND_NAMES or flags & ~31 or (ver == 4) != bool(flags & RECORDS_FLAG):
             raise CorruptStep("step blob: bad header")
         off = _FIXED.size
 
@@ -191,7 +238,7 @@ def _parse_v3(b):
         (nd,) = struct.unpack_from("<H", h, off)
         off += 2
         info = {"deltas": nd, "before": None, "after": None, "snaps": None, "raw": raw_len,
-                "quick": bool(flags & QUICK_FLAG)}
+                "quick": bool(flags & QUICK_FLAG), "records": None}
         if flags & 1:
             (info["before"],) = _U32.unpack_from(h, off)
             off += 4
@@ -208,6 +255,9 @@ def _parse_v3(b):
                 off += 4
                 snaps.append([uid, sz])
             info["snaps"] = snaps
+        if flags & RECORDS_FLAG:
+            (info["records"],) = _U32.unpack_from(h, off)
+            off += 4
         if off != hl:
             raise CorruptStep("step blob: header length mismatch")
     except CorruptStep:
@@ -260,15 +310,22 @@ def _from_v3(mv) -> Step:
         extra = dict(meta["extra"])
         if info["snaps"] is not None:
             extra[SNAPSHOTS_KEY] = {uid: _snap(n) for uid, n in info["snaps"]}
+        records = []
+        if info["records"] is not None:
+            n = info["records"]
+            if off + n > len(body):
+                raise CorruptStep("step blob: records cut short")
+            records = records_from_bytes(body[off:off + n])
+            off += n
     except CorruptStep:
         raise
-    except (CorruptDelta, struct.error, ValueError, KeyError, TypeError) as e:
+    except (CorruptDelta, struct.error, ValueError, KeyError, TypeError, UnicodeDecodeError, RecursionError) as e:
         raise CorruptStep(f"step blob: damaged ({e})") from e
     if off != len(body):
         raise CorruptStep("step blob: unexpected data after the last record")
     return Step(seq=meta["seq"], label=meta["label"], mode=meta["mode"], target=meta["target"],
                 time=meta["time"], kind=meta["kind"], deltas=deltas, before=before, after=after,
-                extra=extra)
+                extra=extra, records=records)
 
 
 def _from_v1(mv) -> Step:
@@ -345,6 +402,8 @@ def same_step(a: Step, b: Step) -> bool:
         if xv.dtype != yv.dtype or xv.reshape(-1).tobytes() != yv.reshape(-1).tobytes():
             return False
     if not (_same_snap(a.before, b.before) and _same_snap(a.after, b.after)):
+        return False
+    if records_to_bytes(a.records) != records_to_bytes(b.records):
         return False
     ea, eb = dict(a.extra or {}), dict(b.extra or {})
     sa, sb = ea.pop(SNAPSHOTS_KEY, None), eb.pop(SNAPSHOTS_KEY, None)

@@ -124,6 +124,47 @@ class Snapshot:
 DELTA = "DELTA"   # deltas only
 TOPO = "TOPO"     # before/after snapshots
 JOIN = "JOIN"     # join of several objects; extra holds join info; before/after per member
+DATA = "DATA"     # data records only (adapters other than the mesh recorder)
+
+
+class _Missing:
+    """A path that doesn't exist on one side of a change (a constraint added, a key removed)."""
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "MISSING"
+
+    def __reduce__(self):
+        return "MISSING"
+
+
+MISSING = _Missing()
+
+
+@dataclass
+class DataChange:
+    """Change of recorded values on one datablock, made by one adapter.
+
+    adapter: adapter id ("xform", "rna", ...)
+    target:  uid of the datablock (its `_hindsight_uid`)
+    changes: path -> (old, new). Values are JSON values (numbers, strings, booleans, None, lists of
+             those); MISSING marks a side where the path doesn't exist. Floats are exact (Blender's
+             float32 and double properties round-trip through Python floats and JSON unchanged).
+    """
+    adapter: str
+    target: str
+    changes: dict
+
+    def nbytes(self) -> int:
+        return 96 + 48 * len(self.changes) + sum(_value_size(o) + _value_size(n) for o, n in self.changes.values())
+
+
+def _value_size(v) -> int:
+    if isinstance(v, (list, tuple)):
+        return 16 + sum(_value_size(x) for x in v)
+    if isinstance(v, str):
+        return 16 + len(v)
+    return 16
 
 
 @dataclass
@@ -138,12 +179,13 @@ class Step:
     before: Optional[Snapshot] = None             # TOPO / JOIN
     after: Optional[Snapshot] = None              # TOPO / JOIN
     extra: dict = field(default_factory=dict)     # JSON-serialisable metadata
+    records: list = field(default_factory=list)  # list[DataChange] (any kind; DATA steps have only these)
 
     def is_topo(self) -> bool:
         return self.kind in (TOPO, JOIN)
 
     def nbytes(self) -> int:
-        n = 256 + sum(d.nbytes() for d in self.deltas)
+        n = 256 + sum(d.nbytes() for d in self.deltas) + sum(r.nbytes() for r in self.records)
         if self.before is not None:
             n += self.before.nbytes()
         if self.after is not None:

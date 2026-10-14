@@ -16,7 +16,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, ".tmp", "mutants")
 TESTS = ("test_core_codec.py", "test_core_store.py", "test_core_migration.py", "test_core_format.py",
-         "test_core_history.py", "test_core_journal.py")
+         "test_core_history.py", "test_core_journal.py", "test_core_records.py")
 
 # (file under hindsight/core, exact text, replacement, what it breaks)
 MUTANTS = [
@@ -41,8 +41,8 @@ MUTANTS = [
      "        want = rec.vals", "undo matching ignores direction"),
     ("delta.py", "    if int(d.idx[-1]) >= b.shape[0]:", "    if False:", "apply skips the range check"),
     ("step.py", "    if zlib.crc32(mv[8:]) != crc:", "    if False:", "step checksum not checked"),
-    ("step.py", "        _FIXED.pack(3, _KINDS[step.kind], flags, 0, int(step.seq),",
-     "        _FIXED.pack(3, _KINDS[step.kind], flags, 0, int(step.seq) + 1,", "sequence number written wrongly"),
+    ("step.py", "_KINDS[step.kind], flags, 0, int(step.seq),",
+     "_KINDS[step.kind], flags, 0, int(step.seq) + 1,", "sequence number written wrongly"),
     ("step.py", "    if len(new) >= len(b) or not same_step(step, step_from_bytes(new)):",
      "    if len(new) >= len(b):", "recompression not verified"),
     ("step.py", "    if off != len(body):", "    if False:", "trailing data after the last record accepted"),
@@ -51,6 +51,15 @@ MUTANTS = [
     ("persist.py", "            if crcs is not None and i < len(crcs) and (zlib.crc32(blob) & 0xFFFFFFFF) != int(crcs[i]):",
      "            if False:", "per-step file checksum not checked"),
     ("history.py", "            _delta.apply(arr, d, forward)", "            _delta.apply(arr, d, True)", "backward jumps apply forward"),
+    ("history.py", "        for rec in (step.records if forward else reversed(step.records)):",
+     "        for rec in step.records:", "records undone in recording order"),
+    ("history.py", "            v = new if forward else old", "            v = new", "records always set the new value"),
+    ("history.py", "            if v is MISSING:\n                self.values.pop(k, None)",
+     "            if v is MISSING:\n                self.values[k] = None", "a missing value kept as None"),
+    ("step.py", "    if v is MISSING:\n        return _MISSING_JSON", "    if v is MISSING:\n        return None",
+     "MISSING stored as null"),
+    ("step.py", "        if flags & RECORDS_FLAG:\n            (info[\"records\"],) = _U32.unpack_from(h, off)",
+     "        if False:\n            (info[\"records\"],) = _U32.unpack_from(h, off)", "record section ignored"),
     ("history.py", "    for e in entries:\n        yield e.load() if e.target in states else None",
      "    for e, w in zip(entries, [x.target in states for x in entries]):\n        yield e.load() if w else None",
      "objects brought back mid-jump skipped"),

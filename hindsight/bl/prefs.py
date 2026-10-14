@@ -62,6 +62,12 @@ def _update_appearance(self, context):
     _redraw()
 
 
+RECORD_SCOPE_ITEMS = (
+    ('SCULPT', "Sculpting only", "Record sculpt and paint strokes, as before"),
+    ('EVERYTHING', "Everything", "Also record other changes on objects you switch on with Record everything "
+                                 "on this object (in the Undo History tab)"),
+)
+
 SAVE_MODE_ITEMS = (
     ('SIDECAR', "Next to the .blend", "Save history in a folder next to the .blend file (fastest saves)"),
     ('EMBED', "Inside the .blend", "Save history inside the .blend file (one file to share)"),
@@ -137,6 +143,11 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         name="Show step counter", description="Show the step number next to the slider",
         default=True, update=_update_appearance)
 
+    record_scope: EnumProperty(
+        name="Record",
+        items=RECORD_SCOPE_ITEMS,
+        default='SCULPT',
+    )
     welcomed: BoolProperty(default=False, options={'HIDDEN'})
 
     def draw(self, context):
@@ -157,6 +168,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         col.prop(self, "crash_recovery")
 
         col = section("History", 'RECOVER_LAST')
+        col.prop(self, "record_scope")
         col.prop(self, "max_steps")
         col.prop(self, "truncation_threshold")
 

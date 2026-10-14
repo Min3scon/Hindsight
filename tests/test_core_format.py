@@ -62,15 +62,15 @@ def _blob_offsets(rest, n):
     return out
 
 
-def test_writes_format_3_with_checksums():
+def test_writes_current_format_with_checksums():
     blob = persist.registry_to_bytes(_reg())
     doc, rest = _split(blob)
-    assert doc["format"] == persist.FORMAT_VERSION == 3 and doc["version"] == 3
+    assert doc["format"] == persist.FORMAT_VERSION == 4 and doc["version"] == 4
     crcs = doc["histories"][0]["crcs"]
     offs = _blob_offsets(rest, 5)
     assert crcs == [zlib.crc32(rest[o:o + n]) & 0xFFFFFFFF for o, n in offs]
     reg = persist.registry_from_bytes(blob)
-    assert reg.load_report == {"format": 3, "writer": persist.WRITER, "migrated": False, "damaged": []}
+    assert reg.load_report == {"format": 4, "writer": persist.WRITER, "migrated": False, "damaged": []}
 
 
 def test_reads_format_1():
@@ -178,7 +178,7 @@ def test_not_a_history():
             raise AssertionError("expected ValueError for %r" % bad[:8])
 
 
-for fn in (test_writes_format_3_with_checksums, test_reads_format_1, test_damaged_step_is_never_applied,
+for fn in (test_writes_current_format_with_checksums, test_reads_format_1, test_damaged_step_is_never_applied,
            test_cut_off_file_keeps_complete_steps, test_header_checksum_trailer,
            test_two_histories_stay_aligned_after_damage, test_newer_format_is_refused, test_not_a_history):
     try:

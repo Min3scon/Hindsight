@@ -229,6 +229,22 @@ def draw_history_options(layout, context):
         _operator(row, "hindsight.turn_off", "Pause recording", 'PAUSE')
     _operator(row, "hindsight.reset_and_turn_off", "Clear and stop", 'CANCEL')
     _operator(layout, "hindsight.reset_all", "Clear all histories", 'TRASH')
+    _draw_everything(layout, context, obj)
+
+
+def _draw_everything(layout, context, obj):
+    """The per-object switch for recording more than sculpting (preference Record: Everything)."""
+    try:
+        from . import datarec
+        if obj is None or not datarec.scope_everything():
+            return
+        on = datarec.is_tracked(obj)
+    except Exception:
+        return
+    row = layout.row()
+    op = row.operator("hindsight.record_everything", text="Record everything on this object",
+                      icon='CHECKBOX_HLT' if on else 'CHECKBOX_DEHLT', depress=on)
+    op.on = not on
 
 
 def draw_help(layout, context):

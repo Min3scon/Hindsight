@@ -147,6 +147,30 @@ Checklist items that were checked and are NOT the cause:
 - The 4-6 KB target at 100k for 2% strokes is not reachable losslessly on real strokes with these
   techniques; what was reached is in PERF_LOG.md. Lossy storage, thinning and replay are out of scope.
 
+### Step 3B decisions (adapters; design in ADAPTERS.md)
+- The mesh recorder stays as it is (adapter one, its own fast path). Everything else is a data record:
+  `DataChange(adapter, target, {path: (old, new)})` with JSON values. Playback folds records into the
+  same per-datablock baseline the mesh uses (`MeshState.values`) and writes only the changed paths at
+  the end of a jump. Records are undone in reverse order within a step.
+- Ids: the existing `_hindsight_uid` custom property on any datablock. Blender copies it with the
+  datablock, so `idmap.claim` gives a fresh id to a copy while the original still exists.
+- Opt-in: preference Record (Sculpting only, the default, or Everything) plus "Record everything on
+  this object". With the defaults nothing changes for anyone (the sculpt regressions pass unchanged).
+- Step boundaries for data: an operator finished (the newest entry of `window_manager.operators`
+  changed) while no modal operator other than navigation runs; otherwise 0.3 s of quiet (fields edited
+  in the UI, scripts). G, R, S, a typed value and a sculpt stroke are one step each in the real UI.
+- Blender's undo: a jump that wrote data pushes an undo step ("Hindsight jump"); Ctrl+Z then undoes the
+  jump and the cursor follows (and redo), checked in the real UI with Global Undo on and off. A Blender
+  undo that lands on a neighbouring recorded state moves the cursor one step; anything else becomes the
+  new baseline without recording.
+- Side effects: setting `rotation_mode` makes Blender convert the rotation, so playback writes modes
+  first and then rewrites the rotation values (found by test, now a regression test).
+- Animated or driven properties change with the frame and are never recorded by the generic adapter;
+  nothing is recorded while animation plays. Tier 4 will record the animation data itself.
+- Format: step blob version 4 when a step has records (version 3 otherwise), file format 4.
+- COVERAGE.md is the list of what may be claimed; check_copy fails when the built site names a data
+  type that isn't supported or opt-in, outside a sentence that says it isn't recorded or is planned.
+
 ### Step 5 decisions (website)
 - Hand-written HTML templates and a 300-line Python build (`site/build.py`) instead of a static site
   generator: no dependencies in CI, full control over the output, facts (version, size, numbers) injected

@@ -334,6 +334,11 @@ def on_load_post(*args) -> None:
             runtime.prime_states()
         except Exception as e:
             guard.fail("loading", e, "could not read meshes after loading")
+        try:
+            from . import datarec
+            datarec.prime()
+        except Exception as e:
+            guard.fail("loading", e, "could not read recorded data after loading")
         if runtime.packer is not None:
             # steps from older files and steps saved in the quick form get re-packed when idle
             runtime.packer.queue_recompress(e for h in reg.all() for e in h.entries)
