@@ -15,7 +15,7 @@ def run(d):
     d.check("package imported", top is not None)
     loaded = [m.__name__.rsplit(".", 1)[-1] for m in getattr(top, "_loaded", [])]
     d.note("loaded_modules", loaded)
-    wanted = [n for n, _ in getattr(top, "_MODULES", ())]
+    wanted = list(getattr(top, "_MODULES", ()))
     d.check("every module registered", loaded == wanted, f"loaded={loaded} wanted={wanted}")
     addon = bpy.context.preferences.addons.get(PKG)
     d.check("preferences object present", addon is not None and addon.preferences is not None)

@@ -8,6 +8,8 @@ No GPU or blf calls happen at import or register time, so this module is safe he
 
 import bpy
 
+from . import guard
+
 ERROR = "ERROR"
 WARNING = "WARNING"
 INFO = "INFO"
@@ -152,8 +154,9 @@ def linked_duplicate_check(context) -> None:
             col.label(text="Use Shift+D for independent history.")
 
         context.window_manager.popup_menu(draw_fn, title="Hindsight", icon='ERROR')
-    except Exception:
-        pass
+    except Exception as exc:
+        from . import log
+        log.error_once(("linked_popup", str(exc)), f"linked duplicate popup failed: {exc}", exc)
     return None
 
 
@@ -178,6 +181,8 @@ def _overlay_x(context, region, scale):
 
 
 def _draw_overlay():
+    if not guard.ok("overlay"):
+        return
     try:
         context = bpy.context
         region = context.region
@@ -212,9 +217,21 @@ def _draw_overlay():
             blf.disable(font_id, blf.SHADOW)
         except Exception:
             pass
-    except Exception:
-        pass
+    except Exception as exc:
+        guard.fail("overlay", exc, "draw")
 
+
+def _remove_overlay():
+    global _handle
+    if _handle is not None:
+        try:
+            bpy.types.SpaceView3D.draw_handler_remove(_handle, 'WINDOW')
+        except Exception:
+            pass
+        _handle = None
+
+
+guard.on_fail("overlay", _remove_overlay)
 
 classes = ()
 

@@ -66,17 +66,17 @@ def test_registered():
     for name in HISTORY_OPS + ("toggle_global", "toggle_preserve_modes", "morph_brush", "turn_on",
                                "reset_all"):
         assert hasattr(bpy.types, "HINDSIGHT_OT_" + name), name
-    assert bpy.types.HINDSIGHT_MT_history.bl_label == "History"
+    assert bpy.types.HINDSIGHT_MT_history.bl_label == "History Menu"
     labels = {c.bl_idname: c.bl_label for c in ui_menu.classes if hasattr(c, "bl_idname")}
-    assert labels["hindsight.toggle_preserve_modes"] == "Preserve Modes"
-    assert labels["hindsight.set_morph_target"] == "Set Morph Target Here"
-    assert labels["hindsight.morph_brush"] == "Morph History Brush"
-    assert labels["hindsight.delete_past"] == "Delete Past Undo Steps"
-    assert labels["hindsight.reset_history"] == "Reset Undo History"
-    assert labels["hindsight.turn_off"] == "Turn Off Undo History"
-    assert labels["hindsight.reset_and_turn_off"] == "Reset and Turn Off"
-    assert labels["hindsight.turn_on"] == "Turn On Undo History"
-    assert labels["hindsight.reset_all"] == "Reset All Objects"
+    assert labels["hindsight.toggle_preserve_modes"] == "Follow object and mode"
+    assert labels["hindsight.set_morph_target"] == "Set morph target"
+    assert labels["hindsight.morph_brush"] == "Use Morph History brush"
+    assert labels["hindsight.delete_past"] == "Delete earlier steps"
+    assert labels["hindsight.reset_history"] == "Clear history"
+    assert labels["hindsight.turn_off"] == "Pause recording"
+    assert labels["hindsight.reset_and_turn_off"] == "Clear and stop recording"
+    assert labels["hindsight.turn_on"] == "Record this object"
+    assert labels["hindsight.reset_all"] == "Clear all histories"
     for c in ui_menu.classes:
         if issubclass(c, bpy.types.Operator):
             assert 'UNDO' not in c.bl_options, c
@@ -195,13 +195,13 @@ def test_menu_draw():
     assert ids == ["hindsight.toggle_global", "hindsight.toggle_preserve_modes", "hindsight.set_morph_target",
                    "hindsight.morph_brush", "hindsight.delete_past", "hindsight.reset_history",
                    "hindsight.turn_off", "hindsight.reset_and_turn_off"], ids
-    assert items[0][1] == "Use Global Undo History"
+    assert items[0][1] == "Use global history"
     assert items[1][2] == 'CHECKBOX_HLT'
     sc.hindsight.use_global = True
     sc.hindsight.preserve_modes = False
     state["recording"] = False
     items = _draw()
-    assert items[0][1] == "Use Active Object Undo History"
+    assert items[0][1] == "Use per-object history"
     assert items[1][2] == 'CHECKBOX_DEHLT'
     assert "hindsight.turn_on" in [i[0] for i in items]
     assert "hindsight.turn_off" not in [i[0] for i in items]
@@ -219,7 +219,7 @@ def test_morph_brush():
             res = ops.morph_brush('EXEC_DEFAULT')
             assert res in ({'FINISHED'}, {'CANCELLED'}), res
         except RuntimeError as e:   # error reports become exceptions headless
-            assert "Morph History tool not available" in str(e), e
+            assert "Morph History brush not available" in str(e), e
     finally:
         bpy.ops.object.mode_set(mode='OBJECT')
     state["history"] = False

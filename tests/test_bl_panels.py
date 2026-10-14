@@ -144,14 +144,15 @@ def test_prefs_class_definition():
         assert name in ann, name
         assert ann[name].keywords.get("update") is not None, name
     kw = ann["save_mode"].keywords
-    assert kw["name"] == "Save Mode" and kw["default"] == 'SIDECAR'
-    assert [i[1] for i in kw["items"]] == ["Sidecar", "Embed", "Both"]
+    assert kw["name"] == "Save history" and kw["default"] == 'SIDECAR'
+    assert [i[0] for i in kw["items"]] == ["SIDECAR", "EMBED", "BOTH"]
     kw = ann["crash_recovery"].keywords
     assert kw["default"] == 'LAST_SAVED'
-    assert [i[1] for i in kw["items"]] == ["Last Saved", "Interrupted Session"]
+    assert [i[0] for i in kw["items"]] == ["LAST_SAVED", "INTERRUPTED"]
     assert ann["max_steps"].keywords["default"] == 10000 and ann["max_steps"].keywords["max"] == 10000
-    assert ann["memory_limit_mb"].keywords["name"] == "Memory Limit (MB)"
-    assert ann["raw_steps"].keywords["name"] == "Uncompressed Recent Steps"
+    assert ann["memory_limit_mb"].keywords["name"] == "Memory limit (MB)"
+    assert ann["raw_steps"].keywords["name"] == "Uncompressed steps"
+    assert "welcomed" in ann
     assert tuple(ann["scrub_color"].keywords["default"]) == (1.0, 0.6, 0.24, 1.0)
     assert ann["scrub_color"].keywords["subtype"] == 'COLOR_GAMMA'
     # update callback mirrors into SETTINGS
@@ -258,20 +259,29 @@ def test_filter_operators():
 @test
 def test_panels_registered():
     for name in ("VIEW3D_PT_hindsight", "VIEW3D_PT_hindsight_movie", "VIEW3D_PT_hindsight_scrubber",
-                 "VIEW3D_PT_hindsight_memory", "VIEW3D_PT_hindsight_filter",
-                 "VIEW3D_PT_hindsight_warnings", "HINDSIGHT_UL_collections"):
+                 "VIEW3D_PT_hindsight_memory", "VIEW3D_PT_hindsight_filter", "VIEW3D_PT_hindsight_history",
+                 "VIEW3D_PT_hindsight_help", "VIEW3D_PT_hindsight_warnings", "HINDSIGHT_UL_collections"):
         assert hasattr(bpy.types, name), name
     main = ui_panel.VIEW3D_PT_hindsight
     assert main.bl_category == "Undo History" and main.bl_label == "Undo History"
     assert main.bl_space_type == 'VIEW_3D' and main.bl_region_type == 'UI'
+    assert not hasattr(main, "poll"), "the main panel must show in every mode, with or without history"
     labels = [c.bl_label for c in ui_panel.classes[1:]]
-    assert labels == ["Movie Mode", "Scrubber", "Memory", "Collection Filtering", "Warnings"]
+    assert labels == ["Warnings", "History options", "Movie Mode", "Collection Filtering", "Memory",
+                      "On-screen slider", "Help"], labels
     assert all(c.bl_parent_id == "VIEW3D_PT_hindsight" for c in ui_panel.classes[1:])
+    orders = [c.bl_order for c in ui_panel.classes]
+    assert orders == sorted(orders), orders
 
 
 class FakeRuntime:
-    def __init__(self, hist=None, raise_all=False, warnings=()):
+    def __init__(self, hist=None, raise_all=False, warnings=(), recording=True, uid="u1", info=None):
         self.hist, self.raise_all, self.warn = hist, raise_all, list(warnings)
+        self.recording, self.uid = recording, uid
+        if info is None and hist is not None:
+            info = {"pos": hist.cursor, "len": len(hist.entries), "cap": 10000, "global": False,
+                    "locked": False, "morph_target": None}
+        self.info = info
 
     def _chk(self):
         if self.raise_all:
@@ -281,9 +291,21 @@ class FakeRuntime:
         self._chk()
         return self.hist
 
+    def scrub_info(self, context):
+        self._chk()
+        return self.info
+
     def is_excluded(self, obj):
         self._chk()
         return False
+
+    def is_recording(self, obj):
+        self._chk()
+        return self.recording
+
+    def obj_uid(self, obj):
+        self._chk()
+        return self.uid
 
     def memory_stats(self):
         self._chk()
@@ -295,61 +317,79 @@ class FakeRuntime:
         return self.warn
 
 
+def _joined(lay):
+    return " ".join(lay.texts())
+
+
 @test
 def test_panel_draw_with_fake_layout():
     scene, A, B, C, objs = setup_scene()
+    objs["a"].data.vertices.add(3)
     ctx = SimpleNamespace(scene=scene, active_object=objs["a"], view_layer=bpy.context.view_layer,
-                          preferences=bpy.context.preferences)
+                          preferences=bpy.context.preferences, window_manager=bpy.context.window_manager,
+                          region=None, area=None)
     orig = ui_panel._rt
     try:
         hist = SimpleNamespace(entries=[1] * 7, cursor=4)
         ui_panel._rt = lambda: FakeRuntime(hist, warnings=[("ERROR", "Bad thing"), ("WARNING", "Meh")])
         lay = draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx)
-        texts = lay.texts()
-        assert "Steps: 4 / 7" in texts, texts
-        assert "This object: 1.0 MB, 5 steps" in texts, texts
-        assert "All objects: 3.5 MB, 12 steps" in texts, texts
-        ops = lay.texts("operator") + lay.texts("label")
-        assert "Reset This Object" in ops and "Reset All Objects" in ops
+        assert "Step 4 of 7, this object" in lay.texts(), lay.texts()
+        ops = [a[0] for n, a, kw in lay.log if n == "operator"]
+        assert "hindsight.step_back" in ops and "hindsight.step_forward" in ops, ops
+        assert "hindsight.open_history_menu" in ops, ops
         # warnings sub-panel
         assert ui_panel.VIEW3D_PT_hindsight_warnings.poll(ctx) is True
         lay = draw_panel(ui_panel.VIEW3D_PT_hindsight_warnings, ctx)
         icons = [(kw.get("text"), kw.get("icon")) for n, a, kw in lay.log if n == "label"]
         assert icons == [("Bad thing", 'ERROR'), ("Meh", 'INFO')], icons
-        # other sub-panels draw without raising
+        # memory readout
+        t = draw_panel(ui_panel.VIEW3D_PT_hindsight_memory, ctx).texts()
+        assert "This object: 1.0 MB, 5 steps" in t and "All objects: 3.5 MB, 12 steps" in t, t
+        # every sub-panel draws without raising
         for cls in ui_panel.classes[1:]:
             draw_panel(cls, ctx)
         draw_panel(ui_panel.VIEW3D_PT_hindsight_movie, ctx, header=True)
         scene.hindsight.use_global = False
-        assert "Movie Mode needs Global Undo History" in draw_panel(
-            ui_panel.VIEW3D_PT_hindsight_movie, ctx).texts()
+        assert "Turn on Global history first." in _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight_movie, ctx))
         scene.hindsight.use_global = True
-        assert "Movie Mode needs Global Undo History" not in draw_panel(
-            ui_panel.VIEW3D_PT_hindsight_movie, ctx).texts()
+        assert "Global history first" not in _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight_movie, ctx))
         scene.hindsight.filter_mode = 'WHITELIST'
-        t = draw_panel(ui_panel.VIEW3D_PT_hindsight_filter, ctx).texts()
-        assert t == ["Whitelist: record only objects in these collections"], t
-        # runtime raising everywhere: nothing shown, nothing raised
+        t = _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight_filter, ctx))
+        assert "Only objects in these collections are recorded." in t, t
+        # runtime raising everywhere: a short note, nothing raised
         ui_panel._rt = lambda: FakeRuntime(hist, raise_all=True)
-        lay = draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx)
-        assert not any(t.startswith(("Steps", "This object", "All objects")) for t in lay.texts())
+        t = _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx))
+        assert "History unavailable" in t and "Step 4" not in t, t
         assert ui_panel.VIEW3D_PT_hindsight_warnings.poll(ctx) is False
         draw_panel(ui_panel.VIEW3D_PT_hindsight_memory, ctx)
-        # no runtime at all / no history / no active object
+        # no runtime at all
         ui_panel._rt = lambda: None
         draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx)
-        ui_panel._rt = lambda: FakeRuntime(None)
-        assert "Steps: 0 / 0" in draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx).texts()
+        # no history yet: the status line for new users
+        ui_panel._rt = lambda: FakeRuntime(None, uid=None)
+        t = _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx))
+        assert "Hindsight is on. Make a stroke in Sculpt Mode to start recording." in t, t
+        # recording turned off: the enable button
+        ui_panel._rt = lambda: FakeRuntime(None, recording=False)
+        lay = draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx)
+        assert "hindsight.turn_on" in [a[0] for n, a, kw in lay.log if n == "operator"]
+        assert "Enable for this object" in lay.texts("operator")
+        # no active object / not a mesh
         ctx.active_object = None
-        assert "No active object" in draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx).texts()
+        assert "Select a mesh object to see its history." in _joined(draw_panel(ui_panel.VIEW3D_PT_hindsight, ctx))
     finally:
         ui_panel._rt = orig
         scene.hindsight.filter_mode = 'NONE'
+        scene.hindsight.use_global = False
 
 
 def main():
     global ok
     ensure_scene_props()
+    from hindsight.bl import ops_core, selfcheck, ui_menu
+    extra = (ops_core, ui_menu, selfcheck)
+    for m in extra:
+        m.register()
     filtering.register()
     ui_panel.register()
     try:
@@ -364,6 +404,8 @@ def main():
     finally:
         ui_panel.unregister()
         filtering.unregister()
+        for m in reversed(extra):
+            m.unregister()
 
 
 main()

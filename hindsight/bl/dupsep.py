@@ -14,7 +14,7 @@ import bpy
 from bpy.app.handlers import persistent
 
 from ..core.registry import new_uid
-from . import runtime, warnings
+from . import guard, log, runtime, warnings
 
 MSG_SEPARATE = "The separated part becomes a new object that starts its own, empty undo history"
 MSG_EXTRACT = "The extracted mesh becomes a new object that starts its own, empty undo history"
@@ -61,7 +61,7 @@ def fix_uids() -> list:
                 nu = new_uid()
                 ob[runtime.UID_PROP] = nu
             except Exception as e:
-                print("Hindsight: could not assign a new uid to", ob.name, e)
+                log.error_once(("uid", str(e)), f"could not give {ob.name!r} its own history: {e}", e)
                 continue
             names[nu] = ob.name
             changed.append(ob.name)
@@ -78,15 +78,13 @@ def fix_uids() -> list:
 
 
 @persistent
-def _on_depsgraph(scene, depsgraph) -> None:
-    try:
-        n = len(bpy.data.objects)
-        if n == _LAST_COUNT[0]:
-            return
-        _LAST_COUNT[0] = n
-        fix_uids()
-    except Exception as e:
-        print("Hindsight: uid fix error:", e)
+@guard.guarded("dupsep")
+def _on_depsgraph(scene, depsgraph=None) -> None:
+    n = len(bpy.data.objects)
+    if n == _LAST_COUNT[0]:
+        return
+    _LAST_COUNT[0] = n
+    fix_uids()
 
 
 @persistent
@@ -179,7 +177,7 @@ def _deferred_linked_warning():
         with bpy.context.temp_override(window=win, screen=win.screen):
             warnings.linked_duplicate_check(bpy.context)
     except Exception as e:
-        print("Hindsight: linked duplicate warning failed:", e)
+        log.error_once(("linked_warning", str(e)), f"linked duplicate warning failed: {e}", e)
     return None
 
 

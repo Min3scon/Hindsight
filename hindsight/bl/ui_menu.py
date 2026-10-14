@@ -63,8 +63,8 @@ class _ObjectHistoryOp:
 
 class HINDSIGHT_OT_toggle_global(bpy.types.Operator):
     bl_idname = "hindsight.toggle_global"
-    bl_label = "Use Global Undo History"
-    bl_description = "Switch between one object's history and a single timeline for all objects"
+    bl_label = "Use global history"
+    bl_description = "Switch between one history per object and one timeline for every object"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -75,20 +75,20 @@ class HINDSIGHT_OT_toggle_global(bpy.types.Operator):
     def description(cls, context, properties):
         s = _settings(context)
         if s is not None and s.use_global:
-            return "Use the active object's own undo history instead of the single timeline for all objects"
-        return "Use a single undo timeline for all objects instead of the active object's own history"
+            return "Go back to one history per object"
+        return "Put every object's steps on one timeline, in the order you made them"
 
     def execute(self, context):
         on = not bool(_settings(context).use_global)
         _rt().set_global(context, on)
-        self.report({'INFO'}, "Global undo history" if on else "Active object undo history")
+        self.report({'INFO'}, "Global history on" if on else "Per-object history on")
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_toggle_preserve_modes(bpy.types.Operator):
     bl_idname = "hindsight.toggle_preserve_modes"
-    bl_label = "Preserve Modes"
-    bl_description = "Keep each object's mode when Global history switches objects"
+    bl_label = "Follow object and mode"
+    bl_description = "When global history moves to another object's step, select that object and enter its mode"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -98,14 +98,14 @@ class HINDSIGHT_OT_toggle_preserve_modes(bpy.types.Operator):
     def execute(self, context):
         on = not bool(_settings(context).preserve_modes)
         _rt().set_preserve_modes(context, on)
-        self.report({'INFO'}, "Preserve Modes on" if on else "Preserve Modes off")
+        self.report({'INFO'}, "Follow object and mode on" if on else "Follow object and mode off")
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_set_morph_target(_ObjectHistoryOp, bpy.types.Operator):
     bl_idname = "hindsight.set_morph_target"
-    bl_label = "Set Morph Target Here"
-    bl_description = "Mark the current step as the morph target"
+    bl_label = "Set morph target"
+    bl_description = "Use the current step as the shape the Morph History brush paints back to"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
@@ -116,8 +116,8 @@ class HINDSIGHT_OT_set_morph_target(_ObjectHistoryOp, bpy.types.Operator):
 
 class HINDSIGHT_OT_morph_brush(_ObjectHistoryOp, bpy.types.Operator):
     bl_idname = "hindsight.morph_brush"
-    bl_label = "Morph History Brush"
-    bl_description = "Activate the Morph History tool (Sculpt Mode)"
+    bl_label = "Use Morph History brush"
+    bl_description = "Switch to the Morph History brush (Sculpt Mode)"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -130,44 +130,42 @@ class HINDSIGHT_OT_morph_brush(_ObjectHistoryOp, bpy.types.Operator):
         except Exception:
             result = None
         if not result or 'FINISHED' not in result:
-            self.report({'ERROR'}, "Morph History tool not available")
+            self.report({'ERROR'}, "Morph History brush not available")
             return {'CANCELLED'}
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_delete_past(_ObjectHistoryOp, bpy.types.Operator):
     bl_idname = "hindsight.delete_past"
-    bl_label = "Delete Past Undo Steps"
-    bl_description = ("Remove older steps to free memory and reduce saved size; "
-                      "later steps stay")
+    bl_label = "Delete earlier steps"
+    bl_description = "Delete the steps before the current one to free memory. Later steps stay"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
         n = int(_rt().delete_past(context, _active_mesh(context)) or 0)
         if n:
-            self.report({'INFO'}, "Deleted %d past step%s" % (n, "" if n == 1 else "s"))
+            self.report({'INFO'}, "Deleted %d earlier step%s" % (n, "" if n == 1 else "s"))
         else:
-            self.report({'INFO'}, "No past steps to delete")
+            self.report({'INFO'}, "No earlier steps to delete")
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_reset_history(_ObjectHistoryOp, bpy.types.Operator):
     bl_idname = "hindsight.reset_history"
-    bl_label = "Reset Undo History"
-    bl_description = "Clear this object's history; the current mesh becomes the new starting point"
+    bl_label = "Clear history"
+    bl_description = "Delete this object's history. The mesh as it is now becomes the new start"
     bl_options = {'REGISTER'}
 
     def execute(self, context):
         _rt().reset_history(context, _active_mesh(context))
-        self.report({'INFO'}, "Undo history reset")
+        self.report({'INFO'}, "History cleared")
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_turn_off(_ObjectHistoryOp, bpy.types.Operator):
     bl_idname = "hindsight.turn_off"
-    bl_label = "Turn Off Undo History"
-    bl_description = ("Pause recording and keep existing steps. Changes made while off become "
-                      "the new start when turned back on")
+    bl_label = "Pause recording"
+    bl_description = "Stop recording this object and keep its steps. Changes made while paused become one step when you resume"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -176,29 +174,29 @@ class HINDSIGHT_OT_turn_off(_ObjectHistoryOp, bpy.types.Operator):
 
     def execute(self, context):
         _rt().turn_off(context, _active_mesh(context))
-        self.report({'INFO'}, "Undo history turned off")
+        self.report({'INFO'}, "Recording paused")
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_reset_and_turn_off(_ObjectHistoryOp, bpy.types.Operator):
     bl_idname = "hindsight.reset_and_turn_off"
-    bl_label = "Reset and Turn Off"
-    bl_description = "Remove the history entirely and stop recording. This cannot be undone"
+    bl_label = "Clear and stop recording"
+    bl_description = "Delete this object's history and stop recording it. Can't be undone"
     bl_options = {'REGISTER'}
 
     def invoke(self, context, event):
-        return _confirm(self, context, event, "Remove this object's undo history? This cannot be undone.")
+        return _confirm(self, context, event, "Delete this object's history and stop recording it? This can't be undone.")
 
     def execute(self, context):
         _rt().reset_and_turn_off(context, _active_mesh(context))
-        self.report({'INFO'}, "Undo history removed and turned off")
+        self.report({'INFO'}, "History deleted. Recording stopped")
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_turn_on(bpy.types.Operator):
     bl_idname = "hindsight.turn_on"
-    bl_label = "Turn On Undo History"
-    bl_description = "Start recording again on an object where it was turned off"
+    bl_label = "Record this object"
+    bl_description = "Start recording this object again"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -213,14 +211,14 @@ class HINDSIGHT_OT_turn_on(bpy.types.Operator):
 
     def execute(self, context):
         _rt().turn_on(context, _active_mesh(context))
-        self.report({'INFO'}, "Undo history turned on")
+        self.report({'INFO'}, "Recording")
         return {'FINISHED'}
 
 
 class HINDSIGHT_OT_reset_all(bpy.types.Operator):
     bl_idname = "hindsight.reset_all"
-    bl_label = "Reset All Objects"
-    bl_description = "Clear the undo history of every object. This cannot be undone"
+    bl_label = "Clear all histories"
+    bl_description = "Delete the history of every object. Can't be undone"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -228,17 +226,17 @@ class HINDSIGHT_OT_reset_all(bpy.types.Operator):
         return getattr(context, "scene", None) is not None
 
     def invoke(self, context, event):
-        return _confirm(self, context, event, "Reset the undo history of all objects? This cannot be undone.")
+        return _confirm(self, context, event, "Delete the history of every object? This can't be undone.")
 
     def execute(self, context):
         _rt().reset_all(context)
-        self.report({'INFO'}, "Undo history reset for all objects")
+        self.report({'INFO'}, "All histories cleared")
         return {'FINISHED'}
 
 
 class HINDSIGHT_MT_history(bpy.types.Menu):
     bl_idname = "HINDSIGHT_MT_history"
-    bl_label = "History"
+    bl_label = "History Menu"
 
     def draw(self, context):
         layout = self.layout
@@ -248,12 +246,12 @@ class HINDSIGHT_MT_history(bpy.types.Menu):
 
         layout.operator(
             HINDSIGHT_OT_toggle_global.bl_idname,
-            text="Use Active Object Undo History" if use_global else "Use Global Undo History",
+            text="Use per-object history" if use_global else "Use global history",
             icon='WORLD' if not use_global else 'OBJECT_DATA',
         )
         layout.operator(
             HINDSIGHT_OT_toggle_preserve_modes.bl_idname,
-            text="Preserve Modes",
+            text="Follow object and mode",
             icon='CHECKBOX_HLT' if preserve else 'CHECKBOX_DEHLT',
         )
         layout.separator()

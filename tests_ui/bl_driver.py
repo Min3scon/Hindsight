@@ -22,6 +22,7 @@ import traceback
 
 SPEC = json.load(open(sys.argv[sys.argv.index("--") + 1], encoding="utf-8"))
 OUT = SPEC["out"]
+sys.path.insert(0, os.path.dirname(SPEC["scenario"]))  # scenarios can `import common`
 
 
 class _Tee(io.TextIOBase):
@@ -141,11 +142,13 @@ class Driver:
 
     # ------------------------------------------------------------------ simulated input
     def ev(self, type, value="NOTHING", x=None, y=None, **kw):
+        """Simulated event. Without x/y it is sent at the last simulated mouse position, so key
+        presses reach the area under the mouse (F3, shortcuts) like real input does."""
         win = self.window
         if x is None:
-            win.event_simulate(type=type, value=value, **kw)
-        else:
-            win.event_simulate(type=type, value=value, x=int(x), y=int(y), **kw)
+            x, y = getattr(self, "_mouse", (win.width // 2, win.height // 2))
+        self._mouse = (int(x), int(y))
+        win.event_simulate(type=type, value=value, x=int(x), y=int(y), **kw)
 
     def region_to_win(self, region, rx, ry):
         return region.x + rx, region.y + ry
@@ -173,8 +176,8 @@ class Driver:
         self.ev(button, "RELEASE", x=x, y=y)
         yield 0.1
 
-    def key(self, key, ctrl=False, shift=False, alt=False):
-        self.ev(key, "PRESS", ctrl=ctrl, shift=shift, alt=alt)
+    def key(self, key, ctrl=False, shift=False, alt=False, x=None, y=None):
+        self.ev(key, "PRESS", x=x, y=y, ctrl=ctrl, shift=shift, alt=alt)
         self.ev(key, "RELEASE", ctrl=ctrl, shift=shift, alt=alt)
 
     # ------------------------------------------------------------------ sculpt

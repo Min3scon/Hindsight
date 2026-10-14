@@ -16,7 +16,7 @@ from mathutils import Matrix
 from ..core.history import MeshState, TOPO_MARK
 from ..core.step import SNAPSHOTS_KEY
 from ..core.types import JOIN, SETTINGS, Step, split_key
-from . import meshio, runtime
+from . import log, meshio, runtime
 
 MAP_ATTR = "_hs_src"
 CONFIRM_MESSAGE = "Join and merge undo histories?"
@@ -61,7 +61,7 @@ def _plain_join(context) -> bool:
     try:
         return 'FINISHED' in bpy.ops.object.join()
     except RuntimeError as e:
-        print("Hindsight: join failed:", e)
+        log.error_once(("join", str(e)), f"join failed: {e}", e)
         return False
 
 

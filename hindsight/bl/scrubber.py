@@ -1,8 +1,13 @@
-"""Viewport scrubber: a history slider along the bottom of every 3D Viewport.
+"""On-screen slider: a history slider along the bottom of every 3D Viewport.
 
 Drawing is done by a POST_PIXEL draw handler; input goes through a 2D gizmo (gizmos get
 events before the Sculpt keymap, which binds LEFTMOUSE to brush strokes). A fallback modal
 operator ``hindsight.scrub`` implements the same drag for use from Python.
+
+The slider sits above bottom-docked overlapping regions (the brush asset shelf in Sculpt Mode on
+Blender 4.3+) and between the toolbar and the sidebar, so it is never drawn under them. In Sculpt
+and Vertex Paint Mode it shows from the start, as an empty track, before any step exists.
+The draw handler is guarded: if it ever raises, it is removed and the sidebar says so.
 
 The layout helpers (``layout``, ``pos_from_x``, ``x_from_pos``, ``hit_test``, ``geometry``)
 are pure and testable headless. Nothing touches ``gpu`` until the draw callback runs.
@@ -12,6 +17,8 @@ import math
 import time
 
 import bpy
+
+from . import guard
 
 MENU_NAME = "HINDSIGHT_MT_history"
 THROTTLE = 1.0 / 60.0      # min seconds between live (final=False) gotos during a drag
@@ -69,27 +76,35 @@ _reported = set()
 
 
 def _report(where, exc):
+    """Input errors (gizmo, modal) are logged once; they never switch the slider off."""
     key = (where, type(exc).__name__, str(exc))
     if key in _reported or len(_reported) > 32:
         return
     _reported.add(key)
-    print("Hindsight scrubber (%s): %s: %s" % (where, type(exc).__name__, exc))
+    from . import log
+    log.error_once(("slider", where, str(exc)), f"on-screen slider ({where}): {type(exc).__name__}: {exc}", exc)
 
 
 # ---------------------------------------------------------------------------------------------
 # Pure layout
 
-def layout(region_w, region_h, ui_scale, prefs_like):
-    """Pixel layout of the scrubber in region space (origin bottom-left)."""
+def layout(region_w, region_h, ui_scale, prefs_like, insets=(0.0, 0.0, 0.0)):
+    """Pixel layout of the scrubber in region space (origin bottom-left).
+
+    insets = (left, right, bottom) pixels covered by overlapping regions (toolbar, sidebar,
+    asset shelf); the slider is centred in what is left and sits above the bottom inset.
+    """
     s = float(ui_scale) if ui_scale and ui_scale > 0 else 1.0
+    left, right, bottom = (max(0.0, float(v)) for v in insets)
     h = max(1.0, float(_pref(prefs_like, "scrub_height"))) * s
-    m = max(0.0, float(_pref(prefs_like, "scrub_margin"))) * s
+    m = max(0.0, float(_pref(prefs_like, "scrub_margin"))) * s + bottom
     pct = min(100.0, max(1.0, float(_pref(prefs_like, "scrub_width_pct"))))
-    w = float(region_w) * pct / 100.0
-    x0 = (float(region_w) - w) / 2.0
+    avail = max(40.0 * s, float(region_w) - left - right)
+    w = avail * pct / 100.0
+    x0 = left + (avail - w) / 2.0
     x1 = x0 + w
-    y0 = m
-    y1 = m + h
+    y0 = float(round(m))
+    y1 = y0 + float(round(h))
     cy = (y0 + y1) / 2.0
     cap = h / 2.0                       # rounded caps extend past x0 / x1
     r = max(5.0, float(_pref(prefs_like, "scrub_height")) / 2.0 + 3.0) * s
@@ -100,6 +115,7 @@ def layout(region_w, region_h, ui_scale, prefs_like):
         "bar": (x0, y0, x1, y1),
         "dot": (dot_cx, cy, r),
         "counter": (x1 + cap + gap, cy - font * 0.35),
+        "hint": ((x0 + x1) / 2.0, y1 + 7.0 * s),
         "global": (dot_cx - r * 0.45, cy + r + 4.0 * s),
         "font_size": font,
         "scale": s,
@@ -175,19 +191,49 @@ def _capsule(x0, y0, x1, y1):
     return pts
 
 
+def _annulus(cx, cy, r0, r1, seg=32, a0=0.0, a1=2.0 * math.pi):
+    """Ring between radius r0 and r1 (also used as a soft edge, Blender's flat shader has no AA)."""
+    pts = []
+    for i in range(seg):
+        t0 = a0 + (a1 - a0) * i / seg
+        t1 = a0 + (a1 - a0) * (i + 1) / seg
+        c0, s0, c1, s1 = math.cos(t0), math.sin(t0), math.cos(t1), math.sin(t1)
+        p0, p1 = (cx + r0 * c0, cy + r0 * s0), (cx + r1 * c0, cy + r1 * s0)
+        p2, p3 = (cx + r1 * c1, cy + r1 * s1), (cx + r0 * c1, cy + r0 * s1)
+        pts += [p0, p1, p2, p0, p2, p3]
+    return pts
+
+
+def _capsule_edge(x0, y0, x1, y1, w):
+    """Soft edge around the two round caps of a capsule."""
+    r = (y1 - y0) / 2.0
+    cy = (y0 + y1) / 2.0
+    return (_annulus(x0, cy, r, r + w, 10, 0.5 * math.pi, 1.5 * math.pi)
+            + _annulus(max(x0, x1), cy, r, r + w, 10, -0.5 * math.pi, 0.5 * math.pi))
+
+
 def geometry(lay, pos, length, morph_target=None, hover=None):
-    """{name: [(x, y), ...]} triangle lists for bg, fill, tick, handle, dot."""
+    """{name: [(x, y), ...]} triangle lists. Drawn in DRAW_ORDER; *_aa are one-pixel soft edges."""
     x0, y0, x1, y1 = lay["bar"]
     s = lay["scale"]
+    aa = 0.9 * s
     cy = (y0 + y1) / 2.0
     xp = x_from_pos(pos, lay, length)
     hr = lay["handle_r"] + (1.5 * s if hover == "bar" else 0.0)
     cx, dcy, r = lay["dot"]
+    ring = max(1.5, 1.6 * s)
     g = {
         "bg": _capsule(x0, y0, x1, y1),
+        "bg_aa": _capsule_edge(x0, y0, x1, y1, aa),
         "fill": _capsule(x0, y0, xp, y1),
+        "fill_aa": _capsule_edge(x0, y0, xp, y1, aa),
+        "handle_shadow": _disc(xp, cy - 0.8 * s, hr + 1.6 * s),
         "handle": _disc(xp, cy, hr),
-        "dot": _disc(cx, dcy, r + (1.0 * s if hover == "dot" else 0.0)),
+        "handle_aa": _annulus(xp, cy, hr, hr + aa),
+        "dot_bg": _disc(cx, dcy, r),
+        "dot": _annulus(cx, dcy, r - ring, r),
+        "dot_aa": _annulus(cx, dcy, r, r + aa),
+        "dot_core": _disc(cx, dcy, r * (0.55 if hover == "dot" else 0.32)),
     }
     if morph_target is not None and length > 0:
         xm = x_from_pos(morph_target, lay, length)
@@ -259,9 +305,62 @@ class _Drag:
         self.timer = None
 
 
+_OVERLAP_BOTTOM = {"ASSET_SHELF", "ASSET_SHELF_HEADER"}
+_OVERLAP_SIDE = {"TOOLS", "UI", "TOOL_PROPS"}
+
+
+def region_insets(area, region):
+    """(left, right, bottom) pixels of `region` covered by other regions of the same area.
+
+    With Region Overlap on (Blender's default) the toolbar, the sidebar and the asset shelf are
+    drawn on top of the viewport region. Hidden regions report a width or height of 1.
+    """
+    left = right = bottom = 0.0
+    if area is None or region is None:
+        return left, right, bottom
+    try:
+        for r in area.regions:
+            if r == region or r.width <= 1 or r.height <= 1:
+                continue
+            align = getattr(r, "alignment", "")
+            if r.type in _OVERLAP_BOTTOM and align == "BOTTOM":
+                bottom = max(bottom, float(r.y + r.height - region.y))
+            elif r.type in _OVERLAP_SIDE and align == "LEFT":
+                left = max(left, float(r.x + r.width - region.x))
+            elif r.type in _OVERLAP_SIDE and align == "RIGHT":
+                right = max(right, float(region.x + region.width - r.x))
+    except Exception:
+        return 0.0, 0.0, 0.0
+    if left + right > region.width * 0.8:   # tiny viewport: ignore side panels rather than vanish
+        left = right = 0.0
+    if bottom > region.height * 0.7:
+        bottom = 0.0
+    return left, right, bottom
+
+
 def _layout_for(context, region=None):
     region = region if region is not None else context.region
-    return layout(region.width, region.height, _ui_scale(context), _prefs(context))
+    area = getattr(context, "area", None)
+    return layout(region.width, region.height, _ui_scale(context), _prefs(context),
+                  region_insets(area, region))
+
+
+def slider_info(context):
+    """What the slider shows: runtime.scrub_info, or an empty track in Sculpt / Vertex Paint Mode
+    on an object that will record its first stroke. None = draw nothing."""
+    rt = _runtime()
+    info = rt.scrub_info(context)
+    if info and info.get("len"):
+        return info
+    if rt.use_global(context):
+        return None
+    obj = getattr(context, "active_object", None)
+    if obj is None or getattr(obj, "type", None) != "MESH" or obj.mode not in rt.RECORD_MODES:
+        return None
+    if not rt.can_record(obj):
+        return None
+    return {"pos": 0, "len": 0, "cap": rt.SETTINGS.max_steps, "global": False, "locked": False,
+            "morph_target": None, "empty": True}
 
 
 def _open_menu(context):
@@ -322,11 +421,13 @@ def _draw(context):
     region = context.region
     if region is None or region.type != 'WINDOW':
         return
-    info = _runtime().scrub_info(context)
+    info = slider_info(context)
+    guard.mark_ok("slider")
     if not info:
         return
     prefs = _prefs(context)
-    lay = layout(region.width, region.height, _ui_scale(context), prefs)
+    lay = layout(region.width, region.height, _ui_scale(context), prefs,
+                 region_insets(context.area, region))
     length = int(info.get("len") or 0)
     pos = int(info.get("pos") or 0)
     morph = info.get("morph_target")
@@ -344,8 +445,12 @@ def _draw(context):
     shader, batches = _batches(lay, pos, length, morph, hover)
     gpu.state.blend_set('ALPHA')
     shader.bind()
-    for name, col in (("bg", bg), ("fill", color), ("tick", MORPH_COLOR),
-                      ("handle", handle_col), ("dot", dot_col)):
+    soft = lambda c, k=0.4: (c[0], c[1], c[2], c[3] * k)
+    for name, col in (("bg_aa", soft(bg)), ("bg", bg), ("fill_aa", soft(color)), ("fill", color),
+                      ("tick", MORPH_COLOR), ("handle_shadow", (0.0, 0.0, 0.0, 0.28)),
+                      ("handle_aa", soft(handle_col)), ("handle", handle_col),
+                      ("dot_bg", (0.06, 0.06, 0.06, 0.72)), ("dot_aa", soft(dot_col)), ("dot", dot_col),
+                      ("dot_core", dot_col)):
         b = batches.get(name)
         if b is not None:
             shader.uniform_float("color", col)
@@ -354,7 +459,8 @@ def _draw(context):
 
     show_counter = bool(_pref(prefs, "scrub_show_counter"))
     is_global = bool(info.get("global"))
-    if not (show_counter or is_global):
+    empty = bool(info.get("empty"))
+    if not (show_counter or is_global or empty):
         return
     import blf
     font = 0
@@ -368,11 +474,18 @@ def _draw(context):
         except Exception:
             shadow = None
     text_col = (0.6, 0.6, 0.6, 0.8) if locked else (1.0, 1.0, 1.0, 0.9)
-    if show_counter:
+    if empty:
+        hint = "Make a stroke to start recording"
+        tw, _ = blf.dimensions(font, hint)
+        hx, hy = lay["hint"]
+        blf.color(font, 1.0, 1.0, 1.0, 0.6)
+        blf.position(font, hx - tw / 2.0, hy, 0)
+        blf.draw(font, hint)
+    elif show_counter:
         x, y = lay["counter"]
         blf.color(font, *text_col)
         blf.position(font, x, y, 0)
-        blf.draw(font, "%d / %d" % (pos, int(info.get("cap") or 0)))
+        blf.draw(font, "%d / %d" % (pos, length))
     if is_global:
         x, y = lay["global"]
         blf.color(font, *color)
@@ -386,20 +499,40 @@ def draw_callback():
     try:
         _draw(bpy.context)
     except Exception as exc:
-        _report("draw", exc)
         try:
             import gpu
             gpu.state.blend_set('NONE')
         except Exception:
             pass
+        guard.fail("slider", exc, "draw")
+
+
+def _remove_draw_handler():
+    """Called once if drawing fails: only the slider goes away, nothing else."""
+    global _draw_handle
+    if _draw_handle is not None:
+        try:
+            bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
+        except Exception:
+            pass
+        _draw_handle = None
+
+
+guard.on_fail("slider", _remove_draw_handler)
+
+
+def draw_handler_installed():
+    return _draw_handle is not None
 
 
 # ---------------------------------------------------------------------------------------------
 # Input: 2D gizmo (takes priority over the Sculpt keymap)
 
 def _scrub_poll(context):
+    if not guard.ok("slider"):
+        return False
     try:
-        return _runtime().scrub_info(context) is not None
+        return slider_info(context) is not None
     except Exception:
         return False
 
@@ -442,7 +575,7 @@ class HINDSIGHT_GT_scrubber(bpy.types.Gizmo):
                 return {'RUNNING_MODAL'}
             if hit == "bar":
                 info = _runtime().scrub_info(context)
-                if info and not info.get("locked"):
+                if info and not info.get("locked") and info.get("len"):
                     drag = _Drag(lay, info)
                     self._drag = drag
                     self._mode = "bar"
@@ -541,7 +674,12 @@ def register():
     for cls in classes:
         if "bl_rna" not in cls.__dict__:
             bpy.utils.register_class(cls)
-    if _draw_handle is None:
+    ensure_draw_handler()
+
+
+def ensure_draw_handler():
+    global _draw_handle
+    if _draw_handle is None and guard.ok("slider"):
         _draw_handle = bpy.types.SpaceView3D.draw_handler_add(draw_callback, (), 'WINDOW', 'POST_PIXEL')
 
 

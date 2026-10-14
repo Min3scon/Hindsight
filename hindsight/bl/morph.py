@@ -6,7 +6,7 @@ import numpy as np
 
 from ..core import morph as M
 from ..core.types import POSITION_KEY, MASK_KEY, HIDE_VERT_KEY
-from . import meshio, runtime
+from . import guard, log, meshio, runtime
 
 TOOL_ID = "hindsight.morph_history"
 STROKE_LABEL = "Morph History"
@@ -216,7 +216,7 @@ def _radius_local(context, obj, hit_local, radius_px, world_radius):
 class HINDSIGHT_OT_morph_stroke(bpy.types.Operator):
     bl_idname = "hindsight.morph_stroke"
     bl_label = "Morph History"
-    bl_description = "Paint the brushed areas back toward the Morph Target"
+    bl_description = "Paint the brushed area back toward the morph target"
     bl_options = {'REGISTER'}
 
     @classmethod
@@ -225,6 +225,9 @@ class HINDSIGHT_OT_morph_stroke(bpy.types.Operator):
         return context.mode == 'SCULPT' and ob is not None and ob.type == 'MESH'
 
     def invoke(self, context, event):
+        if not guard.ok("morph"):
+            self.report({'WARNING'}, "Morph History is off after an error. Run self-check to try again.")
+            return {'CANCELLED'}
         if context.area is None or context.area.type != 'VIEW_3D' or context.region_data is None:
             return {'PASS_THROUGH'}
         ob = context.active_object
@@ -258,6 +261,19 @@ class HINDSIGHT_OT_morph_stroke(bpy.types.Operator):
                 apply_morph_at(ob, hit, r, strength)
 
     def modal(self, context, event):
+        try:
+            return self._modal(context, event)
+        except Exception as exc:
+            guard.fail("morph", exc, "stroke")
+            ob = bpy.data.objects.get(getattr(self, "_obj_name", ""))
+            if ob is not None:
+                try:
+                    end(ob)   # keep what was painted so far as one step
+                except Exception:
+                    pass
+            return {'CANCELLED'}
+
+    def _modal(self, context, event):
         ob = bpy.data.objects.get(getattr(self, "_obj_name", ""))
         if ob is None or ob.mode != 'SCULPT':
             if ob is not None:
@@ -283,9 +299,8 @@ class HINDSIGHT_TOOL_morph_history(bpy.types.WorkSpaceTool):
     bl_context_mode = 'SCULPT'
     bl_idname = TOOL_ID
     bl_label = "Morph History"
-    bl_description = ("Paint the brushed areas back toward the Morph Target (History menu > "
-                      "Set Morph Target Here). Brush lightly for a subtle change or make several "
-                      "passes to move closer")
+    bl_description = ("Paint parts of the mesh back toward the morph target. Set the target "
+                      "first (History Menu > Set morph target). Light strokes give a partial blend")
     bl_icon = "ops.sculpt.mesh_filter"
     bl_widget = None
     bl_keymap = (
@@ -309,8 +324,8 @@ def register():
         bpy.utils.register_tool(HINDSIGHT_TOOL_morph_history, after={"builtin.annotate"},
                                 separator=True, group=False)
         _tool_registered[0] = True
-    except Exception:
-        pass
+    except Exception as exc:
+        log.error_once("register_tool", f"Morph History tool could not be added to the toolbar: {exc}", exc)
 
 
 def unregister():

@@ -63,22 +63,22 @@ def _update_appearance(self, context):
 
 
 SAVE_MODE_ITEMS = (
-    ('SIDECAR', "Sidecar", "Store a history folder beside the .blend file (fastest saves)"),
-    ('EMBED', "Embed", "Store history inside the .blend (one file to share)"),
-    ('BOTH', "Both", "Keep both"),
+    ('SIDECAR', "Next to the .blend", "Save history in a folder next to the .blend file (fastest saves)"),
+    ('EMBED', "Inside the .blend", "Save history inside the .blend file (one file to share)"),
+    ('BOTH', "Both", "Save it in both places"),
 )
 
 CRASH_RECOVERY_ITEMS = (
-    ('LAST_SAVED', "Last Saved", "Open with the history as it was when the file was last saved"),
-    ('INTERRUPTED', "Interrupted Session", "Recover unsaved steps from an interrupted session"),
+    ('LAST_SAVED', "Last save", "Open files with the history as it was at the last save"),
+    ('INTERRUPTED', "Unsaved steps", "Also bring back steps made after the last save if Blender closed unexpectedly"),
 )
 
 COMPRESSION_ITEMS = (
-    ('AUTO', "Auto", "Use the best available codec"),
-    ('ZSTD', "Zstandard", "Zstandard compression (best ratio)"),
-    ('LZ4', "LZ4", "LZ4 compression (fastest)"),
-    ('ZLIB', "Zlib", "Zlib compression (always available)"),
-    ('NONE', "None", "Store packed steps without compression"),
+    ('AUTO', "Auto", "Use the best codec available"),
+    ('ZSTD', "Zstandard", "Smallest history, a little slower"),
+    ('LZ4', "LZ4", "Fastest, a little larger"),
+    ('ZLIB', "Zlib", "Always available"),
+    ('NONE', "None", "No compression"),
 )
 
 
@@ -87,91 +87,95 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
 
     # Saving
     save_mode: EnumProperty(
-        name="Save Mode", description="Where the undo history is saved",
+        name="Save history", description="Where the history is saved",
         items=SAVE_MODE_ITEMS, default='SIDECAR', update=_update)
     crash_recovery: EnumProperty(
-        name="Crash Recovery", description="Which history to load when a file is opened",
+        name="On open", description="Which history to load when a file is opened",
         items=CRASH_RECOVERY_ITEMS, default='LAST_SAVED', update=_update)
 
     # History
     truncation_threshold: IntProperty(
-        name="Truncation Warning Threshold",
-        description="Ask for confirmation before a new step discards at least this many future steps",
+        name="Ask before dropping",
+        description="Ask before a new stroke drops at least this many later steps",
         default=10, min=1, soft_max=1000, update=_update)
     max_steps: IntProperty(
-        name="Max Undo Steps", description="Maximum number of undo steps kept per object",
+        name="Steps per object", description="Most steps kept for one object. Oldest go first",
         default=10000, min=1, max=10000, update=_update)
 
     # Memory
     memory_limit_mb: IntProperty(
-        name="Memory Limit (MB)",
-        description="Total size of all undo histories; the oldest steps are dropped first",
+        name="Memory limit (MB)",
+        description="Total size of all histories. The oldest steps go first when it is reached",
         default=4096, min=16, soft_max=65536, update=_update)
     raw_steps: IntProperty(
-        name="Uncompressed Recent Steps",
-        description="Number of most recent steps per object kept uncompressed for instant scrubbing",
+        name="Uncompressed steps",
+        description="Most recent steps per object kept uncompressed, for instant scrubbing",
         default=64, min=0, soft_max=1024, update=_update)
     compression: EnumProperty(
-        name="Compression", description="Codec used to pack older steps",
+        name="Compression", description="How older steps are packed",
         items=COMPRESSION_ITEMS, default='AUTO', update=_update)
 
-    # Scrubber appearance
+    # On-screen slider
     scrub_height: IntProperty(
-        name="Height", description="Thickness of the scrubber bar",
+        name="Height", description="Thickness of the on-screen slider",
         default=6, min=2, max=64, subtype='PIXEL', update=_update_appearance)
     scrub_margin: IntProperty(
-        name="Bottom Margin", description="Distance of the scrubber from the bottom of the viewport",
+        name="Bottom margin", description="Gap between the slider and the bottom of the viewport",
         default=18, min=0, max=1000, subtype='PIXEL', update=_update_appearance)
     scrub_width_pct: IntProperty(
-        name="Width", description="Scrubber width as a percentage of the viewport width",
+        name="Width", description="Slider width as a share of the viewport width",
         default=60, min=5, max=100, subtype='PERCENTAGE', update=_update_appearance)
     scrub_color: FloatVectorProperty(
-        name="Color", description="Color of the scrubber's filled part and handle",
+        name="Colour", description="Colour of the filled part and the handle",
         size=4, subtype='COLOR_GAMMA', min=0.0, max=1.0,
         default=(1.0, 0.6, 0.24, 1.0), update=_update_appearance)
     scrub_bg_color: FloatVectorProperty(
-        name="Background Color", description="Color of the scrubber track",
+        name="Track colour", description="Colour of the empty part of the slider",
         size=4, subtype='COLOR_GAMMA', min=0.0, max=1.0,
         default=(0.1, 0.1, 0.1, 0.6), update=_update_appearance)
     scrub_show_counter: BoolProperty(
-        name="Show Counter", description="Show the step counter next to the scrubber",
+        name="Show step counter", description="Show the step number next to the slider",
         default=True, update=_update_appearance)
+
+    welcomed: BoolProperty(default=False, options={'HIDDEN'})
 
     def draw(self, context):
         layout = self.layout
         from .beta import draw_note
-        head = layout.row()
-        head.label(text="Hindsight BETA")
-        draw_note(layout.column())
-        layout.use_property_split = True
-        layout.use_property_decorate = False
+        draw_note(layout)
 
-        box = layout.box()
-        box.label(text="Saving", icon='FILE_TICK')
-        col = box.column()
+        def section(title, icon):
+            layout.separator()
+            layout.label(text=title, icon=icon)
+            col = layout.column()
+            col.use_property_split = True
+            col.use_property_decorate = False
+            return col
+
+        col = section("Saving", 'FILE_TICK')
         col.prop(self, "save_mode")
         col.prop(self, "crash_recovery")
 
-        box = layout.box()
-        box.label(text="History", icon='RECOVER_LAST')
-        col = box.column()
-        col.prop(self, "truncation_threshold")
+        col = section("History", 'RECOVER_LAST')
         col.prop(self, "max_steps")
+        col.prop(self, "truncation_threshold")
 
-        box = layout.box()
-        box.label(text="Memory", icon='MEMORY')
-        col = box.column()
+        col = section("Memory", 'MEMORY')
         col.prop(self, "memory_limit_mb")
         col.prop(self, "raw_steps")
         col.prop(self, "compression")
 
-        box = layout.box()
-        box.label(text="Scrubber", icon='TIME')
-        draw_scrubber_props(box.column(), self)
+        col = section("On-screen slider", 'ARROW_LEFTRIGHT')
+        draw_scrubber_props(col, self)
+
+        layout.separator()
+        row = layout.row(align=True)
+        row.operator("hindsight.self_check", text="Run self-check", icon='CHECKMARK')
+        row.operator("hindsight.copy_diagnostics", text="Copy diagnostics", icon='COPYDOWN')
 
 
 def draw_scrubber_props(layout, prefs) -> None:
-    """Shared by the preferences and the sidebar Scrubber sub-panel."""
+    """Shared by the preferences and the sidebar On-screen slider sub-panel."""
     layout.prop(prefs, "scrub_height")
     layout.prop(prefs, "scrub_margin")
     layout.prop(prefs, "scrub_width_pct")

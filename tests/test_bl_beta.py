@@ -40,7 +40,7 @@ def test_beta_tag_and_report_button():
     assert ("label", "BETA") in log
     log.clear()
     beta.draw_note(_Rec(log))
-    assert any(e[0] == "label" and "report bugs" in e[1] for e in log)
+    assert any(e[0] == "label" and e[1].startswith("Beta.") for e in log)
     ops = [e for e in log if e[0] == "op"]
     assert ops and ops[0][1] == "wm.url_open" and ops[0][2] == "Report a bug"
     assert ops[0][3].url == beta.ISSUES_URL and "issues" in beta.ISSUES_URL

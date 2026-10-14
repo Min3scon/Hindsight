@@ -24,7 +24,7 @@ from ..core import persist
 from ..core.journal import Journal
 from ..core.registry import Registry
 from ..core.types import SETTINGS
-from . import runtime
+from . import guard, runtime
 
 TEXT_NAME = ".hindsight_history"
 DATA_PROP = "hindsight_data"
@@ -72,7 +72,7 @@ def _close_journal(remove_untitled: bool = False) -> None:
         try:
             j.close()
         except Exception as e:
-            print("Hindsight: journal close error:", e)
+            guard.fail("saving", e, "journal close error")
         if remove_untitled and path == journal_path(""):
             try:
                 os.remove(path)
@@ -152,6 +152,7 @@ def _codec() -> str:
 
 # ----------------------------------------------------------------------------- handlers
 @bpy.app.handlers.persistent
+@guard.guarded("saving")
 def on_save_pre(*args) -> None:
     try:
         mode = _mode()
@@ -167,10 +168,11 @@ def on_save_pre(*args) -> None:
         elif DATA_PROP in text:
             del text[DATA_PROP]
     except Exception as e:
-        print("Hindsight: could not store undo history in the .blend:", e)
+        guard.fail("saving", e, "could not store undo history in the .blend")
 
 
 @bpy.app.handlers.persistent
+@guard.guarded("saving")
 def on_save_post(*args) -> None:
     path = _handler_path(args)
     if not path:
@@ -181,7 +183,7 @@ def on_save_post(*args) -> None:
             _drain_packer()
             persist.save_sidecar(runtime.reg(), path)
         except Exception as e:
-            print("Hindsight: could not write the undo history folder:", e)
+            guard.fail("saving", e, "could not write the undo history folder")
     current = _current_blend()
     if current and not _same_path(path, current):
         return   # "Save Copy": the session file itself did not change
@@ -190,11 +192,12 @@ def on_save_post(*args) -> None:
         j.truncate(0)            # everything before this point is in the saved file
         _mark_saved(j, path)
     except Exception as e:
-        print("Hindsight: journal error on save:", e)
+        guard.fail("saving", e, "journal error on save")
     runtime.missing_message[0] = None
 
 
 @bpy.app.handlers.persistent
+@guard.guarded("loading")
 def on_load_pre(*args) -> None:
     _close_journal(remove_untitled=True)
     runtime.missing_message[0] = None
@@ -209,7 +212,7 @@ def _load_registry(path: str, text):
         try:
             return persist.registry_from_bytes(base64.b64decode(text[DATA_PROP]))
         except Exception as e:
-            print("Hindsight: embedded undo history unreadable:", e)
+            guard.fail("loading", e, "embedded undo history unreadable")
             return None
 
     def from_sidecar():
@@ -218,7 +221,7 @@ def _load_registry(path: str, text):
         try:
             return persist.load_sidecar(path)
         except Exception as e:
-            print("Hindsight: undo history folder unreadable:", e)
+            guard.fail("loading", e, "undo history folder unreadable")
             return None
 
     if mode == "EMBED":
@@ -234,6 +237,7 @@ def _load_registry(path: str, text):
 
 
 @bpy.app.handlers.persistent
+@guard.guarded("loading")
 def on_load_post(*args) -> None:
     runtime.set_registry(Registry())
     runtime.missing_message[0] = None
@@ -251,14 +255,14 @@ def on_load_post(*args) -> None:
     try:
         j = _open_journal(path)
     except Exception as e:
-        print("Hindsight: could not open the journal:", e)
+        guard.fail("loading", e, "could not open the journal")
 
     if reg is not None:
         if recover and j is not None:
             try:
                 persist.replay(reg, j.read())
             except Exception as e:
-                print("Hindsight: crash recovery failed:", e)
+                guard.fail("loading", e, "crash recovery failed")
         try:
             p = getattr(bpy.context.scene, "hindsight", None)
             if p is not None:
@@ -272,7 +276,7 @@ def on_load_post(*args) -> None:
         try:
             runtime.prime_states()
         except Exception as e:
-            print("Hindsight: could not read meshes after loading:", e)
+            guard.fail("loading", e, "could not read meshes after loading")
 
     if j is not None:
         try:
@@ -285,7 +289,7 @@ def on_load_post(*args) -> None:
                 j.truncate(0)    # fresh session
                 _mark_saved(j, path)
         except Exception as e:
-            print("Hindsight: journal error on load:", e)
+            guard.fail("loading", e, "journal error on load")
     runtime.tag_redraw_all()
 
 

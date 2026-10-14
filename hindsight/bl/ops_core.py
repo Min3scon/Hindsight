@@ -6,36 +6,48 @@ from . import runtime
 
 class HINDSIGHT_OT_step_back(bpy.types.Operator):
     bl_idname = "hindsight.step_back"
-    bl_label = "Step Back"
-    bl_description = "Step back one step in the undo history (falls back to Blender's undo)"
+    bl_label = "Hindsight: Step Back"
+    bl_description = "Go back one step in the history"
+
+    native_fallback: bpy.props.BoolProperty(
+        name="Use Blender undo at the start", default=True, options={'SKIP_SAVE', 'HIDDEN'},
+        description="When there is no earlier step, run Blender's own undo instead")
 
     def execute(self, context):
-        if not runtime.step(context, -1):
+        if runtime.step(context, -1):
+            return {'FINISHED'}
+        if self.native_fallback:
             try:
                 return bpy.ops.ed.undo()
             except RuntimeError:
                 return {'CANCELLED'}
-        return {'FINISHED'}
+        return {'CANCELLED'}
 
 
 class HINDSIGHT_OT_step_forward(bpy.types.Operator):
     bl_idname = "hindsight.step_forward"
-    bl_label = "Step Forward"
-    bl_description = "Step forward one step in the undo history (falls back to Blender's redo)"
+    bl_label = "Hindsight: Step Forward"
+    bl_description = "Go forward one step in the history"
+
+    native_fallback: bpy.props.BoolProperty(
+        name="Use Blender redo at the end", default=True, options={'SKIP_SAVE', 'HIDDEN'},
+        description="When there is no later step, run Blender's own redo instead")
 
     def execute(self, context):
-        if not runtime.step(context, +1):
+        if runtime.step(context, +1):
+            return {'FINISHED'}
+        if self.native_fallback:
             try:
                 return bpy.ops.ed.redo()
             except RuntimeError:
                 return {'CANCELLED'}
-        return {'FINISHED'}
+        return {'CANCELLED'}
 
 
 class HINDSIGHT_OT_goto(bpy.types.Operator):
     bl_idname = "hindsight.goto"
-    bl_label = "Go To Step"
-    bl_description = "Jump to a step of the undo history"
+    bl_label = "Go to Step"
+    bl_description = "Jump to a step in the history"
     position: bpy.props.IntProperty(name="Position", default=0, min=0)
 
     def execute(self, context):
@@ -45,7 +57,7 @@ class HINDSIGHT_OT_goto(bpy.types.Operator):
 
 class HINDSIGHT_OT_confirm_truncate(bpy.types.Operator):
     bl_idname = "hindsight.confirm_truncate"
-    bl_label = "Start a New Branch?"
+    bl_label = "Start a new branch"
     bl_description = "Drop the steps after the current one so you can sculpt from here"
     count: bpy.props.IntProperty(default=0)
 

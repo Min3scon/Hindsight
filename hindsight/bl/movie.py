@@ -5,7 +5,7 @@ Movie Mode only plays history back, it never changes it: no step is ever recorde
 import bpy
 from bpy.app.handlers import persistent
 
-from . import runtime
+from . import guard, runtime
 
 DATA_PATH = "hindsight.movie_step"
 _BUSY = [False]   # re-entrancy guard (goto / keying write meshes and the Step value)
@@ -63,31 +63,27 @@ def _apply(context, value) -> bool:
     return True
 
 
+@guard.guarded("movie")
 def on_step_changed(context) -> None:
     """The user changed the Step value (drag / typing): same as a frame change."""
-    try:
-        sh = _props(context.scene)
-        if sh is not None:
-            _apply(context, sh.movie_step)
-    except Exception as e:
-        print("Hindsight movie error:", e)
+    sh = _props(context.scene)
+    if sh is not None:
+        _apply(context, sh.movie_step)
 
 
 @persistent
+@guard.guarded("movie")
 def on_frame_change(scene, depsgraph=None) -> None:
-    try:
-        sh = _props(scene)
-        if not _active(sh):
-            return  # off (or no global history): playback paused, keyframes stay
-        value = sh.movie_step
-        if depsgraph is not None:
-            try:
-                value = scene.evaluated_get(depsgraph).hindsight.movie_step
-            except Exception:
-                pass
-        _apply(_no_operator_context(bpy.context), value)
-    except Exception as e:
-        print("Hindsight movie error:", e)
+    sh = _props(scene)
+    if not _active(sh):
+        return  # off (or no global history): playback paused, keyframes stay
+    value = sh.movie_step
+    if depsgraph is not None:
+        try:
+            value = scene.evaluated_get(depsgraph).hindsight.movie_step
+        except Exception:
+            pass
+    _apply(_no_operator_context(bpy.context), value)
 
 
 def _step_fcurve(scene):

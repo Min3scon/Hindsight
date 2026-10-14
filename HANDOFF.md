@@ -13,7 +13,9 @@ Pages source).
 - [x] Step 1: real Blender 5.0.1, 5.1.1 (Steam), 5.1.2 driven with a window through `tests_ui/hs_ui.py`.
 - [x] Step 2: root cause found and written to DECISIONS.md (handlers not persistent, slider hidden
   until first step and under the asset shelf, sidebar closed by default).
-- [ ] Step 3: new in-Blender UI
+- [x] Step 3: new in-Blender UI (sidebar tab with a real slider, header popover, F3 menu,
+  self-check, diagnostics, guards). Real-UI suite: `python tests_ui/run_all.py`
+  (6 scenarios x 3 Blenders, all pass).
 - [ ] Step 4: hardening and test rounds A-G (log in TEST_ROUNDS.md)
 - [ ] Step 5: website rebuilt from scratch
 - [ ] Step 6: ship 1.0.0-beta.2 and verify live

@@ -5,6 +5,7 @@ import time
 
 import bpy
 import numpy as np
+from bpy.app.handlers import persistent
 
 from ..core import globaltl
 from ..core.history import MeshState
@@ -12,7 +13,7 @@ from ..core.registry import Registry, new_uid
 from ..core.types import (
     SETTINGS, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width,
 )
-from . import meshio
+from . import guard, log, meshio
 
 UID_PROP = "_hindsight_uid"
 RECORD_MODES = ("SCULPT", "VERTEX_PAINT")
@@ -66,7 +67,7 @@ def _journal(rtype, header, payload_fn=None):
         try:
             journal_hook(rtype, header, payload_fn)
         except Exception as e:  # never break recording because of IO
-            print("Hindsight journal error:", e)
+            log.error_once(("journal", str(e)), f"crash-recovery journal error: {e}", e)
 
 
 def obj_uid(obj, create: bool = False):
@@ -123,6 +124,21 @@ def history_of(obj):
 def is_recording(obj) -> bool:
     uid = obj_uid(obj)
     if uid is None or uid in _REG.disabled:
+        return False
+    h = _REG.history_for(uid)
+    return h is None or h.enabled
+
+
+def can_record(obj) -> bool:
+    """True if the next stroke on obj would be recorded. Safe to call while drawing."""
+    if obj is None or getattr(obj, "type", None) != "MESH" or not guard.ok("recorder"):
+        return False
+    if is_excluded(obj):
+        return False
+    uid = obj_uid(obj)
+    if uid is None:
+        return True
+    if uid in _REG.disabled:
         return False
     h = _REG.history_for(uid)
     return h is None or h.enabled
@@ -422,7 +438,7 @@ def _ask_truncate(n: int) -> None:
         with bpy.context.temp_override(window=win, area=area, region=region):
             bpy.ops.hindsight.confirm_truncate("INVOKE_DEFAULT", count=n)
     except Exception as e:
-        print("Hindsight: could not show truncation dialog:", e)
+        log.error_once(("truncate_dialog", str(e)), f"could not show the new-branch dialog: {e}", e)
 
 
 def confirm_truncate(obj) -> int:
@@ -464,7 +480,7 @@ def _enforce(h=None) -> None:
         store.enforce_caps(hs, SETTINGS)
         store.enforce_tiers(hs, SETTINGS, packer)
     except Exception as e:
-        print("Hindsight: store error:", e)
+        log.error_once(("store", str(e)), f"history store error: {e}", e)
 
 
 # ----------------------------------------------------------------------------- mode tracking
@@ -510,9 +526,12 @@ def check_mode_transition() -> None:
         _TRACK["uid"] = obj_uid(obj)
 
 
-def on_depsgraph(scene, depsgraph) -> None:
-    if _SUSPEND[0]:
+@persistent
+@guard.guarded("recorder")
+def on_depsgraph(scene, depsgraph=None) -> None:
+    if _SUSPEND[0] or depsgraph is None:
         return
+    guard.mark_ok("recorder")
     obj = _active()
     if obj is None or obj.type != "MESH":
         check_mode_transition()
@@ -530,22 +549,31 @@ def on_depsgraph(scene, depsgraph) -> None:
     check_mode_transition()
 
 
+@guard.guarded("recorder")
+def _tick_once() -> None:
+    check_mode_transition()
+    now = time.time()
+    for uid, t in list(_DIRTY.items()):
+        if now - t >= DEBOUNCE:
+            ob = find_object(uid)
+            if ob is None or ob.mode not in RECORD_MODES:
+                _DIRTY.pop(uid, None)
+                continue
+            commit(ob)
+
+
 def tick() -> float:
+    """Commits a stroke once its geometry updates stop (debounced). Never raises."""
     try:
-        check_mode_transition()
-        now = time.time()
-        for uid, t in list(_DIRTY.items()):
-            if now - t >= DEBOUNCE:
-                ob = find_object(uid)
-                if ob is None or ob.mode not in RECORD_MODES:
-                    _DIRTY.pop(uid, None)
-                    continue
-                commit(ob)
+        _tick_once()
+        ensure_handlers()
     except Exception as e:
-        print("Hindsight tick error:", e)
+        log.error_once(("tick", str(e)), f"timer error: {e}", e)
     return 0.1
 
 
+@persistent
+@guard.guarded("undo_sync")
 def on_undo(*_a) -> None:
     """After native undo/redo: compare the mesh with our state (commit() detects the match)."""
     _UID_CACHE.clear()
@@ -553,6 +581,33 @@ def on_undo(*_a) -> None:
     if obj is not None and obj.type == "MESH" and obj.mode in RECORD_MODES:
         if obj_uid(obj) in _STATES:
             commit(obj)
+
+
+_HANDLERS = (("depsgraph_update_post", on_depsgraph), ("undo_post", on_undo), ("redo_post", on_undo))
+
+
+def ensure_handlers() -> list:
+    """Re-install any recorder handler that went missing (another add-on or script removed it).
+    Returns the names that had to be re-added."""
+    added = []
+    for name, fn in _HANDLERS:
+        hl = getattr(bpy.app.handlers, name)
+        if fn not in hl:
+            hl.append(fn)
+            added.append(name)
+    return added
+
+
+def handlers_installed() -> dict:
+    return {name: fn in getattr(bpy.app.handlers, name) for name, fn in _HANDLERS}
+
+
+@persistent
+def on_load_post(*_a) -> None:
+    added = ensure_handlers()
+    if added:
+        log.warn("recorder handlers were missing after loading a file and were re-installed: "
+                 + ", ".join(added))
 
 
 # ----------------------------------------------------------------------------- playback
@@ -647,7 +702,7 @@ def _switch_to(context, ob, mode: str) -> None:
             if mode in ("SCULPT", "VERTEX_PAINT", "EDIT") and ob.mode != mode:
                 bpy.ops.object.mode_set(mode=mode)
         except Exception as e:
-            print("Hindsight: preserve modes switch failed:", e)
+            log.error_once(("preserve", str(e)), f"Preserve Modes could not switch objects: {e}", e)
     _TRACK.update(name=ob.name, uid=obj_uid(ob), mode=ob.mode)
     if ob.mode in TRACK_MODES:
         ensure_state(ob)
@@ -818,27 +873,25 @@ def warnings_for(context, obj) -> list:
 
 # ----------------------------------------------------------------------------- register
 def register() -> None:
-    if on_depsgraph not in bpy.app.handlers.depsgraph_update_post:
-        bpy.app.handlers.depsgraph_update_post.append(on_depsgraph)
-    for hl in (bpy.app.handlers.undo_post, bpy.app.handlers.redo_post):
-        if on_undo not in hl:
-            hl.append(on_undo)
+    ensure_handlers()
+    if on_load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(on_load_post)
     if not bpy.app.timers.is_registered(tick):
         bpy.app.timers.register(tick, first_interval=0.5, persistent=True)
     global packer
     try:
         from ..core.store import Packer
         packer = Packer()
-    except Exception:
+    except Exception as e:
+        log.warn(f"background packing unavailable, packing inline: {e}")
         packer = None
 
 
 def unregister() -> None:
-    for hl in (bpy.app.handlers.depsgraph_update_post, bpy.app.handlers.undo_post,
-               bpy.app.handlers.redo_post):
-        for fn in (on_depsgraph, on_undo):
-            while fn in hl:
-                hl.remove(fn)
+    for name, fn in _HANDLERS + (("load_post", on_load_post),):
+        hl = getattr(bpy.app.handlers, name)
+        while fn in hl:
+            hl.remove(fn)
     if bpy.app.timers.is_registered(tick):
         bpy.app.timers.unregister(tick)
     global packer

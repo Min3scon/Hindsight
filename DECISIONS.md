@@ -56,6 +56,31 @@ Checklist items that were checked and are NOT the cause:
 - A sidebar tab that works without any custom drawing, a header popover, F3 entries, a first-enable
   status message, self-check and copy diagnostics.
 
+### Step 3 UI decisions
+- Sidebar slider: `WindowManager.hindsight_step`, an IntProperty with get/set bound to the active object's
+  cursor (or the global position). Blender has no per-object range, so the property is redefined with a
+  new max from a 0.2 s timer whenever the history length changes (never from a draw callback). It needs
+  no custom drawing and keeps working if the on-screen slider is switched off.
+- Sidebar back/forward buttons and the F3 menu entries never fall through to Blender's own undo
+  (`native_fallback=False`); Ctrl+Z in Sculpt/Vertex Paint keeps the fallback.
+- Header button: appended to `VIEW3D_MT_editor_menus` (right after View, Sculpt, Mask...). Appending to
+  `VIEW3D_HT_header` put it at the far right, where it was cut off at a 1080 px wide window.
+- F3: Blender's F3 is a menu search, so a "Hindsight" submenu is added to the Object, Sculpt, Paint and
+  Mesh menus. Search "hindsight" lists Step Back, Step Forward, Open History Menu, Run Self-check,
+  Copy Diagnostics. Operator labels are "Hindsight: Step Back" etc. for the keymap editor.
+- First-run message: `WorkSpace.status_text_set` for 12 s (operator reports raised from a timer only
+  reach the console, not the status bar). Shown once; a hidden preference remembers it.
+- Registration never raises any more: a failing module is logged with its traceback, listed in a
+  one-time popup and in the sidebar, and the rest loads. Raising from register() made Blender disable
+  the whole add-on, which is the worst case for "no UI".
+- Guards (`bl/guard.py`): each handler, draw callback, timer and modal runs in a guard. First failure:
+  traceback logged once, that feature switched off, sidebar says so. Run Self-check switches failed
+  features back on. Save/load errors are reported but never switch saving off.
+- History Menu and button wording rewritten in plain words of my own (beta 1 reused the reference
+  product's menu labels word for word).
+- Entering Vertex Paint on a mesh without colour attributes makes Blender add one; Hindsight records
+  that as a step. Kept: it is a real change to the mesh and scrubbing back removes the layer again.
+
 ## Earlier jobs (cloud session, headless bpy only)
 
 ### Timing
