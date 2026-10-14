@@ -45,6 +45,7 @@ KINDS = {
     "names": "Names",
     "collections": "Collections",
     "constraints": "Constraints",
+    "edit_steps": "Edit Mode step by step",
 }
 
 

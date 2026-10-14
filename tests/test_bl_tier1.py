@@ -210,8 +210,99 @@ def test_random_mix():
     check_all_positions(b, states, seed=11)
 
 
+def mesh_now(ob):
+    """Every mesh channel, read through a copy in Edit Mode (the mesh attributes there are the
+    edit-mode layers, without positions)."""
+    snap = runtime.read_mesh_snapshot(ob)
+    return {k: v.copy() for k, v in snap.arrays.items()}
+
+
+def test_edit_mode_steps():
+    """Record everything: each Edit Mode operation is its own step, exact at every position, in and
+    out of Edit Mode; selection alone records nothing."""
+    a, b, c = setup()
+    H.enter(b, "EDIT")
+    meshes = [mesh_now(b)]
+
+    def op(label, fn):
+        fn()
+        st = runtime.commit_edit(b, label)
+        assert st is not None and st.mode == "EDIT", label
+        meshes.append(mesh_now(b))
+
+    bpy.ops.mesh.select_all(action="SELECT")
+    assert runtime.commit_edit(b, "Select All") is None, "selection alone is not a step"
+    op("Subdivide", lambda: bpy.ops.mesh.subdivide(number_cuts=1))
+    op("Move", lambda: bpy.ops.transform.translate(value=(0.0, 0.0, 0.25)))
+    bpy.ops.mesh.select_all(action="DESELECT")
+    bpy.ops.mesh.select_random(ratio=0.2, seed=4)
+    op("Extrude", lambda: bpy.ops.mesh.extrude_region_move(TRANSFORM_OT_translate={"value": (0.1, 0.0, 0.0)}))
+    op("Delete", lambda: bpy.ops.mesh.delete(type="VERT"))
+    bpy.ops.mesh.select_all(action="SELECT")
+    op("Smooth Vertices", lambda: bpy.ops.mesh.vertices_smooth(factor=0.5))
+    h = runtime.history_of(b)
+    assert len(h.entries) == 5, [e.meta.get("label") for e in h.entries]
+    for pos in (0, 5, 2, 4, 1, 3, 0, 5):
+        runtime.goto(C, pos)
+        assert b.mode == "EDIT"
+        H.assert_same(mesh_now(b), meshes[pos], f"edit mode position {pos}")
+        assert runtime.commit_edit(b, "Nothing") is None, "a jump records nothing"
+    runtime.goto(C, 3)
+    H.enter(b, "OBJECT")
+    assert len(h.entries) == 5, "leaving Edit Mode adds no step"
+    H.assert_same(mesh_now(b), meshes[3], "object mode after leaving")
+    for pos in (5, 0, 4):
+        runtime.goto(C, pos)
+        H.assert_same(mesh_now(b), meshes[pos], f"object mode position {pos}")
+
+
+def test_edit_mode_default_unchanged():
+    """Without Record everything, Edit Mode stays one step per visit (the beta 1 behaviour)."""
+    a, b, c = setup()
+    datarec.set_tracked(b, False)
+    H.enter(b, "SCULPT")
+    H.fake_stroke(b, 1)
+    assert H.commit(b) is not None
+    h = runtime.history_of(b)
+    H.enter(b, "EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.subdivide(number_cuts=1)
+    datarec._edit_step("Subdivide")                 # what the timer does when an operator finishes
+    bpy.ops.transform.translate(value=(0.0, 0.0, 0.25))
+    datarec._edit_step("Move")
+    assert len(h.entries) == 1, "no step while in Edit Mode"
+    H.enter(b, "OBJECT")
+    assert len(h.entries) == 2 and h.entries[-1].meta.get("label") == "Edit Mode", \
+        [e.meta.get("label") for e in h.entries]
+
+
+EDIT_STEP_BUDGET_MS = {100_000: 120.0}
+
+
+def test_edit_step_cost():
+    """Time of one Edit Mode step (write the edit mesh back, read a copy, diff) on a 100k mesh."""
+    import time
+    a, b, c = setup()
+    big = H.make_mesh(100_000, name="Big")
+    C.view_layer.objects.active = big
+    datarec.set_tracked(big, True)
+    H.enter(big, "EDIT")
+    times = []
+    for i in range(5):
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bpy.ops.mesh.select_random(ratio=0.01, seed=i)
+        bpy.ops.transform.translate(value=(0.0, 0.0, 0.01))
+        t = time.perf_counter()
+        assert runtime.commit_edit(big, "Move") is not None
+        times.append((time.perf_counter() - t) * 1000)
+    med = sorted(times)[len(times) // 2]
+    n = len(big.data.vertices)
+    print(f"  edit step on {n:,} vertices: {med:.1f} ms median")
+    assert med < EDIT_STEP_BUDGET_MS[100_000], med
+
+
 for t in (test_parenting, test_constraints, test_collections_visibility_names, test_kinds_switch_off_and_on,
-          test_random_mix):
+          test_random_mix, test_edit_mode_steps, test_edit_mode_default_unchanged, test_edit_step_cost):
     H.run(t)
 datarec.FORCE_SCOPE[0] = None
 datarec.FORCE_KINDS[0] = None

@@ -187,7 +187,18 @@ def tick() -> None:
     settled = time.time() - max(_DIRTY.values()) >= SETTLE
     if finished or settled:
         _OPS["marker"] = marker
-        commit(label=_last_label() if finished else "Change")
+        label = _last_label() if finished else "Change"
+        commit(label=label)
+        if finished:
+            _edit_step(label)
+
+
+def _edit_step(label: str) -> None:
+    """Edit Mode step by step: the operation that just finished on a tracked object in Edit Mode."""
+    rt = _rt()
+    obj = rt._active()
+    if obj is not None and getattr(obj, "mode", "") == "EDIT" and rt.edit_steps_on(obj):
+        rt.commit_edit(obj, label)
 
 
 def _diff(old: dict, new: dict) -> dict:
