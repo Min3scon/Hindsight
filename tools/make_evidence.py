@@ -35,7 +35,7 @@ NA_FILE = EVID / "not_applicable.json"
 OUT_MD = ROOT / "TEST_EVIDENCE.md"
 PRIVATE_SCENARIOS = {"round_e"}       # the owner's own files: results only, never logs or pictures
 LOG_CAP = 120_000
-SHOT_WIDTH = 1280
+SHOT_WIDTH = 960
 
 
 # ----------------------------------------------------------------------------- sanitising
@@ -176,7 +176,7 @@ def _copy_shots(run, shots) -> list:
             if im.width > SHOT_WIDTH:
                 im = im.resize((SHOT_WIDTH, round(im.height * SHOT_WIDTH / im.width)), Image.LANCZOS)
             dst = d / (s.stem + ".jpg")
-            im.save(dst, "JPEG", quality=82, optimize=True)
+            im.save(dst, "JPEG", quality=75, optimize=True)
             out.append(dst.relative_to(ROOT).as_posix())
         except Exception:
             continue
@@ -194,8 +194,8 @@ def merge(store: dict, runs: list) -> int:
             continue
         rec = {k2: v for k2, v in run.items() if not k2.startswith("_")}
         rec["log"] = _copy_log(run, run["_log"]) if run["_log"] and Path(run["_log"]).is_file() else None
-        visual = any(i == "VISUAL" for t in run["tests"] for _r, i in t["covers"])
-        rec["shots"] = _copy_shots(run, run["_shots"]) if visual else []
+        pictures = run["source"] == "ui" and "[" not in run["unit"]   # screenshots of default runs
+        rec["shots"] = _copy_shots(run, run["_shots"]) if pictures else []
         store["runs"][k] = rec
         n += 1
     return n
@@ -221,7 +221,7 @@ def evaluate(store: dict, rows: list, na: dict):
                     continue
                 cell = table[row][item][rec["blender"]]
                 ref = {"source": rec["source"], "unit": rec["unit"], "name": t["name"], "date": rec["date"],
-                       "log": rec.get("log"), "shots": rec.get("shots") or []}
+                       "log": rec.get("log"), "shots": rec.get("shots") or [], "blender": rec["blender"]}
                 cell["pass" if t["ok"] else "fail"].append(ref)
     for row, items in na.items():
         if row not in ids:
@@ -246,6 +246,16 @@ def gate_status(table, row_id, na):
 def _test_label(ref) -> str:
     unit = ref["unit"].replace("tests/", "")
     return f"{unit} › {ref['name']}"
+
+
+def _reviewed_shots(store, ref) -> list:
+    """The screenshots a visual review looked at: those of its scenario's run on the same Blender."""
+    unit = ref["unit"]
+    if not unit.startswith("visual:"):
+        return []
+    scen = unit[len("visual:"):].split("[")[0]
+    rec = store["runs"].get(f"ui|{scen}|{ref.get('blender')}")
+    return (rec or {}).get("shots") or []
 
 
 def write_md(store, rows, table, na, problems) -> str:
@@ -295,8 +305,9 @@ def write_md(store, rows, table, na, problems) -> str:
             links = []
             for label, ref in sorted(refs.items())[:6]:
                 link = f"[log]({ref['log']})" if ref.get("log") else ""
-                if it == "VISUAL" and ref.get("shots"):
-                    link += " " + " ".join(f"[shot]({s})" for s in ref["shots"][:3])
+                if it == "VISUAL":
+                    shots = ref.get("shots") or _reviewed_shots(store, ref)
+                    link += " " + " ".join(f"[shot]({s})" for s in shots[:4])
                 links.append(f"{label} {link}".strip())
             more = f" and {len(refs) - 6} more" if len(refs) > 6 else ""
             lines.append(f"| {it} | " + " | ".join(cells) + " | " + ("; ".join(links) + more or "none") + " |")

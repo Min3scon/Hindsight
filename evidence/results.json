@@ -1,8 +1,308 @@
 {
  "runs": {
+  "headless|tests/test_bl_metadata.py|5.0.1": {
+   "blender": "5.0.1",
+   "date": "2026-10-15T01:07:47",
+   "log": "evidence/output/headless/5.0.1/tests_test_bl_metadata.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_session_writes_only_what_is_listed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_saving_an_unrecorded_file_adds_nothing",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_opening_a_file_changes_nothing",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_opens_without_hindsight",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_remove_hindsight_data",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_metadata.py"
+  },
+  "headless|tests/test_bl_metadata.py|5.1.1": {
+   "blender": "5.1.1",
+   "date": "2026-10-15T01:11:22",
+   "log": "evidence/output/headless/5.1.1/tests_test_bl_metadata.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_session_writes_only_what_is_listed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_saving_an_unrecorded_file_adds_nothing",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_opening_a_file_changes_nothing",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_opens_without_hindsight",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_remove_hindsight_data",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_metadata.py"
+  },
+  "headless|tests/test_bl_metadata.py|5.1.2": {
+   "blender": "5.1.2",
+   "date": "2026-10-15T01:14:56",
+   "log": "evidence/output/headless/5.1.2/tests_test_bl_metadata.py.log",
+   "shots": [],
+   "source": "headless",
+   "tests": [
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_session_writes_only_what_is_listed",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_saving_an_unrecorded_file_adds_nothing",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_opening_a_file_changes_nothing",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_opens_without_hindsight",
+     "ok": true
+    },
+    {
+     "covers": [
+      [
+       "sculpt.positions",
+       "WARN"
+      ],
+      [
+       "obj.transforms",
+       "WARN"
+      ],
+      [
+       "obj.addremove",
+       "WARN"
+      ]
+     ],
+     "name": "test_remove_hindsight_data",
+     "ok": true
+    }
+   ],
+   "unit": "tests/test_bl_metadata.py"
+  },
   "headless|tests/test_bl_t1_corrupt.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-15T00:45:56",
+   "date": "2026-10-15T01:08:42",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_corrupt.py.log",
    "shots": [],
    "source": "headless",
@@ -72,7 +372,7 @@
   },
   "headless|tests/test_bl_t1_corrupt.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-15T00:49:26",
+   "date": "2026-10-15T01:12:18",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_corrupt.py.log",
    "shots": [],
    "source": "headless",
@@ -142,7 +442,7 @@
   },
   "headless|tests/test_bl_t1_corrupt.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-15T00:53:16",
+   "date": "2026-10-15T01:15:49",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_corrupt.py.log",
    "shots": [],
    "source": "headless",
@@ -212,7 +512,7 @@
   },
   "headless|tests/test_bl_t1_faults.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-15T00:45:58",
+   "date": "2026-10-15T01:08:44",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_faults.py.log",
    "shots": [],
    "source": "headless",
@@ -290,7 +590,7 @@
   },
   "headless|tests/test_bl_t1_faults.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-15T00:49:28",
+   "date": "2026-10-15T01:12:20",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_faults.py.log",
    "shots": [],
    "source": "headless",
@@ -368,7 +668,7 @@
   },
   "headless|tests/test_bl_t1_faults.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-15T00:53:18",
+   "date": "2026-10-15T01:15:51",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_faults.py.log",
    "shots": [],
    "source": "headless",
@@ -446,7 +746,7 @@
   },
   "headless|tests/test_bl_t1_gate.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-15T00:46:02",
+   "date": "2026-10-15T01:08:48",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_gate.py.log",
    "shots": [],
    "source": "headless",
@@ -588,7 +888,7 @@
   },
   "headless|tests/test_bl_t1_gate.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-15T00:49:33",
+   "date": "2026-10-15T01:12:24",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_gate.py.log",
    "shots": [],
    "source": "headless",
@@ -730,7 +1030,7 @@
   },
   "headless|tests/test_bl_t1_gate.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-15T00:53:23",
+   "date": "2026-10-15T01:15:55",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_gate.py.log",
    "shots": [],
    "source": "headless",
@@ -872,7 +1172,7 @@
   },
   "headless|tests/test_bl_t1_migrate.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-15T00:46:14",
+   "date": "2026-10-15T01:09:01",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_migrate.py.log",
    "shots": [],
    "source": "headless",
@@ -942,7 +1242,7 @@
   },
   "headless|tests/test_bl_t1_migrate.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-15T00:49:46",
+   "date": "2026-10-15T01:12:38",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_migrate.py.log",
    "shots": [],
    "source": "headless",
@@ -1012,7 +1312,7 @@
   },
   "headless|tests/test_bl_t1_migrate.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-15T00:53:36",
+   "date": "2026-10-15T01:16:08",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_migrate.py.log",
    "shots": [],
    "source": "headless",
@@ -1202,7 +1502,7 @@
   },
   "headless|tests/test_bl_t1_reload.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-15T00:46:37",
+   "date": "2026-10-15T01:09:26",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_reload.py.log",
    "shots": [],
    "source": "headless",
@@ -1422,7 +1722,7 @@
   },
   "headless|tests/test_bl_t1_reload.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-15T00:50:09",
+   "date": "2026-10-15T01:13:03",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_reload.py.log",
    "shots": [],
    "source": "headless",
@@ -1642,7 +1942,7 @@
   },
   "headless|tests/test_bl_t1_reload.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-15T00:54:01",
+   "date": "2026-10-15T01:16:32",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_reload.py.log",
    "shots": [],
    "source": "headless",
@@ -1862,7 +2162,7 @@
   },
   "headless|tests/test_bl_t1_warn.py|5.0.1": {
    "blender": "5.0.1",
-   "date": "2026-10-15T00:47:50",
+   "date": "2026-10-15T01:10:40",
    "log": "evidence/output/headless/5.0.1/tests_test_bl_t1_warn.py.log",
    "shots": [],
    "source": "headless",
@@ -1970,7 +2270,7 @@
   },
   "headless|tests/test_bl_t1_warn.py|5.1.1": {
    "blender": "5.1.1",
-   "date": "2026-10-15T00:51:37",
+   "date": "2026-10-15T01:14:17",
    "log": "evidence/output/headless/5.1.1/tests_test_bl_t1_warn.py.log",
    "shots": [],
    "source": "headless",
@@ -2078,7 +2378,7 @@
   },
   "headless|tests/test_bl_t1_warn.py|5.1.2": {
    "blender": "5.1.2",
-   "date": "2026-10-15T00:55:22",
+   "date": "2026-10-15T01:17:42",
    "log": "evidence/output/headless/5.1.2/tests_test_bl_t1_warn.py.log",
    "shots": [],
    "source": "headless",

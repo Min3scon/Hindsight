@@ -7,7 +7,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording transforms, parenting, visibility and names is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:rna
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 Hindsight: Recording transforms, parenting, visibility and names failed in diff: RuntimeError: injected fault
 Traceback (most recent call last):
   File "<repo>\hindsight\bl\datarec.py", line 331, in _diff
@@ -18,7 +18,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording transforms, parenting, visibility and names is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:rna
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 Hindsight: Recording transforms, parenting, visibility and names failed in apply: RuntimeError: injected fault
 Traceback (most recent call last):
   File "<repo>\hindsight\bl\datarec.py", line 485, in write
@@ -31,7 +31,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording transforms, parenting, visibility and names is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:rna
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 PASS test_rna_adapter_faults
 Hindsight: Recording collections, hiding and constraints failed in capture: RuntimeError: injected fault
 Traceback (most recent call last):
@@ -42,7 +42,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording collections, hiding and constraints is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:object
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 Hindsight: Recording collections, hiding and constraints failed in diff: RuntimeError: injected fault
 Traceback (most recent call last):
   File "<repo>\hindsight\bl\datarec.py", line 331, in _diff
@@ -53,7 +53,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording collections, hiding and constraints is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:object
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 Hindsight: Recording collections, hiding and constraints failed in apply: RuntimeError: injected fault
 Traceback (most recent call last):
   File "<repo>\hindsight\bl\datarec.py", line 485, in write
@@ -66,7 +66,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording collections, hiding and constraints is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:object
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 PASS test_object_adapter_faults
 Hindsight: Recording adding and deleting objects failed in capture: RuntimeError: injected fault
 Traceback (most recent call last):
@@ -77,7 +77,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording adding and deleting objects is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:scene
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 Hindsight: Recording adding and deleting objects failed in diff: RuntimeError: injected fault
 Traceback (most recent call last):
   File "<repo>\hindsight\bl\datarec.py", line 331, in _diff
@@ -88,7 +88,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording adding and deleting objects is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:scene
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 Hindsight: Recording adding and deleting objects failed in apply: RuntimeError: injected fault
 Traceback (most recent call last):
   File "<repo>\hindsight\bl\datarec.py", line 485, in write
@@ -101,7 +101,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording adding and deleting objects is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:scene
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 PASS test_scene_adapter_faults
 Hindsight: Recording Edit Mode step by step failed in capture: RuntimeError: injected fault
 Traceback (most recent call last):
@@ -113,7 +113,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording Edit Mode step by step is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:edit_steps
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 PASS test_edit_steps_fault
 Hindsight: Recording mesh changes in Object Mode (Apply, Shade Smooth, Set Origin) failed in capture: RuntimeError: injected fault
 Traceback (most recent call last):
@@ -124,7 +124,7 @@ Traceback (most recent call last):
 RuntimeError: injected fault
 Hindsight: Recording mesh changes in Object Mode (Apply, Shade Smooth, Set Origin) is switched off for this session. Run Self-check in the Undo History tab to retry.
 Hindsight: Self-check switched these back on: adapter:object_mesh
-Hindsight: Self-check: all 7 checks passed (00:49)
+Hindsight: Self-check: all 7 checks passed (01:12)
 PASS test_object_mode_mesh_check_fault
 PASS test_animated_constraint_settings_are_not_steps
 Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)

@@ -464,23 +464,20 @@ class VIEW3D_PT_hindsight_advanced(_SubPanel, bpy.types.Panel):
     bl_options = {'DEFAULT_CLOSED'}
     bl_order = 8
 
-    @classmethod
-    def poll(cls, context):
-        try:
-            from . import datarec
-            return datarec.scope_everything()
-        except Exception:
-            return False
-
     def draw(self, context):
         layout = self.layout
+        try:
+            from . import datarec
+            everything = datarec.scope_everything()
+        except Exception:
+            everything = False
         prefs = get_prefs(context)
-        if prefs is None or not hasattr(prefs, "record_kinds"):
-            layout.label(text="Preferences unavailable", icon='INFO')
-            return
-        wrap(layout, context, "What Record everything records on an object:")
-        col = layout.column(align=True)
-        col.prop(prefs, "record_kinds")
+        if everything and prefs is not None and hasattr(prefs, "record_kinds"):
+            wrap(layout, context, "What Record everything records on an object:")
+            col = layout.column(align=True)
+            col.prop(prefs, "record_kinds")
+            layout.separator()
+        _operator(layout, "hindsight.remove_data", "Remove Hindsight data from this file", 'TRASH')
 
 
 class VIEW3D_PT_hindsight_help(_SubPanel, bpy.types.Panel):

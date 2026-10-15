@@ -9,6 +9,7 @@ import traceback
 _MODULES = (
     "props", "prefs", "runtime", "ops_core", "filtering", "warnings", "ui_menu", "slider_prop",
     "selfcheck", "ui_panel", "header", "scrubber", "persistence", "movie", "morph", "joinsep", "dupsep",
+    "cleanup",
 )
 _loaded = []
 _errors = []       # [(module name, short error, full traceback)]

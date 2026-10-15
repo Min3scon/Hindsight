@@ -30,7 +30,8 @@ def run(d):
     sys.path.insert(0, d.spec["repo"])
     from tests import oracle as O
     from tests import t1_ops as T
-    from hindsight.core import globaltl
+    import importlib
+    globaltl = importlib.import_module(C.PKG + ".core.globaltl")      # the installed add-on's own
     rt, datarec, idmap = C.mod("runtime"), C.mod("datarec"), C.mod("idmap")
     variant = d.args.get("variant", "default")
     undo_item = {"default": "UNDO", "globaloff": "UNDO.GLOBAL_OFF"}.get(variant, "UNDO.LIMITS")
@@ -98,7 +99,7 @@ def run(d):
 
     states, positions, labels, lens, names_at = [snap()], [gpos()], ["start"], [counts()], [names_now()]
 
-    def step(label, row, histories, wait=0.9):
+    def step(label, row, histories, wait=0.9, items="OPS STEPS"):
         """Generator, after an operation: exactly one step in each of `histories` (object names or
         "scene"), none elsewhere, one global position."""
         yield wait
@@ -108,7 +109,7 @@ def run(d):
         bad = {u: n for u, n in diffs.items() if n != (1 if u in want else 0)}
         ok = not bad and gpos() == positions[-1] + (1 if histories else 0) and glen() == gpos()
         d.check(f"{label}: one step", ok, {"diffs": bad, "pos": gpos(), "len": glen()},
-                covers=f"{row}: OPS STEPS")
+                covers=f"{row}: {items}")
         states.append(snap())
         positions.append(gpos())
         labels.append(label)
@@ -183,7 +184,7 @@ def run(d):
     select("Pivot")
     before = counts()
     ob("Pivot").location.x += 0.75            # a property edit (what the N panel field does): settle path
-    yield from step("N panel location edit (settle)", ROWS["move"], ["Pivot"], wait=1.2)
+    yield from step("N panel location edit (settle)", ROWS["move"], ["Pivot"], wait=1.2, items="STEPS")
 
     select("C")
     before = counts()
@@ -219,19 +220,13 @@ def run(d):
     yield from step("add a constraint", ROWS["con"], ["B"])
     before = counts()
     ob("B").constraints[0].influence = 0.4      # dragging the Influence slider: settle path
-    yield from step("constraint influence (settle)", ROWS["con"], ["B"], wait=1.2)
+    yield from step("constraint influence (settle)", ROWS["con"], ["B"], wait=1.2, items="STEPS")
 
     select("C")
     before = counts()
-    d.key("M", x=cx, y=cy)
-    yield 0.4
-    d.key("END")
-    d.key("RET")                                  # + New Collection
-    yield 0.5
-    C.type_text(d, "Extra")
-    d.key("RET")
-    yield 0.4
-    d.key("RET")
+    with d.override():                            # what M > + New Collection runs
+        bpy.ops.object.move_to_collection(collection_uid=bpy.context.scene.collection.session_uid,
+                                          is_new=True, new_collection_name="Extra")
     yield from step("M, New Collection", ROWS["coll"], ["C", "scene"])
 
     select("B")
@@ -260,10 +255,25 @@ def run(d):
     yield from step("Shift+D", ROWS["scene"], ["scene"])
     select("C")
     before = counts()
+    warn = C.mod("warnings")
+    shown = []
+    real_check = warn.linked_duplicate_check
+
+    def spy(context):
+        ob_ = context.view_layer.objects.active
+        shown.append(bool(ob_ is not None and warn._shares_with_tracked(ob_)))
+        return real_check(context)
+    warn.linked_duplicate_check = spy
     d.key("D", alt=True, x=cx, y=cy)
     yield 0.3
     d.ev("RIGHTMOUSE", "PRESS", x=cx, y=cy)
     d.ev("RIGHTMOUSE", "RELEASE", x=cx, y=cy)
+    yield 0.4
+    d.shot("alt_d_warning")
+    d.check("Alt+D on a recorded mesh: the shared-mesh warning comes up", any(shown), shown,
+            covers="sculpt.joinsep, obj.addremove: WARN")
+    d.key("ESC")
+    warn.linked_duplicate_check = real_check
     yield from step("Alt+D", ROWS["scene"], ["scene"])
     select("B.001")
     before = counts()
@@ -530,7 +540,7 @@ def run(d):
         bpy.ops.wm.context_toggle(data_path="space_data.show_region_ui")
     d.shot("sidebar_end")
     errors = [l for l in d.console_since(mark).splitlines() if "Traceback" in l or "Error" in l and "hindsight" in l.lower()]
-    d.check("no Python errors", not errors, errors[:5], covers="obj.transforms: VISUAL")
+    d.check("no Python errors", not errors, errors[:5])
 
 
 def _own(state, name):

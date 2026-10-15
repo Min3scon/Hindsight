@@ -104,6 +104,9 @@ def _journal(rtype, header, payload_fn=None):
             log.error_once(("journal", str(e)), f"crash-recovery journal error: {e}", e)
 
 
+_FRESH_UIDS: set = set()     # ids given out for recording that may never happen (see drop_unused_uids)
+
+
 def obj_uid(obj, create: bool = False):
     if obj is None or getattr(obj, "type", None) != "MESH":
         return None
@@ -114,7 +117,30 @@ def obj_uid(obj, create: bool = False):
     if u is None and create:
         u = new_uid()
         obj[UID_PROP] = u
+        _FRESH_UIDS.add(u)
     return u
+
+
+def drop_unused_uids() -> int:
+    """D30: entering Sculpt, Vertex Paint or Edit Mode gives an object an id so a first stroke can be
+    recorded. If nothing was ever recorded with it (no history, not switched on, not referred to by
+    recorded data), take it off again, so saving a file without recording adds nothing to it."""
+    if not _FRESH_UIDS:
+        return 0
+    from . import idmap
+    used = set(_REG.everything) | set(_REG.disabled) | set(idmap._owner)
+    for h in _REG.histories.values():
+        used.update(h.members)
+    n = 0
+    for ob in bpy.data.objects:
+        u = ob.get(UID_PROP) if ob.library is None else None
+        if u in _FRESH_UIDS and u not in used:
+            del ob[UID_PROP]
+            _STATES.pop(u, None)
+            n += 1
+    _FRESH_UIDS.intersection_update(used)
+    _UID_CACHE.clear()
+    return n
 
 
 def find_object(uid: str):

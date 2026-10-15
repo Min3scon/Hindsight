@@ -164,9 +164,53 @@ def _codec() -> str:
 
 
 # ----------------------------------------------------------------------------- handlers
+def has_data(reg=None) -> bool:
+    """Something to keep: a step, or an object switched on or paused."""
+    reg = reg or runtime.reg()
+    return (any(h.entries for h in reg.histories.values()) or bool(getattr(reg, "everything", ()))
+            or bool(getattr(reg, "disabled", ())))
+
+
+def _writes_anything(path: str) -> bool:
+    """D29: a file Hindsight never recorded gets nothing from it when saved (no Text, no folder, no
+    journal). A file that already has Hindsight data (its Text) is kept up to date, also when it
+    became empty. A history folder alone doesn't count: after Remove Hindsight data the folder can be
+    kept as a backup without the file using it again."""
+    return has_data() or bpy.data.texts.get(TEXT_NAME) is not None
+
+
+def drop_default_settings() -> int:
+    """Blender stores a scene's Hindsight settings as soon as anything reads them (the sidebar, the
+    recorder). If none of them was changed, take them off again before saving, so a file only keeps
+    settings someone actually set."""
+    n = 0
+    for sc in bpy.data.scenes:
+        if sc.library is not None:
+            continue
+        get = getattr(sc, "bl_system_properties_get", None)
+        stored = get() if get is not None else sc
+        if stored is None or "hindsight" not in stored.keys():
+            continue
+        p = sc.hindsight
+        from .cleanup import _movie_fcurves          # layered actions (Blender 5) and older ones
+        keyed = bool(_movie_fcurves(sc))
+        default = not keyed and all(
+            (len(getattr(p, prop.identifier)) == 0) if prop.type == "COLLECTION"
+            else getattr(p, prop.identifier) == getattr(prop, "default", None)
+            for prop in p.bl_rna.properties if prop.identifier != "rna_type" and prop.type != "POINTER")
+        if default:
+            sc.property_unset("hindsight")
+            n += 1
+    return n
+
+
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
 def on_save_pre(*args) -> None:
+    runtime.drop_unused_uids()
+    drop_default_settings()
+    if not _writes_anything(_handler_path(args)):
+        return
     try:
         mode = _mode()
         _drain_packer()
@@ -190,7 +234,7 @@ def on_save_pre(*args) -> None:
 @guard.guarded("saving")
 def on_save_post(*args) -> None:
     path = _handler_path(args)
-    if not path:
+    if not path or not _writes_anything(path):
         return
     mode = _mode()
     if mode in ("SIDECAR", "BOTH") and _PROTECT["sidecar"] and os.path.isfile(persist.sidecar_file(path)):
@@ -249,7 +293,9 @@ def _load_registry(path: str, text):
         return None
 
     def from_sidecar():
-        if not path:
+        # only when the file says its history is in the folder (every build writes that on save):
+        # a folder kept after Remove Hindsight data isn't loaded again
+        if not path or text is None or not text.get(SIDECAR_PROP):
             return None
         try:
             return persist.load_sidecar(path)
@@ -312,10 +358,15 @@ def on_load_post(*args) -> None:
 
     recover = reg is not None and bool(path) and _recovery() == "INTERRUPTED"
     j = None
-    try:
-        j = _open_journal(path)
-    except Exception as e:
-        guard.fail("loading", e, "could not open the journal")
+    # D29: a file without history gets no journal until something is recorded (opened on the first
+    # step); one with history, or with a journal left by an interrupted session, gets it now
+    if reg is not None or os.path.isfile(journal_path(path)):
+        try:
+            j = _open_journal(path)
+        except Exception as e:
+            guard.fail("loading", e, "could not open the journal")
+    else:
+        _close_journal(remove_untitled=True)
 
     if reg is not None:
         if recover and j is not None:

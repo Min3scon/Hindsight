@@ -1,0 +1,42 @@
+00:00.719  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
+00:00.812  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_object\plain.blend"
+00:00.906  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.906  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_sculpt\plain.blend"
+00:01.015  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.015  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.015  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_vertex_paint\plain.blend"
+00:01.094  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_edit\plain.blend"
+00:01.203  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_object\untouched.blend"
+00:01.281  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.344  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_sculpt\untouched.blend"
+00:01.469  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.469  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.515  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_vertex_paint\untouched.blend"
+00:01.687  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_edit\untouched.blend"
+00:01.797  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.578  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.703  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+Info: Keyed steps 0-3 on frames 1-7
+Info: Saved as "scene.blend"
+PASS test_session_writes_only_what_is_listed
+Info: Saved as "plain.blend"
+Info: Saved as "plain.blend"
+Info: Saved as "plain.blend"
+Info: Saved as "plain.blend"
+PASS test_saving_an_unrecorded_file_adds_nothing
+Info: Saved as "untouched.blend"
+Info: Saved as "untouched.blend"
+Info: Saved as "untouched.blend"
+Info: Saved as "untouched.blend"
+PASS test_opening_a_file_changes_nothing
+Info: Keyed steps 0-3 on frames 1-7
+Info: Saved as "scene.blend"
+PASS test_opens_without_hindsight
+Info: Keyed steps 0-3 on frames 1-7
+Info: Saved as "scene.blend"
+Info: Saved "scene.blend"
+Info: Keyed steps 0-3 on frames 1-7
+Info: Saved as "scene.blend"
+Info: Saved "scene.blend"
+PASS test_remove_hindsight_data
