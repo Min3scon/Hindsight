@@ -368,10 +368,7 @@ class ObjectAdapter(Adapter):
         if kind_on("collections"):
             out["collections"] = sorted(_coll_ref(c) for c in idb.users_collection)
         if kind_on("visibility"):
-            try:
-                out["hide"] = bool(idb.hide_get())
-            except Exception:
-                pass
+            out["hide"] = _hidden(idb)      # D56: per view layer, not only the one the window shows
         if kind_on("constraints"):
             anim = animated_paths(idb)
             out["constraints"] = [{"type": c.type, "name": c.name, "values": struct_values(c, anim=anim)}
@@ -403,10 +400,7 @@ class ObjectAdapter(Adapter):
                     except Exception:
                         pass
         if "hide" in values and values["hide"] is not MISSING:
-            try:
-                idb.hide_set(bool(values["hide"]))
-            except Exception:
-                pass
+            _set_hidden(idb, values["hide"])
         if "constraints" in values and values["constraints"] is not MISSING:
             _write_constraints(idb, values["constraints"])
 
@@ -520,6 +514,27 @@ def _hidden(ob) -> dict:
             except Exception:
                 continue
     return out
+
+
+def _set_hidden(ob, hidden) -> None:
+    """Put back what _hidden read. A single True/False (recorded before D56) is for the view layer the
+    window shows."""
+    if isinstance(hidden, bool):
+        try:
+            ob.hide_set(hidden)
+        except Exception:
+            pass
+        return
+    for key, h in (hidden or {}).items():
+        sc_name, _sep, vl_name = key.partition("/")
+        sc = bpy.data.scenes.get(sc_name)
+        vl = sc.view_layers.get(vl_name) if sc is not None else None
+        if vl is not None:
+            try:
+                if ob.hide_get(view_layer=vl) != bool(h):
+                    ob.hide_set(bool(h), view_layer=vl)
+            except Exception:
+                pass
 
 
 def object_body(ob) -> dict:
@@ -711,15 +726,7 @@ def _recreate_object(scene, uid, body, snap):
                 slot.material = idmap.find(ref) if ref else None
         except Exception:
             pass
-    for key, hidden in (body.get("hidden") or {}).items():
-        sc_name, _sep, vl_name = key.partition("/")
-        sc = bpy.data.scenes.get(sc_name)
-        vl = sc.view_layers.get(vl_name) if sc is not None else None
-        if vl is not None:
-            try:
-                ob.hide_set(hidden, view_layer=vl)
-            except Exception:
-                pass
+    _set_hidden(ob, body.get("hidden"))
     _set_id_props(ob, body.get("custom"))
     return ob
 

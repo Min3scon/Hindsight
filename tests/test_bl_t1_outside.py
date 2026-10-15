@@ -120,6 +120,35 @@ def test_excluded_by_collection_filtering():
     every_position_existed("A", states)
 
 
+@covers("obj.collections", "STEPS", "EXACT")
+def test_hidden_in_another_view_layer():
+    """D56: hidden (H) is per view layer. A hidden in the first view layer, then the window shows a
+    second view layer (A visible there) and A is moved: the move is one step holding only the move
+    (it also recorded A as shown, read in the second layer), and going back over it leaves A hidden
+    in the first layer and shown in the second. Going back over the hiding shows A in both."""
+    setup()
+    vl1 = C.scene.view_layers[0]
+    vl2 = C.scene.view_layers.new("Second")
+    a = bpy.data.objects["A"]
+    with C.temp_override(view_layer=vl1):
+        a.hide_set(True)
+        L.tick_like("hide A")
+    h = runtime.history_of(a)
+    n = len(h.entries)
+    with C.temp_override(view_layer=vl2):
+        a.location.x += 1.0
+        L.tick_like("move A")
+        assert len(h.entries) == n + 1, [e.meta.get("label") for e in h.entries]
+        keys = {(r.adapter, p) for r in h.entries[-1].load().records for p in r.changes}
+        assert keys == {("rna", "location")}, keys
+        runtime._goto_history(h, n, True)
+        assert a.hide_get(view_layer=vl1) and not a.hide_get(view_layer=vl2)
+        runtime._goto_history(h, n - 1, True)
+        assert not a.hide_get(view_layer=vl1) and not a.hide_get(view_layer=vl2)
+        runtime._goto_history(h, n + 1, True)
+        assert a.hide_get(view_layer=vl1) and not a.hide_get(view_layer=vl2)
+
+
 def save_and_change_outside(path, change):
     """Save with Hindsight, then without it change the file and save again, then open it with
     Hindsight."""
@@ -210,6 +239,6 @@ def test_saving_normally_never_raises_the_alarm():
 
 for fn in (test_record_everything_switched_off_and_on, test_paused_and_resumed, test_values_changed_without_hindsight,
            test_mesh_changed_without_hindsight, test_saving_normally_never_raises_the_alarm,
-           test_excluded_by_collection_filtering):
+           test_excluded_by_collection_filtering, test_hidden_in_another_view_layer):
     H.run(fn)
 H.finish()

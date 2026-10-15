@@ -233,6 +233,11 @@ def read_mesh_snapshot",
     ("bl/warnings.py", 'f"the collection {adapters.COLL_NAMES[r]}" if r in adapters.COLL_NAMES',
      'f"the collection {adapters.COLL_NAMES[r]}" if False',
      "a deleted collection named as an object in the sidebar (D55)", ["obj.collections"], None),
+    ("bl/adapters.py", '            out["hide"] = _hidden(idb)', '            out["hide"] = bool(idb.hide_get())',
+     "hidden read for the window's view layer only (D56)", ["obj.collections"], None),
+    ("bl/adapters.py", "                    ob.hide_set(bool(h), view_layer=vl)",
+     "                    ob.hide_set(bool(h))", "hidden put back in the window's view layer (D56)",
+     ["obj.collections", "obj.addremove"], None),
 ]
 
 
