@@ -206,6 +206,10 @@ def read_mesh_snapshot",
     ("bl/idmap.py", "    lib = getattr(idb, \"library\", None)\n    if lib is not None:\n        coll = _collection_of(idb)",
      "    lib = None\n    if lib is not None:\n        coll = _collection_of(idb)",
      "references to linked data recorded as empty (D48)", ["obj.parenting", "obj.constraints"], None),
+    ("bl/adapters.py", "    for w in body.get(\"modifiers\") or ():", "    for w in ():",
+     "a deleted object brought back without its modifiers (D49)", ["obj.addremove"], None),
+    ("bl/adapters.py", "    for key, hidden in (body.get(\"hidden\") or {}).items():", "    for key, hidden in {}.items():",
+     "a deleted object brought back visible though it was hidden (D49)", ["obj.addremove"], None),
 ]
 
 

@@ -112,6 +112,17 @@ def test_parenting_with_deform():
     assert not shows("B", W.TXT_EV_PARENT_DEFORM)
 
 
+@covers("obj.addremove", "WARN")
+def test_physics_and_particles_note():
+    """D49: physics and particle systems don't come back with a deleted object: said on such objects."""
+    setup()
+    a = bpy.data.objects["A"]
+    assert not shows("A", W.TXT_EV_PHYSICS)
+    a.modifiers.new("Cloth", "CLOTH")
+    assert shows("A", W.TXT_EV_PHYSICS)
+    assert not shows("B", W.TXT_EV_PHYSICS)
+
+
 @covers(["obj.addremove", "obj.transforms"], "WARN")
 def test_objects_not_switched_on_and_other_types():
     setup()
@@ -170,7 +181,7 @@ def test_nothing_said_with_sculpting_only():
         assert " ".join(t.split("{")[0].split()) not in " ".join(text.split()), t
 
 
-for fn in (test_animated_values, test_lists_in_constraint_settings, test_parenting_with_deform, test_objects_not_switched_on_and_other_types,
+for fn in (test_animated_values, test_lists_in_constraint_settings, test_parenting_with_deform, test_physics_and_particles_note, test_objects_not_switched_on_and_other_types,
            test_big_mesh_edit_mode, test_new_collections_need_the_scene, test_linked_objects,
            test_nothing_said_with_sculpting_only):
     H.run(fn)

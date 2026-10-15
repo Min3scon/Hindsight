@@ -440,11 +440,51 @@ _BODY_SKIP = frozenset(_UI_PROPS | {"name", "data", "parent", "active_material",
                                     "mode", "select", "active_shape_key_index", "dimensions"})
 
 
+def _id_props(owner) -> dict:
+    """Custom properties as JSON values (groups as dicts, arrays as lists), Hindsight's id left out."""
+    out = {}
+    try:
+        keys = list(owner.keys())
+    except TypeError:
+        return out
+    for k in keys:
+        if k == idmap.UID_PROP:
+            continue
+        v = owner[k]
+        if hasattr(v, "to_dict"):
+            v = v.to_dict()
+        elif hasattr(v, "to_list"):
+            v = v.to_list()
+        if isinstance(v, (int, float, str, list, dict)):
+            out[k] = v
+    return out
+
+
+def _set_id_props(owner, props: dict) -> None:
+    for k, v in (props or {}).items():
+        try:
+            owner[k] = v
+        except Exception:
+            pass
+
+
+def _hidden(ob) -> dict:
+    """Hidden (H) in each view layer of the scenes it is in."""
+    out = {}
+    for sc in bpy.data.scenes:
+        for vl in sc.view_layers:
+            try:
+                out[f"{sc.name}/{vl.name}"] = bool(ob.hide_get(view_layer=vl))
+            except Exception:
+                continue
+    return out
+
+
 def object_body(ob) -> dict:
     """What it takes to bring a deleted object back exactly: its settings as values (transforms with
-    their rotation mode, deltas, visibility, display, ...), its constraints and custom properties.
-    Its mesh comes from the mesh datablock if it still exists, otherwise from the snapshot stored
-    with the step."""
+    their rotation mode, deltas, visibility, display, ...), its constraints and modifiers with their
+    settings, its custom properties, material slots and hidden state (D49). Its mesh comes from the
+    mesh datablock if it still exists, otherwise from the snapshot stored with the step."""
     data = ob.data
     return {
         "name": ob.name, "type": ob.type,
@@ -458,8 +498,11 @@ def object_body(ob) -> dict:
         "hide": [bool(ob.hide_viewport), bool(ob.hide_render), bool(ob.hide_select)],
         "props": struct_values(ob, _BODY_SKIP),
         "constraints": [{"type": c.type, "name": c.name, "values": struct_values(c)} for c in ob.constraints],
-        "custom": {k: (ob[k].to_list() if hasattr(ob[k], "to_list") else ob[k]) for k in ob.keys()
-                   if k != idmap.UID_PROP and isinstance(ob[k], (int, float, str)) or hasattr(ob[k], "to_list")},
+        "modifiers": [{"type": m.type, "name": m.name, "values": struct_values(m), "custom": _id_props(m)}
+                      for m in ob.modifiers],
+        "slots": [[s.link, idmap.ref_of(s.material) if s.material is not None else None] for s in ob.material_slots],
+        "hidden": _hidden(ob),
+        "custom": _id_props(ob),
     }
 
 
@@ -605,11 +648,35 @@ def _recreate_object(scene, uid, body, snap):
     set_struct_values(ob, props)                 # exact location, rotation, scale and the rest
     if body.get("constraints"):
         _write_constraints(ob, body["constraints"])
-    for k, v in (body.get("custom") or {}).items():
+    for w in body.get("modifiers") or ():
         try:
-            ob[k] = v
+            m = ob.modifiers.new(w["name"], w["type"])
+            m.name = w["name"]
+            set_struct_values(m, w.get("values") or {}, ob, f'modifiers["{m.name}"].')
+            _set_id_props(m, w.get("custom"))
+        except Exception as e:
+            log.error_once(("modifier_new", str(e)), f"could not bring back a modifier: {e}", e)
+    for i, (link, ref) in enumerate(body.get("slots") or ()):
+        if i >= len(ob.material_slots):
+            break
+        try:
+            slot = ob.material_slots[i]
+            if slot.link != link:
+                slot.link = link
+            if link == "OBJECT":
+                slot.material = idmap.find(ref) if ref else None
         except Exception:
             pass
+    for key, hidden in (body.get("hidden") or {}).items():
+        sc_name, _sep, vl_name = key.partition("/")
+        sc = bpy.data.scenes.get(sc_name)
+        vl = sc.view_layers.get(vl_name) if sc is not None else None
+        if vl is not None:
+            try:
+                ob.hide_set(hidden, view_layer=vl)
+            except Exception:
+                pass
+    _set_id_props(ob, body.get("custom"))
     return ob
 
 

@@ -311,6 +311,39 @@ def test_references_to_linked_objects():
     assert a.parent is not None and a.parent.library is not None and a.constraints[-1].target is not None
 
 
+@covers("obj.addremove", "EXACT", "ORACLE")
+def test_deleted_objects_come_back_complete():
+    """D49: objects brought back by the global timeline come back with their modifiers (and their
+    settings), custom properties (groups too), object-linked material slots, display settings and
+    hidden state; they used to lose them."""
+    def scene():
+        L.fresh_scene()
+        a = bpy.data.objects["A"]
+        a.modifiers.new("Bevel", "BEVEL").width = 0.123
+        a.modifiers.new("Sub", "SUBSURF").levels = 2
+        a.data.materials.append(bpy.data.materials.new("Red"))
+        a.material_slots[0].link = "OBJECT"
+        a.material_slots[0].material = bpy.data.materials.new("ObjLevel")
+        a["group"] = {"k": 1.5, "s": "x"}
+        a["arr"] = [1.0, 2.0, 3.0]
+        a.color = (0.1, 0.2, 0.3, 1.0)
+        a.display_type = "WIRE"
+        a.vertex_groups.new(name="VG").add([0, 1, 2], 0.5, "REPLACE")
+        p = bpy.data.objects["Pivot"]
+        p.empty_display_size = 2.5
+        p["note"] = "hello"
+        b = bpy.data.objects["B"]
+        b.hide_set(True)
+    def delete_hidden(name):
+        def run():
+            ob = bpy.data.objects[name]
+            with C.temp_override(selected_objects=[ob], selected_editable_objects=[ob], active_object=ob):
+                return bpy.ops.object.delete()       # what the Outliner's Delete does on a hidden object
+        return T.Op(f"delete hidden {name}", run, ["scene"])
+    r = L.Run([T.delete(["A"]), T.delete(["Pivot"]), delete_hidden("B")], setup=scene)
+    L.check_global(r, full=True)
+
+
 def _lengths():
     return {hid: len(h.entries) for hid, h in runtime.reg().histories.items()}
 
@@ -406,6 +439,6 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_dragging_while_a_linked_duplicate_is_in_edit_mode, test_a_linked_duplicate_gets_its_own_mesh,
            test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload,
            test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
-           test_references_to_linked_objects):
+           test_references_to_linked_objects, test_deleted_objects_come_back_complete):
     H.run(fn)
 H.finish()

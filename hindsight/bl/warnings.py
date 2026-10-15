@@ -148,6 +148,8 @@ TXT_EV_SHARED_MESH = ("Shares its mesh with {owner} (a linked duplicate): change
                       "in {owner}'s history")
 TXT_EV_WEIGHTS = ("Some vertex weights outside 0 to 1 (Blender's bevel and inset can leave tiny negative "
                   "ones) came back as 0 to 1: Blender only takes weights from 0 to 1")
+TXT_EV_PHYSICS = ("If this object is deleted and brought back by the global history, its physics and particle "
+                  "systems won't come back")
 TXT_EV_NAME_TAKEN = "At this step it is called {want}, but another object has that name, so it's {got}"
 TXT_EV_MISSING_REF = ("This step refers to {names}, which is deleted now. This object's own history can't "
                       "bring it back; the global history can")
@@ -201,6 +203,10 @@ def everything_notes(context, obj) -> list:
         out.append((INFO, TXT_EV_SHARED_MESH.format(owner=datarec.mesh_owner_name(obj) or "another object")))
     if runtime.obj_uid(obj) in runtime.WEIGHTS_CLAMPED:
         out.append((INFO, TXT_EV_WEIGHTS))
+    if scene_on and (getattr(obj, "rigid_body", None) is not None or any(
+            m.type in ("PARTICLE_SYSTEM", "CLOTH", "SOFT_BODY", "COLLISION", "FLUID", "DYNAMIC_PAINT")
+            for m in getattr(obj, "modifiers", ()))):
+        out.append((INFO, TXT_EV_PHYSICS))
     taken = adapters.name_taken(obj)
     if taken is not None:
         out.append((INFO, TXT_EV_NAME_TAKEN.format(want=taken, got=obj.name)))
