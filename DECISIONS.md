@@ -1,5 +1,14 @@
 # Decisions log
 
+## Status "partial" (owner, 2026-10-15)
+Owner's instruction for the beta 2 site: mark rows "partial" only where part of the release gate really
+passed, with exact limits in COVERAGE.md, never faked. make_evidence used to require every gate item for
+partial, the same as supported, so no row could be partial. It now checks the owner's definition: the core
+items (EXACT, ORACLE, REPLAY, STEPS) count on Blender 5.0.1, 5.1.1 and 5.1.2, and the row's Limits ends with
+"Open gate items: ..." naming exactly the items that don't count yet (computed by make_evidence, checked on
+every commit). "supported" still needs every item. The owner can revert this rule; the site would then claim
+nothing until the full gate passes.
+
 ## Beta 2 job (2026-10-14, on the owner's Windows PC)
 
 ### Environment

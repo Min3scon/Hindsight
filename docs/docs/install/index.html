@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install Hindsight and turn on object recording</title>
+<meta name="description" content="How to install Hindsight in Blender 4.2 or newer, and how to switch on object recording, which is off until you turn it on.">
+<link rel="canonical" href="https://min3scon.github.io/Hindsight/docs/install/">
+
+<meta name="theme-color" content="#0c0c0e">
+<meta name="color-scheme" content="dark">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Hindsight">
+<meta property="og:locale" content="en_GB">
+<meta property="og:title" content="Install Hindsight and turn on object recording">
+<meta property="og:description" content="How to install Hindsight in Blender 4.2 or newer, and how to switch on object recording, which is off until you turn it on.">
+<meta property="og:url" content="https://min3scon.github.io/Hindsight/docs/install/">
+<meta property="og:image" content="https://min3scon.github.io/Hindsight/assets/img/og.png">
+<meta property="og:image:secure_url" content="https://min3scon.github.io/Hindsight/assets/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Hindsight, a Blender add-on: a sculpt with a history slider under it">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Install Hindsight and turn on object recording">
+<meta name="twitter:description" content="How to install Hindsight in Blender 4.2 or newer, and how to switch on object recording, which is off until you turn it on.">
+<meta name="twitter:image" content="https://min3scon.github.io/Hindsight/assets/img/og.png">
+<meta name="twitter:image:alt" content="Hindsight, a Blender add-on: a sculpt with a history slider under it">
+<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../../assets/img/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="../../assets/img/apple-touch-icon.png">
+<link rel="manifest" href="../../site.webmanifest">
+<link rel="preload" href="../../assets/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="../../assets/fonts/fraunces-var.woff2" as="font" type="font/woff2" crossorigin>
+<style>@font-face {
+font-family: "Fraunces";
+src: url("../../assets/fonts/fraunces-var.woff2") format("woff2");
+font-weight: 300 800;
+font-style: normal;
+font-display: swap;
+}
+@font-face {
+font-family: "Inter";
+src: url("../../assets/fonts/inter-var.woff2") format("woff2");
+font-weight: 300 800;
+font-style: normal;
+font-display: swap;
+}
+:root {
+color-scheme: dark;
+--bg: #0c0c0e;
+--bg-raise: #111114;
+--panel: #16161a;
+--panel-2: #1c1c21;
+--line: rgba(255, 255, 255, 0.08);
+--line-2: rgba(255, 255, 255, 0.14);
+--text: #edebe6;
+--text-2: #b4b1a9;
+--text-3: #8b8881;
+--accent: #ff9b42;
+--accent-2: #ffb672;
+--accent-ink: #1c1005;
+--focus: #ffcf9e;
+--radius-s: 6px;
+--radius: 12px;
+--radius-l: 16px;
+--shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 24px 64px -24px rgba(0, 0, 0, 0.7);
+--ease: cubic-bezier(0.2, 0.7, 0.1, 1);
+--display: "Fraunces", "Iowan Old Style", Georgia, serif;
+--sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+--gutter: 24px;
+--max: 1160px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: 88px; }
+body {
+margin: 0;
+background: var(--bg);
+color: var(--text);
+font: 400 17px/1.6 var(--sans);
+font-feature-settings: "cv11", "ss01";
+-webkit-font-smoothing: antialiased;
+-moz-osx-font-smoothing: grayscale;
+text-rendering: optimizeLegibility;
+}
+img, video, canvas, svg { display: block; max-width: 100%; }
+a { color: inherit; text-decoration-color: rgba(255, 155, 66, 0.5); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--accent); }
+p { margin: 0 0 16px; }
+h1, h2, h3 { margin: 0; font-weight: 600; }
+kbd {
+font: 500 0.82em/1 var(--sans);
+padding: 3px 6px 2px;
+border: 1px solid var(--line-2);
+border-bottom-width: 2px;
+border-radius: 5px;
+background: var(--panel);
+color: var(--text);
+white-space: nowrap;
+}
+code { font: 500 0.9em/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--text); }
+::selection { background: rgba(255, 155, 66, 0.35); }
+:focus-visible {
+outline: 2px solid var(--focus);
+outline-offset: 3px;
+border-radius: 4px;
+}
+.visually-hidden {
+position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.skip {
+position: absolute; left: 16px; top: -48px; z-index: 50;
+padding: 8px 16px; border-radius: var(--radius-s);
+background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none;
+transition: top 0.2s var(--ease);
+}
+.skip:focus { top: 16px; }
+.wrap { width: 100%; max-width: calc(var(--max) + 2 * var(--gutter)); margin: 0 auto; padding: 0 var(--gutter); }
+.nav {
+position: sticky; top: 0; z-index: 40;
+background: rgba(12, 12, 14, 0.78);
+backdrop-filter: saturate(140%) blur(14px);
+-webkit-backdrop-filter: saturate(140%) blur(14px);
+border-bottom: 1px solid transparent;
+transition: border-color 0.3s var(--ease);
+}
+.nav.scrolled { border-bottom-color: var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 600; letter-spacing: -0.01em; }
+.brand svg { width: 26px; height: 26px; }
+.badge {
+font: 600 10.5px/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
+padding: 4px 6px 3px; border-radius: 4px; color: var(--accent); border: 1px solid rgba(255, 155, 66, 0.45);
+}
+.nav ul { display: flex; gap: 4px; margin: 0 0 0 auto; padding: 0; list-style: none; }
+.nav li a {
+display: block; padding: 8px 12px; border-radius: var(--radius-s); text-decoration: none;
+color: var(--text-2); font-size: 15px; transition: color 0.2s, background-color 0.2s;
+}
+.nav li a:hover, .nav li a[aria-current="page"] { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.nav li a.btn-primary, .nav li a.btn-primary:hover { color: var(--accent-ink); background: var(--accent); margin-left: 8px; }
+.nav li a.btn-primary:hover { background: var(--accent-2); }
+.btn {
+--h: 48px;
+display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+height: var(--h); padding: 0 22px; border-radius: 999px;
+font: 600 16px/1 var(--sans); text-decoration: none; cursor: pointer;
+border: 1px solid transparent;
+transition: transform 0.18s var(--ease), background-color 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.btn svg { width: 18px; height: 18px; flex: none; }
+.btn-primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 8px 24px -10px rgba(255, 155, 66, 0.6); }
+.btn-primary:hover { background: var(--accent-2); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); }
+.btn-quiet { background: transparent; color: var(--text); border-color: var(--line-2); }
+.btn-quiet:hover { border-color: rgba(255, 255, 255, 0.3); background: rgba(255, 255, 255, 0.04); }
+.btn-small { --h: 38px; padding: 0 16px; font-size: 14.5px; }
+.hero { padding: 88px 0 40px; }
+.eyebrow { color: var(--text-3); font-size: 14px; letter-spacing: 0.02em; margin-bottom: 16px; }
+.hero h1 {
+font-family: var(--display);
+font-weight: 480;
+font-size: clamp(44px, 7.4vw, 92px);
+line-height: 1.02;
+letter-spacing: -0.012em;
+font-variation-settings: "opsz" 48;
+max-width: 12ch;
+}
+.hero .lede { margin: 24px 0 32px; max-width: 34em; font-size: 19px; color: var(--text-2); }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.meta { margin-top: 20px; font-size: 14px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.meta span + span::before { content: "\00b7"; margin: 0 8px; color: var(--text-3); }
+.frame {
+position: relative; margin-top: 56px; border-radius: var(--radius-l); overflow: hidden;
+background: #1a1a1d; border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.frame video, .frame img { width: 100%; height: auto; }
+.frame .cap {
+position: absolute; left: 16px; bottom: 16px; padding: 6px 10px; border-radius: 999px;
+font-size: 13px; color: var(--text-2); background: rgba(12, 12, 14, 0.72);
+}
+section { padding: 120px 0; }
+section + section { border-top: 1px solid var(--line); }
+.head { max-width: 40em; margin-bottom: 48px; }
+.head h2 {
+font-family: var(--display); font-weight: 520; font-size: clamp(32px, 4.2vw, 48px);
+line-height: 1.08; letter-spacing: -0.01em; font-variation-settings: "opsz" 36; margin-bottom: 16px;
+}
+.head p { color: var(--text-2); font-size: 18px; margin: 0; }
+.demo {
+position: relative; border-radius: var(--radius-l); border: 1px solid var(--line);
+background: radial-gradient(120% 90% at 50% 38%, #26252a 0%, #18181c 55%, #121215 100%);
+box-shadow: var(--shadow); overflow: hidden;
+}
+.demo-stage { position: relative; height: clamp(360px, 58vw, 560px); touch-action: none; cursor: none; }
+.demo-stage canvas { width: 100%; height: 100%; }
+.demo-stage .ring {
+position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; opacity: 0;
+border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, 0.75); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+transition: opacity 0.15s;
+}
+.demo-stage.orbit { cursor: grab; }
+.demo-stage.orbit:active { cursor: grabbing; }
+.hint {
+position: absolute; left: 50%; top: 24px; transform: translate(-50%, 0);
+padding: 8px 14px; border-radius: 999px; font-size: 14px; color: var(--text);
+background: rgba(12, 12, 14, 0.78); border: 1px solid var(--line); pointer-events: none;
+opacity: 0; transition: opacity 0.4s var(--ease), transform 0.4s var(--ease);
+}
+.hint.on { opacity: 1; }
+.hint.low { top: auto; bottom: 16px; }
+.tools {
+position: absolute; top: 16px; left: 16px; display: flex; gap: 6px; padding: 4px;
+border-radius: 999px; background: rgba(12, 12, 14, 0.72); border: 1px solid var(--line);
+}
+.tool {
+height: 32px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--text-2);
+font: 500 13.5px/1 var(--sans); cursor: pointer; transition: background-color 0.2s, color 0.2s;
+}
+.tool:hover { color: var(--text); }
+.tool[aria-pressed="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.demo-reset { position: absolute; top: 16px; right: 16px; }
+.dock {
+display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 16px;
+padding: 16px 20px; border-top: 1px solid var(--line); background: rgba(10, 10, 12, 0.55);
+}
+.ctl { display: flex; gap: 6px; }
+.icon-btn {
+width: 38px; height: 38px; display: grid; place-items: center; border-radius: 50%;
+border: 1px solid var(--line-2); background: transparent; color: var(--text); cursor: pointer;
+transition: background-color 0.2s, border-color 0.2s, transform 0.15s var(--ease);
+}
+.icon-btn:hover { background: rgba(255, 255, 255, 0.06); }
+.icon-btn:active { transform: scale(0.96); }
+.icon-btn:disabled { opacity: 0.35; cursor: default; }
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn.dot { border-color: rgba(255, 155, 66, 0.55); }
+.icon-btn.dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.icon-btn.playing { background: rgba(255, 155, 66, 0.14); border-color: var(--accent); }
+.track { position: relative; height: 40px; display: flex; align-items: center; cursor: pointer; touch-action: none; }
+.track .rail { position: absolute; left: 0; right: 0; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.09); }
+.track .fill { position: absolute; left: 0; height: 6px; border-radius: 3px; background: var(--accent); width: 0; }
+.track .knob {
+position: absolute; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
+background: #ffd2a6; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5), 0 0 0 4px rgba(255, 155, 66, 0.18); left: 0;
+}
+.track.smooth .fill { transition: width 0.22s var(--ease); }
+.track.smooth .knob { transition: left 0.22s var(--ease); }
+.track .tick { position: absolute; top: 9px; width: 2px; height: 22px; margin-left: -1px; border-radius: 1px; background: #79d6ff; opacity: 0; }
+.track .tick.on { opacity: 1; }
+.track:focus-visible { outline-offset: 4px; }
+.count { font: 500 14px/1 var(--sans); color: var(--text-2); font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+.readout { padding: 0 20px 16px; font-size: 13.5px; color: var(--text-3); font-variant-numeric: tabular-nums; min-height: 37px; background: rgba(10, 10, 12, 0.55); }
+.readout b { color: var(--text-2); font-weight: 600; }
+.menu {
+position: absolute; z-index: 5; min-width: 230px; padding: 6px; border-radius: var(--radius);
+background: #1e1e23; border: 1px solid var(--line-2); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+opacity: 0; transform: translateY(6px); pointer-events: none; transition: opacity 0.16s, transform 0.16s var(--ease);
+}
+.menu.open { opacity: 1; transform: none; pointer-events: auto; }
+.menu button {
+display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; border-radius: 8px;
+background: transparent; color: var(--text); font: 450 14.5px/1.2 var(--sans); cursor: pointer;
+}
+.menu button:hover, .menu button:focus-visible { background: rgba(255, 255, 255, 0.07); outline: none; }
+.menu button:disabled { color: var(--text-3); cursor: default; background: none; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+.nogl { display: grid; place-items: center; height: 100%; padding: 32px; text-align: center; color: var(--text-2); }
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.feature { display: flex; flex-direction: column; }
+.feature .media {
+border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); background: #1a1a1d;
+aspect-ratio: 4 / 3; margin-bottom: 20px;
+}
+.feature .media video, .feature .media img { width: 100%; height: 100%; object-fit: cover; }
+.feature h3 { font-size: 19px; letter-spacing: -0.01em; margin-bottom: 8px; }
+.feature p { color: var(--text-2); margin: 0; }
+.where { display: grid; grid-template-columns: 1.35fr 1fr; gap: 32px; align-items: start; }
+.annot { position: relative; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line); }
+.annot svg.labels { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.shot { margin: 0; }
+.shot button {
+display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
+overflow: hidden; background: #1a1a1d; cursor: zoom-in; transition: border-color 0.2s, transform 0.25s var(--ease);
+}
+.shot button:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.shot img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; object-position: top left; }
+.shot figcaption { margin-top: 10px; font-size: 14px; color: var(--text-2); line-height: 1.5; }
+.shot figcaption b { color: var(--text); font-weight: 600; display: block; }
+.lightbox {
+position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px;
+background: rgba(6, 6, 8, 0.88); opacity: 0; pointer-events: none; transition: opacity 0.2s;
+}
+.lightbox.open { opacity: 1; pointer-events: auto; }
+.lightbox img { max-height: 82vh; width: auto; border-radius: var(--radius); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
+.lightbox p { margin: 16px 0 0; color: var(--text-2); text-align: center; max-width: 60ch; }
+.lightbox .close { position: absolute; top: 16px; right: 16px; }
+.install { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: start; }
+.steps { counter-reset: s; margin: 0; padding: 0; list-style: none; }
+.steps li { counter-increment: s; position: relative; padding: 0 0 24px 52px; color: var(--text-2); }
+.steps li::before {
+content: counter(s); position: absolute; left: 0; top: -2px; width: 32px; height: 32px; border-radius: 50%;
+display: grid; place-items: center; font: 600 14px/1 var(--sans); color: var(--text); border: 1px solid var(--line-2);
+}
+.steps li b { color: var(--text); font-weight: 600; }
+.beta {
+padding: 28px; border-radius: var(--radius-l); background: var(--panel); border: 1px solid var(--line);
+}
+.beta h3 { font-size: 19px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+.beta p { color: var(--text-2); }
+.beta .links { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 15px; }
+footer { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--text-3); font-size: 14px; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px 32px; }
+footer nav { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+footer a { text-decoration: none; color: var(--text-2); }
+footer a:hover { color: var(--text); }
+.doc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 56px; padding: 56px 0 96px; }
+.doc aside nav { position: sticky; top: 96px; display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.doc aside a { padding: 6px 10px; border-radius: var(--radius-s); text-decoration: none; color: var(--text-2); }
+.doc aside a:hover, .doc aside a.here { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.doc article { max-width: 72ch; }
+.doc article h1 {
+font-family: var(--display); font-weight: 520; font-size: clamp(36px, 5vw, 56px); line-height: 1.05;
+letter-spacing: -0.02em; font-variation-settings: "opsz" 120; margin-bottom: 16px;
+}
+.doc article h2 {
+font-family: var(--display); font-weight: 540; font-size: 30px; letter-spacing: -0.015em;
+margin: 64px 0 16px; padding-top: 8px; font-variation-settings: "opsz" 72;
+}
+.doc article h3 { font-size: 18.5px; margin: 32px 0 8px; }
+.doc article p, .doc article li { color: var(--text-2); }
+.doc article li { margin-bottom: 8px; }
+.doc article strong { color: var(--text); font-weight: 600; }
+.doc table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.doc th, .doc td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.doc th { color: var(--text); font-weight: 600; }
+.doc td { color: var(--text-2); }
+.doc figure { margin: 24px 0; }
+.doc figure img { border-radius: var(--radius); border: 1px solid var(--line); }
+.doc figcaption { font-size: 14px; color: var(--text-3); margin-top: 8px; }
+.note { padding: 16px 20px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); margin: 16px 0; }
+.faq dt { color: var(--text); font-weight: 600; margin-top: 24px; }
+.faq dd { margin: 8px 0 0; color: var(--text-2); }
+.release { padding: 32px 0; border-bottom: 1px solid var(--line); }
+.release h2 { margin-top: 0 !important; }
+.release .date { color: var(--text-3); font-size: 14px; margin-bottom: 12px; }
+.notfound { min-height: 70vh; display: grid; place-items: center; text-align: center; }
+.notfound h1 { font-family: var(--display); font-weight: 520; font-size: clamp(40px, 6vw, 72px); letter-spacing: -0.02em; margin-bottom: 16px; }
+.notfound p { color: var(--text-2); margin-bottom: 32px; }
+.reveal { opacity: 0; transform: translateY(14px); transition: opacity 0.7s var(--ease), transform 0.7s var(--ease); }
+.reveal.in { opacity: 1; transform: none; }
+.no-js .reveal { opacity: 1; transform: none; }
+@media (max-width: 1023px) {
+.features { grid-template-columns: 1fr 1fr; }
+.features .feature:last-child { grid-column: span 2; }
+.features .feature:last-child .media { aspect-ratio: 16 / 9; }
+.where, .install { grid-template-columns: 1fr; }
+.doc { grid-template-columns: 1fr; gap: 24px; }
+.doc aside nav { position: static; flex-direction: row; flex-wrap: wrap; }
+}
+@media (max-width: 719px) {
+:root { --gutter: 16px; }
+body { font-size: 16px; }
+section { padding: 80px 0; }
+.hero { padding: 56px 0 24px; }
+.hero .lede { font-size: 17px; }
+.nav ul li:not(.keep) { display: none; }
+.nav .wrap { gap: 12px; }
+.features { grid-template-columns: 1fr; }
+.features .feature:last-child { grid-column: auto; }
+.features .feature:last-child .media { aspect-ratio: 4 / 3; }
+.gallery { grid-template-columns: 1fr 1fr; gap: 12px; }
+.dock { grid-template-columns: 1fr; gap: 12px; padding: 14px 16px; }
+.dock .ctl { justify-content: space-between; }
+.count { text-align: left; }
+.tools { top: 12px; left: 12px; }
+.demo-reset { top: 12px; right: 12px; }
+.frame { margin-top: 40px; }
+}
+@media (max-width: 400px) {
+.gallery { grid-template-columns: 1fr; }
+.btn { padding: 0 18px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+.demo-stage { height: 78vh; }
+.hero { padding-top: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+*, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; scroll-behavior: auto !important; }
+.reveal { opacity: 1; transform: none; }
+}</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav"><div class="wrap"><a class="brand" href="../../" aria-label="Hindsight home"><svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1d1d22"/><circle cx="8.5" cy="16" r="3.3" fill="none" stroke="#ff9b42" stroke-width="1.8"/><rect x="14" y="14.6" width="13" height="2.8" rx="1.4" fill="#3b3a42"/><rect x="14" y="14.6" width="7.5" height="2.8" rx="1.4" fill="#ff9b42"/><circle cx="21.5" cy="16" r="3" fill="#ffd2a6"/></svg><span>Hindsight</span></a><ul><li><a href="../../#demo-section">Demo</a></li><li><a href="../../docs/" aria-current=page>Docs</a></li><li><a href="../../changelog/">Changelog</a></li><li class="keep"><a class="btn btn-primary btn-small" href="../../download/hindsight.zip" download>Download beta</a></li></ul></div></header>
+<main id="main" class="wrap">
+  <div class="doc">
+    <aside>
+      <nav aria-label="On this page">
+        <a href="#install">Install</a>
+        <a href="#sculpting">Sculpting is recorded straight away</a>
+        <a href="#objects">Turn on object recording</a>
+        <a href="#global">Global history</a>
+      </nav>
+    </aside>
+    <article>
+      <h1>Install</h1>
+      <p>This is the beta, version 1.0.0-beta.2. <a href="../limitations/">See what it records and what it doesn't.</a></p>
+
+      <h2 id="install">Install</h2>
+      <ol>
+        <li>Download <a href="../../download/hindsight.zip" download>hindsight.zip</a> (144 KB). Keep it zipped.</li>
+        <li>In Blender, open <strong>Edit &gt; Preferences &gt; Get Extensions</strong>. Click the small arrow at the top right and choose <strong>Install from Disk</strong>. Pick the zip. Hindsight is switched on straight away.</li>
+        <li>In the 3D Viewport, press <kbd>N</kbd> and open the <strong>Undo History</strong> tab.</li>
+      </ol>
+      <p>Hindsight needs Blender 4.2 or newer. To remove it, open the Get Extensions page, find the Hindsight entry and choose Uninstall.</p>
+
+      <h2 id="sculpting">Sculpting is recorded straight away</h2>
+      <p>Enter Sculpt Mode and sculpt. Each stroke is one step. Drag the slider at the bottom of the 3D Viewport to go back, or press <kbd>Ctrl</kbd> <kbd>Z</kbd> and <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> to move one step at a time.</p>
+      <p>Save the file and the history is saved with it.</p>
+
+      <h2 id="objects">Turn on object recording</h2>
+      <p>Object recording is off until you switch it on. Until then, only sculpting is recorded. These steps are for Blender 5.x.</p>
+      <ol>
+        <li>Open <strong>Edit &gt; Preferences &gt; Add-ons</strong>, find <strong>Hindsight</strong> and open its preferences. Set <strong>Record</strong> to <strong>Everything</strong>. The other choice, and the default, is <strong>Sculpting only</strong>.</li>
+        <li>Select an object. In the 3D Viewport press <kbd>N</kbd>, open the <strong>Undo History</strong> tab, and under <strong>Record:</strong> click <strong>Everything on this object</strong>. From then on, that object's changes are recorded.</li>
+        <li>To also record objects being added, deleted or duplicated, click <strong>Objects added and deleted</strong> under <strong>Record:</strong>. This one is for the whole scene.</li>
+      </ol>
+      <p>While Record is Sculpting only, the sidebar in Object Mode says: "Object recording is off: only sculpting is recorded. To record objects, set Record to Everything in the add-on preferences."</p>
+      <p>With Record set to Everything, on an object that isn't switched on it says: "To record this object, switch on Record &gt; Everything on this object." Once it is switched on: "Hindsight is on. Changes to this object are recorded from here on."</p>
+      <p>For an object that is switched on, Hindsight records:</p>
+      <ul>
+        <li>Transforms: location, rotation with its rotation mode, scale and delta transforms.</li>
+        <li>Parenting: parent, parent type and bone, and parent inverse.</li>
+        <li>Constraints: adding, removing, reordering, renaming and their settings.</li>
+        <li>The collections the object is in, and its visibility: viewport, render, selectable and hidden with H.</li>
+        <li>Adding, deleting, duplicating and renaming objects, when Objects added and deleted is on.</li>
+        <li>Edit Mode step by step: each Edit Mode operation is its own step, on meshes up to 300,000 vertices. Above that, one step per Edit Mode visit.</li>
+      </ul>
+      <p>The full list of limits is on the <a href="../limitations/">limitations page</a>.</p>
+
+      <h2 id="global">Global history</h2>
+      <p>Each object has its own scrubbable history. Open History Menu &gt; Global history to put every object's steps on one timeline, in the order you made them. One operation is one position. <strong>Follow object and mode</strong> selects the object a step belongs to.</p>
+    </article>
+  </div>
+</main>
+<footer><div class="wrap"><p>Hindsight is free software under the GPL 3.0 or later. Made by Min3scon. Blender is a trademark of the Blender Foundation.</p><nav aria-label="Footer"><a href="../../docs/">Docs</a><a href="../../changelog/">Changelog</a><a href="https://github.com/Min3scon/Hindsight">GitHub</a><a href="https://github.com/Min3scon/Hindsight/issues/new/choose">Report a bug</a></nav></div></footer>
+<script src="../../assets/site.js" defer></script>
+</body>
+</html>

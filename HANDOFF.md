@@ -109,6 +109,22 @@ steps, ticks, counters, thumbnails, labels or progress.
 
 Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, SITE_PLAN.md, STYLE.md.
 
+## Publish 1.0.0-beta.2 site (owner, 2026-10-15, top priority, live by 09:00 UK)
+Done in worktree `.tmp/wt_site` (branch site-beta2), merged to the default branch without [skip ci].
+- Version 1.0.0-beta.2 (manifest, site, changelog, download button); `hindsight/build_info.json` holds the
+  source commit. Zip built with real Blender 5.1.2 (`tests_ui/hs_ui.py build`), install-tested in a fresh
+  sandboxed 5.1.2 profile (`.tmp/smoke_run.py`: enables, Undo History tab, a sculpt stroke records, a move
+  isn't recorded until Record is Everything and the object is switched on, then it is). Other Blender
+  versions weren't install-tested in this step.
+- Sidebar: in Object Mode with Record = Sculpting only it says object recording is off and how to switch it on.
+- COVERAGE: object rows and sculpt rows (except sculpt.colors) are `partial`, each with the exact open gate
+  items; make_evidence now checks that rule (DECISIONS.md, 2026-10-15). sculpt.colors stays not covered (D61
+  fails on 5.0.1), so the site doesn't claim Vertex Paint.
+- Pages workflow: the zip step now checks the committed, tested zip instead of rebuilding it.
+- Site: landing, docs home, Install (with "Turn on object recording"), Limitations, changelog, README.
+- Open after this: D61, the 15 second-review findings (record as D62+), soaks, the Hypothesis runs, Tier 1
+  gate, Tier 2. The main checkout's tests/ has untracked copies of the Tier 0 tests (now committed here).
+
 ## Current job: beta 2 ("broken and sloppy" to polished), started 2026-10-14
 Brief: steps 0-6 (PC check, real Blender, root cause, new UI, hardening and test rounds, new website,
 ship). Work happens on the owner's Windows PC. Only branch: `claude/lucid-brahmagupta-9gsdsn` (default,

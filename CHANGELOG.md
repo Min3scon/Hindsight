@@ -17,7 +17,7 @@ The big one: in beta 1 the add-on installed but most people saw nothing. Three t
 
 - Fixed: recording stopped after you opened any file. Hindsight's recorder was dropped by Blender on every File > Open, File > New and double-click on a .blend, so no stroke was recorded and the slider never appeared. The recorder now survives file loads and puts itself back if anything removes it.
 - Fixed: in Sculpt Mode on Blender 4.3 and newer the slider was drawn under the brush shelf. It now sits above the shelf and between the toolbar and the sidebar.
-- Fixed: nothing showed until the first recorded stroke. In Sculpt and Vertex Paint Mode an empty slider now appears straight away, with a short hint.
+- Fixed: nothing showed until the first recorded stroke. In Sculpt Mode an empty slider now appears straight away, with a short hint.
 
 New:
 

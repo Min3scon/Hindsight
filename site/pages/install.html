@@ -32,13 +32,14 @@ root: ../../
       <p>Save the file and the history is saved with it.</p>
 
       <h2 id="objects">Turn on object recording</h2>
-      <p>Object recording is off until you switch it on. Until then, only sculpting is recorded. It works on Blender 5.x.</p>
+      <p>Object recording is off until you switch it on. Until then, only sculpting is recorded. These steps are for Blender 5.x.</p>
       <ol>
         <li>Open <strong>Edit &gt; Preferences &gt; Add-ons</strong>, find <strong>Hindsight</strong> and open its preferences. Set <strong>Record</strong> to <strong>Everything</strong>. The other choice, and the default, is <strong>Sculpting only</strong>.</li>
         <li>Select an object. In the 3D Viewport press <kbd>N</kbd>, open the <strong>Undo History</strong> tab, and under <strong>Record:</strong> click <strong>Everything on this object</strong>. From then on, that object's changes are recorded.</li>
         <li>To also record objects being added, deleted or duplicated, click <strong>Objects added and deleted</strong> under <strong>Record:</strong>. This one is for the whole scene.</li>
       </ol>
-      <p>On an object that isn't recorded, the sidebar says: "To record this object, switch on Record &gt; Everything on this object." Once it is switched on, the sidebar says: "Hindsight is on. Changes to this object are recorded from here on."</p>
+      <p>While Record is Sculpting only, the sidebar in Object Mode says: "Object recording is off: only sculpting is recorded. To record objects, set Record to Everything in the add-on preferences."</p>
+      <p>With Record set to Everything, on an object that isn't switched on it says: "To record this object, switch on Record &gt; Everything on this object." Once it is switched on: "Hindsight is on. Changes to this object are recorded from here on."</p>
       <p>For an object that is switched on, Hindsight records:</p>
       <ul>
         <li>Transforms: location, rotation with its rotation mode, scale and delta transforms.</li>

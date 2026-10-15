@@ -1,0 +1,5 @@
+{
+  "version": "1.0.0-beta.2",
+  "source_commit": "0dddd8982ae735e71b1de6ef30e1a614ba068899",
+  "built_with": "Blender 5.1.2, blender --command extension build"
+}
