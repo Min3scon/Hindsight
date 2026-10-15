@@ -178,6 +178,9 @@ def read_mesh_snapshot",
     ("bl/runtime.py", "        _clamp_state_weights(obj, st)
 ", "",
      "clamped weights left out of the state, recorded as a change (D43)", ["obj.editsteps"], None),
+    ("bl/runtime.py", "    if h is None and mode not in RECORD_MODES and not _edit and not extras_on(obj):",
+     "    if h is None and mode not in RECORD_MODES and not _edit:",
+     "a first Edit Mode visit on a recorded object not recorded (D50)", ["obj.editsteps"], None),
 ]
 
 

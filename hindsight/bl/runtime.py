@@ -560,9 +560,10 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     h = _REG.history_for(uid)
     if h is not None and not h.enabled:
         return None
-    if h is None and mode not in RECORD_MODES and not _edit:
+    if h is None and mode not in RECORD_MODES and not _edit and not extras_on(obj):
         # Only a sculpt or paint stroke starts a history. Leaving Edit Mode on an object without
-        # one (for example a file saved in Edit Mode) just takes a new baseline.
+        # one (for example a file saved in Edit Mode) just takes a new baseline. An object recorded
+        # with Record everything records the visit (D50).
         ensure_state(obj, refresh=True)
         return None
     if label is None:

@@ -118,6 +118,45 @@ def test_restoring_a_parent_keeps_its_inverse():
     L.check_object_histories(r, full=True)
 
 
+@covers("obj.editsteps", "STEPS", "EXACT")
+def test_first_edit_visit_is_a_step():
+    """D50: with Edit Mode step by step off, or on a mesh over the step-by-step limit, an Edit Mode
+    visit on a recorded object with no history yet is one step (it used to be lost)."""
+    from tests import oracle as O
+    for how in ("edit steps off", "big mesh"):
+        L.fresh_scene()
+        L.track_all()
+        orig_max = runtime.EDIT_STEPS_MAX
+        if how == "edit steps off":
+            from hindsight.bl import adapters
+            datarec.FORCE_KINDS[0] = set(adapters.KINDS) - {"edit_steps"}
+        else:
+            runtime.EDIT_STEPS_MAX = 10                 # stands in for a mesh over 300,000 vertices
+        try:
+            a = bpy.data.objects["A"]
+            before = O.read_mesh(a, O.mesh_state)
+            T.select("A")
+            bpy.ops.object.mode_set(mode="EDIT")
+            runtime.check_mode_transition()
+            L.tick_like("Toggle Edit Mode")
+            bpy.ops.mesh.select_all(action="SELECT")
+            bpy.ops.transform.translate(value=(0, 0, 0.5))
+            L.tick_like("Move")
+            bpy.ops.object.mode_set(mode="OBJECT")
+            runtime.check_mode_transition()
+            L.tick_like("Toggle Edit Mode")
+            after = O.read_mesh(a, O.mesh_state)
+            h = runtime.history_of(a)
+            assert h is not None and len(h.entries) == 1, f"{how}: {None if h is None else len(h.entries)}"
+            runtime._goto_history(h, 0, True)
+            assert O.read_mesh(a, O.mesh_state) == before, how
+            runtime._goto_history(h, 1, True)
+            assert O.read_mesh(a, O.mesh_state) == after, how
+        finally:
+            runtime.EDIT_STEPS_MAX = orig_max
+            datarec.FORCE_KINDS[0] = None
+
+
 def mesh_steps(ob) -> int:
     h = runtime.reg().history_for(idmap.uid_of(ob))
     return 0 if h is None else sum(1 for e in h.entries if e.meta.get("kind") != "DATA")
@@ -152,6 +191,6 @@ def test_linked_duplicates_record_their_mesh_once():
 
 for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_its_changes,
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
-           test_linked_duplicates_record_their_mesh_once):
+           test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step):
     H.run(fn)
 H.finish()
