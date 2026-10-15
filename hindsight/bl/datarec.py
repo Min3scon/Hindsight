@@ -31,7 +31,8 @@ _BODY_DIRTY: set = set()     # object uids whose body must be read again
 _OPS = {"marker": None}      # (count, pointer of the newest) of window_manager.operators
 _JUMPS: list = []            # Hindsight jumps pushed onto Blender's undo stack (see on_undo)
 _MESH_DIRTY: set = set()     # tracked mesh objects whose mesh got a geometry update in Object Mode
-_MESH_USERS: dict = {}       # mesh pointer -> tracked object uids using it
+_MESH_USERS: dict = {}       # mesh pointer -> [the tracked object that records it (its owner)]
+_MESH_OWNER: dict = {}       # mesh pointer -> owner uid (kept while it uses the mesh, D39)
 OBJECT_DEEP_MAX = 1_000_000  # vertices; above this an Object Mode check compares counts and values only
 
 
@@ -100,6 +101,22 @@ def set_tracked(idb, on: bool) -> None:
     refresh_mesh_users()
 
 
+def _track_new(uid: str) -> None:
+    """D36: an object added or duplicated while the scene is recorded is recorded fully from the
+    start. Otherwise its later changes were lost when the global history took it away and brought
+    it back (it came back as it was when added)."""
+    rt = _rt()
+    ob = idmap.find(uid)
+    if ob is None or is_linked(ob) or not isinstance(ob, bpy.types.Object):
+        return
+    if uid in rt.reg().everything or uid in rt.reg().disabled:
+        return
+    rt.reg().everything.add(uid)
+    baseline(ob, uid, refresh=True)
+    rt._journal("META_EVERYTHING", {"uid": uid, "on": True})
+    refresh_mesh_users()
+
+
 def tracked_uids() -> set:
     if not scope_everything():
         return set()
@@ -151,14 +168,56 @@ def capture(idb) -> dict:
 
 
 def refresh_mesh_users() -> None:
-    """Which tracked objects use which mesh (to see Object Mode changes to their meshes)."""
-    out = {}
+    """Which tracked object records each mesh (to see Object Mode changes to it). D39: a mesh shared
+    by linked duplicates (Alt+D) is recorded once, by its owner: the object that recorded it first
+    (kept while it uses the mesh), otherwise the first by name. Any other user of the mesh records
+    only its own object data, and an object that becomes the owner starts from its mesh as it is."""
+    users = {}
     for uid in tracked_uids():
         ob = idmap.find(uid)
         if isinstance(ob, bpy.types.Object) and ob.type == "MESH" and ob.data is not None:
-            out.setdefault(ob.data.as_pointer(), []).append(uid)
+            users.setdefault(ob.data.as_pointer(), []).append((ob.name, uid, ob))
+    owners = {}
+    for ptr, us in users.items():
+        keep = _MESH_OWNER.get(ptr)
+        uid = keep if any(u == keep for _n, u, _o in us) else min(us)[1]
+        if uid != keep and len(us) > 1:
+            ob = next(o for _n, u, o in us if u == uid)
+            if ob.mode != "EDIT":
+                _rt().ensure_state(ob, refresh=True)
+        owners[ptr] = uid
+    _MESH_OWNER.clear()
+    _MESH_OWNER.update(owners)
     _MESH_USERS.clear()
-    _MESH_USERS.update(out)
+    _MESH_USERS.update({ptr: [uid] for ptr, uid in owners.items()})
+
+
+def mesh_owned_elsewhere(ob) -> bool:
+    """True for a tracked object whose mesh is recorded by another object (a linked duplicate)."""
+    me = getattr(ob, "data", None)
+    if getattr(ob, "type", None) != "MESH" or me is None:
+        return False
+    owner = _MESH_OWNER.get(me.as_pointer())
+    return owner is not None and owner != idmap.uid_of(ob)
+
+
+def mesh_owner_name(ob) -> str | None:
+    me = getattr(ob, "data", None)
+    owner = _MESH_OWNER.get(me.as_pointer()) if me is not None else None
+    o = idmap.find(owner) if owner else None
+    return o.name if o is not None else None
+
+
+def _mesh_busy(ob) -> bool:
+    """Another object is editing, sculpting or painting this object's mesh right now: its mesh is
+    checked when that ends (D39; reading it in the middle of an Edit Mode visit reads edit layers)."""
+    me = ob.data
+    if getattr(me, "is_editmode", False):
+        return True
+    try:
+        return any(o is not ob and o.data == me and o.mode != "OBJECT" for o in bpy.context.view_layer.objects)
+    except Exception:
+        return False
 
 
 def baseline(idb, uid: str | None = None, refresh: bool = False) -> MeshState:
@@ -380,7 +439,8 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
         if idb is None or is_linked(idb):
             continue
         mesh_step = None
-        if mesh and uid in _MESH_DIRTY:
+        if mesh and uid in _MESH_DIRTY and not (isinstance(idb, bpy.types.Object) and idb.type == "MESH"
+                                                and idb.mode == "OBJECT" and _mesh_busy(idb)):
             _MESH_DIRTY.discard(uid)
             if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT":
                 if adapter_ok("object_mesh"):
@@ -414,6 +474,8 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
             old_set = set(old_objs) if old_objs is not MISSING else set()
             new_set = set(new_objs) if new_objs is not MISSING else set()
             refresh_bodies(idb, only=new_set - old_set)
+            for ou in sorted(new_set - old_set):
+                _track_new(ou)
             snaps = {}
             for ou in sorted(old_set ^ new_set):
                 body = _BODIES.get(ou)
@@ -498,6 +560,23 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
     except Exception:
         pass
     _DIRTY.pop(idmap.uid_of(idb), None)
+
+
+def resolve_missing_refs() -> None:
+    """D37: an object a restore couldn't refer to is back (the global history brought it back): put
+    the recorded references in now, so Blender matches the history again."""
+    if not adapters.MISSING_REFS:
+        return
+    for ou, d in list(adapters.MISSING_REFS.items()):
+        todo = {}
+        for _path, (ref, aid, apath) in list(d.items()):
+            if idmap.find(ref) is not None:
+                todo.setdefault(aid, set()).add(apath)
+        owner = idmap.find(ou)
+        if todo and owner is not None:
+            write(owner, _state(ou), todo)
+        elif owner is None:
+            adapters.MISSING_REFS.pop(ou, None)
 
 
 def _recorded(st: MeshState, aid: str, path: str):
@@ -608,7 +687,8 @@ def on_undo(direction: str = "undo") -> None:
         h = rt.reg().history_for(uid)
         idb = idmap.find(uid)
         mesh_step = None
-        if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT" and st.counts:
+        if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT" and st.counts \
+                and not mesh_owned_elsewhere(idb):
             # deep: an undone Edit Mode step can change the edges alone (Sort Mesh Elements)
             mesh_step = rt._observe(idb, st, True, "Undo", "OBJECT", deep=True)
             rt._NATIVE_PENDING.discard(uid)
@@ -689,4 +769,6 @@ def forget() -> None:
     _JUMPS.clear()
     _MESH_DIRTY.clear()
     _MESH_USERS.clear()
+    _MESH_OWNER.clear()
+    adapters.MISSING_REFS.clear()
     _OPS["marker"] = None

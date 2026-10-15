@@ -473,11 +473,19 @@ def commit_edit(obj, label: str = "Edit"):
 EDIT_STEPS_MAX = 300_000   # vertices; above this an Edit Mode step (about 55 ms per 100k) is too slow
 
 
+def _mesh_owned_elsewhere(obj) -> bool:
+    try:
+        from . import datarec
+        return datarec.mesh_owned_elsewhere(obj)
+    except Exception:
+        return False
+
+
 def edit_steps_on(obj) -> bool:
     try:
         from . import adapters, datarec
         return (datarec.is_tracked(obj) and adapters.kind_on("edit_steps")
-                and len(obj.data.vertices) <= EDIT_STEPS_MAX)
+                and len(obj.data.vertices) <= EDIT_STEPS_MAX and not datarec.mesh_owned_elsewhere(obj))
     except Exception:
         return False
 
@@ -707,6 +715,11 @@ def _enter(obj) -> None:
     _WROTE.discard(uid)      # entering a mode starts a fresh Blender undo context for it
     h = _REG.history_for(uid)
     st = _STATES.get(uid)
+    if _mesh_owned_elsewhere(obj):
+        # D39: a linked duplicate's mesh is recorded by its owner; this object starts from the mesh
+        # as it is (nothing done through the owner becomes a step here)
+        ensure_state(obj, refresh=obj.mode != "EDIT")
+        return
     if obj.mode == "EDIT":
         if st is None or not st.counts:
             ensure_state(obj)
@@ -734,7 +747,10 @@ def check_mode_transition() -> None:
     pmode = _TRACK["mode"]
     _TRACK.update(name=name, uid=obj_uid(obj) if obj is not None else None, mode=mode)
     if prev is not None and pmode == "EDIT" and prev.mode != "EDIT":
-        commit(prev, label="Edit Mode", mode="EDIT", full=True)
+        if _mesh_owned_elsewhere(prev):
+            ensure_state(prev, refresh=True)    # D39: the mesh's owner records this visit
+        else:
+            commit(prev, label="Edit Mode", mode="EDIT", full=True)
     elif prev is not None and pmode in RECORD_MODES and obj_uid(prev) in _DIRTY:
         commit(prev, mode=pmode)
     if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and not is_excluded(obj):
@@ -968,6 +984,8 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     elif (wrote_data or meshes) and final and not IN_HANDLER[0] and object_mode:
         if datarec.push_undo():
             datarec.note_jump({h.uid: [before, h.cursor, len(h.entries)]}, vb, va, meshes)
+    if acc is None:
+        datarec.resolve_missing_refs()
     _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
     return changes
 
@@ -1066,6 +1084,7 @@ def global_goto(context, g: int, final: bool = True) -> None:
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
             _goto_history(h, cur, final, acc)
+    datarec.resolve_missing_refs()          # D37: objects brought back get their references back
     new_g = globaltl.global_position(_REG, vis)
     if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
         if datarec.push_undo():

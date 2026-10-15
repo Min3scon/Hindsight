@@ -56,6 +56,10 @@ KINDS = {
 # the rotation), so after writing one, its dependents are written again from the recorded state.
 DEPENDENTS: dict = {
     "rotation_mode": ("rotation_euler", "rotation_quaternion", "rotation_axis_angle"),
+    # D38: setting the parent or the parent bone resets the parent inverse to identity in Blender
+    # (ED_object_parent), so the recorded inverse is written again after it
+    "parent": ("matrix_parent_inverse",),
+    "parent_bone": ("matrix_parent_inverse",),
 }
 
 
@@ -131,6 +135,31 @@ def same(a, b) -> bool:
 
 
 ENABLED_KINDS = [None]       # set of kind ids, or None for all (datarec keeps this up to date)
+MISSING_REFS: dict = {}      # D37: object uid -> {path: (referenced id, adapter, adapter path)}
+
+
+def _note_ref(owner, path: str, ref, found, aid: str, apath: str) -> None:
+    """Remember a recorded reference that couldn't be put back because the object it points to is
+    deleted now (the sidebar says so, datarec.resolve_missing_refs puts it in when that object is
+    back); forget it once a write of that path succeeds."""
+    ou = idmap.uid_of(owner) if owner is not None else None
+    if ou is None:
+        return
+    if ref and found is None:
+        MISSING_REFS.setdefault(ou, {})[path] = (ref, aid, apath)
+    else:
+        d = MISSING_REFS.get(ou)
+        if d is not None:
+            d.pop(path, None)
+            if not d:
+                MISSING_REFS.pop(ou, None)
+
+
+def missing_refs(owner) -> list:
+    """[(path, referenced id)] this object's last restore couldn't set, still deleted now."""
+    ou = idmap.uid_of(owner) if owner is not None else None
+    d = MISSING_REFS.get(ou) or {}
+    return sorted((p, r) for p, (r, _a, _ap) in d.items() if idmap.find(r) is None)
 
 
 def kind_on(kind: str) -> bool:
@@ -201,7 +230,9 @@ class RNAAdapter(Adapter):
             try:
                 owner, attr = _split(idb, path)
                 if kind == "ref":
+                    ref = v
                     v = idmap.find(v) if v else None
+                    _note_ref(idb, path, ref, v, self.id, path)
                 setattr(owner, attr, to_rna(v))
             except Exception as e:
                 log.error_once(("rna_write", path, str(e)), f"could not restore {path}: {e}", e)
@@ -277,8 +308,9 @@ def struct_values(st, skip=_UI_PROPS, skip_prefix: tuple = (), anim=None) -> dic
     return out
 
 
-def set_struct_values(st, values: dict) -> None:
-    """Set recorded values back on a struct: ID pointers first (other values may depend on them)."""
+def set_struct_values(st, values: dict, owner=None, prefix: str = "") -> None:
+    """Set recorded values back on a struct: ID pointers first (other values may depend on them).
+    owner and prefix: the object the struct belongs to and its path there (for D37)."""
     items = sorted(values.items(), key=lambda kv: 0 if isinstance(kv[1], dict) else 1)
     for ident, v in items:
         if v == ANIMATED:
@@ -286,7 +318,9 @@ def set_struct_values(st, values: dict) -> None:
         try:
             cur = getattr(st, ident)
             if isinstance(v, dict) and "ref" in v:
-                v = idmap.find(v["ref"]) if v["ref"] else None
+                ref = v["ref"]
+                v = idmap.find(ref) if ref else None
+                _note_ref(owner, prefix + ident, ref, v, "object", "constraints")
                 if cur == v:
                     continue          # unchanged: no write (Blender reports some writes as errors)
             elif isinstance(v, list) and getattr(st.bl_rna.properties.get(ident), "is_enum_flag", False):
@@ -374,7 +408,7 @@ def _write_constraints(ob, want: list) -> None:
             except Exception as e:
                 log.error_once(("constraint_new", str(e)), f"could not restore a constraint: {e}", e)
     for c, w in zip(ob.constraints, want):
-        set_struct_values(c, w.get("values") or {})
+        set_struct_values(c, w.get("values") or {}, ob, f'constraints["{c.name}"].')
 
 
 # Object settings a body leaves out: the name, data and parent are set on their own; matrices and

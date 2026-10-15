@@ -52,6 +52,13 @@ def shows(name, text):
     return " ".join(words) in flat
 
 
+def _commit():
+    """What the timer does after an operator (headless runs have no timers)."""
+    C.view_layer.update()
+    datarec.refresh_mesh_users()
+    datarec.commit(label="Op", uids=datarec.tracked_uids() | set(datarec._DIRTY), mesh=True)
+
+
 def setup(scene_on=True):
     H.fresh()
     T.build_scene()
@@ -87,13 +94,36 @@ def test_lists_in_constraint_settings():
     assert not shows("B", W.TXT_EV_LISTS)
 
 
+@covers("obj.parenting", "WARN")
+def test_parenting_with_deform():
+    """Ctrl+P > Lattice Deform adds a Lattice modifier to the child: not recorded in Tier 1, said."""
+    setup()
+    bpy.ops.object.add(type="LATTICE", location=(0, 4, 0))
+    lat = C.active_object
+    datarec.set_tracked(lat, True)
+    T.select("A", "B", lat.name, active=lat.name)
+    bpy.ops.object.parent_set(type="OBJECT")
+    assert not shows("A", W.TXT_EV_PARENT_DEFORM), "a plain parent adds nothing"
+    T.select("A", lat.name, active=lat.name)
+    bpy.ops.object.parent_set(type="LATTICE")
+    a = bpy.data.objects["A"]
+    assert any(m.type == "LATTICE" for m in a.modifiers), [m.type for m in a.modifiers]
+    assert shows("A", W.TXT_EV_PARENT_DEFORM)
+    assert not shows("B", W.TXT_EV_PARENT_DEFORM)
+
+
 @covers(["obj.addremove", "obj.transforms"], "WARN")
 def test_objects_not_switched_on_and_other_types():
     setup()
     T.add_primitive("cube", (0, -5, 0)).run()
-    assert shows("Cube", W.TXT_EV_NOT_ON), "an added object: only adding and deleting it is recorded"
+    _commit()
+    assert datarec.is_tracked(bpy.data.objects["Cube"]), "D36: added while the scene is recorded: recorded fully"
+    assert not shows("Cube", W.TXT_EV_NOT_ON)
+    datarec.set_tracked(bpy.data.objects["B"], False)
+    assert shows("B", W.TXT_EV_NOT_ON), "switched off: only adding and deleting it is recorded"
     assert not shows("A", W.TXT_EV_NOT_ON)
     bpy.ops.object.light_add(type="POINT")
+    _commit()
     light = C.active_object.name
     assert shows(light, W.TXT_EV_COMEBACK) and "light" in sidebar_text(light)
     assert not shows("A", W.TXT_EV_COMEBACK) and not shows("Pivot", W.TXT_EV_COMEBACK)
@@ -140,7 +170,7 @@ def test_nothing_said_with_sculpting_only():
         assert " ".join(t.split("{")[0].split()) not in " ".join(text.split()), t
 
 
-for fn in (test_animated_values, test_lists_in_constraint_settings, test_objects_not_switched_on_and_other_types,
+for fn in (test_animated_values, test_lists_in_constraint_settings, test_parenting_with_deform, test_objects_not_switched_on_and_other_types,
            test_big_mesh_edit_mode, test_new_collections_need_the_scene, test_linked_objects,
            test_nothing_said_with_sculpting_only):
     H.run(fn)

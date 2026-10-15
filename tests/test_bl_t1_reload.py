@@ -115,7 +115,8 @@ def test_copy_paste_same_and_other_file():
     """Ctrl+C, Ctrl+V, for every row: a pasted copy carries the original's id property; Hindsight
     gives it its own id. In the same file the original's history is untouched and still exact; in
     another file the copy starts with no history (the history stays in the file it was recorded in)
-    and records from scratch; the source file's history is still there when it is opened again."""
+    and records from scratch; the source file's history is still there when it is opened again.
+    D36: pasted while the scene is recorded, the copy is recorded fully from the start."""
     for row in ROWS:
         r = L.Run(T.sequences()[row])
         name = survivors(r)[0]
@@ -134,7 +135,10 @@ def test_copy_paste_same_and_other_file():
             assert pu not in known, f"{row}: the copy {o.name} shares an original's id"
         L.tick_like("paste")
         for o in pasted:
-            assert runtime.reg().history_for(idmap.uid_of(o)) is None and not datarec.is_tracked(o)
+            assert runtime.reg().history_for(idmap.uid_of(o)) is None and datarec.is_tracked(o)
+        T.translate(pasted[0].name, (0, 0, 1)).run()       # and records from scratch
+        L.tick_like("move the copy")
+        assert len(runtime.reg().history_for(idmap.uid_of(pasted[0])).entries) == 1
         assert _object_history_snapshot(r, su) == before
         for o in pasted:
             bpy.data.objects.remove(o)
@@ -205,9 +209,10 @@ def test_append_and_link_from_a_recorded_file():
 
 @covers(ROWS, "RELOAD.DUPLICATE")
 def test_duplicates_shift_d_and_alt_d():
-    """For every row: Shift+D and Alt+D give a copy with its own id and no history (Record everything
-    is off for it until switched on); the original's history is untouched and still exact; the
-    scene history has one step per duplicate; a linked duplicate shares the mesh."""
+    """For every row: Shift+D and Alt+D give a copy with its own id and no history, recorded from
+    the start (D36: the scene is recorded); the original's history is untouched and still exact; the
+    scene history has one step per duplicate; a linked duplicate shares the mesh, which stays
+    recorded in one history (D39)."""
     for row in ROWS:
         r = L.Run(T.sequences()[row])
         names = survivors(r)
@@ -219,8 +224,9 @@ def test_duplicates_shift_d_and_alt_d():
             L.tick_like("duplicate")
             copy = [o for o in C.selected_objects if o.name != name][0]
             assert idmap.claim(copy) != idmap.uid_of(bpy.data.objects[name])
-            assert runtime.history_of(copy) is None and not datarec.is_tracked(copy)
+            assert runtime.history_of(copy) is None and datarec.is_tracked(copy)
             assert (copy.data == bpy.data.objects[name].data) == linked
+            assert datarec.mesh_owned_elsewhere(copy) == (linked and copy.type == "MESH")
         assert {u: _object_history_snapshot(r, u) for u in r.names} == snapshot
         assert len(runtime.reg().history_for(r.scene_uid).entries) == n_scene + 2
         T.select()

@@ -20,8 +20,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, ".tmp", "mutants_bl")
 RESULTS = os.path.join(ROOT, ".tmp", "results", "tools", "mutation_bl")
 T1 = ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps"]
-TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_tier1.py",
-         "test_bl_adapters.py")
+TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_t1_added.py",
+         "test_bl_tier1.py", "test_bl_adapters.py")
 
 # (file under hindsight/, exact text, replacement, what it breaks, rows, reason if equivalent)
 MUTANTS = [
@@ -110,6 +110,30 @@ MUTANTS = [
     _JUMPS.append(", "    _JUMPS.clear()
     _JUMPS.append(",
      "only the newest jump can be undone (D35)", T1, None),
+    ("bl/datarec.py", "    rt = _rt()
+    ob = idmap.find(uid)
+    if ob is None or is_linked(ob) or not isinstance(ob, bpy.types.Object):
+        return",
+     "    return", "objects added while the scene is recorded not recorded (D36)", ["obj.addremove"], None),
+    ("bl/adapters.py", "    return sorted((p, r) for p, (r, _a, _ap) in d.items() if idmap.find(r) is None)",
+     "    return []", "no note about a reference to a deleted object (D37)", ["obj.parenting", "obj.constraints"], None),
+    ("bl/datarec.py", "    if not adapters.MISSING_REFS:
+        return
+", "    return
+",
+     "references not put back when the object comes back (D37)", ["obj.parenting", "obj.constraints"], None),
+    ("bl/adapters.py", '    "parent": ("matrix_parent_inverse",),
+', "",
+     "parent inverse not written again after the parent (D38)", ["obj.parenting"], None),
+    ("bl/datarec.py", "    _MESH_USERS.update({ptr: [uid] for ptr, uid in owners.items()})",
+     "    _MESH_USERS.update({ptr: [u for _n, u, _o in users[ptr]] for ptr in owners})",
+     "every linked duplicate records the shared mesh (D39)", ["obj.addremove", "obj.editsteps"], None),
+    ("bl/datarec.py", '    me = ob.data
+    if getattr(me, "is_editmode", False):
+        return True',
+     '    return False', "a shared mesh read in the middle of an Edit Mode visit (D39)", ["obj.editsteps"], None),
+    ("bl/runtime.py", " and not datarec.mesh_owned_elsewhere(obj))", ")",
+     "Edit Mode steps recorded on a linked duplicate too (D39)", ["obj.editsteps"], None),
 ]
 
 

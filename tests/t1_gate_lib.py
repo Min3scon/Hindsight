@@ -11,6 +11,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_ops as T
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import warnings as W
 from hindsight.core import globaltl
 
 C = bpy.context
@@ -149,10 +150,11 @@ def check_steps(r):
             assert d == exp, f"{op.label}: {who} got {d} steps, want {exp}"
 
 
-def _own(state, renames=None):
+def _own(state, renames=None, shared_mesh=False):
     """An object's state without values that depend on other objects (its own history alone
-    doesn't move those). renames: references to objects renamed since read by their new name."""
-    s = {k: v for k, v in state.items() if k != "canon"}
+    doesn't move those). renames: references to objects renamed since read by their new name.
+    shared_mesh: the object's mesh is recorded by another object's history (D39), so it is left out."""
+    s = {k: v for k, v in state.items() if k != "canon" and not (shared_mesh and k == "mesh")}
     s["rna"] = {k: v for k, v in s["rna"].items() if k not in ("matrix_world", "matrix_local")}
     return _renamed_refs(s, renames) if renames else s
 
@@ -178,12 +180,15 @@ def check_object_histories(r, full=True, seed=7):
         h = runtime.reg().history_for(uid)
         if h is None or not h.entries or idmap.find(uid) is None:
             continue                    # a deleted object: checked through the global timeline
+        # D39: a linked duplicate's mesh is recorded by its owner's history (checked there and on
+        # the global timeline); this object's own history holds its object data
+        shared = datarec.mesh_owned_elsewhere(idmap.find(uid))
         want = {}
         for i, ln in enumerate(r.lens):
             then = r.names_at[i].get(uid)
             if then is None or then not in r.states[i]:
                 continue
-            st = _own(r.states[i][then], r.renames)
+            st = _own(r.states[i][then], r.renames, shared)
             if ln[uid] in want:
                 assert want[ln[uid]] == st, (f"{name} changed without a step at operation {i}: "
                                              f"{O.diff(want[ln[uid]], st)[:3]}")
@@ -196,9 +201,50 @@ def check_object_histories(r, full=True, seed=7):
             runtime._goto_history(h, pos, True)
             ob = idmap.find(uid)
             assert ob is not None, f"{name} is gone at its position {pos}"
-            got = _own(O.object_state(ob, derived=False), r.renames)
-            assert got == want[pos], f"{name} at its position {pos}: {O.diff(want[pos], got)[:4]}"
+            got = _own(O.object_state(ob, derived=False), r.renames, shared)
+            gone = _deleted_refs(want[pos])
+            if not gone:
+                assert got == want[pos], f"{name} at its position {pos}: {O.diff(want[pos], got)[:4]}"
+                continue
+            # D37: an object's own history can't bring back an object it referred to and that is
+            # deleted now: exactly those references are empty, everything else is exact, and the
+            # sidebar says which object it was
+            assert _same_but_deleted(want[pos], got, gone), \
+                f"{name} at its position {pos} (refers to deleted {sorted(gone)}): {O.diff(want[pos], got)[:4]}"
+            notes = " ".join(t for _s, t in W.everything_notes(C, ob))
+            assert all(n in notes for n in gone), f"{name} at {pos}: no note about deleted {sorted(gone)}: {notes}"
         runtime._goto_history(h, len(h.entries), True)
+
+
+def _deleted_refs(state) -> set:
+    """Names of objects a recorded state refers to that don't exist now."""
+    out = set()
+
+    def walk(v):
+        if isinstance(v, tuple) and len(v) == 3 and v[0] == "ID":
+            if v[1] == "Object" and v[2] not in bpy.data.objects:
+                out.add(v[2])
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                walk(x)
+    walk(state)
+    return out
+
+
+def _same_but_deleted(want, got, gone) -> bool:
+    """want == got, except that a reference to an object in `gone` may be empty (None) in got."""
+    if isinstance(want, tuple) and len(want) == 3 and want[0] == "ID" and want[1] == "Object" and want[2] in gone:
+        return got is None
+    if isinstance(want, dict):
+        return isinstance(got, dict) and want.keys() == got.keys() and \
+            all(_same_but_deleted(want[k], got[k], gone) for k in want)
+    if isinstance(want, (list, tuple)) and not (isinstance(want, tuple) and want and want[0] == "f"):
+        return type(got) is type(want) and len(got) == len(want) and \
+            all(_same_but_deleted(a, b, gone) for a, b in zip(want, got))
+    return want == got
 
 
 def goto_after(max_seq_):

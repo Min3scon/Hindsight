@@ -144,6 +144,13 @@ TXT_EV_COMEBACK = ("A deleted {kind} comes back only while its data is still in 
                    "(meshes and empties always come back)")
 TXT_EV_NEW_COLLECTIONS = ("Collections you make or delete are undone only when the scene is recorded "
                           "(Record adding and deleting objects)")
+TXT_EV_SHARED_MESH = ("Shares its mesh with {owner} (a linked duplicate): changes to the mesh are recorded "
+                      "in {owner}'s history")
+TXT_EV_MISSING_REF = ("This step refers to {names}, which is deleted now. This object's own history can't "
+                      "bring it back; the global history can")
+TXT_EV_PARENT_DEFORM = ("Parenting with deform added a modifier ({names}). Modifiers and vertex groups aren't "
+                        "recorded yet, so going back past the parenting keeps them")
+_DEFORM_MODIFIERS = {"ARMATURE", "LATTICE", "CURVE"}
 
 
 def everything_notes(context, obj) -> list:
@@ -178,10 +185,21 @@ def everything_notes(context, obj) -> list:
                if p.identifier != "rna_type"):
             out.append((INFO, TXT_EV_LISTS))
             break
+    parent = getattr(obj, "parent", None)
+    deform = [m.name for m in getattr(obj, "modifiers", ())
+              if parent is not None and m.type in _DEFORM_MODIFIERS and getattr(m, "object", None) == parent]
+    if deform:
+        out.append((INFO, TXT_EV_PARENT_DEFORM.format(names=", ".join(deform[:3]))))
     if getattr(obj, "type", None) == "MESH" and len(obj.data.vertices) > runtime.EDIT_STEPS_MAX:
         out.append((INFO, TXT_EV_EDIT_BIG))
     if not scene_on:
         out.append((INFO, TXT_EV_NEW_COLLECTIONS))
+    if datarec.mesh_owned_elsewhere(obj):
+        out.append((INFO, TXT_EV_SHARED_MESH.format(owner=datarec.mesh_owner_name(obj) or "another object")))
+    refs = adapters.missing_refs(obj)
+    if refs:
+        names = sorted({str((datarec._BODIES.get(r) or {}).get("name") or "an object") for _p, r in refs})
+        out.append((WARNING, TXT_EV_MISSING_REF.format(names=", ".join(names[:3]))))
     return out
 
 
