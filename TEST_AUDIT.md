@@ -156,6 +156,28 @@ D14, D18, D20, D24, D26, D28, D32, D35, D36, D38, D39. None open.
 - Tier 6: scene, world, render settings, collection structure: only what the generic adapter covers
   cheaply, each with a test.
 
+## Tier 0 gate plan (next after Tier 1)
+
+The sculpt rows get the same machinery Tier 1 has, sculpt tests counting only for sculpt rows:
+- OPS: real operators. Headless: mask flood fill and filters, face set operators, hide, Vertex Paint
+  fills, voxel remesh, decimate, Edit Mode visits, join and separate. Real interface: brush strokes
+  by mouse (round_c), a real Vertex Paint stroke and a real remesh (both missing so far).
+- ORACLE: tests/oracle.py's mesh reader at every position, and a replay of the same operations in a
+  fresh scene without Hindsight.
+- STEPS: one stroke one step, quick and slow, through the real timer (operator end and settle).
+- UNDO: a real-interface scenario like s_t1_gate (Ctrl+Z and Ctrl+Shift+Z after strokes, mixed with
+  scrubbing, across Sculpt / Vertex Paint / Edit Mode, Global Undo off, undo steps min and max, Edit >
+  Undo History, File > Revert).
+- RELOAD: sidecar, embed, both, rename, copy-paste, append and link, Shift+D and Alt+D, older formats,
+  for sculpt histories (a test_bl_t0_reload like test_bl_t1_reload).
+- PROP: Hypothesis over strokes on several objects, masks, face sets, hiding, colours, remesh, Edit
+  Mode visits, joins and separates, jumps and emulated Blender undo; every position exact.
+- MUT: the recorder (runtime._observe, _apply_to_state, _write_state, commit) in tools/mutation_bl.py.
+- FAULT, FAULT.CORRUPT: the recorder's guard, damaged files (round_d, test_core_format) tagged.
+- PERF, SOAK: per-stroke cost on small, medium and heavy meshes against budgets; s_soak with a sculpt
+  focus.
+- WARN, VISUAL: Multires, Dyntopo, 2M vertices, the Alt+D warning; ui_tour shots, looked at.
+
 ## Plan
 
 1. Evidence tooling: machine-readable results from every runner, row and gate tags on tests,
