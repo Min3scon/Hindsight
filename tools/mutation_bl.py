@@ -216,6 +216,12 @@ def read_mesh_snapshot",
     ("bl/datarec.py", "    rt.OP_GROUP[0] = [None]\n", "    rt.OP_GROUP[0] = None\n",
      "one operator's data and Edit Mode steps not one global position (D52, D58)", ["obj.editsteps", "obj.addremove"],
      None),
+    ("bl/datarec.py", "        if isinstance(idb, bpy.types.Object) and rt.is_excluded(idb):\n            _EXCLUDED.add(uid)",
+     "        if False:\n            _EXCLUDED.add(uid)", "objects excluded by Collection Filtering still recorded (D54)",
+     ["obj.collections"], None),
+    ("bl/datarec.py", "            _EXCLUDED.discard(uid)\n            catch_up(ob, CHANGES_WHILE_EXCLUDED)",
+     "            _EXCLUDED.discard(uid)", "changes made while excluded lost when the filter is lifted (D54)",
+     ["obj.collections"], None),
 ]
 
 

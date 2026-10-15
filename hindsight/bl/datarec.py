@@ -128,6 +128,23 @@ def _track_new(uid: str) -> None:
 
 
 CHANGES_WHILE_OFF = "Changes While Not Recorded"
+CHANGES_WHILE_EXCLUDED = "Changes While Excluded"
+_EXCLUDED: set = set()       # D54: tracked objects excluded by Collection Filtering at the last check
+
+
+def check_exclusion() -> None:
+    """D54: objects excluded by Collection Filtering record nothing; when one stops being excluded,
+    what changed meanwhile becomes one step, so its history stays a line of real states."""
+    rt = _rt()
+    for uid in tracked_uids():
+        ob = idmap.find(uid)
+        if not isinstance(ob, bpy.types.Object):
+            continue
+        if rt.is_excluded(ob):
+            _EXCLUDED.add(uid)
+        elif uid in _EXCLUDED:
+            _EXCLUDED.discard(uid)
+            catch_up(ob, CHANGES_WHILE_EXCLUDED)
 
 
 def catch_up(idb, label: str = CHANGES_WHILE_OFF) -> list:
@@ -377,6 +394,7 @@ def tick() -> None:
     rt = _rt()
     if rt._SUSPEND[0] or _operation_running():
         return
+    check_exclusion()
     marker = _ops_marker()
     finished = marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
     if marker is not None and _OPS["marker"] is None:
@@ -398,6 +416,7 @@ def finish_operation(label: str) -> list:
     operation (the scene, object data, meshes, every object in Edit Mode: one position on the
     global timeline, D52 and D58). Tests call this for what the timer does."""
     rt = _rt()
+    check_exclusion()
     refresh_mesh_users()
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
@@ -495,6 +514,9 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
             continue
         idb = idmap.find(uid)
         if idb is None or is_linked(idb):
+            continue
+        if isinstance(idb, bpy.types.Object) and rt.is_excluded(idb):
+            _EXCLUDED.add(uid)       # D54: nothing is recorded for it (caught up when it's back)
             continue
         mesh_step = None
         if mesh and uid in _MESH_DIRTY and not (isinstance(idb, bpy.types.Object) and idb.type == "MESH"
@@ -859,6 +881,7 @@ def forget() -> None:
     _MESH_USERS.clear()
     _MESH_OWNER.clear()
     _MESH_OF.clear()
+    _EXCLUDED.clear()
     adapters.MISSING_REFS.clear()
     adapters.NAME_TAKEN.clear()
     _OPS["marker"] = None

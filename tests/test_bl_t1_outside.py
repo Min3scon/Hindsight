@@ -90,6 +90,36 @@ def test_paused_and_resumed():
     every_position_existed("A", states)
 
 
+@covers("obj.collections", "STEPS", "EXACT")
+def test_excluded_by_collection_filtering():
+    """D54: an object excluded by Collection Filtering records nothing (it used to record object
+    steps, not its mesh); when the filter no longer excludes it, what changed meanwhile is one step,
+    so every position of its history is a state that existed."""
+    setup()
+    sh = C.scene.hindsight
+    a = bpy.data.objects["A"]
+    states = [state()]
+    op(T.move_to_collection("A", "Props"))
+    states.append(state())
+    h = runtime.history_of(a)
+    n = len(h.entries)
+    sh.filter_mode = "BLACKLIST"
+    sh.filter_collections.add().collection = bpy.data.collections["Props"]
+    try:
+        for o in (T.translate("A", (0, 2, 0)), T.resize("A", 2.0), T.apply_transform("A", "scale")):
+            op(o)
+            states.append(state())
+        assert len(h.entries) == n, "something was recorded for an excluded object"
+    finally:
+        sh.filter_mode = "NONE"
+    L.tick_like("filter changed")
+    labels = [e.meta.get("label") for e in h.entries]
+    assert labels[-1] == datarec.CHANGES_WHILE_EXCLUDED and len(labels) == n + 1, labels
+    op(T.rotate("A", 0.3))
+    states.append(state())
+    every_position_existed("A", states)
+
+
 def save_and_change_outside(path, change):
     """Save with Hindsight, then without it change the file and save again, then open it with
     Hindsight."""
@@ -179,6 +209,7 @@ def test_saving_normally_never_raises_the_alarm():
 
 
 for fn in (test_record_everything_switched_off_and_on, test_paused_and_resumed, test_values_changed_without_hindsight,
-           test_mesh_changed_without_hindsight, test_saving_normally_never_raises_the_alarm):
+           test_mesh_changed_without_hindsight, test_saving_normally_never_raises_the_alarm,
+           test_excluded_by_collection_filtering):
     H.run(fn)
 H.finish()
