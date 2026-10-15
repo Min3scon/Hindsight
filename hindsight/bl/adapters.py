@@ -25,7 +25,8 @@ from . import idmap, log
 ALLOWLIST: dict = {
     "Object": (
         ("parent", "ref", "parenting"), ("parent_type", "value", "parenting"),
-        ("parent_bone", "value", "parenting"), ("matrix_parent_inverse", "value", "parenting"),
+        ("parent_bone", "value", "parenting"), ("parent_vertices", "value", "parenting"),
+        ("matrix_parent_inverse", "value", "parenting"),
         ("location", "value", "transforms"), ("rotation_mode", "value", "transforms"),
         ("rotation_euler", "value", "transforms"), ("rotation_quaternion", "value", "transforms"),
         ("rotation_axis_angle", "value", "transforms"), ("scale", "value", "transforms"),

@@ -210,3 +210,33 @@ python tests_ui/hs_ui.py run corpus --blender 5.1.2 --out-tag c100k --arg model=
 (remesh: `--arg remesh=1`, subdivided: `--arg subsurf=1`; the old core root comes from
 `git archive d200842 hindsight/core | tar -x -C <folder>`.) Exploration scripts behind "What didn't help"
 are in `bench/lab/`; `bench/bench_codec.py` is the first lab (format variants side by side).
+
+## Tier 1: recording other data (Record everything), test_bl_t1_perf
+
+Measured 2026-10-15 on the development PC, medians of 5 runs (3 for the mesh check), headless.
+Budgets in the test are about 3 times these; the test fails if one is exceeded.
+
+| | 5.0.1 | 5.1.1 | 5.1.2 | Budget |
+|---|---|---|---|---|
+| small (6 objects): recording after a move | 2.0 ms | 1.8 ms | 1.7 ms | 8 ms |
+| small: after parenting (relations change) | 2.4 ms | 2.5 ms | 2.4 ms | 10 ms |
+| small: after adding an object | 2.9 ms | 3.1 ms | 3.1 ms | 12 ms |
+| medium (60 objects, 20 on): after a move | 6.2 ms | 4.6 ms | 4.6 ms | 15 ms |
+| medium: after parenting | 12.7 ms | 11.4 ms | 12.0 ms | 35 ms |
+| medium: after adding an object | 23.0 ms | 12.5 ms | 17.7 ms | 40 ms |
+| heavy (500 objects, 50 on): after a move | 13.4 ms | 15.0 ms | 13.6 ms | 45 ms |
+| heavy: after parenting | 79.4 ms | 84.3 ms | 94.2 ms | 250 ms |
+| heavy: after adding an object | 82.0 ms | 85.7 ms | 91.3 ms | 260 ms |
+| restoring one step of an object | 0.07 ms | 0.07 ms | 0.07 ms | 2 ms |
+| global jump, start to end and back (heavy) | 8.0 ms | 7.8 ms | 7.3 ms | 60 ms |
+| step size: a move | 148 B | 148 B | 148 B | 512 B |
+| step size: a constraint added | 360 B | 361 B | 361 B | 1 KB |
+| step size: an object added (with a copy of its 500-vertex mesh) | 20.1 KB | 20.1 KB | 20.1 KB | 48 KB |
+| Object Mode mesh check (Shade Smooth), 10k vertices | 3.4 ms | 4.8 ms | 4.7 ms | 20 ms |
+| same, 100k vertices | 22.6 ms | 23.8 ms | 25.5 ms | 90 ms |
+| same, 1M vertices | 266 ms | 470 ms | 237 ms | 2,000 ms |
+
+In the heavy scene, an operation that changes relations (parenting, constraints, collections) makes
+Blender report every object as updated, and with the scene recorded each object's stored details
+(what brings a deleted object back exactly, D18) are read again: 129 of 160 ms in a profile. Reading
+only the objects that can be deleted next would need to predict the selection; not done.

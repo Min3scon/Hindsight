@@ -126,6 +126,20 @@ def parent(child, par, keep):
         type="OBJECT", keep_transform=keep), active=par), [child])
 
 
+def vertex_parent(child, par, n_verts):
+    """Ctrl+P in Edit Mode on the parent mesh with 1 or 3 vertices selected (Vertex or Vertex Triangle
+    parent). Entering and leaving Edit Mode on the parent is not a step."""
+    def run():
+        select(child, par, active=par)
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="DESELECT")
+        _select_verts(n_verts)(bpy.data.objects[par])
+        r = bpy.ops.object.vertex_parent_set()
+        bpy.ops.object.mode_set(mode="OBJECT")
+        return r
+    return Op(f"vertex parent {child} to {par} ({n_verts})", run, [child])
+
+
 def unparent(name, how):
     return Op(f"clear parent {name} ({how})", _sel_then([name], lambda: bpy.ops.object.parent_clear(type=how)),
               [name])
@@ -342,7 +356,10 @@ def sequences() -> dict:
                            origin_to_geometry("C"), shade("A", True), translate("Pivot", (-1, 0, 0))],
         "obj.parenting": [parent("A", "Pivot", True), translate("Pivot", (0, 1, 0)), parent("B", "A", False),
                           rotate("A", 0.5), unparent("B", "CLEAR_KEEP_TRANSFORM"), unparent("A", "CLEAR_INVERSE"),
-                          parent("C", "B", True), unparent("C", "CLEAR")],
+                          parent("C", "B", True), unparent("C", "CLEAR"),
+                          vertex_parent("C", "E", 1), vertex_parent("B", "E", 3), vertex_parent("C", "E", 3),
+                          translate("E", (0, 0, 1)),
+                          unparent("C", "CLEAR_KEEP_TRANSFORM")],
         "obj.constraints": [add_constraint("A", "COPY_LOCATION"), add_constraint("A", "LIMIT_ROTATION"),
                             add_constraint("A", "TRACK_TO"), move_constraint("A", 2, 0), copy_constraint("A", 1),
                             delete_constraint("A", 0), add_constraint("B", "CHILD_OF"), delete_constraint("B", 0)],

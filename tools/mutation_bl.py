@@ -27,6 +27,8 @@ MUTANTS = [
     ("bl/adapters.py", "            if path not in values:\n                continue",
      "            if path not in values or path == 'location':\n                continue",
      "RNA write skips location", ["obj.transforms"], None),
+    ("bl/adapters.py", ' ("parent_vertices", "value", "parenting"),', "",
+     "vertex parent indices not recorded (D31)", ["obj.parenting"], None),
     ("bl/adapters.py", '    "rotation_mode": ("rotation_euler", "rotation_quaternion", "rotation_axis_angle"),',
      '    "rotation_mode": (),', "rotation values not rewritten after the rotation mode", ["obj.transforms"], None),
     ("bl/adapters.py", "        return mathutils.Matrix(v)", "        return v",
