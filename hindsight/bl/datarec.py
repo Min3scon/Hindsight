@@ -619,6 +619,16 @@ def note_jump(hists: dict, values_before: dict, values_after: dict, meshes: dict
     del _JUMPS[:-JUMPS_MAX]
 
 
+def recorded_values() -> dict:
+    """uid -> recorded values of every tracked datablock that exists now (a global jump notes them
+    before and after, see _jump_matches)."""
+    out = {}
+    for uid in tracked_uids():
+        if idmap.find(uid) is not None:
+            out[uid] = dict(_state(uid).values)
+    return out
+
+
 def drop_undone_jumps() -> None:
     """A new step or jump: Blender can no longer redo the jumps it undid."""
     _JUMPS[:] = [j for j in _JUMPS if not j["undone"]]
@@ -644,6 +654,10 @@ def _jump_matches(j, seen: dict) -> bool:
     if not want and not j["meshes"]:
         return False
     if not all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
+        return False
+    # a datablock that exists on the other side of the jump only (brought back or removed by it)
+    # must not exist now
+    if any(uid in seen for uid in set(j["va"] if back else j["vb"]) - set(want)):
         return False
     for uid, (fb, fa) in j["meshes"].items():
         ob = rt.find_object(uid)

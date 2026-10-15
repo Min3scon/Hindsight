@@ -512,6 +512,7 @@ def _write_collection_tree(scene, want: list) -> None:
         if ch is None:
             ch = bpy.data.collections.new(name)
             ch[idmap.UID_PROP] = u
+            idmap.note(ch, u)
         if ch.name != name:
             ch.name = name
         par = coll(p)
@@ -554,11 +555,13 @@ def _recreate_object(scene, uid, body, snap):
         meshio.write_snapshot(data, snap)
         if body.get("data"):
             data[idmap.UID_PROP] = body["data"]
+            idmap.note(data, body["data"])
     if data is None and body.get("type") not in ("EMPTY",):
         log.warn(f"{body.get('name')} can't be brought back: its data is gone")
         return None
     ob = bpy.data.objects.new(body.get("name") or "Object", data)
     ob[idmap.UID_PROP] = uid
+    idmap.note(ob, uid)
     linked = False
     for ref in body.get("collections") or ():
         c = _coll_from_ref(ref)

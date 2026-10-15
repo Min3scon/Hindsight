@@ -61,6 +61,8 @@ def fix_uids() -> list:
                 nu = new_uid()
                 ob[runtime.UID_PROP] = nu
                 runtime._FRESH_UIDS.add(nu)      # unused until something is recorded on the copy (D30)
+                from . import idmap
+                idmap.note(ob, nu)
             except Exception as e:
                 log.error_once(("uid", str(e)), f"could not give {ob.name!r} its own history: {e}", e)
                 continue

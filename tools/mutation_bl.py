@@ -21,7 +21,7 @@ OUT = os.path.join(ROOT, ".tmp", "mutants_bl")
 RESULTS = os.path.join(ROOT, ".tmp", "results", "tools", "mutation_bl")
 T1 = ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps"]
 TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_t1_added.py",
-         "test_bl_tier1.py", "test_bl_adapters.py")
+         "test_bl_t1_real_undo.py", "test_bl_tier1.py", "test_bl_adapters.py")
 
 # (file under hindsight/, exact text, replacement, what it breaks, rows, reason if equivalent)
 MUTANTS = [
@@ -138,6 +138,15 @@ MUTANTS = [
 ', '        if False:
 ',
      "Blender's Edit Mode undo recorded as a step, dropping later ones (D40)", ["obj.editsteps"], None),
+    ("bl/idmap.py", "    if not _session:
+        return 0
+    n = 0", "    if True:
+        return 0
+    n = 0",
+     "ids not put back after Blender's undo (D42)", T1, None),
+    ("bl/runtime.py", 'datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])',
+     'datarec.note_jump(acc["hists"], acc["vb"], acc["va"], acc["meshes"])',
+     "a global jump's values taken in the middle of the jump (D59)", ["obj.addremove"], None),
 ]
 
 

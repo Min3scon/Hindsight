@@ -19,6 +19,52 @@ COLLECTIONS = ("objects", "meshes", "materials", "node_groups", "worlds", "scene
 
 _cache: dict = {}        # uid -> (collection name, datablock name)
 _owner: dict = {}        # uid -> as_pointer() of the datablock that owns it this session
+# D42: session_uid -> uid. Blender keeps a datablock's session_uid through its own undo and redo,
+# but an id property set after Blender pushed its undo step (Hindsight hands out ids after the
+# operator) isn't in that step: restore_after_undo() puts the ids back.
+_session: dict = {}
+
+
+def note(idb, u) -> None:
+    """Remember which id this datablock carries in this session."""
+    try:
+        _session[idb.session_uid] = u
+    except Exception:
+        pass
+
+
+def unnote(idb) -> None:
+    try:
+        _session.pop(idb.session_uid, None)
+    except Exception:
+        pass
+
+
+def restore_after_undo() -> int:
+    """After Blender's own undo or redo: every datablock gets back the id it had in this session
+    (an id set after Blender's undo step was pushed is missing, a copy may carry the original's).
+    Returns how many were put back."""
+    if not _session:
+        return 0
+    n = 0
+    for c in COLLECTIONS:
+        col = getattr(bpy.data, c, None)
+        if col is None:
+            continue
+        for idb in col:
+            try:
+                if idb.library is not None:
+                    continue
+                u = _session.get(idb.session_uid)
+                if u is not None and idb.get(UID_PROP) != u:
+                    idb[UID_PROP] = u
+                    n += 1
+            except Exception:
+                continue
+    if n:
+        _cache.clear()
+        _owner.clear()
+    return n
 
 
 def uid_of(idb, create: bool = False) -> str | None:
@@ -38,7 +84,9 @@ def uid_of(idb, create: bool = False) -> str | None:
         except Exception:
             return None
         _owner[u] = idb.as_pointer()
+        note(idb, u)
         return u
+    note(idb, u)
     return u
 
 
@@ -64,6 +112,7 @@ def claim(idb) -> str | None:
         nu = new_uid()
         idb[UID_PROP] = nu
         _owner[nu] = ptr
+        note(idb, nu)
         return nu
     _owner[u] = ptr              # the old owner is gone (deleted, or undo rebuilt it)
     return u
@@ -108,7 +157,10 @@ def find(uid: str):
     return None
 
 
-def forget() -> None:
-    """Drop caches (file load, undo: datablocks are rebuilt and pointers change)."""
+def forget(session: bool = False) -> None:
+    """Drop caches (file load, undo: datablocks are rebuilt and pointers change). session: also the
+    session ids (a new file, or Hindsight's data removed from this one)."""
     _cache.clear()
     _owner.clear()
+    if session:
+        _session.clear()

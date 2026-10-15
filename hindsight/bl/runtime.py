@@ -81,7 +81,7 @@ def set_registry(r: Registry) -> None:
     try:
         from . import datarec, idmap
         datarec.forget()
-        idmap.forget()
+        idmap.forget(session=True)
     except Exception:
         pass
 
@@ -121,6 +121,9 @@ def obj_uid(obj, create: bool = False):
         u = new_uid()
         obj[UID_PROP] = u
         _FRESH_UIDS.add(u)
+    if u is not None:
+        from . import idmap
+        idmap.note(obj, u)
     return u
 
 
@@ -139,6 +142,7 @@ def drop_unused_uids() -> int:
         u = ob.get(UID_PROP) if ob.library is None else None
         if u in _FRESH_UIDS and u not in used:
             del ob[UID_PROP]
+            idmap.unnote(ob)
             _STATES.pop(u, None)
             n += 1
     _FRESH_UIDS.intersection_update(used)
@@ -859,6 +863,11 @@ def on_redo(*_a) -> None:
 
 def _after_native_undo() -> None:
     """Compare the mesh with our state (commit() detects the match)."""
+    try:
+        from . import idmap
+        idmap.restore_after_undo()        # D42: ids set after Blender's undo push come back first
+    except Exception as e:
+        log.error_once(("restore_ids", str(e)), f"could not restore ids after undo: {e}", e)
     _UID_CACHE.clear()
     _NATIVE_PENDING.update(_STATES.keys())   # objects in other modes are checked on their next commit
     obj = _active()
@@ -1094,6 +1103,8 @@ def global_goto(context, g: int, final: bool = True) -> None:
     old = globaltl.global_position(_REG, vis)
     acc = {"hists": {}, "vb": {}, "va": {}, "meshes": {}, "wrote": False, "object_mode": True}
     held = _leave_edit_for_push(context, final) if g != old else None
+    pre = datarec.recorded_values()          # the whole scene before the jump (objects it brings back
+                                             # or removes must not count on the wrong side)
     for hid, cur in globaltl.transition(_REG, g, vis):
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
@@ -1102,7 +1113,7 @@ def global_goto(context, g: int, final: bool = True) -> None:
     new_g = globaltl.global_position(_REG, vis)
     if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
         if datarec.push_undo():
-            datarec.note_jump(acc["hists"], acc["vb"], acc["va"], acc["meshes"])
+            datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])
     _reenter_edit(context, held)
     p = _scene_props(context)
     preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
