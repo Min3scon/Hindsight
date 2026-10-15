@@ -135,7 +135,7 @@ def collect(context, obj) -> list:
 
 # What Record everything leaves out, said where it applies (COVERAGE.md lists the same limits).
 TXT_EV_LINKED = "Linked from another file: it can't be changed here, so Hindsight doesn't record it"
-TXT_EV_NOT_ON = ("Only adding and deleting this object is recorded. Switch on Record everything on this "
+TXT_EV_NOT_ON = ("Only adding and deleting this object is recorded. Switch on Record > Everything on this "
                  "object to record its changes too")
 TXT_EV_ANIMATED = "Animated or driven, so not recorded (they follow the animation): {names}"
 TXT_EV_LISTS = "Lists in constraint settings (such as Armature constraint targets) aren't recorded"
@@ -143,7 +143,7 @@ TXT_EV_EDIT_BIG = "Over 300,000 vertices: Edit Mode is recorded as one step per 
 TXT_EV_COMEBACK = ("A deleted {kind} comes back only while its data is still in this session "
                    "(meshes and empties always come back)")
 TXT_EV_NEW_COLLECTIONS = ("Collections you make or delete are undone only when the scene is recorded "
-                          "(Record adding and deleting objects)")
+                          "(Record > Objects added and deleted)")
 TXT_EV_SHARED_MESH = ("Shares its mesh with {owner} (a linked duplicate): changes to the mesh are recorded "
                       "in {owner}'s history")
 TXT_EV_MISSING_REF = ("This step refers to {names}, which is deleted now. This object's own history can't "

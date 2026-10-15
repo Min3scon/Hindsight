@@ -21,7 +21,10 @@ _FAIL = object()
 NO_HISTORY = "Hindsight is on. Make a stroke in Sculpt Mode to start recording."
 NO_HISTORY_EDIT = "Hindsight is on. Edits are recorded once this object has a history."
 NO_HISTORY_EVERYTHING = "Hindsight is on. Changes to this object are recorded from here on."
-NO_HISTORY_OTHER = "To record this object, switch on Record everything on this object."
+NO_HISTORY_OTHER = "To record this object, switch on Record > Everything on this object."
+SWITCHES_TITLE = "Record:"
+SWITCH_OBJECT = "Everything on this object"
+SWITCH_SCENE = "Objects added and deleted"
 CATEGORY = "Undo History"
 
 
@@ -284,11 +287,12 @@ def _draw_everything(layout, context, obj):
     except Exception:
         return
     col = layout.column(align=True)
+    col.label(text=SWITCHES_TITLE)            # short button texts: they fit the narrowest sidebar
     if obj is not None:
-        op = col.operator("hindsight.record_everything", text="Record everything on this object",
+        op = col.operator("hindsight.record_everything", text=SWITCH_OBJECT,
                           icon='CHECKBOX_HLT' if on else 'CHECKBOX_DEHLT', depress=on)
         op.on = not on
-    op = col.operator("hindsight.record_scene", text="Record adding and deleting objects",
+    op = col.operator("hindsight.record_scene", text=SWITCH_SCENE,
                       icon='CHECKBOX_HLT' if scene_on else 'CHECKBOX_DEHLT', depress=scene_on)
     op.on = not scene_on
 
