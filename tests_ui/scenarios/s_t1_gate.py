@@ -382,16 +382,37 @@ def run(d):
                 pts.append((reg.x + int(q.x), reg.y + int(q.y)))
     k0, k1 = min(pts), max(pts)
     before = counts()
-    d.ev("MOUSEMOVE", x=k0[0], y=k0[1])
-    d.key("K", x=k0[0], y=k0[1])
-    yield 0.3
-    for (kx, ky) in (k0, k1):
-        d.ev("MOUSEMOVE", x=kx, y=ky)
-        yield 0.1
-        d.ev("LEFTMOUSE", "PRESS", x=kx, y=ky)
-        d.ev("LEFTMOUSE", "RELEASE", x=kx, y=ky)
-        yield 0.15
-    d.key("RET")
+
+    def knife_gesture():
+        """K, a click on each point (the pointer moved there in small steps first), Enter."""
+        d.ev("MOUSEMOVE", x=k0[0], y=k0[1])
+        yield 0.2
+        d.key("K", x=k0[0], y=k0[1])
+        yield 0.5
+        prev = k0
+        for (kx, ky) in (k0, k1):
+            for t in (0.25, 0.5, 0.75, 1.0):
+                d.ev("MOUSEMOVE", x=int(prev[0] + (kx - prev[0]) * t), y=int(prev[1] + (ky - prev[1]) * t))
+                yield 0.05
+            prev = (kx, ky)
+            d.ev("LEFTMOUSE", "PRESS", x=kx, y=ky)
+            d.ev("LEFTMOUSE", "RELEASE", x=kx, y=ky)
+            yield 0.25
+        d.key("RET")
+        yield 0.3
+
+    def edge_count():
+        with d.override():
+            e.update_from_editmode()
+        return len(e.data.edges)
+
+    n_edges = edge_count()
+    yield from knife_gesture()
+    if edge_count() == n_edges:
+        # the simulated clicks didn't reach Blender's knife (no cut, so rightly no step): once more
+        d.log("knife: Blender made no cut from the simulated clicks; the gesture is repeated once")
+        d.note("knife_retry", True)
+        yield from knife_gesture()
     yield from step("K knife", ROWS["edit"], ["E"])
     with d.override():
         bpy.ops.mesh.select_all(action="DESELECT")
@@ -530,12 +551,15 @@ def run(d):
     with d.override():
         rt.global_goto(bpy.context, max(0, gpos() - 4))
     yield 0.4
+    dbg("after the scrub")
     ok0, _w = in_sync()
     d.key("Z", ctrl=True, x=cx, y=cy)
     yield 0.9
+    dbg("scrub, Ctrl+Z")
     ok1, w1 = in_sync()
     d.key("Z", ctrl=True, shift=True, x=cx, y=cy)
     yield 0.9
+    dbg("scrub, Ctrl+Shift+Z")
     ok2, w2 = in_sync()
     d.check("scrub, Ctrl+Z, Ctrl+Shift+Z: data and history in sync", ok0 and ok1 and ok2, (w1, w2),
             covers=f"obj.transforms, obj.addremove: {undo_item}")

@@ -23,7 +23,8 @@ from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from tests.gate import covers
 from hindsight.core import globaltl
-from hindsight.bl import datarec, idmap, runtime
+from hindsight.core import importer as I
+from hindsight.bl import datarec, idmap, meshio, runtime
 
 C = bpy.context
 
@@ -221,7 +222,43 @@ def test_a_redo_is_matched_on_meshes_too():
         teardown(orig)
 
 
+@covers("obj.editsteps", "UNDO.GLOBAL_OFF")
+def test_blender_undo_never_records_a_step():
+    """D40: with Global Undo off a jump isn't on Blender's undo, so Blender's own Ctrl+Z in Edit Mode
+    can land on an edit state that isn't next to Hindsight's place. It was recorded as a new step,
+    cutting off the steps after the cursor. Now the mesh is put back with a message, nothing is
+    recorded and no step is lost."""
+    H.fresh()
+    T.build_scene()
+    L.track_all()
+    for op in T.edit_ops("E", 3)[:4]:
+        op.run()
+        L.tick_like(op.label)
+    T.select()
+    L.tick_like("leave Edit Mode")
+    e = bpy.data.objects["E"]
+    h = runtime.history_of(e)
+    n = len(h.entries)
+    end = meshio.read_snapshot(e.data)
+    runtime._goto_history(h, 1, True)                    # back over three Edit Mode steps
+    at_one = meshio.read_snapshot(e.data)
+    T.select("E")
+    bpy.ops.object.mode_set(mode="EDIT")
+    runtime.check_mode_transition()
+    # what Blender's Edit Mode undo does here: its own stack puts back the edit state of the end
+    with runtime.suspended():
+        bpy.ops.object.mode_set(mode="OBJECT")
+        meshio.write_snapshot(e.data, end)
+        bpy.ops.object.mode_set(mode="EDIT")
+    runtime.UNDO_DIRECTION[0] = "undo"
+    runtime._after_native_undo()
+    assert len(h.entries) == n and h.cursor == 1, (len(h.entries), h.cursor, n)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    got = meshio.read_snapshot(e.data)
+    assert I.snapshot_digest(got) == I.snapshot_digest(at_one), "the mesh is back at the history's place"
+
+
 for fn in (test_undo_and_redo_across_a_global_walk, test_a_jump_from_edit_mode_is_undone_in_one_go,
-           test_a_redo_is_matched_on_meshes_too):
+           test_a_redo_is_matched_on_meshes_too, test_blender_undo_never_records_a_step):
     H.run(fn)
 H.finish()

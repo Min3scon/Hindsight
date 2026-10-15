@@ -134,6 +134,10 @@ MUTANTS = [
      '    return False', "a shared mesh read in the middle of an Edit Mode visit (D39)", ["obj.editsteps"], None),
     ("bl/runtime.py", " and not datarec.mesh_owned_elsewhere(obj))", ")",
      "Edit Mode steps recorded on a linked duplicate too (D39)", ["obj.editsteps"], None),
+    ("bl/runtime.py", '        if mode == "EDIT" and _edit:
+', '        if False:
+',
+     "Blender's Edit Mode undo recorded as a step, dropping later ones (D40)", ["obj.editsteps"], None),
 ]
 
 

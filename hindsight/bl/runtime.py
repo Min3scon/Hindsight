@@ -40,6 +40,9 @@ _NATIVE_PENDING: set = set()
 _WROTE: set = set()
 NATIVE_UNDO_TEXT = ("Blender's own undo can't go back past a history jump in Sculpt or Vertex Paint "
                     "Mode, so it was reversed. Use Ctrl+Z or the slider")
+NATIVE_UNDO_EDIT_TEXT = ("Blender's own undo went to an Edit Mode state that isn't next to this object's "
+                         "place in its history (with Global Undo off a history jump isn't on Blender's "
+                         "undo), so it was reversed. Use the slider")
 
 
 def mark_written(obj) -> None:
@@ -561,6 +564,12 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
             # not a real state. Put the mesh back (never record it, never drop later steps).
             _put_back_after_native_undo(obj, st, step)
             return None
+        if mode == "EDIT" and _edit:
+            # D40: Blender's own Edit Mode undo landed somewhere that isn't next to the cursor (with
+            # Global Undo off a jump isn't on Blender's undo). Blender's undo never records a step
+            # or drops later ones: put the mesh back and say so.
+            _put_back_after_native_undo(obj, st, step, NATIVE_UNDO_EDIT_TEXT)
+            return None
     if h is not None:
         fut = h.future_count()
         if fut > 0:
@@ -594,8 +603,10 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     return step
 
 
-def _put_back_after_native_undo(obj, st: MeshState, step: Step) -> None:
+def _put_back_after_native_undo(obj, st: MeshState, step: Step, text: str = NATIVE_UNDO_TEXT) -> None:
     keys = {d.key for d in step.deltas} | set(st.removed) if step.kind == DELTA else {"__TOPO__"}
+    if obj.mode == "EDIT":
+        keys = {"__TOPO__"}       # in Edit Mode the edit mesh is written by leaving and entering it
     name = obj.name
 
     def _later():
@@ -605,11 +616,14 @@ def _put_back_after_native_undo(obj, st: MeshState, step: Step) -> None:
             tag_redraw_all()
         return None
     # Never write meshes or switch modes inside Blender's undo handler: do it right after.
-    bpy.app.timers.register(_later, first_interval=0.0)
-    log.warn(NATIVE_UNDO_TEXT)
+    if bpy.app.background:
+        _later()                  # tests call the handler themselves, outside Blender's undo
+    else:
+        bpy.app.timers.register(_later, first_interval=0.0)
+    log.warn(text)
     try:
         from .selfcheck import flash_status
-        flash_status("Hindsight: " + NATIVE_UNDO_TEXT, 10.0)
+        flash_status("Hindsight: " + text, 10.0)
     except Exception:
         pass
 

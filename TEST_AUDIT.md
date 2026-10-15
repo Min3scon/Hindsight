@@ -88,6 +88,23 @@ Defects found by this audit, before any new test:
 - **D15** (S3): animated or driven constraint settings are read as user changes, so changing the
   frame records steps. Fix written (on the `tier2` branch), to be ported with a regression test.
 
+### Tier 1 update (2026-10-15)
+
+The gate machinery from the plan below exists and runs on all three Blenders: tests/oracle.py
+(independent oracle) and the replay oracle (tests/t1_gate_lib.py), test_bl_t1_gate (every row's
+operations, every position both ways, the global timeline, Blender's undo emulated), test_bl_t1_prop
+(Hypothesis, 2,000 sequences, corpus kept), tools/mutation_bl.py (39 mutants), test_bl_t1_faults
+(per-adapter fault isolation), test_bl_t1_corrupt, test_bl_t1_reload and test_bl_t1_migrate (every
+reload variant and older formats), test_bl_t1_warn, test_bl_t1_perf (budgets), test_bl_t1_jumps
+(Blender's undo of jumps), test_bl_t1_added (objects that come and go), and the real-interface
+scenario s_t1_gate (every Tier 1 operation by keyboard and mouse, Ctrl+Z / Ctrl+Shift+Z mixed with
+scrubbing and across Edit Mode, Global Undo off, undo steps at their minimum and maximum) plus
+s_soak (per adapter and mixed). The gaps listed in the table above are closed by those tests;
+TEST_EVIDENCE.md is the record of what passed where.
+
+Defects found by the gate work: D14 to D39 (DEFECTS.md, no D21), among them S1: D17, D27 and S2:
+D14, D18, D20, D24, D26, D28, D32, D35, D36, D38, D39. None open.
+
 ## Tiers 2 to 6
 
 | Tier | Rows | Code | Tests |
