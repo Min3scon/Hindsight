@@ -20,6 +20,8 @@ _FAIL = object()
 
 NO_HISTORY = "Hindsight is on. Make a stroke in Sculpt Mode to start recording."
 NO_HISTORY_EDIT = "Hindsight is on. Edits are recorded once this object has a history."
+NO_HISTORY_EVERYTHING = "Hindsight is on. Changes to this object are recorded from here on."
+NO_HISTORY_OTHER = "To record this object, switch on Record everything on this object."
 CATEGORY = "Undo History"
 
 
@@ -147,11 +149,15 @@ def draw_main(layout, context, units=None):
     """Status, slider, step counter, back and forward. Shared by the sidebar and the popover."""
     _draw_problems(layout, context, units)
     obj = _ctx_active(context)
+    everything = _everything_on()
     if obj is None:
         wrap(layout, context, "Select a mesh object to see its history.", 'INFO', units)
         return
-    if getattr(obj, "type", None) != 'MESH':
+    if getattr(obj, "type", None) != 'MESH' and not everything:
         wrap(layout, context, "Hindsight records mesh objects. Select a mesh.", 'INFO', units)
+        return
+    if getattr(obj, "type", None) != 'MESH':
+        _draw_other_object(layout, context, obj, units)
         return
 
     excluded = _call("is_excluded", obj)
@@ -175,9 +181,44 @@ def draw_main(layout, context, units=None):
     if not info or not info.get("len"):
         if paused in (None, _FAIL) and (recording is not False or has_uid in (None, _FAIL)):
             text = NO_HISTORY_EDIT if getattr(obj, "mode", "") == 'EDIT' else NO_HISTORY
+            if everything and _tracked(obj):
+                text = NO_HISTORY_EVERYTHING
             wrap(layout, context, text, 'INFO', units)
+        _draw_everything(layout, context, obj)
         return
+    _draw_slider(layout, context, info, units)
+    _draw_everything(layout, context, obj)
 
+
+def _everything_on() -> bool:
+    try:
+        from . import datarec
+        return datarec.scope_everything()
+    except Exception:
+        return False
+
+
+def _tracked(obj) -> bool:
+    try:
+        from . import datarec
+        return bool(datarec.is_tracked(obj))
+    except Exception:
+        return False
+
+
+def _draw_other_object(layout, context, obj, units=None):
+    """An empty or another non-mesh object with Record set to Everything: its history (if it has
+    one) and the switches. Sculpting doesn't apply to it."""
+    info = _call("scrub_info", context)
+    if info in (None, _FAIL) or not info.get("len"):
+        text = NO_HISTORY_EVERYTHING if _tracked(obj) else NO_HISTORY_OTHER
+        wrap(layout, context, text, 'INFO', units)
+    else:
+        _draw_slider(layout, context, info, units)
+    _draw_everything(layout, context, obj)
+
+
+def _draw_slider(layout, context, info, units=None):
     pos, n = int(info.get("pos", 0)), int(info.get("len", 0))
     locked = bool(info.get("locked"))
     wm = context.window_manager
@@ -217,7 +258,7 @@ def draw_history_options(layout, context):
     col = layout.column(align=True)
     row = col.row(align=True)
     _operator(row, "hindsight.set_morph_target", "Set morph target", 'PINNED')
-    _operator(row, "hindsight.morph_brush", "Morph History brush", 'BRUSH_DATA')
+    _operator(row, "hindsight.morph_brush", "Morph brush", 'BRUSH_DATA')
     row = col.row(align=True)
     _operator(row, "hindsight.delete_past", "Delete earlier steps", 'TRASH')
     _operator(row, "hindsight.reset_history", "Clear history", 'FILE_REFRESH')
@@ -230,7 +271,6 @@ def draw_history_options(layout, context):
         _operator(row, "hindsight.turn_off", "Pause recording", 'PAUSE')
     _operator(row, "hindsight.reset_and_turn_off", "Clear and stop", 'CANCEL')
     _operator(layout, "hindsight.reset_all", "Clear all histories", 'TRASH')
-    _draw_everything(layout, context, obj)
 
 
 def _draw_everything(layout, context, obj):
@@ -239,8 +279,8 @@ def _draw_everything(layout, context, obj):
         from . import datarec
         if not datarec.scope_everything():
             return
-        on = datarec.is_tracked(obj) if obj is not None else False
-        scene_on = datarec.is_tracked(context.scene)
+        on = _tracked(obj) if obj is not None else False
+        scene_on = _tracked(context.scene)
     except Exception:
         return
     col = layout.column(align=True)

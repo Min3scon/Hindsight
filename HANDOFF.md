@@ -210,6 +210,27 @@ COVERAGE rows filled. round_b_features now 18/18 on all three Blenders: it found
 brush broken in Blender 5.x, fixed) and a test-setup gap (an object kept Sculpt Mode after another
 object was added, so Ctrl+J ran in Sculpt Mode). Next: Tier 2.
 
+### Tier 1 gate status (test guarantee, 2026-10-15)
+Headless gate on all three Blenders: OPS, EXACT, ORACLE+REPLAY, STEPS, UNDO (emulated), RELOAD (all
+variants incl. previous formats), FAULT and FAULT.CORRUPT, WARN, PERF pass (`tests/test_bl_t1_*.py`).
+Hypothesis at 2,000 examples per row with the corpus in `tests/corpus/t1_prop`. Mutation:
+`tools/mutation_bl.py` 28 mutants. Defects found and fixed so far: D14-D34 (DEFECTS.md).
+Real-interface gate: `python tests_ui/hs_ui.py run t1_gate --blender <v> --out-tag <v>[-variant]`
+(variants: `--arg variant=globaloff|undomin|undomax`, `--arg debug=1` prints every history's cursor
+around Blender's undo). 48/48 on 5.1.2 after D35 (jumps on Blender's undo). The Hypothesis run then
+found D36 (objects added while the scene is recorded lost later changes) and D37 (a reference to a
+deleted object); fixes in `.tmp/fix_d36_d37.py` and the parenting-deform note in
+`.tmp/warn_parent.py` are applied after the headless pass, with tests/test_bl_t1_added.py.
+Soak per adapter: `python tests_ui/hs_ui.py run soak --blender <v> --out-tag <v>-<focus> --arg
+focus=rna|object|scene|edit|mesh` (30 minutes each), mixed (`focus=mixed`, 2 hours) later.
+Still to do for the gate: t1_gate default and three variants on all three Blenders, visual review of
+the shots (`tools/visual_review.py`), the soaks, the final Hypothesis and mutation runs on the final
+code, `python tools/make_evidence.py`, the hostile reviewer, a full regression pass. COVERAGE
+statuses change only through make_evidence's gate check.
+Importer (after the Tier 1 gate): design in IMPORTER.md; core in hindsight/core/importer.py with
+tests/test_core_importer.py (passing); Blender side staged in `.tmp/staging/` (version_reader.py,
+importer.py, ui_empty_state.py).
+
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
 adapter records, migration from 1-3) -> Tiers 1..6 -> website v2 -> final test passes -> ship.

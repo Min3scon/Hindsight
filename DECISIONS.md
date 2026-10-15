@@ -216,6 +216,16 @@ Checklist items that were checked and are NOT the cause:
   it switches it back on.
 - With the scene recorded, the collection tree is recorded too (part of the Tier 6 row "collection
   structure"), because M > New Collection is a Tier 1 operation and can't be undone without it.
+- Jumps and Blender's undo (D35): every finished jump that changes a recorded object, its mesh
+  included, is one entry on Blender's undo, pushed in Object Mode. A jump started in Edit Mode leaves
+  Edit Mode for the push and goes back into it afterwards (a push in Edit Mode keeps only the edit mesh,
+  so Blender's later undo would put back stale data for everything else). Scripts switching modes don't
+  add undo entries in Blender, so this adds exactly one entry per jump. Hindsight remembers the jumps
+  Blender can still undo or redo (up to 512) and matches one only when the values and every mesh it
+  wrote (a fingerprint of counts, topology and recorded attributes before and after) are exactly the
+  state on its other side. Sculpt-only histories in Sculpt or Vertex Paint Mode keep the Tier 0
+  behaviour (Blender's sculpt undo; see NATIVE_UNDO_TEXT). Cost: two mesh reads per recorded mesh a
+  finished jump writes (measured with the Tier 1 PERF tests).
 
 ### Step 5 decisions (website)
 - Hand-written HTML templates and a 300-line Python build (`site/build.py`) instead of a static site

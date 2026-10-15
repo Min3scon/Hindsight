@@ -20,7 +20,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, ".tmp", "mutants_bl")
 RESULTS = os.path.join(ROOT, ".tmp", "results", "tools", "mutation_bl")
 T1 = ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps"]
-TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_tier1.py", "test_bl_adapters.py")
+TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_tier1.py",
+         "test_bl_adapters.py")
 
 # (file under hindsight/, exact text, replacement, what it breaks, rows, reason if equivalent)
 MUTANTS = [
@@ -97,6 +98,18 @@ MUTANTS = [
      "corner vertices read from the wrong array", ["obj.editsteps", "obj.transforms"], None),
     ("bl/meshio.py", "    if deep == \"corners\":\n        return True", "    if deep:\n        return True",
      "deep topology check skips edges in Edit Mode", ["obj.editsteps"], None),
+    ("bl/runtime.py", 'acc["wrote"] = acc["wrote"] or wrote_data or bool(meshes)',
+     'acc["wrote"] = acc["wrote"] or wrote_data', "global jumps that change only meshes not on Blender's undo (D35)",
+     ["obj.editsteps"], None),
+    ("bl/datarec.py", 'if ob is None or ob.type != "MESH" or rt.mesh_fingerprint(ob) != (fb if back else fa):',
+     'if ob is None or ob.type != "MESH":', "Blender's undo of a jump matched without its meshes (D35)",
+     ["obj.editsteps"], None),
+    ("bl/runtime.py", '    if not final or IN_HANDLER[0] or not datarec.can_push() or ob is None or ob.mode != "EDIT":',
+     '    if True:', "a jump from Edit Mode not pushed in Object Mode (D35)", ["obj.editsteps"], None),
+    ("bl/datarec.py", "    drop_undone_jumps()
+    _JUMPS.append(", "    _JUMPS.clear()
+    _JUMPS.append(",
+     "only the newest jump can be undone (D35)", T1, None),
 ]
 
 

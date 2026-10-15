@@ -1,6 +1,8 @@
 """Read and write Hindsight channels on Blender meshes (numpy + foreach, no bmesh)."""
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 
 from ..core.types import (
@@ -116,6 +118,19 @@ def read_snapshot(me, sculpt_only: bool = False) -> Snapshot:
         if a is not None:
             arrays[key] = a
     return Snapshot(counts(me), arrays)
+
+
+def fingerprint(me) -> str:
+    """A digest of the whole mesh as Hindsight records it (counts, topology, every recorded
+    channel). Used to tell which recorded state Blender's undo put back after a Hindsight jump."""
+    snap = read_snapshot(me)
+    h = hashlib.blake2b(digest_size=16)
+    h.update(repr(sorted(snap.counts.items())).encode())
+    for key in sorted(snap.arrays):
+        a = np.ascontiguousarray(snap.arrays[key])
+        h.update(key.encode() + b"\0" + str(a.dtype).encode() + b"\0")
+        h.update(a.view(np.uint8))
+    return h.hexdigest()
 
 
 def topology_equal(me, snap_counts: dict, snap_arrays: dict, deep=False) -> bool:

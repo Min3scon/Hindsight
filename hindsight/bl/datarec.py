@@ -293,7 +293,14 @@ def tick() -> None:
         _OPS["marker"] = marker
         label = _last_label() if finished else "Change"
         refresh_mesh_users()
-        commit(label=label, uids=(tracked_uids() | set(_DIRTY)) if finished else None, mesh=finished)
+        if finished:
+            # D32: the timer can run before Blender has evaluated what the operator changed; evaluate
+            # now, so its mesh update is seen in this step and not left for a later one
+            try:
+                bpy.context.view_layer.update()
+            except Exception:
+                pass
+        commit(label=label, uids=(tracked_uids() | set(_DIRTY)) if finished else None, mesh=True)
         if finished:
             _edit_step(label)
 
@@ -456,7 +463,7 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
         rt._enforce(h)
         steps.append(step)
     if steps:
-        _JUMPS.clear()        # a new step: Blender's undo now undoes that, not an earlier jump
+        drop_undone_jumps()   # a new step: Blender can no longer redo the jumps it undid
         rt.tag_redraw_all()
     return steps
 
@@ -499,10 +506,18 @@ def _recorded(st: MeshState, aid: str, path: str):
     return st.values.get((aid, path), MISSING)
 
 
+PUSH_IN_BACKGROUND = [False]   # tests: act as if each jump went onto Blender's undo stack
+JUMPS_MAX = 512                # jumps remembered (Blender keeps at most 256 undo steps)
+
+
+def can_push() -> bool:
+    return not bpy.app.background or PUSH_IN_BACKGROUND[0]
+
+
 def push_undo(message: str = "Hindsight jump") -> bool:
-    """Put the state after a jump on Blender's undo stack (Object Mode data only)."""
+    """Put the state after a jump on Blender's undo stack (Object Mode only)."""
     if bpy.app.background:
-        return False
+        return PUSH_IN_BACKGROUND[0]
     try:
         wm = bpy.context.window_manager
         win = wm.windows[0]
@@ -514,12 +529,48 @@ def push_undo(message: str = "Hindsight jump") -> bool:
         return False
 
 
-def note_jump(hists: dict, values_before: dict, values_after: dict) -> None:
+def note_jump(hists: dict, values_before: dict, values_after: dict, meshes: dict | None = None) -> None:
     """Remember a jump that was pushed onto Blender's undo stack (see on_undo). hists: history uid
-    -> [cursor before, cursor after, length] for every history the jump moved."""
-    _JUMPS.clear()
+    -> [cursor before, cursor after, length] for every history the jump moved; meshes: object uid ->
+    [mesh fingerprint before, after] for every recorded mesh it wrote. Jumps undone in Blender and
+    not redone are dropped: a new jump starts a new line of redo."""
+    drop_undone_jumps()
     _JUMPS.append({"hists": {k: list(v) for k, v in hists.items()}, "vb": values_before,
-                   "va": values_after, "undone": False})
+                   "va": values_after, "meshes": dict(meshes or {}), "undone": False})
+    del _JUMPS[:-JUMPS_MAX]
+
+
+def drop_undone_jumps() -> None:
+    """A new step or jump: Blender can no longer redo the jumps it undid."""
+    _JUMPS[:] = [j for j in _JUMPS if not j["undone"]]
+
+
+def _jump_candidate(direction: str):
+    """The jump Blender's undo (the newest not undone) or redo (the oldest undone) would reach."""
+    if direction == "redo":
+        return next((j for j in _JUMPS if j["undone"]), None)
+    return next((j for j in reversed(_JUMPS) if not j["undone"]), None)
+
+
+def _jump_matches(j, seen: dict) -> bool:
+    """Blender's data is exactly the state on the other side of jump j: every history it moved is
+    where j left it, the recorded values and every mesh it wrote match."""
+    rt = _rt()
+    back = not j["undone"]
+    for hid, (cb, ca, n) in j["hists"].items():
+        h = rt.reg().histories.get(hid)
+        if h is None or len(h.entries) != n or h.cursor != (ca if back else cb):
+            return False
+    want = j["vb"] if back else j["va"]
+    if not want and not j["meshes"]:
+        return False
+    if not all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
+        return False
+    for uid, (fb, fa) in j["meshes"].items():
+        ob = rt.find_object(uid)
+        if ob is None or ob.type != "MESH" or rt.mesh_fingerprint(ob) != (fb if back else fa):
+            return False
+    return True
 
 
 @guard.guarded("datarec")
@@ -538,23 +589,20 @@ def on_undo(direction: str = "undo") -> None:
     if not seen:
         return
     moved = set()
-    # Only the newest jump can be undone or redone by Blender, and only while nothing was recorded
-    # after it and the cursor is still where that jump left it.
-    for j in _JUMPS[-1:]:
-        hs = {hid: rt.reg().histories.get(hid) for hid in j["hists"]}
-        if any(h is None or len(h.entries) != j["hists"][hid][2] or
-               h.cursor != j["hists"][hid][1 if not j["undone"] else 0] for hid, h in hs.items()):
-            continue
-        want = j["vb"] if not j["undone"] else j["va"]
-        if want and all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
-            for hid, h in hs.items():
-                h.cursor = j["hists"][hid][0 if not j["undone"] else 1]
-                moved.add(hid)
-                for m in h.members:                     # Blender put the meshes back too
-                    ob = rt.find_object(m)
-                    if ob is not None and ob.mode != "EDIT":
-                        rt.ensure_state(ob, refresh=True)
-            j["undone"] = not j["undone"]
+    # Blender's undo reaches the newest jump not undone yet, its redo the oldest undone one; it
+    # counts only while the histories are where that jump left them and the data (values and
+    # meshes) is exactly the state on its other side.
+    j = _jump_candidate(direction)
+    if j is not None and _jump_matches(j, seen):
+        for hid, (cb, ca, _n) in j["hists"].items():
+            h = rt.reg().histories[hid]
+            h.cursor = cb if not j["undone"] else ca
+            moved.add(hid)
+            for m in h.members:                     # Blender put the meshes back too
+                ob = rt.find_object(m)
+                if ob is not None and ob.mode != "EDIT":
+                    rt.ensure_state(ob, refresh=True)
+        j["undone"] = not j["undone"]
     for uid, vals in seen.items():
         st = _state(uid)
         h = rt.reg().history_for(uid)

@@ -579,7 +579,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     _enforce(h)
     try:
         from . import datarec
-        datarec._JUMPS.clear()
+        datarec.drop_undone_jumps()
     except Exception:
         pass
     tag_redraw_all()
@@ -921,6 +921,10 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     before = h.cursor
     changes = h.goto(pos, states, join_hook=_join_hook)
     wrote_data = False
+    # A jump that may go onto Blender's undo stack: note each recorded mesh before it's written, so
+    # Blender's undo of the jump can be told apart from anything else (datarec.on_undo)
+    pushing = final and not IN_HANDLER[0] and datarec.can_push()
+    meshes = acc["meshes"] if acc is not None else {}
     for target, keys in changes.items():
         ob = _find_any(target)
         st = states.get(target) or _STATES.get(target)
@@ -941,7 +945,12 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         if reenter_edit:
             with suspended():
                 bpy.ops.object.mode_set(mode="OBJECT")
+        fp = pushing and ob.mode == "OBJECT" and ob.type == "MESH" and target in datarec.tracked_uids()
+        if fp and target not in meshes:
+            meshes[target] = [mesh_fingerprint(ob), None]
         _write_state(ob, st, mesh_keys, final)
+        if fp:
+            meshes[target][1] = mesh_fingerprint(ob)
         if reenter_edit:
             with suspended():
                 bpy.ops.object.mode_set(mode="EDIT")
@@ -954,11 +963,11 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         for k, v in vb.items():
             acc["vb"].setdefault(k, v)
         acc["va"].update(va)
-        acc["wrote"] = acc["wrote"] or wrote_data
+        acc["wrote"] = acc["wrote"] or wrote_data or bool(meshes)
         acc["object_mode"] = acc["object_mode"] and object_mode
-    elif wrote_data and final and not IN_HANDLER[0] and object_mode:
+    elif (wrote_data or meshes) and final and not IN_HANDLER[0] and object_mode:
         if datarec.push_undo():
-            datarec.note_jump({h.uid: [before, h.cursor, len(h.entries)]}, vb, va)
+            datarec.note_jump({h.uid: [before, h.cursor, len(h.entries)]}, vb, va, meshes)
     _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
     return changes
 
@@ -995,8 +1004,54 @@ def goto(context, pos: int, final: bool = True) -> None:
         h = history_of(_ctx_active(context))
         if h is None:
             return
+        held = _leave_edit_for_push(context, final)
         _goto_history(h, pos, final)
+        _reenter_edit(context, held)
     tag_redraw_all()
+
+
+def _leave_edit_for_push(context, final: bool):
+    """A jump that goes onto Blender's undo stack is pushed in Object Mode: in Edit Mode the push
+    would keep only the edit mesh, and Blender's undo would later put back stale data for every
+    other object. The edit is kept as a step first (as when a jump leaves Edit Mode). Returns the
+    object to put back into Edit Mode after the push, or None."""
+    from . import datarec
+    ob = _ctx_active(context)
+    if not final or IN_HANDLER[0] or not datarec.can_push() or ob is None or ob.mode != "EDIT":
+        return None
+    if not any(datarec.is_tracked(o) for o in context.view_layer.objects if o.mode == "EDIT"):
+        return None
+    with suspended():
+        bpy.ops.object.mode_set(mode="OBJECT")
+    commit(ob, label="Edit Mode", mode="EDIT", full=True)
+    return ob.name
+
+
+def _reenter_edit(context, name) -> None:
+    if name is None:
+        return
+    ob = bpy.data.objects.get(name)
+    if ob is None or ob.type != "MESH" or ob.mode != "OBJECT" or context.view_layer.objects.active != ob:
+        return
+    with suspended():
+        try:
+            bpy.ops.object.mode_set(mode="EDIT")
+        except Exception as e:
+            log.error_once(("reenter_edit", str(e)), f"could not go back to Edit Mode after a jump: {e}", e)
+
+
+def mesh_fingerprint(ob) -> str:
+    """meshio.fingerprint of an object's mesh, also in Edit Mode (read from a copy)."""
+    if ob.mode != "EDIT":
+        return meshio.fingerprint(ob.data)
+    with suspended():
+        ob.update_from_editmode()
+        tmp = ob.data.copy()
+    try:
+        return meshio.fingerprint(tmp)
+    finally:
+        with suspended():
+            bpy.data.meshes.remove(tmp)
 
 
 def global_goto(context, g: int, final: bool = True) -> None:
@@ -1005,7 +1060,8 @@ def global_goto(context, g: int, final: bool = True) -> None:
     from . import datarec
     vis = _visible_uids()
     old = globaltl.global_position(_REG, vis)
-    acc = {"hists": {}, "vb": {}, "va": {}, "wrote": False, "object_mode": True}
+    acc = {"hists": {}, "vb": {}, "va": {}, "meshes": {}, "wrote": False, "object_mode": True}
+    held = _leave_edit_for_push(context, final) if g != old else None
     for hid, cur in globaltl.transition(_REG, g, vis):
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
@@ -1013,7 +1069,8 @@ def global_goto(context, g: int, final: bool = True) -> None:
     new_g = globaltl.global_position(_REG, vis)
     if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
         if datarec.push_undo():
-            datarec.note_jump(acc["hists"], acc["vb"], acc["va"])
+            datarec.note_jump(acc["hists"], acc["vb"], acc["va"], acc["meshes"])
+    _reenter_edit(context, held)
     p = _scene_props(context)
     preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
     if preserve and final and new_g != old:
