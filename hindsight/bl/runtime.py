@@ -1029,9 +1029,10 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
             wrote_data = True
         if not mesh_keys:
             continue
-        reenter_edit = ob.mode == "EDIT"
-        if reenter_edit:
-            with suspended():
+        # the mesh can be in Edit Mode through the object itself or (D51) through a linked duplicate
+        editor = ob if ob.mode == "EDIT" else _mesh_editor(ob)
+        if editor is not None:
+            with suspended(), bpy.context.temp_override(object=editor, active_object=editor):
                 bpy.ops.object.mode_set(mode="OBJECT")
         fp = pushing and ob.mode == "OBJECT" and ob.type == "MESH" and target in datarec.tracked_uids()
         if fp and target not in meshes:
@@ -1039,8 +1040,8 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         _write_state(ob, st, mesh_keys, final)
         if fp:
             meshes[target][1] = mesh_fingerprint(ob)
-        if reenter_edit:
-            with suspended():
+        if editor is not None:
+            with suspended(), bpy.context.temp_override(object=editor, active_object=editor):
                 bpy.ops.object.mode_set(mode="EDIT")
     ob = find_object(h.members[0]) if h.members else None
     object_mode = ob is None or ob.mode == "OBJECT"
@@ -1098,6 +1099,17 @@ def goto(context, pos: int, final: bool = True) -> None:
         _goto_history(h, pos, final)
         _reenter_edit(context, held)
     tag_redraw_all()
+
+
+def _mesh_editor(ob):
+    """The object through which ob's mesh is in Edit Mode right now (a linked duplicate), or None."""
+    me = getattr(ob, "data", None)
+    if me is None or not getattr(me, "is_editmode", False):
+        return None
+    for o in bpy.context.view_layer.objects:
+        if o.data == me and o.mode == "EDIT":
+            return o
+    return None
 
 
 def _leave_edit_for_push(context, final: bool):

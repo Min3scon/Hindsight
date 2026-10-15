@@ -157,6 +157,35 @@ def test_first_edit_visit_is_a_step():
             datarec.FORCE_KINDS[0] = None
 
 
+@covers("obj.editsteps", "EXACT")
+def test_dragging_while_a_linked_duplicate_is_in_edit_mode():
+    """D51: the global slider dragged (and released) while a linked duplicate of a recorded mesh is
+    in Edit Mode: the shared mesh is written (Edit Mode is left and entered again around it), no
+    error in the middle of the jump, cursors and mesh agree."""
+    from tests import oracle as O
+    L.fresh_scene()
+    L.track_all()
+    runtime.reg().preserve_modes = False
+    start = O.read_mesh(bpy.data.objects["A"], O.mesh_state)
+    for o in [T.duplicate("A", linked=True), T.edit("A", "grab", lambda: bpy.ops.transform.translate(value=(0, 0, 0.5))),
+              T.leave_edit("A"), T.translate("B", (0, 1, 0))]:
+        o.run()
+        L.tick_like(o.label)
+    T.select("A.001")
+    bpy.ops.object.mode_set(mode="EDIT")
+    runtime.check_mode_transition()
+    L.tick_like("Toggle Edit Mode")
+    runtime.global_goto(C, 2, final=False)             # dragging (position 1: the duplicate, not the grab)
+    runtime.global_goto(C, 1, final=False)
+    runtime.global_goto(C, 1, final=True)              # released
+    a = bpy.data.objects["A"]
+    assert bpy.data.objects["A.001"].mode == "EDIT", "Edit Mode is kept"
+    assert O.read_mesh(a, O.mesh_state) == start, "before the grab the shared mesh is as at the start"
+    runtime.global_goto(C, glen(), final=True)
+    h = runtime.history_of(a)
+    assert h.cursor == len(h.entries)
+
+
 def mesh_steps(ob) -> int:
     h = runtime.reg().history_for(idmap.uid_of(ob))
     return 0 if h is None else sum(1 for e in h.entries if e.meta.get("kind") != "DATA")
@@ -191,6 +220,7 @@ def test_linked_duplicates_record_their_mesh_once():
 
 for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_its_changes,
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
-           test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step):
+           test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
+           test_dragging_while_a_linked_duplicate_is_in_edit_mode):
     H.run(fn)
 H.finish()
