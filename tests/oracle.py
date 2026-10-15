@@ -233,8 +233,21 @@ def object_state(ob, mesh: bool = True, derived: bool = True) -> dict:
         out["hide"] = None
     if mesh and ob.type == "MESH" and ob.data is not None:
         out["mesh"] = read_mesh(ob, mesh_state)
-        out["vgroups"] = tuple(g.name for g in ob.vertex_groups)
+        out["vgroups"] = read_mesh(ob, lambda me: vertex_weights(ob, me))
     return out
+
+
+def vertex_weights(ob, me) -> tuple:
+    """Every vertex group of the object with its members and weights (bit for bit, as Blender's API
+    can write them: 0 to 1), read vertex by vertex (not the way Hindsight reads them)."""
+    names = [g.name for g in ob.vertex_groups]
+    per = {n: [] for n in names}
+    for v in me.vertices:
+        for g in v.groups:
+            if g.group < len(names):
+                w = float(np.clip(np.float32(g.weight), 0.0, 1.0))
+                per[names[g.group]].append((v.index, struct.pack("<f", w).hex()))
+    return tuple((n, hashlib.blake2b(repr(per[n]).encode(), digest_size=16).hexdigest()) for n in names)
 
 
 def read_mesh(ob, reader):

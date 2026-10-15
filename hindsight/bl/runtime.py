@@ -263,16 +263,27 @@ def _sync_edit(obj) -> None:
             pass
 
 
+def extras_on(obj) -> bool:
+    """D43: vertex group weights and shape keys are part of the mesh state of objects recorded with
+    Record everything."""
+    try:
+        from . import datarec
+        return datarec.is_tracked(obj)
+    except Exception:
+        return False
+
+
 def read_mesh_snapshot(obj):
     """The object's mesh as a Snapshot. In Edit Mode the mesh attributes are the edit-mode layers,
     so the edit mesh is written back first and a plain copy is read instead."""
+    ext = extras_on(obj)
     if obj.mode != "EDIT":
-        return meshio.read_snapshot(obj.data)
+        return meshio.read_snapshot(obj.data, ob=obj, extras=ext)
     with suspended():
         obj.update_from_editmode()
         tmp = obj.data.copy()
     try:
-        return meshio.read_snapshot(tmp)
+        return meshio.read_snapshot(tmp, ob=obj, extras=ext)
     finally:
         with suspended():
             bpy.data.meshes.remove(tmp)
@@ -377,21 +388,23 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
     me = me if me is not None else obj.data
     uid = obj_uid(obj)
     c = meshio.counts(me)
+    ext = full and extras_on(obj)
     if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=deep)):
-        after = meshio.read_snapshot(me)
+        after = meshio.read_snapshot(me, ob=obj, extras=ext)
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
                     kind=TOPO, before=st.to_snapshot(), after=after)
-    keys = meshio.channel_keys(me, sculpt_only=not full)
+    extra_vals = meshio.read_extras(obj, me) if ext else {}
+    keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
     for k in list(st.arrays):
-        if k in meshio.TOPO_KEYS or k in present:
+        if k in meshio.TOPO_KEYS or k in present or (meshio.is_extra(k) and not ext):
             continue
         name = split_key(k)[0]
         if full or name in meshio.SCULPT_NAMES or split_key(k)[2] in ("FLOAT_COLOR", "BYTE_COLOR"):
             keys.append(k)
     deltas = []
     for key in keys:
-        new = meshio.read_channel(me, key, reuse=True)
+        new = extra_vals.get(key) if meshio.is_extra(key) else meshio.read_channel(me, key, reuse=True)
         old = st.arrays.get(key)
         if new is None and old is None:
             continue
@@ -423,6 +436,21 @@ def _apply_to_state(st: MeshState, step: Step) -> None:
         st.removed.clear()
 
 
+WEIGHTS_CLAMPED: set = set()  # object uids whose last restore put back weights outside 0 to 1 clamped
+
+
+def _clamp_state_weights(obj, st: MeshState) -> None:
+    """D43: Blender only takes weights from 0 to 1: the state keeps what Blender now holds, so the
+    clamping is never recorded as a change."""
+    clamped = False
+    for k, arr in st.arrays.items():
+        if k.startswith(meshio.VG_PREFIX):
+            clamped |= meshio.clamp_weights(arr)
+    uid = obj_uid(obj)
+    if clamped:
+        WEIGHTS_CLAMPED.add(uid)
+
+
 def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
     mark_written(obj)
     me = obj.data
@@ -446,14 +474,15 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
                 return
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            meshio.write_snapshot(me, st.to_snapshot())
+            meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode=mode)
         else:
-            meshio.write_changes(me, st.arrays, keys, st.removed)
+            meshio.write_changes(me, st.arrays, keys, st.removed, ob=obj)
             if obj.mode == "SCULPT" and final and _refresh_toggle():
                 _sculpt_refresh(obj)
         st.removed.clear()
+        _clamp_state_weights(obj, st)
         obj.update_tag()
 
 
@@ -1102,13 +1131,14 @@ def _reenter_edit(context, name) -> None:
 
 def mesh_fingerprint(ob) -> str:
     """meshio.fingerprint of an object's mesh, also in Edit Mode (read from a copy)."""
+    with_ob = ob if extras_on(ob) else None
     if ob.mode != "EDIT":
-        return meshio.fingerprint(ob.data)
+        return meshio.fingerprint(ob.data, with_ob)
     with suspended():
         ob.update_from_editmode()
         tmp = ob.data.copy()
     try:
-        return meshio.fingerprint(tmp)
+        return meshio.fingerprint(tmp, with_ob)
     finally:
         with suspended():
             bpy.data.meshes.remove(tmp)

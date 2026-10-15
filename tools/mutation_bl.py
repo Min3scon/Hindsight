@@ -21,7 +21,8 @@ OUT = os.path.join(ROOT, ".tmp", "mutants_bl")
 RESULTS = os.path.join(ROOT, ".tmp", "results", "tools", "mutation_bl")
 T1 = ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps"]
 TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_t1_added.py",
-         "test_bl_t1_real_undo.py", "test_bl_tier1.py", "test_bl_adapters.py")
+         "test_bl_t1_real_undo.py", "test_bl_t1_meshdata.py", "test_bl_tier1.py",
+         "test_bl_adapters.py")
 
 # (file under hindsight/, exact text, replacement, what it breaks, rows, reason if equivalent)
 MUTANTS = [
@@ -152,6 +153,31 @@ MUTANTS = [
      "                if ob is not None and ob.mode != \"EDIT\":
                     rt.ensure_state(ob, refresh=True)",
      "after Blender's undo of a jump, an object in Edit Mode keeps a stale state (D53)", ["obj.editsteps"], None),
+    ("bl/runtime.py", "        return datarec.is_tracked(obj)
+    except Exception:
+        return False
+
+
+def read_mesh_snapshot",
+     "        return False
+    except Exception:
+        return False
+
+
+def read_mesh_snapshot",
+     "weights and shape keys not part of recorded objects' states (D43)", ["obj.editsteps"], None),
+    ("bl/meshio.py", "        for name, lock in groups:
+            if ob.vertex_groups.get(name) is None:",
+     "        for name, lock in []:
+            if ob.vertex_groups.get(name) is None:",
+     "vertex groups not kept across a topology restore (D43)", ["obj.editsteps"], None),
+    ("bl/meshio.py", "    members = np.nonzero(~np.isnan(arr))[0]", "    members = np.nonzero(arr >= 0)[0]",
+     "negative weights read as not in the group (D43)", ["obj.editsteps"], None),
+    ("bl/meshio.py", "    if rebuilt or any(len(kb.data) != n for kb in blocks):", "    if False:",
+     "shape keys not rebuilt at the new size (D43)", ["obj.editsteps"], None),
+    ("bl/runtime.py", "        _clamp_state_weights(obj, st)
+", "",
+     "clamped weights left out of the state, recorded as a change (D43)", ["obj.editsteps"], None),
 ]
 
 
