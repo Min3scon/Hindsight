@@ -659,8 +659,10 @@ def sync_taken_names() -> None:
 
 def resolve_missing_refs() -> None:
     """D37: an object a restore couldn't refer to is back (the global history brought it back): put
-    the recorded references in now, so Blender matches the history again."""
+    the recorded references in now, so Blender matches the history again. D55: then collections
+    Hindsight made again that the jump took out and left empty are removed."""
     if not adapters.MISSING_REFS:
+        adapters.drop_recreated_orphans()
         return
     for ou, d in list(adapters.MISSING_REFS.items()):
         todo = {}
@@ -672,6 +674,7 @@ def resolve_missing_refs() -> None:
             write(owner, _state(ou), todo)
         elif owner is None:
             adapters.MISSING_REFS.pop(ou, None)
+    adapters.drop_recreated_orphans()
 
 
 def _recorded(st: MeshState, aid: str, path: str):
@@ -884,4 +887,6 @@ def forget() -> None:
     _EXCLUDED.clear()
     adapters.MISSING_REFS.clear()
     adapters.NAME_TAKEN.clear()
+    adapters.COLL_NAMES.clear()
+    adapters._RECREATED.clear()
     _OPS["marker"] = None

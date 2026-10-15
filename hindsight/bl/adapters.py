@@ -137,6 +137,8 @@ def same(a, b) -> bool:
 
 ENABLED_KINDS = [None]       # set of kind ids, or None for all (datarec keeps this up to date)
 MISSING_REFS: dict = {}      # D37: object uid -> {path: (referenced id, adapter, adapter path)}
+COLL_NAMES: dict = {}        # D55: collection id -> its name when last seen in a scene (for messages)
+_RECREATED: set = set()      # D55: collections Hindsight made again (removed when taken out and empty)
 NAME_TAKEN: dict = {}        # D47: uid -> the name it should have, which another datablock holds
 
 
@@ -380,13 +382,20 @@ class ObjectAdapter(Adapter):
         if "collections" in values and values["collections"] is not MISSING:
             want = set(values["collections"])
             have = {_coll_ref(c): c for c in idb.users_collection}
-            for ref in want - set(have):
+            missing = []
+            for ref in sorted(want - set(have)):
                 c = _coll_from_ref(ref)
-                if c is not None:
-                    try:
-                        c.objects.link(idb)
-                    except Exception as e:
-                        log.error_once(("coll_link", str(e)), f"could not put the object back in a collection: {e}", e)
+                if c is None:
+                    if not ref.startswith("scene:"):
+                        missing.append(ref)
+                    continue
+                try:
+                    c.objects.link(idb)
+                except Exception as e:
+                    log.error_once(("coll_link", str(e)), f"could not put the object back in a collection: {e}", e)
+            # D55: a collection that's deleted now: the object goes in when it's back (the global
+            # history brings collections back before it puts objects in them)
+            _note_ref(idb, "collections", missing[0] if missing else None, None, "object", "collections")
             for ref in set(have) - want:
                 if len(idb.users_collection) > 1:      # never take an object out of its last collection
                     try:
@@ -400,6 +409,39 @@ class ObjectAdapter(Adapter):
                 pass
         if "constraints" in values and values["constraints"] is not MISSING:
             _write_constraints(idb, values["constraints"])
+
+
+def _give_name(ch, name: str, names: dict) -> None:
+    """D55: a collection gets its recorded name back from one that isn't in any scene now (taken out
+    by this jump, or left over) or that gets another name in this same jump; one still in use keeps
+    its name and this one gets '.001' (the sidebar says so)."""
+    if ch.name != name and ch.library is None:
+        holder = bpy.data.collections.get(name)
+        if (holder is not None and holder != ch and holder.library is None
+                and (holder.users == 0 or names.get(idmap.uid_of(holder), name) != name)):
+            if hasattr(ch, "rename"):
+                ch.rename(name, mode="ALWAYS")
+            else:
+                holder.name = name + ".001"
+                ch.name = name
+        else:
+            ch.name = name
+    note_name(ch, name)
+
+
+def drop_recreated_orphans() -> None:
+    """D55: a collection Hindsight made again that a later jump took out of the scene, with nothing
+    left in it, is removed again, as it was when it was deleted (collections the user made stay, so
+    their settings are kept when they come back)."""
+    for u in list(_RECREATED):
+        c = idmap.find(u)
+        if c is None:
+            _RECREATED.discard(u)
+            continue
+        if c.users == 0 and not c.objects and not c.children and c.library is None:
+            _RECREATED.discard(u)
+            idmap.unnote(c)
+            bpy.data.collections.remove(c)
 
 
 def _coll_ref(c) -> str:
@@ -551,6 +593,8 @@ def collection_tree(scene) -> list:
         for ch in c.children:
             u = idmap.claim(ch)
             rows.append([u, ch.name, parent])
+            if u:
+                COLL_NAMES[u] = ch.name
             walk(ch, u)
     walk(scene.collection, "scene")
     return rows
@@ -571,15 +615,15 @@ def _write_collection_tree(scene, want: list) -> None:
             par, ch = coll(p), idmap.find(u)
             if par is not None and ch is not None and ch.name in par.children:
                 par.children.unlink(ch)
+    names = {u: name for u, name, _p in want}
     for u, name, p in want:
         ch = idmap.find(u)
         if ch is None:
             ch = bpy.data.collections.new(name)
             ch[idmap.UID_PROP] = u
             idmap.note(ch, u)
-        if ch.name != name:
-            ch.name = name
-        note_name(ch, name)
+            _RECREATED.add(u)
+        _give_name(ch, name, names)
         par = coll(p)
         if par is not None and ch.name not in par.children:
             par.children.link(ch)

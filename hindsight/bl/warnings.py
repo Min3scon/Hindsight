@@ -212,7 +212,8 @@ def everything_notes(context, obj) -> list:
         out.append((INFO, TXT_EV_NAME_TAKEN.format(want=taken, got=obj.name)))
     refs = adapters.missing_refs(obj)
     if refs:
-        names = sorted({str((datarec._BODIES.get(r) or {}).get("name") or "an object") for _p, r in refs})
+        names = sorted({f"the collection {adapters.COLL_NAMES[r]}" if r in adapters.COLL_NAMES
+                        else str((datarec._BODIES.get(r) or {}).get("name") or "an object") for _p, r in refs})
         out.append((WARNING, TXT_EV_MISSING_REF.format(names=", ".join(names[:3]))))
     return out
 

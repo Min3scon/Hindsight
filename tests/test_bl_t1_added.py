@@ -491,6 +491,50 @@ def test_linked_duplicates_record_their_mesh_once():
     L.check_object_histories(r, full=True)
 
 
+@covers("obj.collections", "EXACT", "STEPS", "WARN")
+@covers("obj.addremove", "EXACT")
+def test_a_deleted_collection_comes_back():
+    """D55: A in a new collection Outer, Outer deleted the way the outliner does it (A goes to the
+    Scene Collection), then C in a new collection that takes the name Outer. The global history back
+    and forward again matches every real state: A goes back into Outer once Outer exists again
+    (it stayed in the Scene Collection), Outer gets its own name back (it was Outer.001), and no
+    empty collection is left over when it's deleted again. A's own history can't bring Outer back
+    and says so."""
+    setup()
+    states, seqs = [L.snap()], [L.max_seq()]
+
+    def step(o):
+        o.run() if isinstance(o, T.Op) else o()
+        L.tick_like("step")
+        states.append(L.snap())
+        seqs.append(L.max_seq())
+    step(T.move_to_collection("A", "Outer", new=True))
+
+    def delete_outer():
+        outer = bpy.data.collections["Outer"]
+        for ob in list(outer.objects):
+            if ob.name not in C.scene.collection.objects:
+                C.scene.collection.objects.link(ob)
+        bpy.data.collections.remove(outer)
+    step(delete_outer)
+    step(T.move_to_collection("C", "Outer", new=True))
+    step(T.translate("A", (0, 0, 1)))
+    for i in list(range(len(seqs)))[::-1] + list(range(len(seqs))):
+        L.goto_after(seqs[i])
+        d = O.diff(states[i], L.snap())
+        assert not d, (i, d[:3])
+    assert not [c.name for c in bpy.data.collections if c.users == 0], "an empty collection was left over"
+    a = bpy.data.objects["A"]
+    h = runtime.history_of(a)
+    runtime._goto_history(h, 0, True)
+    runtime._goto_history(h, 1, True)                   # A in the deleted Outer
+    assert [c.name for c in a.users_collection] == ["Scene Collection"]
+    notes = " ".join(t for _s, t in W.everything_notes(C, a))
+    assert "the collection Outer" in notes, notes
+    runtime._goto_history(h, len(h.entries), True)
+    assert not any("deleted now" in t for _s, t in W.everything_notes(C, a))
+
+
 for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_its_changes,
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
            test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
@@ -498,6 +542,7 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload,
            test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
            test_references_to_linked_objects, test_deleted_objects_come_back_complete,
-           test_several_objects_in_edit_mode, test_separate_is_one_operation):
+           test_several_objects_in_edit_mode, test_separate_is_one_operation,
+           test_a_deleted_collection_comes_back):
     H.run(fn)
 H.finish()

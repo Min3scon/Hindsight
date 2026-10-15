@@ -222,6 +222,17 @@ def read_mesh_snapshot",
     ("bl/datarec.py", "            _EXCLUDED.discard(uid)\n            catch_up(ob, CHANGES_WHILE_EXCLUDED)",
      "            _EXCLUDED.discard(uid)", "changes made while excluded lost when the filter is lifted (D54)",
      ["obj.collections"], None),
+    ("bl/adapters.py", '            _note_ref(idb, "collections", missing[0] if missing else None, None, "object", "collections")',
+     "            pass", "objects not put back into a collection the global history brings back (D55)",
+     ["obj.collections"], None),
+    ("bl/adapters.py", '            if hasattr(ch, "rename"):\n                ch.rename(name, mode="ALWAYS")',
+     '            if hasattr(ch, "rename"):\n                ch.name = name',
+     "a collection brought back doesn't get its name back from a left-over one (D55)", ["obj.collections"], None),
+    ("bl/adapters.py", "        if c.users == 0 and not c.objects and not c.children and c.library is None:",
+     "        if False:", "empty collections made again are left over (D55)", ["obj.collections"], None),
+    ("bl/warnings.py", 'f"the collection {adapters.COLL_NAMES[r]}" if r in adapters.COLL_NAMES',
+     'f"the collection {adapters.COLL_NAMES[r]}" if False',
+     "a deleted collection named as an object in the sidebar (D55)", ["obj.collections"], None),
 ]
 
 
