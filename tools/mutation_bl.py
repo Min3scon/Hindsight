@@ -184,6 +184,17 @@ def read_mesh_snapshot",
     ("bl/runtime.py", '        editor = ob if ob.mode == "EDIT" else _mesh_editor(ob)',
      '        editor = ob if ob.mode == "EDIT" else None',
      "a shared mesh written while a linked duplicate is in Edit Mode (D51)", ["obj.editsteps"], None),
+    ("bl/adapters.py", '        ("data", "ref", "objects"),           # which mesh (or other data) it uses (D44: Make Single User)
+',
+     "", "which mesh an object uses not recorded (D44)", ["obj.addremove"], None),
+    ("bl/datarec.py", "            rt.ensure_state(ob, refresh=True)
+            _MESH_OF[uid] = ptr",
+     "            _MESH_OF[uid] = ptr", "a new owner of a mesh keeps a stale state (D44)", ["obj.addremove"], None),
+    ("bl/runtime.py", '        relink_last = pos < before and "data" in data_keys.get("rna", ())', "        relink_last = False",
+     "going back over a relink writes the mesh into the earlier one (D44)", ["obj.addremove"], None),
+    ("bl/datarec.py", "            uid = min((0 if records_mesh(u) else 1, n, u) for n, u, _o in us)[2]",
+     "            uid = min((n, u) for n, u, _o in us)[1]", "the shared mesh's owner after a reload picked by name (D45)",
+     ["obj.addremove"], None),
 ]
 
 

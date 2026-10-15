@@ -71,6 +71,7 @@ class Run:
         self.ops = []
         self.states, self.lens, self.seqs = [snap()], [lengths()], [max_seq()]
         self.names, self.names_at = {}, []
+        self.shared_at = []          # per state: uids whose mesh another object records (D39, D44)
         self.renames = {}            # old name -> new name, for references read by name
         self._note_names()
         for op in ops:
@@ -90,13 +91,17 @@ class Run:
     def _note_names(self):
         """Tracked objects by id, noted after every operation (so deleted ones keep their name, and
         a renamed object is found under the name it had at each step)."""
-        now = {}
+        now, shared = {}, set()
+        datarec.refresh_mesh_users()
         for uid in runtime.reg().everything:
             ob = idmap.find(uid)
             if isinstance(ob, bpy.types.Object):
                 self.names[uid] = ob.name
                 now[uid] = ob.name
+                if datarec.mesh_owned_elsewhere(ob):
+                    shared.add(uid)
         self.names_at.append(now)
+        self.shared_at.append(shared)
 
 
 def replay(ops) -> list:
@@ -180,15 +185,15 @@ def check_object_histories(r, full=True, seed=7):
         h = runtime.reg().history_for(uid)
         if h is None or not h.entries or idmap.find(uid) is None:
             continue                    # a deleted object: checked through the global timeline
-        # D39: a linked duplicate's mesh is recorded by its owner's history (checked there and on
-        # the global timeline); this object's own history holds its object data
-        shared = datarec.mesh_owned_elsewhere(idmap.find(uid))
-        want = {}
+        # D39, D44: while a linked duplicate's mesh is recorded by another object's history it is
+        # checked there (and on the global timeline); this object's own history holds its object data
+        want, shared_at = {}, {}
         for i, ln in enumerate(r.lens):
             then = r.names_at[i].get(uid)
             if then is None or then not in r.states[i]:
                 continue
-            st = _own(r.states[i][then], r.renames, shared)
+            shared_at.setdefault(ln[uid], uid in r.shared_at[i])
+            st = _own(r.states[i][then], r.renames, shared_at[ln[uid]])
             if ln[uid] in want:
                 assert want[ln[uid]] == st, (f"{name} changed without a step at operation {i}: "
                                              f"{O.diff(want[ln[uid]], st)[:3]}")
@@ -201,7 +206,7 @@ def check_object_histories(r, full=True, seed=7):
             runtime._goto_history(h, pos, True)
             ob = idmap.find(uid)
             assert ob is not None, f"{name} is gone at its position {pos}"
-            got = _own(O.object_state(ob, derived=False), r.renames, shared)
+            got = _own(O.object_state(ob, derived=False), r.renames, shared_at[pos])
             gone = _deleted_refs(want[pos])
             if not gone:
                 assert got == want[pos], f"{name} at its position {pos}: {O.diff(want[pos], got)[:4]}"

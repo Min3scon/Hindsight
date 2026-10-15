@@ -24,6 +24,7 @@ from . import idmap, log
 # this order: parenting first, modes before the values they convert.
 ALLOWLIST: dict = {
     "Object": (
+        ("data", "ref", "objects"),           # which mesh (or other data) it uses (D44: Make Single User)
         ("parent", "ref", "parenting"), ("parent_type", "value", "parenting"),
         ("parent_bone", "value", "parenting"), ("parent_vertices", "value", "parenting"),
         ("matrix_parent_inverse", "value", "parenting"),

@@ -186,6 +186,84 @@ def test_dragging_while_a_linked_duplicate_is_in_edit_mode():
     assert h.cursor == len(h.entries)
 
 
+def _single_user(name):
+    def run():
+        T.select(name)
+        return bpy.ops.object.make_single_user(object=False, obdata=True)
+    return T.Op(f"make single user {name}", run, [name])
+
+
+def _apply_isolated(name):
+    def run():
+        T.select(name)
+        return bpy.ops.object.transform_apply(location=False, rotation=False, scale=True, isolate_users=True)
+    return T.Op(f"apply scale {name}, isolate users", run, [name])
+
+
+@covers("obj.addremove", "EXACT", "STEPS")
+@covers("obj.editsteps", "EXACT")
+def test_a_linked_duplicate_gets_its_own_mesh():
+    """D44: Alt+D, an edit through the original, then the duplicate gets its own mesh (Make Single
+    User, or Apply Scale with isolate users) and changes it. Which mesh an object uses is recorded,
+    the duplicate records its new mesh from that mesh as it is, and every history and the global
+    timeline are exact at every position."""
+    for last in (_single_user, _apply_isolated):
+        ops = [T.duplicate("A", linked=True), T.edit("A", "grab", lambda: bpy.ops.transform.translate(value=(0, 0, 0.7))),
+               T.leave_edit("A"), T.resize("A.001", 2.0), last("A.001"), T.shade("A.001", True),
+               T.translate("A.001", (0, 1, 0))]
+        r = L.Run(ops)
+        a, a1 = bpy.data.objects["A"], bpy.data.objects["A.001"]
+        assert a.data != a1.data, last
+        L.check_object_histories(r, full=True)
+        L.check_global(r, full=True)
+
+
+@covers("obj.addremove", "EXACT")
+def test_the_owner_of_a_shared_mesh_deleted():
+    """D44: the object that records a shared mesh is deleted; the other one records it from then on,
+    starting from the mesh as it is."""
+    ops = [T.duplicate("A", linked=True), T.edit("A", "grab", lambda: bpy.ops.transform.translate(value=(0, 0, 0.5))),
+           T.leave_edit("A"), T.delete(["A"]),
+           T.edit("A.001", "scale", lambda: bpy.ops.transform.resize(value=(1.5, 1.5, 1.5))), T.leave_edit("A.001")]
+    r = L.Run(ops)
+    L.check_global(r, full=True)
+    L.check_object_histories(r, full=True)
+
+
+@covers("obj.addremove", "RELOAD.EMBED")
+def test_the_owner_of_a_shared_mesh_after_a_reload():
+    """D45: after a reload the object whose history holds the shared mesh's steps records it (not the
+    first by name): an edit through the other one isn't undone by scrubbing the first one's history."""
+    import os, tempfile
+    from tests import oracle as O
+    L.fresh_scene()
+    L.track_all()
+    for o in [T.duplicate("A", linked=True), T.edit("A", "grab", lambda: bpy.ops.transform.translate(value=(0, 0, 0.5))),
+              T.leave_edit("A")]:
+        o.run()
+        L.tick_like(o.label)
+    bpy.data.objects["A"].name = "Zed"                  # the duplicate's name sorts first now
+    L.tick_like("rename")
+    path = os.path.join(tempfile.mkdtemp(prefix="hs_owner_"), "owner.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    zed, a1 = bpy.data.objects["Zed"], bpy.data.objects["A.001"]
+    datarec.refresh_mesh_users()
+    assert datarec.mesh_owned_elsewhere(a1) and not datarec.mesh_owned_elsewhere(zed)
+    T.edit("A.001", "scale", lambda: bpy.ops.transform.resize(value=(1.5, 1.5, 1.5))).run()
+    L.tick_like("scale")
+    T.leave_edit("A.001").run()
+    T.select()
+    runtime.check_mode_transition()
+    L.tick_like("leave")
+    end = O.read_mesh(zed, O.mesh_state)
+    h = runtime.history_of(zed)
+    runtime._goto_history(h, 0, True)
+    runtime._goto_history(h, len(h.entries), True)
+    assert O.read_mesh(zed, O.mesh_state) == end, "scrubbing Zed's history undid the edit made through A.001"
+
+
 def mesh_steps(ob) -> int:
     h = runtime.reg().history_for(idmap.uid_of(ob))
     return 0 if h is None else sum(1 for e in h.entries if e.meta.get("kind") != "DATA")
@@ -221,6 +299,7 @@ def test_linked_duplicates_record_their_mesh_once():
 for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_its_changes,
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
            test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
-           test_dragging_while_a_linked_duplicate_is_in_edit_mode):
+           test_dragging_while_a_linked_duplicate_is_in_edit_mode, test_a_linked_duplicate_gets_its_own_mesh,
+           test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload):
     H.run(fn)
 H.finish()

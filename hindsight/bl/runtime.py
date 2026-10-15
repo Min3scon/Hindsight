@@ -1024,10 +1024,16 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
                 datarec.write(ob, st, data_keys)
                 wrote_data = True
             continue
-        if data_keys:
+        # D44: steps that change which mesh the object uses: going back, its mesh is written before it
+        # goes back to the earlier mesh; going forward, after it uses the later one
+        relink_last = pos < before and "data" in data_keys.get("rna", ())
+        if data_keys and not relink_last:
             datarec.write(ob, st, data_keys)
             wrote_data = True
         if not mesh_keys:
+            if relink_last:
+                datarec.write(ob, st, data_keys)
+                wrote_data = True
             continue
         # the mesh can be in Edit Mode through the object itself or (D51) through a linked duplicate
         editor = ob if ob.mode == "EDIT" else _mesh_editor(ob)
@@ -1043,6 +1049,9 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         if editor is not None:
             with suspended(), bpy.context.temp_override(object=editor, active_object=editor):
                 bpy.ops.object.mode_set(mode="EDIT")
+        if relink_last:
+            datarec.write(ob, st, data_keys)
+            wrote_data = True
     ob = find_object(h.members[0]) if h.members else None
     object_mode = ob is None or ob.mode == "OBJECT"
     va = {m: dict(states[m].values) for m in tracked if m in states}

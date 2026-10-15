@@ -33,6 +33,7 @@ _JUMPS: list = []            # Hindsight jumps pushed onto Blender's undo stack 
 _MESH_DIRTY: set = set()     # tracked mesh objects whose mesh got a geometry update in Object Mode
 _MESH_USERS: dict = {}       # mesh pointer -> [the tracked object that records it (its owner)]
 _MESH_OWNER: dict = {}       # mesh pointer -> owner uid (kept while it uses the mesh, D39)
+_MESH_OF: dict = {}          # owner uid -> pointer of the mesh its state was read from (D44)
 OBJECT_DEEP_MAX = 1_000_000  # vertices; above this an Object Mode check compares counts and values only
 
 
@@ -178,13 +179,24 @@ def refresh_mesh_users() -> None:
         if isinstance(ob, bpy.types.Object) and ob.type == "MESH" and ob.data is not None:
             users.setdefault(ob.data.as_pointer(), []).append((ob.name, uid, ob))
     owners = {}
+    rt = _rt()
+
+    def records_mesh(u):
+        h = rt.reg().history_for(u)
+        return h is not None and any(e.meta.get("kind") != DATA for e in h.entries)
     for ptr, us in users.items():
         keep = _MESH_OWNER.get(ptr)
-        uid = keep if any(u == keep for _n, u, _o in us) else min(us)[1]
-        if uid != keep and len(us) > 1:
-            ob = next(o for _n, u, o in us if u == uid)
-            if ob.mode != "EDIT":
-                _rt().ensure_state(ob, refresh=True)
+        if any(u == keep for _n, u, _o in us):
+            uid = keep
+        else:
+            # D45: the object whose history already holds this mesh's steps, then the first by name
+            uid = min((0 if records_mesh(u) else 1, n, u) for n, u, _o in us)[2]
+        ob = next(o for _n, u, o in us if u == uid)
+        if _MESH_OF.get(uid) != ptr and ob.mode != "EDIT":
+            # D44: it records a mesh it didn't before (Make Single User, the owner deleted, a duplicate
+            # that was never an owner): its state starts from that mesh as it is
+            rt.ensure_state(ob, refresh=True)
+            _MESH_OF[uid] = ptr
         owners[ptr] = uid
     _MESH_OWNER.clear()
     _MESH_OWNER.update(owners)
@@ -785,5 +797,6 @@ def forget() -> None:
     _MESH_DIRTY.clear()
     _MESH_USERS.clear()
     _MESH_OWNER.clear()
+    _MESH_OF.clear()
     adapters.MISSING_REFS.clear()
     _OPS["marker"] = None
