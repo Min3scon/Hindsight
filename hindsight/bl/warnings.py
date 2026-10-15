@@ -148,6 +148,7 @@ TXT_EV_SHARED_MESH = ("Shares its mesh with {owner} (a linked duplicate): change
                       "in {owner}'s history")
 TXT_EV_WEIGHTS = ("Some vertex weights outside 0 to 1 (Blender's bevel and inset can leave tiny negative "
                   "ones) came back as 0 to 1: Blender only takes weights from 0 to 1")
+TXT_EV_NAME_TAKEN = "At this step it is called {want}, but another object has that name, so it's {got}"
 TXT_EV_MISSING_REF = ("This step refers to {names}, which is deleted now. This object's own history can't "
                       "bring it back; the global history can")
 TXT_EV_PARENT_DEFORM = ("Parenting with deform added a modifier ({names}). Modifiers and vertex groups aren't "
@@ -200,6 +201,9 @@ def everything_notes(context, obj) -> list:
         out.append((INFO, TXT_EV_SHARED_MESH.format(owner=datarec.mesh_owner_name(obj) or "another object")))
     if runtime.obj_uid(obj) in runtime.WEIGHTS_CLAMPED:
         out.append((INFO, TXT_EV_WEIGHTS))
+    taken = adapters.name_taken(obj)
+    if taken is not None:
+        out.append((INFO, TXT_EV_NAME_TAKEN.format(want=taken, got=obj.name)))
     refs = adapters.missing_refs(obj)
     if refs:
         names = sorted({str((datarec._BODIES.get(r) or {}).get("name") or "an object") for _p, r in refs})

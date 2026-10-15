@@ -137,6 +137,24 @@ def same(a, b) -> bool:
 
 ENABLED_KINDS = [None]       # set of kind ids, or None for all (datarec keeps this up to date)
 MISSING_REFS: dict = {}      # D37: object uid -> {path: (referenced id, adapter, adapter path)}
+NAME_TAKEN: dict = {}        # D47: uid -> the name it should have, which another datablock holds
+
+
+def note_name(idb, wanted) -> None:
+    """After giving a datablock a recorded name: Blender adds .001 when another one has that name."""
+    u = idmap.uid_of(idb)
+    if u is None or not isinstance(wanted, str):
+        return
+    if idb.name != wanted:
+        NAME_TAKEN[u] = wanted
+    else:
+        NAME_TAKEN.pop(u, None)
+
+
+def name_taken(idb):
+    """The name idb should have at this step when another datablock holds it, else None."""
+    w = NAME_TAKEN.get(idmap.uid_of(idb))
+    return w if w is not None and idb.name != w else None
 
 
 def _note_ref(owner, path: str, ref, found, aid: str, apath: str) -> None:
@@ -235,6 +253,8 @@ class RNAAdapter(Adapter):
                     v = idmap.find(v) if v else None
                     _note_ref(idb, path, ref, v, self.id, path)
                 setattr(owner, attr, to_rna(v))
+                if path == "name":
+                    note_name(idb, v)
             except Exception as e:
                 log.error_once(("rna_write", path, str(e)), f"could not restore {path}: {e}", e)
 
@@ -516,6 +536,7 @@ def _write_collection_tree(scene, want: list) -> None:
             idmap.note(ch, u)
         if ch.name != name:
             ch.name = name
+        note_name(ch, name)
         par = coll(p)
         if par is not None and ch.name not in par.children:
             par.children.link(ch)
@@ -563,6 +584,7 @@ def _recreate_object(scene, uid, body, snap):
     ob = bpy.data.objects.new(body.get("name") or "Object", data)
     ob[idmap.UID_PROP] = uid
     idmap.note(ob, uid)
+    note_name(ob, body.get("name") or "Object")
     linked = False
     for ref in body.get("collections") or ():
         c = _coll_from_ref(ref)

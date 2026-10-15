@@ -595,7 +595,20 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
         idb.update_tag()
     except Exception:
         pass
+    sync_taken_names()
     _DIRTY.pop(idmap.uid_of(idb), None)
+
+
+def sync_taken_names() -> None:
+    """D47: a datablock that couldn't get its recorded name (another one holds it) is recorded as
+    the name Blender gave it, so the next operation doesn't record the difference as a change."""
+    for u, wanted in list(adapters.NAME_TAKEN.items()):
+        idb = idmap.find(u)
+        if idb is None:
+            continue
+        st = _state(u)
+        if st.values.get(("rna", "name")) == wanted and idb.name != wanted:
+            st.values[("rna", "name")] = idb.name
 
 
 def resolve_missing_refs() -> None:
@@ -823,4 +836,5 @@ def forget() -> None:
     _MESH_OWNER.clear()
     _MESH_OF.clear()
     adapters.MISSING_REFS.clear()
+    adapters.NAME_TAKEN.clear()
     _OPS["marker"] = None

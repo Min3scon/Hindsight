@@ -264,6 +264,63 @@ def test_the_owner_of_a_shared_mesh_after_a_reload():
     assert O.read_mesh(zed, O.mesh_state) == end, "scrubbing Zed's history undid the edit made through A.001"
 
 
+def _lengths():
+    return {hid: len(h.entries) for hid, h in runtime.reg().histories.items()}
+
+
+@covers("obj.addremove", "EXACT", "WARN")
+def test_a_name_another_object_holds():
+    """D47: A renamed X, then B renamed A; X's own history back to before its rename can't call it A
+    (B is A now): Blender calls it A.001, the sidebar says why, and the next unrelated operation
+    records nothing on X (it used to record 'A' to 'A.001' and cut X's steps). Forward again, X."""
+    from hindsight.bl import warnings as W
+    L.fresh_scene()
+    L.track_all()
+    ua = idmap.uid_of(bpy.data.objects["A"])
+    for name, new in (("A", "X"), ("B", "A")):
+        T.select(name)
+        bpy.data.objects[name].name = new
+        L.tick_like(f"rename {name}")
+    h = runtime.reg().history_for(ua)
+    n = len(h.entries)
+    runtime._goto_history(h, 0, True)
+    x = idmap.find(ua)
+    assert x.name == "A.001", x.name
+    notes = " ".join(t for _s, t in W.everything_notes(C, x))
+    assert "called A" in notes and "A.001" in notes, notes
+    before = _lengths()
+    T.translate("C", (0, 0, 1)).run()
+    L.tick_like("move C")
+    changed = {k for k, v in _lengths().items() if before.get(k) != v}
+    assert changed == {runtime.reg().history_for(idmap.uid_of(bpy.data.objects["C"])).uid}, changed
+    assert len(h.entries) == n and h.cursor == 0, "X's history was cut"
+    runtime._goto_history(h, n, True)
+    assert x.name == "X" and not any("called" in t for _s, t in W.everything_notes(C, x))
+
+
+@covers("obj.addremove", "EXACT", "WARN")
+def test_a_deleted_object_back_while_its_name_is_taken():
+    """D47: C deleted, then an object that isn't recorded (and was there before) takes the name C;
+    going back over the deletion brings C back as C.001, and nothing is recorded for the name."""
+    L.fresh_scene()
+    L.track_all()
+    uc = idmap.uid_of(bpy.data.objects["C"])
+    holder = bpy.data.objects["Pivot"]                  # there from the start, not recorded
+    datarec.set_tracked(holder, False)
+    T.delete(["C"]).run()
+    L.tick_like("delete C")
+    holder.name = "C"
+    L.tick_like("rename the holder")
+    runtime.global_goto(C, 0, True)
+    back = idmap.find(uc)
+    assert back is not None and back.name == "C.001", getattr(back, "name", None)
+    before = _lengths()
+    T.translate("A", (0, 0, 1)).run()
+    L.tick_like("move A")
+    changed = {k for k, v in _lengths().items() if before.get(k) != v}
+    assert changed == {runtime.reg().history_for(idmap.uid_of(bpy.data.objects["A"])).uid}, changed
+
+
 def mesh_steps(ob) -> int:
     h = runtime.reg().history_for(idmap.uid_of(ob))
     return 0 if h is None else sum(1 for e in h.entries if e.meta.get("kind") != "DATA")
@@ -300,6 +357,7 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
            test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
            test_dragging_while_a_linked_duplicate_is_in_edit_mode, test_a_linked_duplicate_gets_its_own_mesh,
-           test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload):
+           test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload,
+           test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken):
     H.run(fn)
 H.finish()

@@ -201,6 +201,8 @@ def read_mesh_snapshot",
     ("bl/runtime.py", "    from . import datarec, idmap\n    for u, rec in (saved or {}).items():",
      "    from . import datarec, idmap\n    for u, rec in {}.items():",
      "changes made without Hindsight not noticed on opening (D46)", ["obj.transforms", "obj.editsteps"], None),
+    ("bl/datarec.py", "        if st.values.get((\"rna\", \"name\")) == wanted and idb.name != wanted:", "        if False:",
+     "a name Blender changed on restore recorded as a change (D47)", ["obj.addremove"], None),
 ]
 
 
