@@ -1338,6 +1338,65 @@ def reset_all(context) -> None:
             reset_history(context, ob)
 
 
+OUTSIDE_LABEL = "Changes Outside Hindsight"
+OUTSIDE_MESH_TEXT = ("{name} was changed while Hindsight wasn't running, so its history no longer matches its "
+                     "mesh and was left out")
+
+
+def saved_prints() -> dict:
+    """D46: every recorded object as it is saved (a fingerprint of its mesh, its recorded values), so
+    opening the file can tell whether it was changed in a session without Hindsight."""
+    from . import datarec, idmap
+    tracked = datarec.tracked_uids()
+    uids = set(tracked)
+    for h in _REG.histories.values():
+        if h.entries:
+            uids.update(h.members)
+    out = {}
+    for u in sorted(uids):
+        ob = idmap.find(u) or find_object(u)
+        if ob is None:
+            continue
+        rec = {}
+        try:
+            if isinstance(ob, bpy.types.Object) and ob.type == "MESH" and ob.data is not None:
+                rec["mesh"] = mesh_fingerprint(ob)
+            if u in tracked:
+                rec["values"] = [[a, p, v] for (a, p), v in sorted(datarec.capture(ob).items())]
+        except Exception as e:
+            log.error_once(("saved_prints", str(e)), f"could not note {getattr(ob, 'name', u)} for saving: {e}", e)
+            continue
+        out[u] = rec
+    return out
+
+
+def check_outside_changes(saved: dict) -> None:
+    """D46: after opening a file, compare every recorded object with how Hindsight saved it. Values
+    changed in a session without Hindsight become one step; a changed mesh can't be rebuilt from
+    the history, so that object's history is left out with a message (never played back onto it)."""
+    from . import datarec, idmap
+    for u, rec in (saved or {}).items():
+        ob = idmap.find(u) or find_object(u)
+        if ob is None or not isinstance(rec, dict):
+            continue
+        h = _REG.history_for(u)
+        fp = rec.get("mesh")
+        if fp and isinstance(ob, bpy.types.Object) and ob.type == "MESH" and h is not None and h.entries:
+            if mesh_fingerprint(ob) != fp:
+                h.reset()
+                _journal("RESET", {"hist": h.uid})
+                for m in list(h.members):
+                    _REG.remove_object(m)
+                load_notes.append(("ERROR", OUTSIDE_MESH_TEXT.format(name=ob.name)))
+                ensure_state(ob, refresh=ob.mode != "EDIT")
+                continue
+        vals = rec.get("values")
+        if isinstance(vals, list) and u in datarec.tracked_uids():
+            st = datarec._state(u)
+            st.values = {(a, p): v for a, p, v in vals}
+            datarec.commit(label=OUTSIDE_LABEL, uids={u}, mesh=False)
+
+
 def turn_off(context, obj) -> None:
     uid = obj_uid(obj, create=True)
     if uid in _STATES and obj.mode in RECORD_MODES and uid in _DIRTY:
@@ -1359,7 +1418,11 @@ def turn_on(context, obj) -> None:
         h.enabled = True
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": True,
                           "morph_target": h.morph_target})
-        if uid in _STATES and obj.mode != "EDIT":
+        from . import datarec
+        if datarec.is_tracked(obj) and obj.mode != "EDIT":
+            # D46: values and mesh changed while off become one step together
+            datarec.catch_up(obj, "Changes While Off")
+        elif uid in _STATES and obj.mode != "EDIT":
             # Changes made while off become the new starting point: one step bridging them.
             commit(obj, label="Changes While Off", full=True)
         else:

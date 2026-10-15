@@ -16,7 +16,7 @@ into a .blend or next to it that isn't listed here.
 | Name | Kind | Where | Written | Removed by |
 |---|---|---|---|---|
 | `.hindsight_history` | Text datablock (fake user, empty text) | in the .blend | when a file that has history is saved | Remove Hindsight data from this file |
-| `.hindsight_history[hindsight_data]` | custom property (text: the whole history) | in the .blend, on the Text above | when saving with Save mode set to Embed or Both | saving with Save mode Sidecar; Remove Hindsight data |
+| `.hindsight_history[hindsight_data]` | custom property (text: the whole history, and how each recorded object was when saved: a fingerprint of its mesh and its recorded values, to notice changes made without Hindsight) | in the .blend, on the Text above | when saving with Save mode set to Embed or Both | saving with Save mode Sidecar; Remove Hindsight data |
 | `.hindsight_history[hindsight_data_unreadable]` | custom property (text) | in the .blend, on the Text above | only when an embedded history couldn't be read: it is kept, unchanged, in case it can be recovered | Remove Hindsight data from this file |
 | `.hindsight_history[sidecar]` | custom property (on/off) | in the .blend, on the Text above | when a file that has history is saved: on when the history is in the folder next to the file | Remove Hindsight data from this file |
 | `_hindsight_uid` | custom property (text, 16 characters) | in the .blend, on objects, meshes, the scene, collections and materials Hindsight records or refers to | when an object's first change is recorded (entering Sculpt or Vertex Paint Mode counts), when Record everything is switched on, and on data a recorded value refers to (a parent, a collection) | Remove Hindsight data from this file (Advanced panel); deleting the object |
@@ -24,7 +24,7 @@ into a .blend or next to it that isn't listed here.
 | `Scene.hindsight` | property group on the scene (Blender 5 keeps it with the scene's system properties) | in the .blend | only once one of its settings is changed (Blender doesn't store unchanged defaults) | Remove Hindsight data from this file |
 | `WindowManager.hindsight_step` | slider property (computed, never stored) | nowhere: it reads and sets the history position | never | nothing to remove |
 | `<file>_hindsight/` | folder | next to the .blend | when a file that has history is saved with Save mode Sidecar or Both | Remove Hindsight data (ticked) or deleting the folder; the .blend opens fine without it |
-| `<file>_hindsight/history.hsr` | file (the history) | in the folder above | on save (Sidecar or Both) | as the folder |
+| `<file>_hindsight/history.hsr` | file (the history, and how each recorded object was when saved: a fingerprint of its mesh and its recorded values) | in the folder above | on save (Sidecar or Both) | as the folder |
 | `<file>_hindsight/history.hsr.unreadable-<date>` | file (a history file that couldn't be read, set aside) | in the folder above | only when a history file couldn't be read, so the next save can't overwrite it | as the folder |
 | `<file>_hindsight/index.json` | file (format, version, file name, time saved) | in the folder above | on save (Sidecar or Both) | as the folder |
 | `journal/<id>.hsj` | file (crash journal) | outside: the extension's user data folder (or hindsight_journal in the system temp folder when that isn't available) | while you record, so steps after the last save can be recovered after a crash | emptied on every save; removed with the extension |

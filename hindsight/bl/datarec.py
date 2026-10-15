@@ -94,7 +94,16 @@ def set_tracked(idb, on: bool) -> None:
     if uid is None:
         return
     if on:
+        was_on = uid in rt.reg().everything
         rt.reg().everything.add(uid)
+        h = rt.reg().history_for(uid)
+        if not was_on and h is not None and h.entries and _state(uid).values:
+            # D46: switched on again: what changed while it was off becomes one step, so every
+            # position of its history is a state that existed
+            refresh_mesh_users()
+            if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT":
+                _MESH_DIRTY.add(uid)
+            commit(label=CHANGES_WHILE_OFF, uids={uid}, mesh=True)
         baseline(idb, uid, refresh=True)
     else:
         rt.reg().everything.discard(uid)
@@ -116,6 +125,21 @@ def _track_new(uid: str) -> None:
     baseline(ob, uid, refresh=True)
     rt._journal("META_EVERYTHING", {"uid": uid, "on": True})
     refresh_mesh_users()
+
+
+CHANGES_WHILE_OFF = "Changes While Not Recorded"
+
+
+def catch_up(idb, label: str = CHANGES_WHILE_OFF) -> list:
+    """D46: record what changed on a recorded datablock while its history was paused, as one step
+    (values and mesh)."""
+    uid = idmap.uid_of(idb)
+    if uid is None or uid not in tracked_uids() or not _state(uid).values:
+        return []
+    refresh_mesh_users()
+    if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT":
+        _MESH_DIRTY.add(uid)
+    return commit(label=label, uids={uid}, mesh=True)
 
 
 def tracked_uids() -> set:

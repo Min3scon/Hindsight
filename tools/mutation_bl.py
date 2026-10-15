@@ -21,7 +21,7 @@ OUT = os.path.join(ROOT, ".tmp", "mutants_bl")
 RESULTS = os.path.join(ROOT, ".tmp", "results", "tools", "mutation_bl")
 T1 = ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps"]
 TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_t1_added.py",
-         "test_bl_t1_real_undo.py", "test_bl_t1_meshdata.py", "test_bl_tier1.py",
+         "test_bl_t1_real_undo.py", "test_bl_t1_meshdata.py", "test_bl_t1_outside.py", "test_bl_tier1.py",
          "test_bl_adapters.py")
 
 # (file under hindsight/, exact text, replacement, what it breaks, rows, reason if equivalent)
@@ -195,6 +195,12 @@ def read_mesh_snapshot",
     ("bl/datarec.py", "            uid = min((0 if records_mesh(u) else 1, n, u) for n, u, _o in us)[2]",
      "            uid = min((n, u) for n, u, _o in us)[1]", "the shared mesh's owner after a reload picked by name (D45)",
      ["obj.addremove"], None),
+    ("bl/datarec.py", "        if not was_on and h is not None and h.entries and _state(uid).values:",
+     "        if False and h is not None and h.entries and _state(uid).values:",
+     "changes made while Record everything was off not recorded when it's switched on (D46)", ["obj.transforms"], None),
+    ("bl/runtime.py", "    from . import datarec, idmap\n    for u, rec in (saved or {}).items():",
+     "    from . import datarec, idmap\n    for u, rec in {}.items():",
+     "changes made without Hindsight not noticed on opening (D46)", ["obj.transforms", "obj.editsteps"], None),
 ]
 
 
