@@ -535,6 +535,80 @@ def test_a_deleted_collection_comes_back():
     assert not any("deleted now" in t for _s, t in W.everything_notes(C, a))
 
 
+def _b_back_to_its_parenting():
+    """B parented to A, A deleted, B's own history back to the parenting (A can't come back that way)."""
+    setup()
+    for o in (T.parent("B", "A", False), T.delete(["A"])):
+        o.run()
+        L.tick_like(o.label)
+    b = bpy.data.objects["B"]
+    runtime._goto_history(runtime.history_of(b), 1, True)
+    return b
+
+
+def _notes(ob) -> str:
+    return " ".join(t for _s, t in W.everything_notes(C, ob))
+
+
+@covers("obj.parenting", "EXACT", "STEPS", "WARN")
+def test_the_next_operation_while_a_reference_waits():
+    """D60: while B's parent A is deleted, the next operation on B (a move) records only the move (it
+    also recorded the parent as cleared); back over the move, B is where it was and still waits for
+    A. Parenting B to C yourself ends the wait: the note goes."""
+    b = _b_back_to_its_parenting()
+    hb = runtime.history_of(b)
+    T.translate("B", (0, 0, 1)).run()
+    L.tick_like("move B")
+    keys = {(r.adapter, p) for r in hb.entries[-1].load().records for p in r.changes}
+    assert keys == {("rna", "location")}, keys
+    assert "refers to A" in _notes(b)
+    loc = tuple(b.location)
+    runtime._goto_history(hb, len(hb.entries) - 1, True)
+    assert b.parent is None and tuple(b.location) != loc and "refers to A" in _notes(b)
+    runtime._goto_history(hb, len(hb.entries), True)
+    assert tuple(b.location) == loc
+    T.parent("B", "C", False).run()
+    L.tick_like("parent B to C")
+    assert b.parent == bpy.data.objects["C"] and "refers to" not in _notes(b), _notes(b)
+
+
+@covers("obj.parenting", "RELOAD.SIDECAR", "WARN", "EXACT")
+def test_a_reference_that_waits_after_a_reload():
+    """D57: B waiting for its deleted parent A, saved and reopened: the sidebar still says B refers to A
+    (it said nothing), and the global history brings A back with B parented to it (B stayed without a
+    parent). Parented to C in a session without Hindsight in between, the wait is over: no note, and C
+    stays B's parent."""
+    import tempfile
+    import hindsight
+    from hindsight.core.types import SETTINGS
+    for outside in (False, True):
+        _b_back_to_its_parenting()
+        SETTINGS.save_mode = "SIDECAR"
+        T.select()
+        path = os.path.join(tempfile.mkdtemp(prefix="hs_wait_"), "wait.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        if outside:
+            hindsight.unregister()
+            H._registered[0] = False
+            bpy.data.objects["B"].parent = bpy.data.objects["C"]
+            bpy.ops.wm.save_as_mainfile(filepath=path)
+            hindsight.register()
+            H._registered[0] = True
+        bpy.ops.wm.open_mainfile(filepath=path)
+        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        b = bpy.data.objects["B"]
+        if outside:
+            assert "refers to" not in _notes(b) and b.parent == bpy.data.objects["C"], _notes(b)
+            continue
+        assert "refers to A" in _notes(b), _notes(b)
+        assert b.parent is None
+        runtime.global_goto(C, 1, True)
+        assert b.parent == bpy.data.objects["A"], b.parent
+        assert "refers to" not in _notes(b)
+        runtime.global_goto(C, glen(), True)
+        assert "A" not in bpy.data.objects and b.parent is None and "refers to" not in _notes(b)
+
+
 for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_its_changes,
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
            test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
@@ -543,6 +617,7 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
            test_references_to_linked_objects, test_deleted_objects_come_back_complete,
            test_several_objects_in_edit_mode, test_separate_is_one_operation,
-           test_a_deleted_collection_comes_back):
+           test_a_deleted_collection_comes_back, test_the_next_operation_while_a_reference_waits,
+           test_a_reference_that_waits_after_a_reload):
     H.run(fn)
 H.finish()

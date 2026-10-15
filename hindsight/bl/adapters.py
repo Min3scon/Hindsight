@@ -137,7 +137,10 @@ def same(a, b) -> bool:
 
 ENABLED_KINDS = [None]       # set of kind ids, or None for all (datarec keeps this up to date)
 MISSING_REFS: dict = {}      # D37: object uid -> {path: (referenced id, adapter, adapter path)}
+WANTED: dict = {}            # D60: (object uid, adapter, adapter path) -> the recorded value MISSING_REFS
+                             # waits to put in (the object's state holds what Blender has meanwhile)
 COLL_NAMES: dict = {}        # D55: collection id -> its name when last seen in a scene (for messages)
+REF_NAMES: dict = {}         # D57: id -> how the sidebar named it when the file was saved
 _RECREATED: set = set()      # D55: collections Hindsight made again (removed when taken out and empty)
 NAME_TAKEN: dict = {}        # D47: uid -> the name it should have, which another datablock holds
 
@@ -174,6 +177,20 @@ def _note_ref(owner, path: str, ref, found, aid: str, apath: str) -> None:
             d.pop(path, None)
             if not d:
                 MISSING_REFS.pop(ou, None)
+
+
+def drop_changed_refs(ou, changes) -> None:
+    """D60: a path the user changed since its reference couldn't be put back keeps their change: the
+    recorded reference isn't put in when the object it points to comes back."""
+    d = MISSING_REFS.get(ou)
+    if not d:
+        return
+    for path, (_ref, aid, apath) in list(d.items()):
+        if (aid, apath) in changes:
+            d.pop(path, None)
+            WANTED.pop((ou, aid, apath), None)
+    if not d:
+        MISSING_REFS.pop(ou, None)
 
 
 def missing_refs(owner) -> list:

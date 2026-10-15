@@ -541,6 +541,8 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
             continue
         new = capture(idb)
         changes = _diff(st.values, new)
+        if changes:
+            adapters.drop_changed_refs(uid, changes)
         if not changes and mesh_step is None:
             if is_scene:
                 _BODY_DIRTY.clear()
@@ -642,7 +644,37 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
     except Exception:
         pass
     sync_taken_names()
+    sync_missing_refs(idb, st, data_keys)
     _DIRTY.pop(idmap.uid_of(idb), None)
+
+
+def ref_label(ref) -> str:
+    """How the sidebar names a deleted object or collection a reference waits for."""
+    if ref in adapters.COLL_NAMES:
+        return f"the collection {adapters.COLL_NAMES[ref]}"
+    name = (_BODIES.get(ref) or {}).get("name")
+    if name:
+        return str(name)
+    return adapters.REF_NAMES.get(ref) or "an object"
+
+
+def sync_missing_refs(idb, st: MeshState, data_keys: dict) -> None:
+    """D60: a reference that couldn't be put back (the object it points to is deleted now): the
+    recorded value waits with the note (resolve_missing_refs puts it in when that object is back) and
+    the state is what Blender has, so the next operation doesn't record the difference as a change."""
+    ou = idmap.uid_of(idb)
+    d = adapters.MISSING_REFS.get(ou)
+    if not d:
+        return
+    cap = None
+    for _path, (_ref, aid, apath) in list(d.items()):
+        if apath not in data_keys.get(aid, ()) or (aid, apath) not in st.values:
+            continue
+        if cap is None:
+            cap = capture(idb)
+        if (aid, apath) in cap:
+            adapters.WANTED[(ou, aid, apath)] = st.values[(aid, apath)]
+            st.values[(aid, apath)] = cap[(aid, apath)]
 
 
 def sync_taken_names() -> None:
@@ -671,7 +703,13 @@ def resolve_missing_refs() -> None:
                 todo.setdefault(aid, set()).add(apath)
         owner = idmap.find(ou)
         if todo and owner is not None:
-            write(owner, _state(ou), todo)
+            st = _state(ou)
+            for aid, paths in todo.items():
+                for p in paths:
+                    w = adapters.WANTED.pop((ou, aid, p), MISSING)
+                    if w is not MISSING:
+                        st.values[(aid, p)] = w
+            write(owner, st, todo)
         elif owner is None:
             adapters.MISSING_REFS.pop(ou, None)
     adapters.drop_recreated_orphans()
@@ -886,6 +924,8 @@ def forget() -> None:
     _MESH_OF.clear()
     _EXCLUDED.clear()
     adapters.MISSING_REFS.clear()
+    adapters.WANTED.clear()
+    adapters.REF_NAMES.clear()
     adapters.NAME_TAKEN.clear()
     adapters.COLL_NAMES.clear()
     adapters._RECREATED.clear()

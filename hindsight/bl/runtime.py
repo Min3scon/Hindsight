@@ -1353,7 +1353,7 @@ OUTSIDE_MESH_TEXT = ("{name} was changed while Hindsight wasn't running, so its 
 def saved_prints() -> dict:
     """D46: every recorded object as it is saved (a fingerprint of its mesh, its recorded values), so
     opening the file can tell whether it was changed in a session without Hindsight."""
-    from . import datarec, idmap
+    from . import adapters, datarec, idmap
     tracked = datarec.tracked_uids()
     uids = set(tracked)
     for h in _REG.histories.values():
@@ -1370,6 +1370,12 @@ def saved_prints() -> dict:
                 rec["mesh"] = mesh_fingerprint(ob)
             if u in tracked:
                 rec["values"] = [[a, p, v] for (a, p), v in sorted(datarec.capture(ob).items())]
+                # D57: references still waiting for a deleted object to come back
+                miss = [[path, ref, a, ap, adapters.WANTED[(u, a, ap)], datarec.ref_label(ref)]
+                        for path, (ref, a, ap) in sorted((adapters.MISSING_REFS.get(u) or {}).items())
+                        if (u, a, ap) in adapters.WANTED]
+                if miss:
+                    rec["missing"] = miss
         except Exception as e:
             log.error_once(("saved_prints", str(e)), f"could not note {getattr(ob, 'name', u)} for saving: {e}", e)
             continue
@@ -1381,7 +1387,7 @@ def check_outside_changes(saved: dict) -> None:
     """D46: after opening a file, compare every recorded object with how Hindsight saved it. Values
     changed in a session without Hindsight become one step; a changed mesh can't be rebuilt from
     the history, so that object's history is left out with a message (never played back onto it)."""
-    from . import datarec, idmap
+    from . import adapters, datarec, idmap
     for u, rec in (saved or {}).items():
         ob = idmap.find(u) or find_object(u)
         if ob is None or not isinstance(rec, dict):
@@ -1401,7 +1407,24 @@ def check_outside_changes(saved: dict) -> None:
         if isinstance(vals, list) and u in datarec.tracked_uids():
             st = datarec._state(u)
             st.values = {(a, p): v for a, p, v in vals}
+            _restore_missing_refs(u, rec.get("missing"))
             datarec.commit(label=OUTSIDE_LABEL, uids={u}, mesh=False)
+
+
+def _restore_missing_refs(u, miss) -> None:
+    """D57: references that were waiting for a deleted object to come back when the file was saved
+    wait again (the sidebar says so, the global history puts them in). One changed without Hindsight
+    meanwhile stops waiting when that change is recorded, right after this."""
+    from . import adapters
+    for item in miss if isinstance(miss, list) else ():
+        try:
+            path, ref, aid, apath, value = item[:5]
+        except (TypeError, ValueError):
+            continue
+        adapters.MISSING_REFS.setdefault(u, {})[path] = (ref, aid, apath)
+        adapters.WANTED[(u, aid, apath)] = value
+        if len(item) > 5 and isinstance(item[5], str):
+            adapters.REF_NAMES[ref] = item[5]
 
 
 def turn_off(context, obj) -> None:
