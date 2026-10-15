@@ -227,6 +227,10 @@ Still to do for the gate: t1_gate default and three variants on all three Blende
 the shots (`tools/visual_review.py`), the soaks, the final Hypothesis and mutation runs on the final
 code, `python tools/make_evidence.py`, the hostile reviewer, a full regression pass. COVERAGE
 statuses change only through make_evidence's gate check.
+Hostile review 1 (2026-10-15, repros in `.tmp/review/p01..p38`): D42-D59 found, D60 found while
+fixing D57; all fixed with regression tests that fail without the fix and mutants in
+`tools/mutation_bl.py` (each fix's sanity run: `.tmp/sanity_d5x.py`). Next: full headless suite on
+all three Blenders, then hostile review 2 (S1/S2 were found), then the remaining gate runs above.
 Importer (after the Tier 1 gate): design in IMPORTER.md; core in hindsight/core/importer.py with
 tests/test_core_importer.py (passing); Blender side staged in `.tmp/staging/` (version_reader.py,
 importer.py, ui_empty_state.py).

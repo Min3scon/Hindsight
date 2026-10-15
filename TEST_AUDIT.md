@@ -159,9 +159,14 @@ D14, D18, D20, D24, D26, D28, D32, D35, D36, D38, D39. None open.
 ## Tier 0 gate plan (next after Tier 1)
 
 The sculpt rows get the same machinery Tier 1 has, sculpt tests counting only for sculpt rows:
-- OPS: real operators. Headless: mask flood fill and filters, face set operators, hide, Vertex Paint
-  fills, voxel remesh, decimate, Edit Mode visits, join and separate. Real interface: brush strokes
-  by mouse (round_c), a real Vertex Paint stroke and a real remesh (both missing so far).
+- OPS: real operators. Probed 2026-10-15 on 5.1.2 (`.tmp/staging_t0/probe_ops*.py`): in background
+  mode every sculpt operator (mask flood fill, face sets, filters, hide) and Voxel Remesh in Sculpt
+  Mode crash Blender (no sculpt session without a window), so those run only in the real interface.
+  Headless: Vertex Paint operators (set, invert, brightness/contrast, HSV; the depsgraph handler marks
+  the object as changed), Object Mode remesh (voxel, QuadriFlow), Edit Mode operators, join and
+  separate; sculpt data otherwise through the harness's data writes. Real interface: brush strokes
+  by mouse (round_c), mask, face sets, filters and hide (round_c), a real Vertex Paint stroke and a
+  real remesh in Sculpt Mode (both missing so far).
 - ORACLE: tests/oracle.py's mesh reader at every position, and a replay of the same operations in a
   fresh scene without Hindsight.
 - STEPS: one stroke one step, quick and slow, through the real timer (operator end and settle).
