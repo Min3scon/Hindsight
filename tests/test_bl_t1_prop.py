@@ -203,7 +203,7 @@ def _save_failure(specs):
 
 
 COUNT = [0]
-LAST_FAILURE = [None]
+FAILURES = []           # every failing sequence in order; Hypothesis replays each shrunk one last
 
 
 @settings(max_examples=EXAMPLES, deadline=None, derandomize=True, database=None,
@@ -214,7 +214,7 @@ def _property(specs):
     try:
         check_sequence(specs)
     except Exception:
-        LAST_FAILURE[0] = specs       # replaced while Hypothesis shrinks; the smallest comes last
+        FAILURES.append(specs)
         raise
 
 
@@ -227,10 +227,13 @@ def test_t1_random_sequences():
     t = time.time()
     try:
         _property()
-    finally:
-        if LAST_FAILURE[0] is not None:
-            _save_failure(LAST_FAILURE[0])
-            print("shrunk failing sequence saved:", LAST_FAILURE[0])
+    except BaseException as e:
+        # Hypothesis ends by replaying each distinct shrunk failure once: keep all of them
+        n = len(getattr(e, "exceptions", ())) or 1
+        for specs in FAILURES[-n:]:
+            _save_failure(specs)
+            print("shrunk failing sequence saved:", specs)
+        raise
     print(f"{COUNT[0]} generated sequences checked in {time.time() - t:.0f} s")
     assert COUNT[0] >= EXAMPLES, COUNT[0]
 

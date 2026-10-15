@@ -216,6 +216,25 @@ Checklist items that were checked and are NOT the cause:
   it switches it back on.
 - With the scene recorded, the collection tree is recorded too (part of the Tier 6 row "collection
   structure"), because M > New Collection is a Tier 1 operation and can't be undone without it.
+- Jumps and Blender's undo (D35): every finished jump that changes a recorded object, its mesh
+  included, is one entry on Blender's undo, pushed in Object Mode. A jump started in Edit Mode leaves
+  Edit Mode for the push and goes back into it afterwards (a push in Edit Mode keeps only the edit mesh,
+  so Blender's later undo would put back stale data for everything else). Scripts switching modes don't
+  add undo entries in Blender, so this adds exactly one entry per jump. Hindsight remembers the jumps
+  Blender can still undo or redo (up to 512) and matches one only when the values and every mesh it
+  wrote (a fingerprint of counts, topology and recorded attributes before and after) are exactly the
+  state on its other side. Sculpt-only histories in Sculpt or Vertex Paint Mode keep the Tier 0
+  behaviour (Blender's sculpt undo; see NATIVE_UNDO_TEXT). Cost: two mesh reads per recorded mesh a
+  finished jump writes (measured with the Tier 1 PERF tests).
+- Objects added or duplicated while the scene is recorded are recorded fully (D36): with only their adding
+  recorded, the global history brought them back as they were when added and lost every later change.
+- A mesh shared by linked duplicates is recorded in one history (D39), its owner's: two histories of
+  deltas over one mesh can't both stay exact. The other users record their object data; their Edit Mode
+  visits become one step in the owner's history when they end. Sculpting a linked duplicate keeps the
+  Tier 0 behaviour (its own sculpt history; the Alt+D warning says so), and the owner records the result
+  once the duplicate leaves Sculpt Mode, so the owner's history stays exact.
+- An object's own history can't bring back another object it referred to (D37). That reference stays
+  empty with a note; when the global history brings the object back, the recorded references are set.
 
 ### Step 5 decisions (website)
 - Hand-written HTML templates and a 300-line Python build (`site/build.py`) instead of a static site

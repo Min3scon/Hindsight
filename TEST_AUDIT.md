@@ -88,6 +88,23 @@ Defects found by this audit, before any new test:
 - **D15** (S3): animated or driven constraint settings are read as user changes, so changing the
   frame records steps. Fix written (on the `tier2` branch), to be ported with a regression test.
 
+### Tier 1 update (2026-10-15)
+
+The gate machinery from the plan below exists and runs on all three Blenders: tests/oracle.py
+(independent oracle) and the replay oracle (tests/t1_gate_lib.py), test_bl_t1_gate (every row's
+operations, every position both ways, the global timeline, Blender's undo emulated), test_bl_t1_prop
+(Hypothesis, 2,000 sequences, corpus kept), tools/mutation_bl.py (39 mutants), test_bl_t1_faults
+(per-adapter fault isolation), test_bl_t1_corrupt, test_bl_t1_reload and test_bl_t1_migrate (every
+reload variant and older formats), test_bl_t1_warn, test_bl_t1_perf (budgets), test_bl_t1_jumps
+(Blender's undo of jumps), test_bl_t1_added (objects that come and go), and the real-interface
+scenario s_t1_gate (every Tier 1 operation by keyboard and mouse, Ctrl+Z / Ctrl+Shift+Z mixed with
+scrubbing and across Edit Mode, Global Undo off, undo steps at their minimum and maximum) plus
+s_soak (per adapter and mixed). The gaps listed in the table above are closed by those tests;
+TEST_EVIDENCE.md is the record of what passed where.
+
+Defects found by the gate work: D14 to D39 (DEFECTS.md, no D21), among them S1: D17, D27 and S2:
+D14, D18, D20, D24, D26, D28, D32, D35, D36, D38, D39. None open.
+
 ## Tiers 2 to 6
 
 | Tier | Rows | Code | Tests |
@@ -138,6 +155,28 @@ Defects found by this audit, before any new test:
   row.
 - Tier 6: scene, world, render settings, collection structure: only what the generic adapter covers
   cheaply, each with a test.
+
+## Tier 0 gate plan (next after Tier 1)
+
+The sculpt rows get the same machinery Tier 1 has, sculpt tests counting only for sculpt rows:
+- OPS: real operators. Headless: mask flood fill and filters, face set operators, hide, Vertex Paint
+  fills, voxel remesh, decimate, Edit Mode visits, join and separate. Real interface: brush strokes
+  by mouse (round_c), a real Vertex Paint stroke and a real remesh (both missing so far).
+- ORACLE: tests/oracle.py's mesh reader at every position, and a replay of the same operations in a
+  fresh scene without Hindsight.
+- STEPS: one stroke one step, quick and slow, through the real timer (operator end and settle).
+- UNDO: a real-interface scenario like s_t1_gate (Ctrl+Z and Ctrl+Shift+Z after strokes, mixed with
+  scrubbing, across Sculpt / Vertex Paint / Edit Mode, Global Undo off, undo steps min and max, Edit >
+  Undo History, File > Revert).
+- RELOAD: sidecar, embed, both, rename, copy-paste, append and link, Shift+D and Alt+D, older formats,
+  for sculpt histories (a test_bl_t0_reload like test_bl_t1_reload).
+- PROP: Hypothesis over strokes on several objects, masks, face sets, hiding, colours, remesh, Edit
+  Mode visits, joins and separates, jumps and emulated Blender undo; every position exact.
+- MUT: the recorder (runtime._observe, _apply_to_state, _write_state, commit) in tools/mutation_bl.py.
+- FAULT, FAULT.CORRUPT: the recorder's guard, damaged files (round_d, test_core_format) tagged.
+- PERF, SOAK: per-stroke cost on small, medium and heavy meshes against budgets; s_soak with a sculpt
+  focus.
+- WARN, VISUAL: Multires, Dyntopo, 2M vertices, the Alt+D warning; ui_tour shots, looked at.
 
 ## Plan
 

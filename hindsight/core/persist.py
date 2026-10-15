@@ -128,6 +128,7 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
         "by_object": dict(reg.by_object),
         "disabled": sorted(getattr(reg, "disabled", ()) or ()),
         "everything": sorted(getattr(reg, "everything", ()) or ()),
+        "saved": getattr(reg, "saved", None) or {},
         "histories": hjson,
     }
     js = json.dumps(doc, separators=(",", ":"), default=_json_default).encode("utf-8")
@@ -172,6 +173,8 @@ def registry_from_bytes(b: bytes):
     reg.use_global = bool(doc.get("use_global", False))
     reg.preserve_modes = bool(doc.get("preserve_modes", True))
     reg.by_object = dict(doc.get("by_object", {}))
+    saved = doc.get("saved")
+    reg.saved = dict(saved) if isinstance(saved, dict) else {}
     if hasattr(reg, "disabled"):
         reg.disabled = set(doc.get("disabled", []))
     if hasattr(reg, "everything"):

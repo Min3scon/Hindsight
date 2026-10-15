@@ -108,7 +108,7 @@ class HINDSIGHT_OT_record_everything(bpy.types.Operator):
 
 class HINDSIGHT_OT_record_scene(bpy.types.Operator):
     bl_idname = "hindsight.record_scene"
-    bl_label = "Record Adding and Deleting Objects"
+    bl_label = "Record Added and Deleted Objects"
     bl_description = ("Record objects being added, duplicated and deleted in this scene, so scrubbing the "
                       "global history brings them back or removes them. Needs Record set to Everything")
     bl_options = {'REGISTER'}

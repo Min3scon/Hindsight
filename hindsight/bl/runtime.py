@@ -40,6 +40,9 @@ _NATIVE_PENDING: set = set()
 _WROTE: set = set()
 NATIVE_UNDO_TEXT = ("Blender's own undo can't go back past a history jump in Sculpt or Vertex Paint "
                     "Mode, so it was reversed. Use Ctrl+Z or the slider")
+NATIVE_UNDO_EDIT_TEXT = ("Blender's own undo went to an Edit Mode state that isn't next to this object's "
+                         "place in its history (with Global Undo off a history jump isn't on Blender's "
+                         "undo), so it was reversed. Use the slider")
 
 
 def mark_written(obj) -> None:
@@ -78,7 +81,7 @@ def set_registry(r: Registry) -> None:
     try:
         from . import datarec, idmap
         datarec.forget()
-        idmap.forget()
+        idmap.forget(session=True)
     except Exception:
         pass
 
@@ -118,6 +121,9 @@ def obj_uid(obj, create: bool = False):
         u = new_uid()
         obj[UID_PROP] = u
         _FRESH_UIDS.add(u)
+    if u is not None:
+        from . import idmap
+        idmap.note(obj, u)
     return u
 
 
@@ -136,6 +142,7 @@ def drop_unused_uids() -> int:
         u = ob.get(UID_PROP) if ob.library is None else None
         if u in _FRESH_UIDS and u not in used:
             del ob[UID_PROP]
+            idmap.unnote(ob)
             _STATES.pop(u, None)
             n += 1
     _FRESH_UIDS.intersection_update(used)
@@ -256,19 +263,42 @@ def _sync_edit(obj) -> None:
             pass
 
 
+def extras_on(obj) -> bool:
+    """D43: vertex group weights and shape keys are part of the mesh state of objects recorded with
+    Record everything."""
+    try:
+        from . import datarec
+        return datarec.is_tracked(obj)
+    except Exception:
+        return False
+
+
 def read_mesh_snapshot(obj):
     """The object's mesh as a Snapshot. In Edit Mode the mesh attributes are the edit-mode layers,
     so the edit mesh is written back first and a plain copy is read instead."""
+    ext = extras_on(obj)
     if obj.mode != "EDIT":
-        return meshio.read_snapshot(obj.data)
+        return meshio.read_snapshot(obj.data, ob=obj, extras=ext)
     with suspended():
         obj.update_from_editmode()
         tmp = obj.data.copy()
     try:
-        return meshio.read_snapshot(tmp)
+        return meshio.read_snapshot(tmp, ob=obj, extras=ext)
     finally:
         with suspended():
             bpy.data.meshes.remove(tmp)
+
+
+def refresh_state_any_mode(obj) -> MeshState:
+    """Read the object's mesh into its state again (in Edit Mode from a copy), keeping its values."""
+    if obj.mode != "EDIT":
+        return ensure_state(obj, refresh=True)
+    uid = obj_uid(obj, create=True)
+    old = _STATES.get(uid)
+    snap = read_mesh_snapshot(obj)
+    st = MeshState(snap.counts, snap.arrays, old.values if old is not None else None)
+    _STATES[uid] = st
+    return st
 
 
 def ensure_state(obj, refresh: bool = False) -> MeshState:
@@ -358,21 +388,23 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
     me = me if me is not None else obj.data
     uid = obj_uid(obj)
     c = meshio.counts(me)
+    ext = full and extras_on(obj)
     if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=deep)):
-        after = meshio.read_snapshot(me)
+        after = meshio.read_snapshot(me, ob=obj, extras=ext)
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
                     kind=TOPO, before=st.to_snapshot(), after=after)
-    keys = meshio.channel_keys(me, sculpt_only=not full)
+    extra_vals = meshio.read_extras(obj, me) if ext else {}
+    keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
     for k in list(st.arrays):
-        if k in meshio.TOPO_KEYS or k in present:
+        if k in meshio.TOPO_KEYS or k in present or (meshio.is_extra(k) and not ext):
             continue
         name = split_key(k)[0]
         if full or name in meshio.SCULPT_NAMES or split_key(k)[2] in ("FLOAT_COLOR", "BYTE_COLOR"):
             keys.append(k)
     deltas = []
     for key in keys:
-        new = meshio.read_channel(me, key, reuse=True)
+        new = extra_vals.get(key) if meshio.is_extra(key) else meshio.read_channel(me, key, reuse=True)
         old = st.arrays.get(key)
         if new is None and old is None:
             continue
@@ -404,6 +436,21 @@ def _apply_to_state(st: MeshState, step: Step) -> None:
         st.removed.clear()
 
 
+WEIGHTS_CLAMPED: set = set()  # object uids whose last restore put back weights outside 0 to 1 clamped
+
+
+def _clamp_state_weights(obj, st: MeshState) -> None:
+    """D43: Blender only takes weights from 0 to 1: the state keeps what Blender now holds, so the
+    clamping is never recorded as a change."""
+    clamped = False
+    for k, arr in st.arrays.items():
+        if k.startswith(meshio.VG_PREFIX):
+            clamped |= meshio.clamp_weights(arr)
+    uid = obj_uid(obj)
+    if clamped:
+        WEIGHTS_CLAMPED.add(uid)
+
+
 def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
     mark_written(obj)
     me = obj.data
@@ -427,14 +474,15 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
                 return
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            meshio.write_snapshot(me, st.to_snapshot())
+            meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode=mode)
         else:
-            meshio.write_changes(me, st.arrays, keys, st.removed)
+            meshio.write_changes(me, st.arrays, keys, st.removed, ob=obj)
             if obj.mode == "SCULPT" and final and _refresh_toggle():
                 _sculpt_refresh(obj)
         st.removed.clear()
+        _clamp_state_weights(obj, st)
         obj.update_tag()
 
 
@@ -473,11 +521,19 @@ def commit_edit(obj, label: str = "Edit"):
 EDIT_STEPS_MAX = 300_000   # vertices; above this an Edit Mode step (about 55 ms per 100k) is too slow
 
 
+def _mesh_owned_elsewhere(obj) -> bool:
+    try:
+        from . import datarec
+        return datarec.mesh_owned_elsewhere(obj)
+    except Exception:
+        return False
+
+
 def edit_steps_on(obj) -> bool:
     try:
         from . import adapters, datarec
         return (datarec.is_tracked(obj) and adapters.kind_on("edit_steps")
-                and len(obj.data.vertices) <= EDIT_STEPS_MAX)
+                and len(obj.data.vertices) <= EDIT_STEPS_MAX and not datarec.mesh_owned_elsewhere(obj))
     except Exception:
         return False
 
@@ -504,9 +560,10 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     h = _REG.history_for(uid)
     if h is not None and not h.enabled:
         return None
-    if h is None and mode not in RECORD_MODES and not _edit:
+    if h is None and mode not in RECORD_MODES and not _edit and not extras_on(obj):
         # Only a sculpt or paint stroke starts a history. Leaving Edit Mode on an object without
-        # one (for example a file saved in Edit Mode) just takes a new baseline.
+        # one (for example a file saved in Edit Mode) just takes a new baseline. An object recorded
+        # with Record everything records the visit (D50).
         ensure_state(obj, refresh=True)
         return None
     if label is None:
@@ -553,6 +610,12 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
             # not a real state. Put the mesh back (never record it, never drop later steps).
             _put_back_after_native_undo(obj, st, step)
             return None
+        if mode == "EDIT" and _edit:
+            # D40: Blender's own Edit Mode undo landed somewhere that isn't next to the cursor (with
+            # Global Undo off a jump isn't on Blender's undo). Blender's undo never records a step
+            # or drops later ones: put the mesh back and say so.
+            _put_back_after_native_undo(obj, st, step, NATIVE_UNDO_EDIT_TEXT)
+            return None
     if h is not None:
         fut = h.future_count()
         if fut > 0:
@@ -569,6 +632,12 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": True,
                           "morph_target": None})
     step.seq = _REG.new_seq()
+    group = OP_GROUP[0]
+    if group is not None:                    # D52: one operator's steps are one global position
+        if group[0] is None:
+            group[0] = step.seq
+        else:
+            step.extra = dict(step.extra or {}, op=group[0])
     at = h.cursor
     removed = h.push(step)
     _apply_to_state(st, step)
@@ -579,15 +648,17 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     _enforce(h)
     try:
         from . import datarec
-        datarec._JUMPS.clear()
+        datarec.drop_undone_jumps()
     except Exception:
         pass
     tag_redraw_all()
     return step
 
 
-def _put_back_after_native_undo(obj, st: MeshState, step: Step) -> None:
+def _put_back_after_native_undo(obj, st: MeshState, step: Step, text: str = NATIVE_UNDO_TEXT) -> None:
     keys = {d.key for d in step.deltas} | set(st.removed) if step.kind == DELTA else {"__TOPO__"}
+    if obj.mode == "EDIT":
+        keys = {"__TOPO__"}       # in Edit Mode the edit mesh is written by leaving and entering it
     name = obj.name
 
     def _later():
@@ -597,11 +668,14 @@ def _put_back_after_native_undo(obj, st: MeshState, step: Step) -> None:
             tag_redraw_all()
         return None
     # Never write meshes or switch modes inside Blender's undo handler: do it right after.
-    bpy.app.timers.register(_later, first_interval=0.0)
-    log.warn(NATIVE_UNDO_TEXT)
+    if bpy.app.background:
+        _later()                  # tests call the handler themselves, outside Blender's undo
+    else:
+        bpy.app.timers.register(_later, first_interval=0.0)
+    log.warn(text)
     try:
         from .selfcheck import flash_status
-        flash_status("Hindsight: " + NATIVE_UNDO_TEXT, 10.0)
+        flash_status("Hindsight: " + text, 10.0)
     except Exception:
         pass
 
@@ -707,6 +781,11 @@ def _enter(obj) -> None:
     _WROTE.discard(uid)      # entering a mode starts a fresh Blender undo context for it
     h = _REG.history_for(uid)
     st = _STATES.get(uid)
+    if _mesh_owned_elsewhere(obj):
+        # D39: a linked duplicate's mesh is recorded by its owner; this object starts from the mesh
+        # as it is (nothing done through the owner becomes a step here)
+        ensure_state(obj, refresh=obj.mode != "EDIT")
+        return
     if obj.mode == "EDIT":
         if st is None or not st.counts:
             ensure_state(obj)
@@ -734,7 +813,10 @@ def check_mode_transition() -> None:
     pmode = _TRACK["mode"]
     _TRACK.update(name=name, uid=obj_uid(obj) if obj is not None else None, mode=mode)
     if prev is not None and pmode == "EDIT" and prev.mode != "EDIT":
-        commit(prev, label="Edit Mode", mode="EDIT", full=True)
+        if _mesh_owned_elsewhere(prev):
+            ensure_state(prev, refresh=True)    # D39: the mesh's owner records this visit
+        else:
+            commit(prev, label="Edit Mode", mode="EDIT", full=True)
     elif prev is not None and pmode in RECORD_MODES and obj_uid(prev) in _DIRTY:
         commit(prev, mode=pmode)
     if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and not is_excluded(obj):
@@ -808,6 +890,7 @@ def tick() -> float:
     return 0.02 if (_DIRTY or busy) else 0.1
 
 
+OP_GROUP = [None]             # [first step number] while one operator's changes are recorded (D52)
 UNDO_DIRECTION = ["undo"]      # which way Blender's last undo or redo went (see commit, datarec.on_undo)
 
 
@@ -829,20 +912,32 @@ def on_redo(*_a) -> None:
 
 def _after_native_undo() -> None:
     """Compare the mesh with our state (commit() detects the match)."""
+    try:
+        from . import idmap
+        idmap.restore_after_undo()        # D42: ids set after Blender's undo push come back first
+    except Exception as e:
+        log.error_once(("restore_ids", str(e)), f"could not restore ids after undo: {e}", e)
     _UID_CACHE.clear()
     _NATIVE_PENDING.update(_STATES.keys())   # objects in other modes are checked on their next commit
+    # D53: Hindsight's jumps on Blender's undo are matched first; an object whose history that moved
+    # is where it belongs and isn't compared again (in Edit Mode that compare would undo the undo)
+    moved = set()
+    try:
+        from . import datarec
+        moved = datarec.on_undo(UNDO_DIRECTION[0]) or set()
+    except Exception as e:
+        log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
     obj = _active()
+    h = history_of(obj) if obj is not None else None
+    if h is not None and h.uid in moved:
+        _NATIVE_PENDING.discard(obj_uid(obj))
+        return
     if obj is not None and obj.type == "MESH" and obj.mode in RECORD_MODES:
         if obj_uid(obj) in _STATES:
             commit(obj)
     elif obj is not None and obj.type == "MESH" and obj.mode == "EDIT" and edit_steps_on(obj):
         if obj_uid(obj) in _STATES:
             commit_edit(obj, "Edit")
-    try:
-        from . import datarec
-        datarec.on_undo(UNDO_DIRECTION[0])
-    except Exception as e:
-        log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
 
 
 _HANDLERS = (("depsgraph_update_post", on_depsgraph), ("undo_post", on_undo), ("redo_post", on_redo))
@@ -921,6 +1016,10 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     before = h.cursor
     changes = h.goto(pos, states, join_hook=_join_hook)
     wrote_data = False
+    # A jump that may go onto Blender's undo stack: note each recorded mesh before it's written, so
+    # Blender's undo of the jump can be told apart from anything else (datarec.on_undo)
+    pushing = final and not IN_HANDLER[0] and datarec.can_push()
+    meshes = acc["meshes"] if acc is not None else {}
     for target, keys in changes.items():
         ob = _find_any(target)
         st = states.get(target) or _STATES.get(target)
@@ -932,19 +1031,34 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
                 datarec.write(ob, st, data_keys)
                 wrote_data = True
             continue
-        if data_keys:
+        # D44: steps that change which mesh the object uses: going back, its mesh is written before it
+        # goes back to the earlier mesh; going forward, after it uses the later one
+        relink_last = pos < before and "data" in data_keys.get("rna", ())
+        if data_keys and not relink_last:
             datarec.write(ob, st, data_keys)
             wrote_data = True
         if not mesh_keys:
+            if relink_last:
+                datarec.write(ob, st, data_keys)
+                wrote_data = True
             continue
-        reenter_edit = ob.mode == "EDIT"
-        if reenter_edit:
-            with suspended():
+        # the mesh can be in Edit Mode through the object itself or (D51) through a linked duplicate
+        editor = ob if ob.mode == "EDIT" else _mesh_editor(ob)
+        if editor is not None:
+            with suspended(), bpy.context.temp_override(object=editor, active_object=editor):
                 bpy.ops.object.mode_set(mode="OBJECT")
+        fp = pushing and ob.mode == "OBJECT" and ob.type == "MESH" and target in datarec.tracked_uids()
+        if fp and target not in meshes:
+            meshes[target] = [mesh_fingerprint(ob), None]
         _write_state(ob, st, mesh_keys, final)
-        if reenter_edit:
-            with suspended():
+        if fp:
+            meshes[target][1] = mesh_fingerprint(ob)
+        if editor is not None:
+            with suspended(), bpy.context.temp_override(object=editor, active_object=editor):
                 bpy.ops.object.mode_set(mode="EDIT")
+        if relink_last:
+            datarec.write(ob, st, data_keys)
+            wrote_data = True
     ob = find_object(h.members[0]) if h.members else None
     object_mode = ob is None or ob.mode == "OBJECT"
     va = {m: dict(states[m].values) for m in tracked if m in states}
@@ -954,11 +1068,13 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         for k, v in vb.items():
             acc["vb"].setdefault(k, v)
         acc["va"].update(va)
-        acc["wrote"] = acc["wrote"] or wrote_data
+        acc["wrote"] = acc["wrote"] or wrote_data or bool(meshes)
         acc["object_mode"] = acc["object_mode"] and object_mode
-    elif wrote_data and final and not IN_HANDLER[0] and object_mode:
+    elif (wrote_data or meshes) and final and not IN_HANDLER[0] and object_mode:
         if datarec.push_undo():
-            datarec.note_jump({h.uid: [before, h.cursor, len(h.entries)]}, vb, va)
+            datarec.note_jump({h.uid: [before, h.cursor, len(h.entries)]}, vb, va, meshes)
+    if acc is None:
+        datarec.resolve_missing_refs()
     _journal("CURSOR", {"hist": h.uid, "cursor": h.cursor})
     return changes
 
@@ -995,8 +1111,66 @@ def goto(context, pos: int, final: bool = True) -> None:
         h = history_of(_ctx_active(context))
         if h is None:
             return
+        held = _leave_edit_for_push(context, final)
         _goto_history(h, pos, final)
+        _reenter_edit(context, held)
     tag_redraw_all()
+
+
+def _mesh_editor(ob):
+    """The object through which ob's mesh is in Edit Mode right now (a linked duplicate), or None."""
+    me = getattr(ob, "data", None)
+    if me is None or not getattr(me, "is_editmode", False):
+        return None
+    for o in bpy.context.view_layer.objects:
+        if o.data == me and o.mode == "EDIT":
+            return o
+    return None
+
+
+def _leave_edit_for_push(context, final: bool):
+    """A jump that goes onto Blender's undo stack is pushed in Object Mode: in Edit Mode the push
+    would keep only the edit mesh, and Blender's undo would later put back stale data for every
+    other object. The edit is kept as a step first (as when a jump leaves Edit Mode). Returns the
+    object to put back into Edit Mode after the push, or None."""
+    from . import datarec
+    ob = _ctx_active(context)
+    if not final or IN_HANDLER[0] or not datarec.can_push() or ob is None or ob.mode != "EDIT":
+        return None
+    if not any(datarec.is_tracked(o) for o in context.view_layer.objects if o.mode == "EDIT"):
+        return None
+    with suspended():
+        bpy.ops.object.mode_set(mode="OBJECT")
+    commit(ob, label="Edit Mode", mode="EDIT", full=True)
+    return ob.name
+
+
+def _reenter_edit(context, name) -> None:
+    if name is None:
+        return
+    ob = bpy.data.objects.get(name)
+    if ob is None or ob.type != "MESH" or ob.mode != "OBJECT" or context.view_layer.objects.active != ob:
+        return
+    with suspended():
+        try:
+            bpy.ops.object.mode_set(mode="EDIT")
+        except Exception as e:
+            log.error_once(("reenter_edit", str(e)), f"could not go back to Edit Mode after a jump: {e}", e)
+
+
+def mesh_fingerprint(ob) -> str:
+    """meshio.fingerprint of an object's mesh, also in Edit Mode (read from a copy)."""
+    with_ob = ob if extras_on(ob) else None
+    if ob.mode != "EDIT":
+        return meshio.fingerprint(ob.data, with_ob)
+    with suspended():
+        ob.update_from_editmode()
+        tmp = ob.data.copy()
+    try:
+        return meshio.fingerprint(tmp, with_ob)
+    finally:
+        with suspended():
+            bpy.data.meshes.remove(tmp)
 
 
 def global_goto(context, g: int, final: bool = True) -> None:
@@ -1005,15 +1179,20 @@ def global_goto(context, g: int, final: bool = True) -> None:
     from . import datarec
     vis = _visible_uids()
     old = globaltl.global_position(_REG, vis)
-    acc = {"hists": {}, "vb": {}, "va": {}, "wrote": False, "object_mode": True}
+    acc = {"hists": {}, "vb": {}, "va": {}, "meshes": {}, "wrote": False, "object_mode": True}
+    held = _leave_edit_for_push(context, final) if g != old else None
+    pre = datarec.recorded_values()          # the whole scene before the jump (objects it brings back
+                                             # or removes must not count on the wrong side)
     for hid, cur in globaltl.transition(_REG, g, vis):
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
             _goto_history(h, cur, final, acc)
+    datarec.resolve_missing_refs()          # D37: objects brought back get their references back
     new_g = globaltl.global_position(_REG, vis)
     if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
         if datarec.push_undo():
-            datarec.note_jump(acc["hists"], acc["vb"], acc["va"])
+            datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])
+    _reenter_edit(context, held)
     p = _scene_props(context)
     preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
     if preserve and final and new_g != old:
@@ -1166,6 +1345,65 @@ def reset_all(context) -> None:
             reset_history(context, ob)
 
 
+OUTSIDE_LABEL = "Changes Outside Hindsight"
+OUTSIDE_MESH_TEXT = ("{name} was changed while Hindsight wasn't running, so its history no longer matches its "
+                     "mesh and was left out")
+
+
+def saved_prints() -> dict:
+    """D46: every recorded object as it is saved (a fingerprint of its mesh, its recorded values), so
+    opening the file can tell whether it was changed in a session without Hindsight."""
+    from . import datarec, idmap
+    tracked = datarec.tracked_uids()
+    uids = set(tracked)
+    for h in _REG.histories.values():
+        if h.entries:
+            uids.update(h.members)
+    out = {}
+    for u in sorted(uids):
+        ob = idmap.find(u) or find_object(u)
+        if ob is None:
+            continue
+        rec = {}
+        try:
+            if isinstance(ob, bpy.types.Object) and ob.type == "MESH" and ob.data is not None:
+                rec["mesh"] = mesh_fingerprint(ob)
+            if u in tracked:
+                rec["values"] = [[a, p, v] for (a, p), v in sorted(datarec.capture(ob).items())]
+        except Exception as e:
+            log.error_once(("saved_prints", str(e)), f"could not note {getattr(ob, 'name', u)} for saving: {e}", e)
+            continue
+        out[u] = rec
+    return out
+
+
+def check_outside_changes(saved: dict) -> None:
+    """D46: after opening a file, compare every recorded object with how Hindsight saved it. Values
+    changed in a session without Hindsight become one step; a changed mesh can't be rebuilt from
+    the history, so that object's history is left out with a message (never played back onto it)."""
+    from . import datarec, idmap
+    for u, rec in (saved or {}).items():
+        ob = idmap.find(u) or find_object(u)
+        if ob is None or not isinstance(rec, dict):
+            continue
+        h = _REG.history_for(u)
+        fp = rec.get("mesh")
+        if fp and isinstance(ob, bpy.types.Object) and ob.type == "MESH" and h is not None and h.entries:
+            if mesh_fingerprint(ob) != fp:
+                h.reset()
+                _journal("RESET", {"hist": h.uid})
+                for m in list(h.members):
+                    _REG.remove_object(m)
+                load_notes.append(("ERROR", OUTSIDE_MESH_TEXT.format(name=ob.name)))
+                ensure_state(ob, refresh=ob.mode != "EDIT")
+                continue
+        vals = rec.get("values")
+        if isinstance(vals, list) and u in datarec.tracked_uids():
+            st = datarec._state(u)
+            st.values = {(a, p): v for a, p, v in vals}
+            datarec.commit(label=OUTSIDE_LABEL, uids={u}, mesh=False)
+
+
 def turn_off(context, obj) -> None:
     uid = obj_uid(obj, create=True)
     if uid in _STATES and obj.mode in RECORD_MODES and uid in _DIRTY:
@@ -1187,7 +1425,11 @@ def turn_on(context, obj) -> None:
         h.enabled = True
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": True,
                           "morph_target": h.morph_target})
-        if uid in _STATES and obj.mode != "EDIT":
+        from . import datarec
+        if datarec.is_tracked(obj) and obj.mode != "EDIT":
+            # D46: values and mesh changed while off become one step together
+            datarec.catch_up(obj, "Changes While Off")
+        elif uid in _STATES and obj.mode != "EDIT":
             # Changes made while off become the new starting point: one step bridging them.
             commit(obj, label="Changes While Off", full=True)
         else:

@@ -13,6 +13,7 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import bpy
 
 import tests.harness as H
+from tests import oracle as O
 from tests import t1_ops as T
 from tests.gate import covers
 from hindsight.bl import adapters, datarec, guard, idmap, runtime, selfcheck
@@ -189,6 +190,34 @@ def test_object_mode_mesh_check_fault():
     assert not guard.failed()
 
 
+@covers("obj.transforms", "STEPS")
+def test_mesh_change_without_an_operator_is_recorded():
+    """D32: a change to a recorded mesh in Object Mode that comes without an operator (a script, or
+    an operator's update that arrives after the timer saw it finish) reaches the recorder through the
+    settle path, which must compare the mesh too. One step, exact both ways."""
+    setup()
+    a = bpy.data.objects["A"]
+    tick("baseline")
+    h0 = len(hist("A").entries) if hist("A") else 0
+    before = O.object_state(a)
+    co = [c for v in a.data.vertices for c in v.co]
+    co[0] += 0.5
+    a.data.vertices.foreach_set("co", co)
+    a.data.update()
+    C.view_layer.update()                           # the update reaches the recorder (on_update)
+    datarec._OPS["marker"] = datarec._ops_marker()  # no operator finished
+    for uid in list(datarec._DIRTY):
+        datarec._DIRTY[uid] -= 10                   # the settle time has passed
+    datarec.tick()
+    h = hist("A")
+    assert h is not None and len(h.entries) == h0 + 1, None if h is None else [e.meta.get("label") for e in h.entries]
+    after = O.object_state(a)
+    runtime._goto_history(h, h0, True)
+    assert O.object_state(a) == before
+    runtime._goto_history(h, h0 + 1, True)
+    assert O.object_state(a) == after
+
+
 @covers("obj.constraints", "STEPS")
 def test_animated_constraint_settings_are_not_steps():
     """D15: keyframed or driven constraint settings change with the frame: never a step."""
@@ -217,7 +246,7 @@ def test_animated_constraint_settings_are_not_steps():
 
 
 for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults, test_edit_steps_fault,
-           test_object_mode_mesh_check_fault,
+           test_object_mode_mesh_check_fault, test_mesh_change_without_an_operator_is_recorded,
            test_animated_constraint_settings_are_not_steps):
     H.run(fn)
 H.finish()

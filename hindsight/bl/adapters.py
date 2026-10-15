@@ -24,6 +24,7 @@ from . import idmap, log
 # this order: parenting first, modes before the values they convert.
 ALLOWLIST: dict = {
     "Object": (
+        ("data", "ref", "objects"),           # which mesh (or other data) it uses (D44: Make Single User)
         ("parent", "ref", "parenting"), ("parent_type", "value", "parenting"),
         ("parent_bone", "value", "parenting"), ("parent_vertices", "value", "parenting"),
         ("matrix_parent_inverse", "value", "parenting"),
@@ -56,6 +57,10 @@ KINDS = {
 # the rotation), so after writing one, its dependents are written again from the recorded state.
 DEPENDENTS: dict = {
     "rotation_mode": ("rotation_euler", "rotation_quaternion", "rotation_axis_angle"),
+    # D38: setting the parent or the parent bone resets the parent inverse to identity in Blender
+    # (ED_object_parent), so the recorded inverse is written again after it
+    "parent": ("matrix_parent_inverse",),
+    "parent_bone": ("matrix_parent_inverse",),
 }
 
 
@@ -98,7 +103,7 @@ def normalise(v):
     if v is None or isinstance(v, (bool, int, float, str)):
         return v
     if isinstance(v, bpy.types.ID):
-        return idmap.claim(v)
+        return idmap.ref_of(v)
     if hasattr(v, "to_list") and hasattr(v, "col"):          # Matrix
         return [list(map(float, row)) for row in v]
     try:
@@ -131,6 +136,49 @@ def same(a, b) -> bool:
 
 
 ENABLED_KINDS = [None]       # set of kind ids, or None for all (datarec keeps this up to date)
+MISSING_REFS: dict = {}      # D37: object uid -> {path: (referenced id, adapter, adapter path)}
+NAME_TAKEN: dict = {}        # D47: uid -> the name it should have, which another datablock holds
+
+
+def note_name(idb, wanted) -> None:
+    """After giving a datablock a recorded name: Blender adds .001 when another one has that name."""
+    u = idmap.uid_of(idb)
+    if u is None or not isinstance(wanted, str):
+        return
+    if idb.name != wanted:
+        NAME_TAKEN[u] = wanted
+    else:
+        NAME_TAKEN.pop(u, None)
+
+
+def name_taken(idb):
+    """The name idb should have at this step when another datablock holds it, else None."""
+    w = NAME_TAKEN.get(idmap.uid_of(idb))
+    return w if w is not None and idb.name != w else None
+
+
+def _note_ref(owner, path: str, ref, found, aid: str, apath: str) -> None:
+    """Remember a recorded reference that couldn't be put back because the object it points to is
+    deleted now (the sidebar says so, datarec.resolve_missing_refs puts it in when that object is
+    back); forget it once a write of that path succeeds."""
+    ou = idmap.uid_of(owner) if owner is not None else None
+    if ou is None:
+        return
+    if ref and found is None:
+        MISSING_REFS.setdefault(ou, {})[path] = (ref, aid, apath)
+    else:
+        d = MISSING_REFS.get(ou)
+        if d is not None:
+            d.pop(path, None)
+            if not d:
+                MISSING_REFS.pop(ou, None)
+
+
+def missing_refs(owner) -> list:
+    """[(path, referenced id)] this object's last restore couldn't set, still deleted now."""
+    ou = idmap.uid_of(owner) if owner is not None else None
+    d = MISSING_REFS.get(ou) or {}
+    return sorted((p, r) for p, (r, _a, _ap) in d.items() if idmap.find(r) is None)
 
 
 def kind_on(kind: str) -> bool:
@@ -201,8 +249,12 @@ class RNAAdapter(Adapter):
             try:
                 owner, attr = _split(idb, path)
                 if kind == "ref":
+                    ref = v
                     v = idmap.find(v) if v else None
+                    _note_ref(idb, path, ref, v, self.id, path)
                 setattr(owner, attr, to_rna(v))
+                if path == "name":
+                    note_name(idb, v)
             except Exception as e:
                 log.error_once(("rna_write", path, str(e)), f"could not restore {path}: {e}", e)
 
@@ -268,7 +320,7 @@ def struct_values(st, skip=_UI_PROPS, skip_prefix: tuple = (), anim=None) -> dic
             continue
         if ptype == "POINTER":
             if v is None or isinstance(v, bpy.types.ID):
-                out[ident] = {"ref": idmap.claim(v)} if v is not None else {"ref": None}
+                out[ident] = {"ref": idmap.ref_of(v)} if v is not None else {"ref": None}
             continue
         if is_flag:
             out[ident] = sorted(v)
@@ -277,8 +329,9 @@ def struct_values(st, skip=_UI_PROPS, skip_prefix: tuple = (), anim=None) -> dic
     return out
 
 
-def set_struct_values(st, values: dict) -> None:
-    """Set recorded values back on a struct: ID pointers first (other values may depend on them)."""
+def set_struct_values(st, values: dict, owner=None, prefix: str = "") -> None:
+    """Set recorded values back on a struct: ID pointers first (other values may depend on them).
+    owner and prefix: the object the struct belongs to and its path there (for D37)."""
     items = sorted(values.items(), key=lambda kv: 0 if isinstance(kv[1], dict) else 1)
     for ident, v in items:
         if v == ANIMATED:
@@ -286,7 +339,9 @@ def set_struct_values(st, values: dict) -> None:
         try:
             cur = getattr(st, ident)
             if isinstance(v, dict) and "ref" in v:
-                v = idmap.find(v["ref"]) if v["ref"] else None
+                ref = v["ref"]
+                v = idmap.find(ref) if ref else None
+                _note_ref(owner, prefix + ident, ref, v, "object", "constraints")
                 if cur == v:
                     continue          # unchanged: no write (Blender reports some writes as errors)
             elif isinstance(v, list) and getattr(st.bl_rna.properties.get(ident), "is_enum_flag", False):
@@ -374,7 +429,7 @@ def _write_constraints(ob, want: list) -> None:
             except Exception as e:
                 log.error_once(("constraint_new", str(e)), f"could not restore a constraint: {e}", e)
     for c, w in zip(ob.constraints, want):
-        set_struct_values(c, w.get("values") or {})
+        set_struct_values(c, w.get("values") or {}, ob, f'constraints["{c.name}"].')
 
 
 # Object settings a body leaves out: the name, data and parent are set on their own; matrices and
@@ -385,26 +440,69 @@ _BODY_SKIP = frozenset(_UI_PROPS | {"name", "data", "parent", "active_material",
                                     "mode", "select", "active_shape_key_index", "dimensions"})
 
 
+def _id_props(owner) -> dict:
+    """Custom properties as JSON values (groups as dicts, arrays as lists), Hindsight's id left out."""
+    out = {}
+    try:
+        keys = list(owner.keys())
+    except TypeError:
+        return out
+    for k in keys:
+        if k == idmap.UID_PROP:
+            continue
+        v = owner[k]
+        if hasattr(v, "to_dict"):
+            v = v.to_dict()
+        elif hasattr(v, "to_list"):
+            v = v.to_list()
+        if isinstance(v, (int, float, str, list, dict)):
+            out[k] = v
+    return out
+
+
+def _set_id_props(owner, props: dict) -> None:
+    for k, v in (props or {}).items():
+        try:
+            owner[k] = v
+        except Exception:
+            pass
+
+
+def _hidden(ob) -> dict:
+    """Hidden (H) in each view layer of the scenes it is in."""
+    out = {}
+    for sc in bpy.data.scenes:
+        for vl in sc.view_layers:
+            try:
+                out[f"{sc.name}/{vl.name}"] = bool(ob.hide_get(view_layer=vl))
+            except Exception:
+                continue
+    return out
+
+
 def object_body(ob) -> dict:
     """What it takes to bring a deleted object back exactly: its settings as values (transforms with
-    their rotation mode, deltas, visibility, display, ...), its constraints and custom properties.
-    Its mesh comes from the mesh datablock if it still exists, otherwise from the snapshot stored
-    with the step."""
+    their rotation mode, deltas, visibility, display, ...), its constraints and modifiers with their
+    settings, its custom properties, material slots and hidden state (D49). Its mesh comes from the
+    mesh datablock if it still exists, otherwise from the snapshot stored with the step."""
     data = ob.data
     return {
         "name": ob.name, "type": ob.type,
         "data": idmap.claim(data) if data is not None else None,
         "data_name": data.name if data is not None else None,
         "matrix": [list(map(float, r)) for r in ob.matrix_basis],
-        "parent": idmap.claim(ob.parent) if ob.parent is not None else None,
+        "parent": idmap.ref_of(ob.parent) if ob.parent is not None else None,
         "parent_inverse": [list(map(float, r)) for r in ob.matrix_parent_inverse],
         "collections": sorted(_coll_ref(c) for c in ob.users_collection),
         "materials": [idmap.claim(s.material) if s.material is not None else None for s in ob.material_slots],
         "hide": [bool(ob.hide_viewport), bool(ob.hide_render), bool(ob.hide_select)],
         "props": struct_values(ob, _BODY_SKIP),
         "constraints": [{"type": c.type, "name": c.name, "values": struct_values(c)} for c in ob.constraints],
-        "custom": {k: (ob[k].to_list() if hasattr(ob[k], "to_list") else ob[k]) for k in ob.keys()
-                   if k != idmap.UID_PROP and isinstance(ob[k], (int, float, str)) or hasattr(ob[k], "to_list")},
+        "modifiers": [{"type": m.type, "name": m.name, "values": struct_values(m), "custom": _id_props(m)}
+                      for m in ob.modifiers],
+        "slots": [[s.link, idmap.ref_of(s.material) if s.material is not None else None] for s in ob.material_slots],
+        "hidden": _hidden(ob),
+        "custom": _id_props(ob),
     }
 
 
@@ -478,8 +576,10 @@ def _write_collection_tree(scene, want: list) -> None:
         if ch is None:
             ch = bpy.data.collections.new(name)
             ch[idmap.UID_PROP] = u
+            idmap.note(ch, u)
         if ch.name != name:
             ch.name = name
+        note_name(ch, name)
         par = coll(p)
         if par is not None and ch.name not in par.children:
             par.children.link(ch)
@@ -520,11 +620,14 @@ def _recreate_object(scene, uid, body, snap):
         meshio.write_snapshot(data, snap)
         if body.get("data"):
             data[idmap.UID_PROP] = body["data"]
+            idmap.note(data, body["data"])
     if data is None and body.get("type") not in ("EMPTY",):
         log.warn(f"{body.get('name')} can't be brought back: its data is gone")
         return None
     ob = bpy.data.objects.new(body.get("name") or "Object", data)
     ob[idmap.UID_PROP] = uid
+    idmap.note(ob, uid)
+    note_name(ob, body.get("name") or "Object")
     linked = False
     for ref in body.get("collections") or ():
         c = _coll_from_ref(ref)
@@ -545,11 +648,35 @@ def _recreate_object(scene, uid, body, snap):
     set_struct_values(ob, props)                 # exact location, rotation, scale and the rest
     if body.get("constraints"):
         _write_constraints(ob, body["constraints"])
-    for k, v in (body.get("custom") or {}).items():
+    for w in body.get("modifiers") or ():
         try:
-            ob[k] = v
+            m = ob.modifiers.new(w["name"], w["type"])
+            m.name = w["name"]
+            set_struct_values(m, w.get("values") or {}, ob, f'modifiers["{m.name}"].')
+            _set_id_props(m, w.get("custom"))
+        except Exception as e:
+            log.error_once(("modifier_new", str(e)), f"could not bring back a modifier: {e}", e)
+    for i, (link, ref) in enumerate(body.get("slots") or ()):
+        if i >= len(ob.material_slots):
+            break
+        try:
+            slot = ob.material_slots[i]
+            if slot.link != link:
+                slot.link = link
+            if link == "OBJECT":
+                slot.material = idmap.find(ref) if ref else None
         except Exception:
             pass
+    for key, hidden in (body.get("hidden") or {}).items():
+        sc_name, _sep, vl_name = key.partition("/")
+        sc = bpy.data.scenes.get(sc_name)
+        vl = sc.view_layers.get(vl_name) if sc is not None else None
+        if vl is not None:
+            try:
+                ob.hide_set(hidden, view_layer=vl)
+            except Exception:
+                pass
+    _set_id_props(ob, body.get("custom"))
     return ob
 
 

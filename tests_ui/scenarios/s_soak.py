@@ -8,7 +8,10 @@ threads, and Hindsight's handlers and timers. After the first quarter of the run
 growing: memory stays within 8% of its warm level (no steady climb over the last half), handles and
 threads within a small margin, handlers and timers exactly the same.
 
-args: minutes (default 30), seed (default 1)
+args: minutes (default 30), seed (default 1), focus: mixed (default, every adapter) or one adapter:
+rna (moves, rotations, parenting), object (constraints, collections, hiding), scene (adding,
+duplicating, deleting), edit (Edit Mode operations), mesh (Object Mode mesh changes). Run a focused
+soak with --out-tag <version>-<focus>; it covers that adapter's rows only.
 """
 import ctypes
 import ctypes.wintypes as wt
@@ -21,6 +24,12 @@ import time
 import bpy
 
 import common as C
+
+# the rows each focused soak covers (mixed: every Tier 1 adapter at once)
+FOCUS_ROWS = {"rna": ["obj.transforms", "obj.parenting"], "object": ["obj.constraints", "obj.collections"],
+              "scene": ["obj.addremove"], "edit": ["obj.editsteps"], "mesh": ["obj.transforms"],
+              "mixed": ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove",
+                        "obj.editsteps"]}
 
 
 class _PMC(ctypes.Structure):
@@ -77,6 +86,8 @@ def run(d):
     rt = C.mod("runtime")
     minutes = float(d.args.get("minutes", 30))
     rng = random.Random(int(d.args.get("seed", 1)))
+    focus = d.args.get("focus", "mixed")
+    assert focus in FOCUS_ROWS, focus
     mark = d.console_mark()
     yield 1.0
     C.dismiss_splash(d)
@@ -104,22 +115,34 @@ def run(d):
     def op_list():
         names = [o.name for o in bpy.context.scene.objects if o.name in T.NAMES]
         meshes = [n for n in names if bpy.data.objects[n].type == "MESH"]
+        on = {focus} if focus != "mixed" else set(FOCUS_ROWS)
         ops = []
         for n in names:
-            ops += [T.translate(n, (rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5), 0)),
-                    T.rotate(n, rng.uniform(-1, 1)), T.add_constraint(n, "COPY_ROTATION"),
-                    T.move_to_collection(n, "Props")]
-        for n in meshes:
-            ops += [T.shade(n, rng.random() < 0.5), T.origin_to_geometry(n)]
-        if "E" in meshes:
+            if "rna" in on:
+                ops += [T.translate(n, (rng.uniform(-0.5, 0.5), rng.uniform(-0.5, 0.5), 0)),
+                        T.rotate(n, rng.uniform(-1, 1))]
+                others = [m for m in names if m != n]
+                if others:
+                    ops += [T.parent(n, rng.choice(others), rng.random() < 0.5),
+                            T.unparent(n, rng.choice(["CLEAR", "CLEAR_KEEP_TRANSFORM"]))]
+            if "object" in on:
+                ops += [T.add_constraint(n, rng.choice(["COPY_ROTATION", "LIMIT_LOCATION", "DAMPED_TRACK"])),
+                        T.move_to_collection(n, rng.choice(["Props", "Extra"]))]
+                if bpy.data.objects[n].constraints:
+                    ops.append(T.delete_constraint(n, 0))
+        if "mesh" in on:
+            for n in meshes:
+                ops += [T.shade(n, rng.random() < 0.5), T.origin_to_geometry(n)]
+        if "edit" in on and "E" in meshes:
             ops += [o for o in T.edit_ops("E", rng.randrange(1000)) if o.label.split(": ")[1] in
                     ("grab", "rotate", "scale", "extrude", "subdivide")]
-        ops += [T.add_primitive(rng.choice(T.PRIMITIVES), (rng.uniform(-6, 6), -6, 0))]
-        extra = [o.name for o in bpy.context.scene.objects if o.name not in T.NAMES]
-        if extra:
-            ops.append(T.delete([rng.choice(extra)]))
-        if names:
-            ops.append(T.duplicate(rng.choice(names)))
+        if "scene" in on:
+            ops += [T.add_primitive(rng.choice(T.PRIMITIVES), (rng.uniform(-6, 6), -6, 0))]
+            extra = [o.name for o in bpy.context.scene.objects if o.name not in T.NAMES]
+            if extra:
+                ops.append(T.delete([rng.choice(extra)]))
+            if names:
+                ops.append(T.duplicate(rng.choice(names)))
         return ops
 
     samples = []
@@ -159,12 +182,12 @@ def run(d):
     warm = [s for s in samples if s["t"] >= minutes * 60 / 4]
     half = [s for s in samples if s["t"] >= minutes * 60 / 2]
     if len(warm) < 3:
-        d.check("enough samples", False, len(samples), covers="obj.transforms: SOAK")
+        d.check("enough samples", False, len(samples), covers=", ".join(FOCUS_ROWS[focus]) + ": SOAK")
         return
     base = warm[0]
     mem_max = max(s["mem"] for s in warm)
     climb = half[-1]["mem"] - half[0]["mem"] if len(half) >= 2 else 0
-    rows = "obj.transforms, obj.parenting, obj.constraints, obj.collections, obj.addremove, obj.editsteps: SOAK"
+    rows = ", ".join(FOCUS_ROWS[focus]) + ": SOAK"
     d.check("memory levels off (within 8% of its warm level, no steady climb in the second half)",
             mem_max <= base["mem"] * 1.08 and climb <= base["mem"] * 0.03,
             {"base_mb": round(base["mem"] / 1e6), "max_mb": round(mem_max / 1e6),

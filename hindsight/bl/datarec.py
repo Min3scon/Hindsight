@@ -31,7 +31,9 @@ _BODY_DIRTY: set = set()     # object uids whose body must be read again
 _OPS = {"marker": None}      # (count, pointer of the newest) of window_manager.operators
 _JUMPS: list = []            # Hindsight jumps pushed onto Blender's undo stack (see on_undo)
 _MESH_DIRTY: set = set()     # tracked mesh objects whose mesh got a geometry update in Object Mode
-_MESH_USERS: dict = {}       # mesh pointer -> tracked object uids using it
+_MESH_USERS: dict = {}       # mesh pointer -> [the tracked object that records it (its owner)]
+_MESH_OWNER: dict = {}       # mesh pointer -> owner uid (kept while it uses the mesh, D39)
+_MESH_OF: dict = {}          # owner uid -> pointer of the mesh its state was read from (D44)
 OBJECT_DEEP_MAX = 1_000_000  # vertices; above this an Object Mode check compares counts and values only
 
 
@@ -92,12 +94,69 @@ def set_tracked(idb, on: bool) -> None:
     if uid is None:
         return
     if on:
+        was_on = uid in rt.reg().everything
         rt.reg().everything.add(uid)
+        h = rt.reg().history_for(uid)
+        if not was_on and h is not None and h.entries and _state(uid).values:
+            # D46: switched on again: what changed while it was off becomes one step, so every
+            # position of its history is a state that existed
+            refresh_mesh_users()
+            if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT":
+                _MESH_DIRTY.add(uid)
+            commit(label=CHANGES_WHILE_OFF, uids={uid}, mesh=True)
         baseline(idb, uid, refresh=True)
     else:
         rt.reg().everything.discard(uid)
     rt._journal("META_EVERYTHING", {"uid": uid, "on": bool(on)})
     refresh_mesh_users()
+
+
+def _track_new(uid: str) -> None:
+    """D36: an object added or duplicated while the scene is recorded is recorded fully from the
+    start. Otherwise its later changes were lost when the global history took it away and brought
+    it back (it came back as it was when added)."""
+    rt = _rt()
+    ob = idmap.find(uid)
+    if ob is None or is_linked(ob) or not isinstance(ob, bpy.types.Object):
+        return
+    if uid in rt.reg().everything or uid in rt.reg().disabled:
+        return
+    rt.reg().everything.add(uid)
+    baseline(ob, uid, refresh=True)
+    rt._journal("META_EVERYTHING", {"uid": uid, "on": True})
+    refresh_mesh_users()
+
+
+CHANGES_WHILE_OFF = "Changes While Not Recorded"
+CHANGES_WHILE_EXCLUDED = "Changes While Excluded"
+_EXCLUDED: set = set()       # D54: tracked objects excluded by Collection Filtering at the last check
+
+
+def check_exclusion() -> None:
+    """D54: objects excluded by Collection Filtering record nothing; when one stops being excluded,
+    what changed meanwhile becomes one step, so its history stays a line of real states."""
+    rt = _rt()
+    for uid in tracked_uids():
+        ob = idmap.find(uid)
+        if not isinstance(ob, bpy.types.Object):
+            continue
+        if rt.is_excluded(ob):
+            _EXCLUDED.add(uid)
+        elif uid in _EXCLUDED:
+            _EXCLUDED.discard(uid)
+            catch_up(ob, CHANGES_WHILE_EXCLUDED)
+
+
+def catch_up(idb, label: str = CHANGES_WHILE_OFF) -> list:
+    """D46: record what changed on a recorded datablock while its history was paused, as one step
+    (values and mesh)."""
+    uid = idmap.uid_of(idb)
+    if uid is None or uid not in tracked_uids() or not _state(uid).values:
+        return []
+    refresh_mesh_users()
+    if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT":
+        _MESH_DIRTY.add(uid)
+    return commit(label=label, uids={uid}, mesh=True)
 
 
 def tracked_uids() -> set:
@@ -151,14 +210,67 @@ def capture(idb) -> dict:
 
 
 def refresh_mesh_users() -> None:
-    """Which tracked objects use which mesh (to see Object Mode changes to their meshes)."""
-    out = {}
+    """Which tracked object records each mesh (to see Object Mode changes to it). D39: a mesh shared
+    by linked duplicates (Alt+D) is recorded once, by its owner: the object that recorded it first
+    (kept while it uses the mesh), otherwise the first by name. Any other user of the mesh records
+    only its own object data, and an object that becomes the owner starts from its mesh as it is."""
+    users = {}
     for uid in tracked_uids():
         ob = idmap.find(uid)
         if isinstance(ob, bpy.types.Object) and ob.type == "MESH" and ob.data is not None:
-            out.setdefault(ob.data.as_pointer(), []).append(uid)
+            users.setdefault(ob.data.as_pointer(), []).append((ob.name, uid, ob))
+    owners = {}
+    rt = _rt()
+
+    def records_mesh(u):
+        h = rt.reg().history_for(u)
+        return h is not None and any(e.meta.get("kind") != DATA for e in h.entries)
+    for ptr, us in users.items():
+        keep = _MESH_OWNER.get(ptr)
+        if any(u == keep for _n, u, _o in us):
+            uid = keep
+        else:
+            # D45: the object whose history already holds this mesh's steps, then the first by name
+            uid = min((0 if records_mesh(u) else 1, n, u) for n, u, _o in us)[2]
+        ob = next(o for _n, u, o in us if u == uid)
+        if _MESH_OF.get(uid) != ptr and ob.mode != "EDIT":
+            # D44: it records a mesh it didn't before (Make Single User, the owner deleted, a duplicate
+            # that was never an owner): its state starts from that mesh as it is
+            rt.ensure_state(ob, refresh=True)
+            _MESH_OF[uid] = ptr
+        owners[ptr] = uid
+    _MESH_OWNER.clear()
+    _MESH_OWNER.update(owners)
     _MESH_USERS.clear()
-    _MESH_USERS.update(out)
+    _MESH_USERS.update({ptr: [uid] for ptr, uid in owners.items()})
+
+
+def mesh_owned_elsewhere(ob) -> bool:
+    """True for a tracked object whose mesh is recorded by another object (a linked duplicate)."""
+    me = getattr(ob, "data", None)
+    if getattr(ob, "type", None) != "MESH" or me is None:
+        return False
+    owner = _MESH_OWNER.get(me.as_pointer())
+    return owner is not None and owner != idmap.uid_of(ob)
+
+
+def mesh_owner_name(ob) -> str | None:
+    me = getattr(ob, "data", None)
+    owner = _MESH_OWNER.get(me.as_pointer()) if me is not None else None
+    o = idmap.find(owner) if owner else None
+    return o.name if o is not None else None
+
+
+def _mesh_busy(ob) -> bool:
+    """Another object is editing, sculpting or painting this object's mesh right now: its mesh is
+    checked when that ends (D39; reading it in the middle of an Edit Mode visit reads edit layers)."""
+    me = ob.data
+    if getattr(me, "is_editmode", False):
+        return True
+    try:
+        return any(o is not ob and o.data == me and o.mode != "OBJECT" for o in bpy.context.view_layer.objects)
+    except Exception:
+        return False
 
 
 def baseline(idb, uid: str | None = None, refresh: bool = False) -> MeshState:
@@ -282,6 +394,7 @@ def tick() -> None:
     rt = _rt()
     if rt._SUSPEND[0] or _operation_running():
         return
+    check_exclusion()
     marker = _ops_marker()
     finished = marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
     if marker is not None and _OPS["marker"] is None:
@@ -291,23 +404,52 @@ def tick() -> None:
     settled = bool(_DIRTY) and time.time() - max(_DIRTY.values()) >= SETTLE
     if finished or settled:
         _OPS["marker"] = marker
-        label = _last_label() if finished else "Change"
-        refresh_mesh_users()
-        commit(label=label, uids=(tracked_uids() | set(_DIRTY)) if finished else None, mesh=finished)
         if finished:
-            _edit_step(label)
+            finish_operation(_last_label())
+        else:
+            refresh_mesh_users()
+            commit(label="Change", uids=None, mesh=True)
+
+
+def finish_operation(label: str) -> list:
+    """What happens when an operator has finished: everything it changed is recorded as one
+    operation (the scene, object data, meshes, every object in Edit Mode: one position on the
+    global timeline, D52 and D58). Tests call this for what the timer does."""
+    rt = _rt()
+    check_exclusion()
+    refresh_mesh_users()
+    # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
+    # so its mesh update is seen in this step and not left for a later one
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
+    rt.OP_GROUP[0] = [None]
+    try:
+        steps = commit(label=label, uids=tracked_uids() | set(_DIRTY), mesh=True)
+        _edit_step(label)
+    finally:
+        rt.OP_GROUP[0] = None
+    return steps
 
 
 def _edit_step(label: str) -> None:
-    """Edit Mode step by step: the operation that just finished on a tracked object in Edit Mode."""
+    """Edit Mode step by step: the operation that just finished, on every recorded object in Edit Mode
+    (D52: with several objects in Edit Mode, each gets its step, as one operation)."""
     rt = _rt()
-    obj = rt._active()
-    if obj is not None and getattr(obj, "mode", "") == "EDIT" and rt.edit_steps_on(obj) \
-            and adapter_ok("edit_steps"):
-        try:
-            rt.commit_edit(obj, label)
-        except Exception as e:
-            _adapter_failed("edit_steps", e, "capture")
+    active = rt._active()
+    try:
+        editing = [o for o in bpy.context.view_layer.objects if o.mode == "EDIT" and o.type == "MESH"]
+    except Exception:
+        editing = [active] if active is not None else []
+    editing.sort(key=lambda o: o != active)          # the active object first
+    for obj in editing:
+        if rt.edit_steps_on(obj) and adapter_ok("edit_steps"):
+            try:
+                rt.commit_edit(obj, label)
+            except Exception as e:
+                _adapter_failed("edit_steps", e, "capture")
+                break
 
 
 def _diff(old: dict, new: dict) -> dict:
@@ -365,15 +507,20 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
     # exists before an object's own step from the same operation is replayed (and is removed last)
     targets.sort(key=lambda u: (not _is_scene_uid(u), u))
     steps = []
-    op_first = None          # number of this operation's first step (global timeline: one position)
+    group = rt.OP_GROUP[0]   # set while one operator's changes are recorded (shared with Edit Mode steps)
+    op_first = group[0] if group else None   # this operation's first step (global timeline: one position)
     for uid in targets:
         if uid not in tracked_uids():
             continue
         idb = idmap.find(uid)
         if idb is None or is_linked(idb):
             continue
+        if isinstance(idb, bpy.types.Object) and rt.is_excluded(idb):
+            _EXCLUDED.add(uid)       # D54: nothing is recorded for it (caught up when it's back)
+            continue
         mesh_step = None
-        if mesh and uid in _MESH_DIRTY:
+        if mesh and uid in _MESH_DIRTY and not (isinstance(idb, bpy.types.Object) and idb.type == "MESH"
+                                                and idb.mode == "OBJECT" and _mesh_busy(idb)):
             _MESH_DIRTY.discard(uid)
             if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT":
                 if adapter_ok("object_mesh"):
@@ -407,6 +554,8 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
             old_set = set(old_objs) if old_objs is not MISSING else set()
             new_set = set(new_objs) if new_objs is not MISSING else set()
             refresh_bodies(idb, only=new_set - old_set)
+            for ou in sorted(new_set - old_set):
+                _track_new(ou)
             snaps = {}
             for ou in sorted(old_set ^ new_set):
                 body = _BODIES.get(ou)
@@ -440,6 +589,8 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
                         kind=DATA, records=records, extra=extra)
         if op_first is None:
             op_first = step.seq
+            if group is not None:
+                group[0] = op_first
         else:
             step.extra = dict(step.extra or {}, op=op_first)
         at = h.cursor
@@ -456,7 +607,7 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
         rt._enforce(h)
         steps.append(step)
     if steps:
-        _JUMPS.clear()        # a new step: Blender's undo now undoes that, not an earlier jump
+        drop_undone_jumps()   # a new step: Blender can no longer redo the jumps it undid
         rt.tag_redraw_all()
     return steps
 
@@ -490,7 +641,37 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
         idb.update_tag()
     except Exception:
         pass
+    sync_taken_names()
     _DIRTY.pop(idmap.uid_of(idb), None)
+
+
+def sync_taken_names() -> None:
+    """D47: a datablock that couldn't get its recorded name (another one holds it) is recorded as
+    the name Blender gave it, so the next operation doesn't record the difference as a change."""
+    for u, wanted in list(adapters.NAME_TAKEN.items()):
+        idb = idmap.find(u)
+        if idb is None:
+            continue
+        st = _state(u)
+        if st.values.get(("rna", "name")) == wanted and idb.name != wanted:
+            st.values[("rna", "name")] = idb.name
+
+
+def resolve_missing_refs() -> None:
+    """D37: an object a restore couldn't refer to is back (the global history brought it back): put
+    the recorded references in now, so Blender matches the history again."""
+    if not adapters.MISSING_REFS:
+        return
+    for ou, d in list(adapters.MISSING_REFS.items()):
+        todo = {}
+        for _path, (ref, aid, apath) in list(d.items()):
+            if idmap.find(ref) is not None:
+                todo.setdefault(aid, set()).add(apath)
+        owner = idmap.find(ou)
+        if todo and owner is not None:
+            write(owner, _state(ou), todo)
+        elif owner is None:
+            adapters.MISSING_REFS.pop(ou, None)
 
 
 def _recorded(st: MeshState, aid: str, path: str):
@@ -499,10 +680,18 @@ def _recorded(st: MeshState, aid: str, path: str):
     return st.values.get((aid, path), MISSING)
 
 
+PUSH_IN_BACKGROUND = [False]   # tests: act as if each jump went onto Blender's undo stack
+JUMPS_MAX = 512                # jumps remembered (Blender keeps at most 256 undo steps)
+
+
+def can_push() -> bool:
+    return not bpy.app.background or PUSH_IN_BACKGROUND[0]
+
+
 def push_undo(message: str = "Hindsight jump") -> bool:
-    """Put the state after a jump on Blender's undo stack (Object Mode data only)."""
+    """Put the state after a jump on Blender's undo stack (Object Mode only)."""
     if bpy.app.background:
-        return False
+        return PUSH_IN_BACKGROUND[0]
     try:
         wm = bpy.context.window_manager
         win = wm.windows[0]
@@ -514,12 +703,62 @@ def push_undo(message: str = "Hindsight jump") -> bool:
         return False
 
 
-def note_jump(hists: dict, values_before: dict, values_after: dict) -> None:
+def note_jump(hists: dict, values_before: dict, values_after: dict, meshes: dict | None = None) -> None:
     """Remember a jump that was pushed onto Blender's undo stack (see on_undo). hists: history uid
-    -> [cursor before, cursor after, length] for every history the jump moved."""
-    _JUMPS.clear()
+    -> [cursor before, cursor after, length] for every history the jump moved; meshes: object uid ->
+    [mesh fingerprint before, after] for every recorded mesh it wrote. Jumps undone in Blender and
+    not redone are dropped: a new jump starts a new line of redo."""
+    drop_undone_jumps()
     _JUMPS.append({"hists": {k: list(v) for k, v in hists.items()}, "vb": values_before,
-                   "va": values_after, "undone": False})
+                   "va": values_after, "meshes": dict(meshes or {}), "undone": False})
+    del _JUMPS[:-JUMPS_MAX]
+
+
+def recorded_values() -> dict:
+    """uid -> recorded values of every tracked datablock that exists now (a global jump notes them
+    before and after, see _jump_matches)."""
+    out = {}
+    for uid in tracked_uids():
+        if idmap.find(uid) is not None:
+            out[uid] = dict(_state(uid).values)
+    return out
+
+
+def drop_undone_jumps() -> None:
+    """A new step or jump: Blender can no longer redo the jumps it undid."""
+    _JUMPS[:] = [j for j in _JUMPS if not j["undone"]]
+
+
+def _jump_candidate(direction: str):
+    """The jump Blender's undo (the newest not undone) or redo (the oldest undone) would reach."""
+    if direction == "redo":
+        return next((j for j in _JUMPS if j["undone"]), None)
+    return next((j for j in reversed(_JUMPS) if not j["undone"]), None)
+
+
+def _jump_matches(j, seen: dict) -> bool:
+    """Blender's data is exactly the state on the other side of jump j: every history it moved is
+    where j left it, the recorded values and every mesh it wrote match."""
+    rt = _rt()
+    back = not j["undone"]
+    for hid, (cb, ca, n) in j["hists"].items():
+        h = rt.reg().histories.get(hid)
+        if h is None or len(h.entries) != n or h.cursor != (ca if back else cb):
+            return False
+    want = j["vb"] if back else j["va"]
+    if not want and not j["meshes"]:
+        return False
+    if not all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
+        return False
+    # a datablock that exists on the other side of the jump only (brought back or removed by it)
+    # must not exist now
+    if any(uid in seen for uid in set(j["va"] if back else j["vb"]) - set(want)):
+        return False
+    for uid, (fb, fa) in j["meshes"].items():
+        ob = rt.find_object(uid)
+        if ob is None or ob.type != "MESH" or rt.mesh_fingerprint(ob) != (fb if back else fa):
+            return False
+    return True
 
 
 @guard.guarded("datarec")
@@ -536,31 +775,29 @@ def on_undo(direction: str = "undo") -> None:
         if idb is not None:
             seen[uid] = capture(idb)
     if not seen:
-        return
+        return set()
     moved = set()
-    # Only the newest jump can be undone or redone by Blender, and only while nothing was recorded
-    # after it and the cursor is still where that jump left it.
-    for j in _JUMPS[-1:]:
-        hs = {hid: rt.reg().histories.get(hid) for hid in j["hists"]}
-        if any(h is None or len(h.entries) != j["hists"][hid][2] or
-               h.cursor != j["hists"][hid][1 if not j["undone"] else 0] for hid, h in hs.items()):
-            continue
-        want = j["vb"] if not j["undone"] else j["va"]
-        if want and all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
-            for hid, h in hs.items():
-                h.cursor = j["hists"][hid][0 if not j["undone"] else 1]
-                moved.add(hid)
-                for m in h.members:                     # Blender put the meshes back too
-                    ob = rt.find_object(m)
-                    if ob is not None and ob.mode != "EDIT":
-                        rt.ensure_state(ob, refresh=True)
-            j["undone"] = not j["undone"]
+    # Blender's undo reaches the newest jump not undone yet, its redo the oldest undone one; it
+    # counts only while the histories are where that jump left them and the data (values and
+    # meshes) is exactly the state on its other side.
+    j = _jump_candidate(direction)
+    if j is not None and _jump_matches(j, seen):
+        for hid, (cb, ca, _n) in j["hists"].items():
+            h = rt.reg().histories[hid]
+            h.cursor = cb if not j["undone"] else ca
+            moved.add(hid)
+            for m in h.members:                     # Blender put the meshes back too
+                ob = rt.find_object(m)
+                if ob is not None:
+                    rt.refresh_state_any_mode(ob)
+        j["undone"] = not j["undone"]
     for uid, vals in seen.items():
         st = _state(uid)
         h = rt.reg().history_for(uid)
         idb = idmap.find(uid)
         mesh_step = None
-        if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT" and st.counts:
+        if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode == "OBJECT" and st.counts \
+                and not mesh_owned_elsewhere(idb):
             # deep: an undone Edit Mode step can change the edges alone (Sort Mesh Elements)
             mesh_step = rt._observe(idb, st, True, "Undo", "OBJECT", deep=True)
             rt._NATIVE_PENDING.discard(uid)
@@ -582,6 +819,7 @@ def on_undo(direction: str = "undo") -> None:
     _DIRTY.clear()
     _MESH_DIRTY.clear()
     rt.tag_redraw_all()
+    return moved
 
 
 def _step_matches(step, uid, diff: dict, mesh_step, st, inverse: bool) -> bool:
@@ -641,4 +879,9 @@ def forget() -> None:
     _JUMPS.clear()
     _MESH_DIRTY.clear()
     _MESH_USERS.clear()
+    _MESH_OWNER.clear()
+    _MESH_OF.clear()
+    _EXCLUDED.clear()
+    adapters.MISSING_REFS.clear()
+    adapters.NAME_TAKEN.clear()
     _OPS["marker"] = None

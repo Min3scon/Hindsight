@@ -45,7 +45,9 @@ DESCRIBE = {
         "when a file that has history is saved: on when the history is in the folder next to the file",
         "Remove Hindsight data from this file"),
     ".hindsight_history[hindsight_data]": (
-        "custom property (text: the whole history)", "in the .blend, on the Text above",
+        "custom property (text: the whole history, and how each recorded object was when saved: a fingerprint "
+        "of its mesh and its recorded values, to notice changes made without Hindsight)", "in the .blend, on the "
+        "Text above",
         "when saving with Save mode set to Embed or Both", "saving with Save mode Sidecar; Remove Hindsight data"),
     ".hindsight_history[hindsight_data_unreadable]": (
         "custom property (text)", "in the .blend, on the Text above",
@@ -56,7 +58,8 @@ DESCRIBE = {
         "when a file that has history is saved with Save mode Sidecar or Both", "Remove Hindsight data (ticked) or "
         "deleting the folder; the .blend opens fine without it"),
     "<file>_hindsight/history.hsr": (
-        "file (the history)", "in the folder above", "on save (Sidecar or Both)", "as the folder"),
+        "file (the history, and how each recorded object was when saved: a fingerprint of its mesh and its "
+        "recorded values)", "in the folder above", "on save (Sidecar or Both)", "as the folder"),
     "<file>_hindsight/index.json": (
         "file (format, version, file name, time saved)", "in the folder above", "on save (Sidecar or Both)",
         "as the folder"),

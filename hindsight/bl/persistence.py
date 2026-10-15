@@ -24,7 +24,7 @@ from ..core import persist
 from ..core.journal import Journal
 from ..core.registry import Registry
 from ..core.types import SETTINGS
-from . import guard, runtime
+from . import guard, log, runtime
 
 TEXT_NAME = ".hindsight_history"
 DATA_PROP = "hindsight_data"
@@ -212,6 +212,10 @@ def on_save_pre(*args) -> None:
     if not _writes_anything(_handler_path(args)):
         return
     try:
+        runtime.reg().saved = runtime.saved_prints()          # D46
+    except Exception as e:
+        log.error_once(("saved_prints", str(e)), f"could not note the recorded objects for saving: {e}", e)
+    try:
         mode = _mode()
         _drain_packer()
         text = bpy.data.texts.get(TEXT_NAME)
@@ -393,6 +397,10 @@ def on_load_post(*args) -> None:
             datarec.prime()
         except Exception as e:
             guard.fail("loading", e, "could not read recorded data after loading")
+        try:
+            runtime.check_outside_changes(getattr(reg, "saved", None))       # D46
+        except Exception as e:
+            guard.fail("loading", e, "could not compare the file with its history")
         if runtime.packer is not None:
             # steps from older files and steps saved in the quick form get re-packed when idle
             runtime.packer.queue_recompress(e for h in reg.all() for e in h.entries)

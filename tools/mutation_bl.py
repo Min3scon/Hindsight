@@ -20,7 +20,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, ".tmp", "mutants_bl")
 RESULTS = os.path.join(ROOT, ".tmp", "results", "tools", "mutation_bl")
 T1 = ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps"]
-TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_tier1.py", "test_bl_adapters.py")
+TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_t1_added.py",
+         "test_bl_t1_real_undo.py", "test_bl_t1_meshdata.py", "test_bl_t1_outside.py", "test_bl_tier1.py",
+         "test_bl_adapters.py")
 
 # (file under hindsight/, exact text, replacement, what it breaks, rows, reason if equivalent)
 MUTANTS = [
@@ -97,6 +99,129 @@ MUTANTS = [
      "corner vertices read from the wrong array", ["obj.editsteps", "obj.transforms"], None),
     ("bl/meshio.py", "    if deep == \"corners\":\n        return True", "    if deep:\n        return True",
      "deep topology check skips edges in Edit Mode", ["obj.editsteps"], None),
+    ("bl/runtime.py", 'acc["wrote"] = acc["wrote"] or wrote_data or bool(meshes)',
+     'acc["wrote"] = acc["wrote"] or wrote_data', "global jumps that change only meshes not on Blender's undo (D35)",
+     ["obj.editsteps"], None),
+    ("bl/datarec.py", 'if ob is None or ob.type != "MESH" or rt.mesh_fingerprint(ob) != (fb if back else fa):',
+     'if ob is None or ob.type != "MESH":', "Blender's undo of a jump matched without its meshes (D35)",
+     ["obj.editsteps"], None),
+    ("bl/runtime.py", '    if not final or IN_HANDLER[0] or not datarec.can_push() or ob is None or ob.mode != "EDIT":',
+     '    if True:', "a jump from Edit Mode not pushed in Object Mode (D35)", ["obj.editsteps"], None),
+    ("bl/datarec.py", "    drop_undone_jumps()
+    _JUMPS.append(", "    _JUMPS.clear()
+    _JUMPS.append(",
+     "only the newest jump can be undone (D35)", T1, None),
+    ("bl/datarec.py", "    rt = _rt()
+    ob = idmap.find(uid)
+    if ob is None or is_linked(ob) or not isinstance(ob, bpy.types.Object):
+        return",
+     "    return", "objects added while the scene is recorded not recorded (D36)", ["obj.addremove"], None),
+    ("bl/adapters.py", "    return sorted((p, r) for p, (r, _a, _ap) in d.items() if idmap.find(r) is None)",
+     "    return []", "no note about a reference to a deleted object (D37)", ["obj.parenting", "obj.constraints"], None),
+    ("bl/datarec.py", "    if not adapters.MISSING_REFS:
+        return
+", "    return
+",
+     "references not put back when the object comes back (D37)", ["obj.parenting", "obj.constraints"], None),
+    ("bl/adapters.py", '    "parent": ("matrix_parent_inverse",),
+', "",
+     "parent inverse not written again after the parent (D38)", ["obj.parenting"], None),
+    ("bl/datarec.py", "    _MESH_USERS.update({ptr: [uid] for ptr, uid in owners.items()})",
+     "    _MESH_USERS.update({ptr: [u for _n, u, _o in users[ptr]] for ptr in owners})",
+     "every linked duplicate records the shared mesh (D39)", ["obj.addremove", "obj.editsteps"], None),
+    ("bl/datarec.py", '    me = ob.data
+    if getattr(me, "is_editmode", False):
+        return True',
+     '    return False', "a shared mesh read in the middle of an Edit Mode visit (D39)", ["obj.editsteps"], None),
+    ("bl/runtime.py", " and not datarec.mesh_owned_elsewhere(obj))", ")",
+     "Edit Mode steps recorded on a linked duplicate too (D39)", ["obj.editsteps"], None),
+    ("bl/runtime.py", '        if mode == "EDIT" and _edit:
+', '        if False:
+',
+     "Blender's Edit Mode undo recorded as a step, dropping later ones (D40)", ["obj.editsteps"], None),
+    ("bl/idmap.py", "    if not _session:
+        return 0
+    n = 0", "    if True:
+        return 0
+    n = 0",
+     "ids not put back after Blender's undo (D42)", T1, None),
+    ("bl/runtime.py", 'datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])',
+     'datarec.note_jump(acc["hists"], acc["vb"], acc["va"], acc["meshes"])',
+     "a global jump's values taken in the middle of the jump (D59)", ["obj.addremove"], None),
+    ("bl/datarec.py", "                if ob is not None:
+                    rt.refresh_state_any_mode(ob)",
+     "                if ob is not None and ob.mode != \"EDIT\":
+                    rt.ensure_state(ob, refresh=True)",
+     "after Blender's undo of a jump, an object in Edit Mode keeps a stale state (D53)", ["obj.editsteps"], None),
+    ("bl/runtime.py", "        return datarec.is_tracked(obj)
+    except Exception:
+        return False
+
+
+def read_mesh_snapshot",
+     "        return False
+    except Exception:
+        return False
+
+
+def read_mesh_snapshot",
+     "weights and shape keys not part of recorded objects' states (D43)", ["obj.editsteps"], None),
+    ("bl/meshio.py", "        for name, lock in groups:
+            if ob.vertex_groups.get(name) is None:",
+     "        for name, lock in []:
+            if ob.vertex_groups.get(name) is None:",
+     "vertex groups not kept across a topology restore (D43)", ["obj.editsteps"], None),
+    ("bl/meshio.py", "    members = np.nonzero(~np.isnan(arr))[0]", "    members = np.nonzero(arr >= 0)[0]",
+     "negative weights read as not in the group (D43)", ["obj.editsteps"], None),
+    ("bl/meshio.py", "    if rebuilt or any(len(kb.data) != n for kb in blocks):", "    if False:",
+     "shape keys not rebuilt at the new size (D43)", ["obj.editsteps"], None),
+    ("bl/runtime.py", "        _clamp_state_weights(obj, st)
+", "",
+     "clamped weights left out of the state, recorded as a change (D43)", ["obj.editsteps"], None),
+    ("bl/runtime.py", "    if h is None and mode not in RECORD_MODES and not _edit and not extras_on(obj):",
+     "    if h is None and mode not in RECORD_MODES and not _edit:",
+     "a first Edit Mode visit on a recorded object not recorded (D50)", ["obj.editsteps"], None),
+    ("bl/runtime.py", '        editor = ob if ob.mode == "EDIT" else _mesh_editor(ob)',
+     '        editor = ob if ob.mode == "EDIT" else None',
+     "a shared mesh written while a linked duplicate is in Edit Mode (D51)", ["obj.editsteps"], None),
+    ("bl/adapters.py", '        ("data", "ref", "objects"),           # which mesh (or other data) it uses (D44: Make Single User)
+',
+     "", "which mesh an object uses not recorded (D44)", ["obj.addremove"], None),
+    ("bl/datarec.py", "            rt.ensure_state(ob, refresh=True)
+            _MESH_OF[uid] = ptr",
+     "            _MESH_OF[uid] = ptr", "a new owner of a mesh keeps a stale state (D44)", ["obj.addremove"], None),
+    ("bl/runtime.py", '        relink_last = pos < before and "data" in data_keys.get("rna", ())', "        relink_last = False",
+     "going back over a relink writes the mesh into the earlier one (D44)", ["obj.addremove"], None),
+    ("bl/datarec.py", "            uid = min((0 if records_mesh(u) else 1, n, u) for n, u, _o in us)[2]",
+     "            uid = min((n, u) for n, u, _o in us)[1]", "the shared mesh's owner after a reload picked by name (D45)",
+     ["obj.addremove"], None),
+    ("bl/datarec.py", "        if not was_on and h is not None and h.entries and _state(uid).values:",
+     "        if False and h is not None and h.entries and _state(uid).values:",
+     "changes made while Record everything was off not recorded when it's switched on (D46)", ["obj.transforms"], None),
+    ("bl/runtime.py", "    from . import datarec, idmap\n    for u, rec in (saved or {}).items():",
+     "    from . import datarec, idmap\n    for u, rec in {}.items():",
+     "changes made without Hindsight not noticed on opening (D46)", ["obj.transforms", "obj.editsteps"], None),
+    ("bl/datarec.py", "        if st.values.get((\"rna\", \"name\")) == wanted and idb.name != wanted:", "        if False:",
+     "a name Blender changed on restore recorded as a change (D47)", ["obj.addremove"], None),
+    ("bl/idmap.py", "    lib = getattr(idb, \"library\", None)\n    if lib is not None:\n        coll = _collection_of(idb)",
+     "    lib = None\n    if lib is not None:\n        coll = _collection_of(idb)",
+     "references to linked data recorded as empty (D48)", ["obj.parenting", "obj.constraints"], None),
+    ("bl/adapters.py", "    for w in body.get(\"modifiers\") or ():", "    for w in ():",
+     "a deleted object brought back without its modifiers (D49)", ["obj.addremove"], None),
+    ("bl/adapters.py", "    for key, hidden in (body.get(\"hidden\") or {}).items():", "    for key, hidden in {}.items():",
+     "a deleted object brought back visible though it was hidden (D49)", ["obj.addremove"], None),
+    ("bl/datarec.py", "        editing = [o for o in bpy.context.view_layer.objects if o.mode == \"EDIT\" and o.type == \"MESH\"]",
+     "        editing = [active] if active is not None and active.mode == \"EDIT\" else []",
+     "with several objects in Edit Mode only the active one gets steps (D52)", ["obj.editsteps"], None),
+    ("bl/datarec.py", "    rt.OP_GROUP[0] = [None]\n", "    rt.OP_GROUP[0] = None\n",
+     "one operator's data and Edit Mode steps not one global position (D52, D58)", ["obj.editsteps", "obj.addremove"],
+     None),
+    ("bl/datarec.py", "        if isinstance(idb, bpy.types.Object) and rt.is_excluded(idb):\n            _EXCLUDED.add(uid)",
+     "        if False:\n            _EXCLUDED.add(uid)", "objects excluded by Collection Filtering still recorded (D54)",
+     ["obj.collections"], None),
+    ("bl/datarec.py", "            _EXCLUDED.discard(uid)\n            catch_up(ob, CHANGES_WHILE_EXCLUDED)",
+     "            _EXCLUDED.discard(uid)", "changes made while excluded lost when the filter is lifted (D54)",
+     ["obj.collections"], None),
 ]
 
 

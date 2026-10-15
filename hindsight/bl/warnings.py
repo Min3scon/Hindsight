@@ -135,7 +135,7 @@ def collect(context, obj) -> list:
 
 # What Record everything leaves out, said where it applies (COVERAGE.md lists the same limits).
 TXT_EV_LINKED = "Linked from another file: it can't be changed here, so Hindsight doesn't record it"
-TXT_EV_NOT_ON = ("Only adding and deleting this object is recorded. Switch on Record everything on this "
+TXT_EV_NOT_ON = ("Only adding and deleting this object is recorded. Switch on Record > Everything on this "
                  "object to record its changes too")
 TXT_EV_ANIMATED = "Animated or driven, so not recorded (they follow the animation): {names}"
 TXT_EV_LISTS = "Lists in constraint settings (such as Armature constraint targets) aren't recorded"
@@ -143,7 +143,19 @@ TXT_EV_EDIT_BIG = "Over 300,000 vertices: Edit Mode is recorded as one step per 
 TXT_EV_COMEBACK = ("A deleted {kind} comes back only while its data is still in this session "
                    "(meshes and empties always come back)")
 TXT_EV_NEW_COLLECTIONS = ("Collections you make or delete are undone only when the scene is recorded "
-                          "(Record adding and deleting objects)")
+                          "(Record > Objects added and deleted)")
+TXT_EV_SHARED_MESH = ("Shares its mesh with {owner} (a linked duplicate): changes to the mesh are recorded "
+                      "in {owner}'s history")
+TXT_EV_WEIGHTS = ("Some vertex weights outside 0 to 1 (Blender's bevel and inset can leave tiny negative "
+                  "ones) came back as 0 to 1: Blender only takes weights from 0 to 1")
+TXT_EV_PHYSICS = ("If this object is deleted and brought back by the global history, its physics and particle "
+                  "systems won't come back")
+TXT_EV_NAME_TAKEN = "At this step it is called {want}, but another object has that name, so it's {got}"
+TXT_EV_MISSING_REF = ("This step refers to {names}, which is deleted now. This object's own history can't "
+                      "bring it back; the global history can")
+TXT_EV_PARENT_DEFORM = ("Parenting with deform added a modifier ({names}). Modifiers and vertex groups aren't "
+                        "recorded yet, so going back past the parenting keeps them")
+_DEFORM_MODIFIERS = {"ARMATURE", "LATTICE", "CURVE"}
 
 
 def everything_notes(context, obj) -> list:
@@ -178,10 +190,30 @@ def everything_notes(context, obj) -> list:
                if p.identifier != "rna_type"):
             out.append((INFO, TXT_EV_LISTS))
             break
+    parent = getattr(obj, "parent", None)
+    deform = [m.name for m in getattr(obj, "modifiers", ())
+              if parent is not None and m.type in _DEFORM_MODIFIERS and getattr(m, "object", None) == parent]
+    if deform:
+        out.append((INFO, TXT_EV_PARENT_DEFORM.format(names=", ".join(deform[:3]))))
     if getattr(obj, "type", None) == "MESH" and len(obj.data.vertices) > runtime.EDIT_STEPS_MAX:
         out.append((INFO, TXT_EV_EDIT_BIG))
     if not scene_on:
         out.append((INFO, TXT_EV_NEW_COLLECTIONS))
+    if datarec.mesh_owned_elsewhere(obj):
+        out.append((INFO, TXT_EV_SHARED_MESH.format(owner=datarec.mesh_owner_name(obj) or "another object")))
+    if runtime.obj_uid(obj) in runtime.WEIGHTS_CLAMPED:
+        out.append((INFO, TXT_EV_WEIGHTS))
+    if scene_on and (getattr(obj, "rigid_body", None) is not None or any(
+            m.type in ("PARTICLE_SYSTEM", "CLOTH", "SOFT_BODY", "COLLISION", "FLUID", "DYNAMIC_PAINT")
+            for m in getattr(obj, "modifiers", ()))):
+        out.append((INFO, TXT_EV_PHYSICS))
+    taken = adapters.name_taken(obj)
+    if taken is not None:
+        out.append((INFO, TXT_EV_NAME_TAKEN.format(want=taken, got=obj.name)))
+    refs = adapters.missing_refs(obj)
+    if refs:
+        names = sorted({str((datarec._BODIES.get(r) or {}).get("name") or "an object") for _p, r in refs})
+        out.append((WARNING, TXT_EV_MISSING_REF.format(names=", ".join(names[:3]))))
     return out
 
 

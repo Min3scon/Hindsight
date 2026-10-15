@@ -258,6 +258,8 @@ def _recreate(info, snap):
     if m and len(m) == 16:
         ob.matrix_world = Matrix([m[0:4], m[4:8], m[8:12], m[12:16]])
     ob[runtime.UID_PROP] = uid
+    from . import idmap
+    idmap.note(ob, uid)
     runtime._UID_CACHE[uid] = ob.name
     return ob
 

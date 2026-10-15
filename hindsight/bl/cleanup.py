@@ -139,7 +139,7 @@ def remove(delete_folder: bool = False) -> dict:
     runtime.set_registry(runtime.Registry())
     runtime._STATES.clear()
     datarec.forget()
-    idmap.forget()
+    idmap.forget(session=True)
     try:
         jp = journal_path(bpy.data.filepath or "")
         from .persistence import _close_journal

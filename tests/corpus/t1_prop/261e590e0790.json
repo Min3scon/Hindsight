@@ -1,0 +1,1 @@
+[["parent", "Pivot", "B", false], ["con_add", "A", "COPY_LOCATION"], ["dup", "Pivot", false], ["edit", "E", "grab", 0], ["rotate", "A", 0.0, "X"], ["origin", "B"]]

@@ -384,6 +384,72 @@ def test_panel_draw_with_fake_layout():
         scene.hindsight.use_global = False
 
 
+@test
+def test_record_everything_switches_and_other_objects():
+    """V1-V3 (Tier 1 visual review): with Record set to Everything the two switches are in the part
+    the sidebar and the popover share (not inside the collapsed History options), an empty that is
+    recorded shows its slider instead of "Select a mesh", and the popover button label fits."""
+    from hindsight.bl import datarec
+    scene = bpy.context.scene
+    ctx = SimpleNamespace(scene=scene, active_object=None, view_layer=bpy.context.view_layer,
+                          preferences=bpy.context.preferences, window_manager=bpy.context.window_manager,
+                          region=None, area=None)
+    empty = bpy.data.objects.new("Pivot test", None)
+    mesh = bpy.data.objects.new("Mesh test", bpy.data.meshes.new("Mesh test"))
+    hist = SimpleNamespace(entries=[1] * 3, cursor=2)
+    orig_rt, orig_tracked, orig_scope = ui_panel._rt, ui_panel._tracked, datarec.FORCE_SCOPE[0]
+
+    def ops(lay):
+        return [a[0] for n, a, kw in lay.log if n == "operator"]
+    try:
+        tracked = set()
+        ui_panel._tracked = lambda ob: ob in tracked
+        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        # a recorded mesh: the switches are drawn by draw_main (sidebar and popover alike)
+        ctx.active_object = mesh
+        ui_panel._rt = lambda: FakeRuntime(hist)
+        for units in (None, 13):
+            lay = FakeLayout()
+            ui_panel.draw_main(lay, ctx, units)
+            assert "hindsight.record_everything" in ops(lay) and "hindsight.record_scene" in ops(lay), ops(lay)
+        lay = FakeLayout()
+        ui_panel.draw_history_options(lay, ctx)
+        assert "hindsight.record_everything" not in ops(lay), "the switches belong to the always-open part"
+        assert "Morph brush" in lay.texts("operator") + lay.texts(), "the popover cut off a longer label"
+        # a mesh with no history yet and Record everything on: a line that says so, and the switches
+        ui_panel._rt = lambda: FakeRuntime(None, uid=None)
+        tracked.add(mesh)
+        lay = FakeLayout()
+        ui_panel.draw_main(lay, ctx)
+        assert ui_panel.NO_HISTORY_EVERYTHING in _joined(lay) and "hindsight.record_everything" in ops(lay)
+        # an empty, not switched on: how to record it, and the switch
+        ctx.active_object = empty
+        lay = FakeLayout()
+        ui_panel.draw_main(lay, ctx)
+        t = _joined(lay)
+        assert "Select a mesh" not in t and ui_panel.NO_HISTORY_OTHER in t, t
+        assert "hindsight.record_everything" in ops(lay), ops(lay)
+        # an empty with a history: its slider and step line
+        tracked.add(empty)
+        ui_panel._rt = lambda: FakeRuntime(hist)
+        lay = FakeLayout()
+        ui_panel.draw_main(lay, ctx)
+        assert "Step 2 of 3, this object" in lay.texts(), lay.texts()
+        assert "hindsight.step_back" in ops(lay), ops(lay)
+        # Record set to sculpting only: an empty isn't recorded, the old line stays
+        datarec.FORCE_SCOPE[0] = "SCULPT"
+        lay = FakeLayout()
+        ui_panel.draw_main(lay, ctx)
+        assert "Hindsight records mesh objects. Select a mesh." in _joined(lay)
+        assert "hindsight.record_everything" not in ops(lay)
+    finally:
+        ui_panel._rt, ui_panel._tracked, datarec.FORCE_SCOPE[0] = orig_rt, orig_tracked, orig_scope
+        bpy.data.objects.remove(empty)
+        me = mesh.data
+        bpy.data.objects.remove(mesh)
+        bpy.data.meshes.remove(me)
+
+
 def main():
     global ok
     ensure_scene_props()

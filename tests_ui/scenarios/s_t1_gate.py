@@ -71,13 +71,30 @@ def run(d):
     def ob(name):
         return bpy.data.objects.get(name)
 
+    def dbg(where):
+        """With --arg debug=1: every history's cursor, the active object's mode and the newest jump
+        Blender can undo, printed to the console log."""
+        if not d.args.get("debug"):
+            return
+        with d.override():
+            hs_ = {}
+            for h in rt.reg().histories.values():
+                o = idmap.find(h.uid)
+                hs_[getattr(o, "name", h.uid[:6])] = f"{h.cursor}/{len(h.entries)}"
+            act = bpy.context.view_layer.objects.active
+            jumps = [{"hists": {getattr(idmap.find(k), "name", k[:6]): v for k, v in j["hists"].items()},
+                      "undone": j["undone"]} for j in datarec._JUMPS]
+            e = ob("E")
+            print(f"[dbg] {where}: g={gpos()} active={getattr(act, 'name', None)}/{getattr(act, 'mode', None)} "
+                  f"hists={hs_} jumps={jumps} E.faces={len(e.data.polygons) if e else None}", flush=True)
+
     def snap():
         with d.override():
             return {"__scene__": O.scene_state(), **{o.name: O.object_state(o) for o in bpy.context.scene.objects}}
 
     def counts():
-        reg_ = rt.reg()
-        return {h.uid: len(h.entries) for h in reg_.histories.values()}
+        """History length per recorded datablock (object or scene) id."""
+        return {m: len(h.entries) for h in rt.reg().histories.values() for m in h.members}
 
     def gpos():
         return globaltl.global_position(rt.reg(), rt._visible_uids())
@@ -244,7 +261,7 @@ def run(d):
     d.key("A", ctrl=True)
     C.type_text(d, "Hub")
     d.key("RET")
-    yield from step("F2 rename", ROWS["move"], ["Pivot"])
+    yield from step("F2 rename", ROWS["move"], ["Hub"])       # named as it is after the operation
 
     select("B")
     before = counts()
@@ -303,12 +320,17 @@ def run(d):
     d.ev("LEFTMOUSE", "PRESS", x=cx, y=cy + 30)
     d.ev("LEFTMOUSE", "RELEASE", x=cx, y=cy + 30)
     yield from step("E extrude", ROWS["edit"], ["E"])
+    with d.override():
+        bpy.ops.mesh.select_all(action="DESELECT")
+        bpy.ops.mesh.select_random(ratio=0.3, seed=6)
+    gx, gy = screen_of(ob("E"))
     before = counts()
-    d.key("B", ctrl=True, x=cx + 80, y=cy)
-    for i in range(1, 7):
-        d.ev("MOUSEMOVE", x=cx + 80 - i * 4, y=cy)
-    d.ev("LEFTMOUSE", "PRESS", x=cx + 56, y=cy)
-    d.ev("LEFTMOUSE", "RELEASE", x=cx + 56, y=cy)
+    d.ev("MOUSEMOVE", x=gx + 15, y=gy)
+    d.key("B", ctrl=True, x=gx + 15, y=gy)               # bevel: moving away from the selection widens it
+    for i in range(1, 9):
+        d.ev("MOUSEMOVE", x=gx + 15 + i * 8, y=gy)
+    d.ev("LEFTMOUSE", "PRESS", x=gx + 79, y=gy)
+    d.ev("LEFTMOUSE", "RELEASE", x=gx + 79, y=gy)
     yield from step("Ctrl+B bevel", ROWS["edit"], ["E"])
     with d.override():
         bpy.ops.mesh.select_mode(type="FACE")
@@ -346,19 +368,51 @@ def run(d):
     d.ev("RIGHTMOUSE", "PRESS", x=ex + 1, y=ey)
     d.ev("RIGHTMOUSE", "RELEASE", x=ex + 1, y=ey)
     yield from step("Ctrl+R loop cut", ROWS["edit"], ["E"])
-    # knife: K, two clicks across the grid, Enter
-    gx, gy = screen_of(e)
+    # knife: K, a click on the leftmost and on the rightmost face of the flat grid, Enter. The knife
+    # only takes points on the mesh, so the clicks go on face centers (projected to the screen)
+    e.update_from_editmode()
+    mw = e.matrix_world
+    flat = [mw @ f.center for f in me.polygons if f.normal.z > 0.99]
+    low = min(c.z for c in flat)
+    pts = []
+    for c in flat:
+        if abs(c.z - low) < 1e-4:
+            q = view3d_utils.location_3d_to_region_2d(reg, space.region_3d, c)
+            if q is not None:
+                pts.append((reg.x + int(q.x), reg.y + int(q.y)))
+    k0, k1 = min(pts), max(pts)
     before = counts()
-    d.ev("MOUSEMOVE", x=gx - 40, y=gy - 30)
-    d.key("K", x=gx - 40, y=gy - 30)
-    yield 0.3
-    for (kx, ky) in ((gx - 40, gy - 30), (gx + 40, gy + 25)):
-        d.ev("MOUSEMOVE", x=kx, y=ky)
-        yield 0.1
-        d.ev("LEFTMOUSE", "PRESS", x=kx, y=ky)
-        d.ev("LEFTMOUSE", "RELEASE", x=kx, y=ky)
-        yield 0.15
-    d.key("RET")
+
+    def knife_gesture():
+        """K, a click on each point (the pointer moved there in small steps first), Enter."""
+        d.ev("MOUSEMOVE", x=k0[0], y=k0[1])
+        yield 0.2
+        d.key("K", x=k0[0], y=k0[1])
+        yield 0.5
+        prev = k0
+        for (kx, ky) in (k0, k1):
+            for t in (0.25, 0.5, 0.75, 1.0):
+                d.ev("MOUSEMOVE", x=int(prev[0] + (kx - prev[0]) * t), y=int(prev[1] + (ky - prev[1]) * t))
+                yield 0.05
+            prev = (kx, ky)
+            d.ev("LEFTMOUSE", "PRESS", x=kx, y=ky)
+            d.ev("LEFTMOUSE", "RELEASE", x=kx, y=ky)
+            yield 0.25
+        d.key("RET")
+        yield 0.3
+
+    def edge_count():
+        with d.override():
+            e.update_from_editmode()
+        return len(e.data.edges)
+
+    n_edges = edge_count()
+    yield from knife_gesture()
+    if edge_count() == n_edges:
+        # the simulated clicks didn't reach Blender's knife (no cut, so rightly no step): once more
+        d.log("knife: Blender made no cut from the simulated clicks; the gesture is repeated once")
+        d.note("knife_retry", True)
+        yield from knife_gesture()
     yield from step("K knife", ROWS["edit"], ["E"])
     with d.override():
         bpy.ops.mesh.select_all(action="DESELECT")
@@ -397,18 +451,18 @@ def run(d):
         for i, st in enumerate(states):
             then = names_at[i].get(u)
             if then is not None and then in st:
-                want.setdefault(lens[i].get(h.uid, 0), st[then])
+                want.setdefault(lens[i].get(u, 0), st[then])
         for pos in sorted(want)[::-1] + sorted(want):
-            select(name)
+            select(idmap.find(u).name)                # by id: scrubbing past a rename renames it back
             with d.override():
                 C.mod("slider_prop").sync()
                 wm.hindsight_step = pos
             yield 0.15
             with d.override():
-                got = O.object_state(ob(name), derived=False)
+                got = O.object_state(idmap.find(u), derived=False)
             if _own(got, name) != _own(want[pos], name):
                 bad.append((name, pos, O.diff(_own(want[pos], name), _own(got, name))[:2]))
-        select(name)
+        select(idmap.find(u).name)
         with d.override():
             wm.hindsight_step = len(h.entries)
         yield 0.15
@@ -428,8 +482,12 @@ def run(d):
     yield 0.3
 
     # ------------------------------------------------------------------ the global timeline
-    sp = bpy.context.scene.hindsight
-    sp.use_global = True
+    def hs():
+        """The scene's Hindsight settings, looked up again each time: Blender's undo rebuilds the
+        scene, and a reference kept across an undo points at freed memory."""
+        return bpy.context.scene.hindsight
+
+    hs().use_global = True
     yield 0.3
     gbad = []
     for i in list(range(len(states) - 1, -1, -1)) + list(range(len(states))):
@@ -452,17 +510,26 @@ def run(d):
 
     # ------------------------------------------------------------------ Blender's own undo
     def in_sync():
-        """Blender's data equals the recorded state at Hindsight's global position."""
+        """Blender's data equals the recorded state at Hindsight's global position, and every
+        history's cursor is where it was at that state (a global position alone can hide one
+        history whose cursor no longer describes its object)."""
         p = gpos()
         idx = max((i for i, q in enumerate(positions) if q == p), default=None)
-        return idx is not None and snap() == states[idx], (p, labels[idx] if idx is not None else None)
+        if idx is None:
+            return False, (p, None)
+        now = snap()
+        cur = {m: h.cursor for h in rt.reg().histories.values() for m in h.members}
+        off = {m: (cur.get(m), n) for m, n in lens[idx].items() if cur.get(m) != n}
+        return now == states[idx] and not off, (p, labels[idx], O.diff(states[idx], now)[:3], off)
 
     n_all = counts()
+    dbg("before Ctrl+Z")
     moved = []
     for k in range(3):
         p0 = gpos()
         d.key("Z", ctrl=True, x=cx, y=cy)
         yield 0.9
+        dbg(f"Ctrl+Z {k + 1}")
         ok, where = in_sync()
         moved.append(gpos() - p0)
         d.check(f"Ctrl+Z {k + 1}: data and history in sync", ok, where,
@@ -470,6 +537,7 @@ def run(d):
     for k in range(3):
         d.key("Z", ctrl=True, shift=True, x=cx, y=cy)
         yield 0.9
+        dbg(f"Ctrl+Shift+Z {k + 1}")
         ok, where = in_sync()
         d.check(f"Ctrl+Shift+Z {k + 1}: data and history in sync", ok, where,
                 covers=f"obj.transforms, obj.addremove, obj.editsteps, obj.collections: {undo_item}")
@@ -483,12 +551,15 @@ def run(d):
     with d.override():
         rt.global_goto(bpy.context, max(0, gpos() - 4))
     yield 0.4
+    dbg("after the scrub")
     ok0, _w = in_sync()
     d.key("Z", ctrl=True, x=cx, y=cy)
     yield 0.9
+    dbg("scrub, Ctrl+Z")
     ok1, w1 = in_sync()
     d.key("Z", ctrl=True, shift=True, x=cx, y=cy)
     yield 0.9
+    dbg("scrub, Ctrl+Shift+Z")
     ok2, w2 = in_sync()
     d.check("scrub, Ctrl+Z, Ctrl+Shift+Z: data and history in sync", ok0 and ok1 and ok2, (w1, w2),
             covers=f"obj.transforms, obj.addremove: {undo_item}")
@@ -497,7 +568,7 @@ def run(d):
     yield 0.4
 
     # across a mode switch: Tab, G in Edit Mode, Tab, then Ctrl+Z three times
-    sp.use_global = False
+    hs().use_global = False
     select("E")
     d.key("TAB", x=cx, y=cy)
     yield 0.5
@@ -508,10 +579,11 @@ def run(d):
     yield 0.9
     d.key("TAB", x=cx, y=cy)
     yield 0.6
-    sp.use_global = True
+    hs().use_global = True
     states.append(snap())
     positions.append(gpos())
     labels.append("G in Edit Mode")
+    lens.append(counts())
     n_all = counts()
     sync = []
     for k in range(3):
@@ -536,8 +608,8 @@ def run(d):
 
     # ------------------------------------------------------------------ panels to look at
     with d.override():
-        bpy.ops.wm.context_toggle(data_path="space_data.show_region_ui")
-        bpy.ops.wm.context_toggle(data_path="space_data.show_region_ui")
+        space.show_region_ui = True                   # undo may have hidden it: the shot needs it open
+    yield 0.4
     d.shot("sidebar_end")
     errors = [l for l in d.console_since(mark).splitlines() if "Traceback" in l or "Error" in l and "hindsight" in l.lower()]
     d.check("no Python errors", not errors, errors[:5])
