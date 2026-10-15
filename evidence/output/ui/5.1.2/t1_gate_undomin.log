@@ -1,0 +1,66 @@
+[driver 7.4s] PASS G move: one step -- {'diffs': {}, 'pos': 1, 'len': 1}
+[driver 8.3s] PASS R Z 45, typed: one step -- {'diffs': {}, 'pos': 2, 'len': 2}
+[driver 9.2s] PASS S 1.5, typed: one step -- {'diffs': {}, 'pos': 3, 'len': 3}
+[driver 10.1s] PASS G with Ctrl (snapping): one step -- {'diffs': {}, 'pos': 4, 'len': 4}
+[driver 11.9s] PASS drag with the move gizmo: one step -- {'diffs': {}, 'pos': 5, 'len': 5}
+[driver 12.8s] PASS G with two objects: one step -- {'diffs': {}, 'pos': 6, 'len': 6}
+[driver 13.7s] PASS R about the 3D cursor, two objects: one step -- {'diffs': {}, 'pos': 7, 'len': 7}
+[driver 14.9s] PASS N panel location edit (settle): one step -- {'diffs': {}, 'pos': 8, 'len': 8}
+[driver 15.8s] PASS Apply > Transforms to Deltas: one step -- {'diffs': {}, 'pos': 9, 'len': 9}
+[driver 16.7s] PASS Ctrl+A Apply Scale: one step -- {'diffs': {}, 'pos': 10, 'len': 10}
+[driver 18.0s] PASS Ctrl+P, Object: one step -- {'diffs': {}, 'pos': 11, 'len': 11}
+[driver 19.3s] PASS Alt+P, Clear and Keep Transformation: one step -- {'diffs': {}, 'pos': 12, 'len': 12}
+[driver 20.2s] PASS add a constraint: one step -- {'diffs': {}, 'pos': 13, 'len': 13}
+[driver 21.4s] PASS constraint influence (settle): one step -- {'diffs': {}, 'pos': 14, 'len': 14}
+Info: C moved to Extra
+[driver 22.3s] PASS M, New Collection: one step -- {'diffs': {}, 'pos': 15, 'len': 15}
+00:38.406  operator         | 1 object(s) hidden
+[driver 23.2s] PASS H: one step -- {'diffs': {}, 'pos': 16, 'len': 16}
+[driver 24.1s] PASS Alt+H: one step -- {'diffs': {}, 'pos': 17, 'len': 17}
+[driver 25.5s] PASS F2 rename: one step -- {'diffs': {}, 'pos': 18, 'len': 18}
+[driver 26.7s] PASS Shift+D: one step -- {'diffs': {}, 'pos': 19, 'len': 19}
+Warning: 1 × Draw window and swap: 7.2023 ms, average: 7.20230000 ms
+[driver 27.4s] shot <path>
+[driver 27.4s] PASS Alt+D on a recorded mesh: the shared-mesh warning comes up -- [True]
+[driver 28.3s] PASS Alt+D: one step -- {'diffs': {}, 'pos': 20, 'len': 20}
+00:44.703  operator         | Deleted 1 object(s)
+[driver 29.5s] PASS X, Delete: one step -- {'diffs': {}, 'pos': 21, 'len': 21}
+[driver 30.4s] PASS Shift+A, Monkey: one step -- {'diffs': {}, 'pos': 22, 'len': 22}
+[driver 31.3s] PASS Tab into Edit Mode (no step): one step -- {'diffs': {}, 'pos': 22, 'len': 22}
+[driver 32.2s] PASS selecting (no step): one step -- {'diffs': {}, 'pos': 22, 'len': 22}
+[driver 33.1s] PASS E extrude: one step -- {'diffs': {}, 'pos': 23, 'len': 23}
+[driver 34.0s] PASS Ctrl+B bevel: one step -- {'diffs': {}, 'pos': 24, 'len': 24}
+[driver 34.9s] PASS I inset: one step -- {'diffs': {}, 'pos': 25, 'len': 25}
+[driver 36.8s] PASS Ctrl+R loop cut: one step -- {'diffs': {}, 'pos': 26, 'len': 26}
+[driver 39.6s] PASS K knife: one step -- {'diffs': {}, 'pos': 27, 'len': 27}
+[driver 40.9s] PASS M merge, At Center: one step -- {'diffs': {}, 'pos': 28, 'len': 28}
+[driver 42.2s] PASS X delete vertices: one step -- {'diffs': {}, 'pos': 29, 'len': 29}
+[driver 43.1s] PASS F fill: one step -- {'diffs': {}, 'pos': 30, 'len': 30}
+[driver 44.0s] PASS Tab out of Edit Mode (no step): one step -- {'diffs': {}, 'pos': 30, 'len': 30}
+Warning: 1 × Draw window and swap: 8.8764 ms, average: 8.87640000 ms
+[driver 44.0s] shot <path>
+[driver 54.6s] PASS every object's history is exact through the sidebar slider, both ways -- []
+[driver 55.6s] PASS dragging the on-screen slider moves A's history -- (3, 3)
+[driver 63.0s] PASS global timeline: every operation boundary is exact, both ways -- []
+Warning: 1 × Draw window and swap: 12.4154 ms, average: 12.41539999 ms
+[driver 63.1s] shot <path>
+Warning: 1 × Draw window and swap: 10.5535 ms, average: 10.55350000 ms
+[driver 63.5s] shot <path>
+[driver 64.7s] PASS Ctrl+Z 1: data and history in sync -- (29, 'X delete vertices', [], {})
+[driver 65.6s] PASS Ctrl+Z 2: data and history in sync -- (28, 'M merge, At Center', [], {})
+[driver 66.5s] PASS Ctrl+Z 3: data and history in sync -- (28, 'M merge, At Center', [], {})
+[driver 67.4s] PASS Ctrl+Shift+Z 1: data and history in sync -- (29, 'X delete vertices', [], {})
+[driver 68.3s] PASS Ctrl+Shift+Z 2: data and history in sync -- (30, 'Tab out of Edit Mode (no step)', [], {})
+[driver 69.2s] PASS Ctrl+Shift+Z 3: data and history in sync -- (30, 'Tab out of Edit Mode (no step)', [], {})
+[driver 69.2s] PASS undo and redo recorded nothing -- None
+[driver 71.4s] PASS scrub, Ctrl+Z, Ctrl+Shift+Z: data and history in sync -- ((30, 'Tab out of Edit Mode (no step)', [], {}), (26, 'Ctrl+R loop cut', [], {}))
+[driver 79.8s] PASS Ctrl+Z and Ctrl+Shift+Z across Tab: back in sync, nothing recorded -- {'end': (31, 'G in Edit Mode', [], {}), 'steps': [('edit', 9), ('edit', 9), ('edit', 9)]}
+Warning: 1 × Draw window and swap: 7.9176 ms, average: 7.91760000 ms
+[driver 80.2s] shot <path>
+[driver 80.2s] PASS no Python errors -- []
+[driver 80.2s] finished ok=True
+01:36.625  blend            | Saved session recovery to "<path>"
+01:36.625  blend            | Writing user preferences: "<path>" 
+01:36.625  reports          | Preferences saved
+
+Blender quit

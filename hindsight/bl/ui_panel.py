@@ -22,6 +22,8 @@ NO_HISTORY = "Hindsight is on. Make a stroke in Sculpt Mode to start recording."
 NO_HISTORY_EDIT = "Hindsight is on. Edits are recorded once this object has a history."
 NO_HISTORY_EVERYTHING = "Hindsight is on. Changes to this object are recorded from here on."
 NO_HISTORY_OTHER = "To record this object, switch on Record > Everything on this object."
+OBJECTS_OFF = ("Object recording is off: only sculpting is recorded. To record objects, set Record to "
+               "Everything in the add-on preferences.")
 SWITCHES_TITLE = "Record:"
 SWITCH_OBJECT = "Everything on this object"
 SWITCH_SCENE = "Objects added and deleted"
@@ -281,6 +283,8 @@ def _draw_everything(layout, context, obj):
     try:
         from . import datarec
         if not datarec.scope_everything():
+            if obj is not None and getattr(obj, "mode", "") == 'OBJECT':
+                wrap(layout, context, OBJECTS_OFF, 'INFO')
             return
         on = _tracked(obj) if obj is not None else False
         scene_on = _tracked(context.scene)

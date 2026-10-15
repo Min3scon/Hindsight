@@ -2,7 +2,16 @@
 
 All notable changes to Hindsight. Dates are when the release went out.
 
-## 1.0.0-beta.2 (unreleased)
+## 1.0.0-beta.2
+
+This version records objects as well as sculpting. Object recording is off until you switch it on ([Install](https://min3scon.github.io/Hindsight/docs/install/#objects)). What it records and what it doesn't: [Limitations](https://min3scon.github.io/Hindsight/docs/limitations/).
+
+New:
+
+- Object recording: transforms, parenting, constraints, collections and visibility, and adding, deleting, duplicating and renaming objects. Set Record to Everything in the add-on preferences, then switch it on per object.
+- Edit Mode step by step: each Edit Mode operation is its own step.
+- Global history with one position per operation, so every object's steps sit on one timeline in the order you made them.
+- Record: switches in the sidebar for the selected object and for objects added and deleted.
 
 The big one: in beta 1 the add-on installed but most people saw nothing. Three things caused it.
 
@@ -28,9 +37,9 @@ Also fixed:
 - On a slow modifier stack one stroke could be split into several steps.
 - Using Blender's own undo after a Hindsight jump in Sculpt Mode replayed old stroke data on top of the mesh and could drop later steps. Hindsight now reverses that and tells you to use Ctrl+Z or the slider.
 - Filling a mask and then clearing it was taken for an undo and the clear was never recorded.
-- A file saved in Edit Mode got an "Edit Mode" step as soon as you left Edit Mode, without any edit.
+- A file saved in Edit Mode got an empty step as soon as you left Edit Mode.
 - With Multires or Dyntopo on, the tab and the slider still invited a stroke. They now say recording is paused and why.
-- Removed the note about object transforms that appeared on almost every object. History is stored in object space, so moving an object doesn't affect it.
+- Removed a note about moving objects that appeared on almost every object: moving an object doesn't change its sculpt history.
 - A part of the add-on that fails now switches off on its own and says so, instead of printing the same error on every redraw. A module that fails to start no longer takes the whole add-on down with it.
 - Ctrl+Z at the start of the history no longer falls through to Blender's undo once Hindsight has moved the mesh.
 - The Morph History brush showed an error on every stroke in Blender 5.0 and newer, and its radius and strength settings were missing from the tool header.
@@ -47,7 +56,7 @@ First public beta.
 
 - Each object gets its own history of up to 10,000 steps, with a slider along the bottom of the viewport.
 - History Menu, Morph History brush, Movie Mode, global history, Collection Filtering.
-- Join keeps the histories and scrubbing back past it brings the original objects back.
+- Joining objects (Ctrl+J) merges their histories, and going back past the join brings the original objects back.
 - History saved next to the .blend, inside it, or both, with crash recovery.
 - Tested with Blender's Python module only, not in the real interface.
 

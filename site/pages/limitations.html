@@ -1,0 +1,62 @@
+<!--page
+title: What Hindsight records and what it doesn't
+description: What Hindsight records, the known limits of this beta, and the things that aren't recorded in this version.
+path: docs/limitations/
+root: ../../
+-->
+{{nav:docs}}
+<main id="main" class="wrap">
+  <div class="doc">
+    <aside>
+      <nav aria-label="On this page">
+        <a href="#records">What it records</a>
+        <a href="#limits">Known limits</a>
+        <a href="#not-recorded">Not recorded in this version</a>
+      </nav>
+    </aside>
+    <article>
+      <h1>Limitations</h1>
+      <p>Version {{version}} is a beta. Object recording passed most of its release test gate on Blender 5.0.1, 5.1.1 and 5.1.2 on Windows. The long soak runs and the fixes from the latest review aren't finished, and it hasn't been tried on macOS or Linux. Back up your files.</p>
+
+      <h2 id="records">What it records</h2>
+      <ul>
+        <li>Sculpting, by default: Sculpt Mode strokes and filters, Vertex Paint strokes, and topology changes such as Voxel Remesh.</li>
+        <li>Objects, once you switch them on: transforms, parenting, constraints, collections, visibility, adding and deleting objects, and Edit Mode step by step. <a href="../install/#objects">Turn on object recording.</a></li>
+      </ul>
+
+      <h2 id="limits">Known limits</h2>
+      <ul>
+        <li>Multires and Dyntopo pause sculpt recording on that object, and the tab says why.</li>
+        <li>Animated or driven properties aren't recorded, because they follow the animation.</li>
+        <li>Physics and particle systems of an object that the global history deleted and brought back don't come back. A note on such objects says so.</li>
+        <li>Edit Mode step by step works up to 300,000 vertices. Above that, it is one step per visit.</li>
+        <li>Linked duplicates (Alt+D) share one mesh, so its changes are recorded once, in one object's history.</li>
+        <li>Objects linked from another .blend file aren't recorded, because they can't be changed in this file.</li>
+        <li>A name that another object already has can't be given back. Blender adds .001 and the tab says so.</li>
+        <li>Each object keeps up to 10,000 steps. The oldest go first.</li>
+        <li>Going back over a topology change such as a remesh keeps vertex groups and shape keys, but their weights and shapes aren't recorded with that step unless Record &gt; Everything is on for that object.</li>
+        <li>An object's own history can't bring back a parent or constraint target that is deleted now, and a note says so. The global history can.</li>
+        <li>Collections you make or delete are undone only when Objects added and deleted is on.</li>
+        <li>Changes made in a session without Hindsight become one step when the file is opened. If the mesh itself was changed without Hindsight, that object's history is left out and a message says so.</li>
+      </ul>
+      <p>Multires adds subdivision levels to sculpt on. Dyntopo, short for dynamic topology, adds and removes faces while you sculpt. History resumes on a normal mesh, once Multires is removed or Dyntopo is off.</p>
+
+      <h2 id="not-recorded">Not recorded in this version</h2>
+      <p>These aren't recorded in this version:</p>
+      <ul>
+        <li>Modifiers aren't recorded.</li>
+        <li>Geometry Nodes inputs and node trees aren't recorded.</li>
+        <li>Materials aren't recorded.</li>
+        <li>Weight paint isn't recorded.</li>
+        <li>UVs aren't recorded.</li>
+        <li>Texture paint isn't recorded.</li>
+        <li>Animation isn't recorded.</li>
+        <li>Shape keys aren't recorded.</li>
+        <li>Armatures aren't recorded.</li>
+        <li>Other object types, such as curves, text, lights and cameras, aren't recorded.</li>
+        <li>Scene settings aren't recorded.</li>
+      </ul>
+    </article>
+  </div>
+</main>
+{{footer}}

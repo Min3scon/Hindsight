@@ -1,5 +1,7 @@
 PASS test_animated_values
 PASS test_lists_in_constraint_settings
+PASS test_parenting_with_deform
+PASS test_physics_and_particles_note
 PASS test_objects_not_switched_on_and_other_types
 PASS test_big_mesh_edit_mode
 PASS test_new_collections_need_the_scene

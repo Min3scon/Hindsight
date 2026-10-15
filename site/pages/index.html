@@ -1,6 +1,6 @@
 <!--page
-title: Hindsight: scrub back through your sculpt in Blender
-description: A Blender add-on that gives every sculpted object its own history. Drag a slider to go back and forth through up to 10,000 steps. Free beta.
+title: Hindsight: step back through your Blender work
+description: A Blender add-on that records sculpting, objects and Edit Mode step by step, with a timeline per object and a global one. Free beta.
 path:
 root: ./
 -->
@@ -9,24 +9,23 @@ root: ./
   <div class="hero">
     <div class="wrap">
       <p class="eyebrow">Blender add-on <span class="badge">Beta</span></p>
-      <h1>Scrub back through your sculpt</h1>
-      <p class="lede">Hindsight gives every object its own history. Drag a slider to any of the last 10,000 steps, look, and drag back. The history is saved with your file.</p>
+      <h1>Step back through your Blender work</h1>
+      <p class="lede">Hindsight records your sculpting, your objects and Edit Mode, one step at a time. Each object has a timeline you can scrub, and a global timeline puts every object's steps in the order you made them.</p>
       <div class="cta">
         <a class="btn btn-primary" href="download/hindsight.zip" download>{{icon:download}}Download beta</a>
         <a class="btn btn-quiet" href="#demo">Try the demo</a>
       </div>
+      <p>Beta. See what it records and <a href="docs/limitations/">what it doesn't</a>.</p>
+      <p>Object recording is off until you switch it on. <a href="docs/install/#objects">See Install</a>.</p>
       <p class="meta"><span>Version {{version}}</span><span>{{size}} zip</span><span>Blender 4.2 and newer</span></p>
-      <div class="frame reveal">
-        {{video:hero|A sculpt in Blender being scrubbed back and forth with the Hindsight slider at the bottom of the viewport|1600|900|eager}}
-      </div>
     </div>
   </div>
 
   <section id="demo-section" aria-labelledby="demo-h">
     <div class="wrap">
       <div class="head reveal">
-        <h2 id="demo-h">Try it here</h2>
-        <p>Drag on the shape to sculpt, then drag the slider. Each stroke is one step, and jumping back and forth is exact.</p>
+        <h2 id="demo-h">Sculpting example</h2>
+        <p>Drag on the shape to sculpt, then drag the slider. Each stroke is one step.</p>
       </div>
       {{demo}}
     </div>
@@ -39,35 +38,21 @@ root: ./
       </div>
       <div class="features">
         <div class="feature reveal">
-          <div class="media">{{video:feature-scrub|Two sculpted objects in Blender, each with its own history slider|960|720|lazy}}</div>
-          <h3>A history for every object</h3>
-          <p>Up to 10,000 steps per object. A step stores only the vertices that stroke moved, about 8 KB for a typical stroke on a 100k mesh.</p>
+          <h3>A timeline for every object</h3>
+          <p>Scrub one object's history with the slider, or use the global timeline to see all of them in order.</p>
         </div>
         <div class="feature reveal">
-          <div class="media">{{video:feature-morph|The Morph History brush painting an earlier shape back onto one area of a sculpt|960|720|lazy}}</div>
-          <h3>Paint an earlier shape back</h3>
-          <p>Mark a step as the morph target, then brush it back onto the nose, or one ear. The rest stays as it is.</p>
+          <h3>Objects and Edit Mode</h3>
+          <p>Transforms, parenting, constraints, collections, visibility, and adding, deleting, duplicating and renaming objects. Each Edit Mode operation is its own step. This is opt-in.</p>
         </div>
         <div class="feature reveal">
-          <div class="media">{{video:feature-movie|Movie Mode playing a sculpt history on the Blender timeline|960|720|lazy}}</div>
-          <h3>Your sculpt as a timelapse</h3>
-          <p>Movie Mode plays every step on the timeline, so you can render the whole session as a video.</p>
+          <h3>Morph History brush</h3>
+          <p>Set a step as the morph target, then paint it back onto part of the mesh.</p>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="screenshots" aria-labelledby="where-h">
-    <div class="wrap">
-      <div class="head reveal">
-        <h2 id="where-h">Where to find it</h2>
-        <p>Press <kbd>N</kbd> in the 3D Viewport and open the Undo History tab. The slider at the bottom of the viewport does the same job without the sidebar.</p>
-      </div>
-      <div class="where">
-        <div class="reveal">{{annotated}}</div>
-        <ul class="gallery reveal">
-          {{shots}}
-        </ul>
+        <div class="feature reveal">
+          <h3>Movie Mode</h3>
+          <p>Plays the history on the timeline so you can render a timelapse.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -79,19 +64,19 @@ root: ./
           <h2 id="install-h">Install</h2>
         </div>
         <ol class="steps">
-          <li><b>Download</b> <a href="download/hindsight.zip" download>hindsight.zip</a>. Don't unzip it.</li>
-          <li>In Blender, open <b>Edit &gt; Preferences &gt; Get Extensions</b>, click the arrow at the top right and choose <b>Install from Disk</b>.</li>
-          <li>Pick the zip. Then press <kbd>N</kbd> in the 3D Viewport and open the <b>Undo History</b> tab.</li>
+          <li><b>Download</b> <a href="download/hindsight.zip" download>hindsight.zip</a>. Keep it zipped.</li>
+          <li>In Blender, open <b>Edit &gt; Preferences &gt; Get Extensions</b>, click the small arrow at the top right, choose <b>Install from Disk</b> and pick the zip. Hindsight is switched on straight away.</li>
+          <li>In the 3D Viewport press <kbd>N</kbd> and open the <b>Undo History</b> tab.</li>
         </ol>
+        <p>To turn on object recording, follow <a href="docs/install/">the install guide</a>.</p>
       </div>
       <div class="beta reveal">
-        <h3><span class="badge">Beta</span> What's tested</h3>
-        <p>{{tested}}</p>
-        <p>It hasn't been tried on macOS or Linux yet. Back up your files. If something breaks, the Undo History tab has a Copy diagnostics button for the report.</p>
-        <div class="links"><a href="docs/#known-issues">Known issues</a><a href="https://github.com/Min3scon/Hindsight/issues/new/choose">Report a bug</a><a href="changelog/">What changed</a></div>
+        <h3><span class="badge">Beta</span> Status</h3>
+        <p>Object recording passed most of its release tests on Blender 5.0.1, 5.1.1 and 5.1.2 on Windows. The long soak runs and the latest fixes aren't finished. Not tried on macOS or Linux.</p>
+        <p>Back up your files.</p>
+        <div class="links"><a href="docs/limitations/">Limitations</a><a href="https://github.com/Min3scon/Hindsight/issues/new/choose">Report a bug</a><a href="changelog/">What changed</a></div>
       </div>
     </div>
   </section>
 </main>
-{{lightbox}}
 {{footer}}

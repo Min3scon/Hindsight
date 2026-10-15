@@ -315,6 +315,9 @@ def write_md(store, rows, table, na, problems) -> str:
     return "\n".join(lines) + "\n"
 
 
+PARTIAL_CORE = ("EXACT", "ORACLE", "REPLAY", "STEPS")
+
+
 def check_statuses(rows, table, na) -> list:
     errors = []
     for r in rows:
@@ -325,9 +328,21 @@ def check_statuses(rows, table, na) -> list:
         if st in ("supported", "partial"):
             done = gate_status(table, r["id"], na)
             missing = [it for it in gate_spec.ITEMS if it not in done]
-            if missing:
+            if st == "supported" and missing:
                 errors.append(f"{r['id']} is {st} in COVERAGE.md but the gate isn't complete: "
                               f"missing {', '.join(missing)}")
+            if st == "partial":
+                # Owner, 2026-10-15: partial = part of the gate really passed. The core items count on
+                # every Blender, and Limits names exactly the gate items that don't (yet).
+                core = [it for it in PARTIAL_CORE if it not in done]
+                if core:
+                    errors.append(f"{r['id']} is partial but core gate items don't count on every Blender: "
+                                  f"{', '.join(core)}")
+                m = re.search(r"Open gate items: ([A-Z_., ]+?)\.(?:\s|$)", r.get("limits") or "")
+                listed = sorted(x.strip() for x in m.group(1).split(",")) if m else None
+                if listed != sorted(missing):
+                    errors.append(f"{r['id']} is partial but its Limits must say exactly 'Open gate items: "
+                                  f"{', '.join(missing)}.' (it says {listed})")
         if st == "partial" and not r.get("limits"):
             errors.append(f"{r['id']} is partial but Limits doesn't say what doesn't work")
     return errors

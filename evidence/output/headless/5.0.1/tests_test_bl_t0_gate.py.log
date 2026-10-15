@@ -1,0 +1,23 @@
+PASS test_gate_positions
+PASS test_gate_masks
+FAIL test_gate_colors
+Info: QuadriFlow: Remeshing completed
+Info: QuadriFlow: Remeshing completed
+PASS test_gate_topology
+PASS test_gate_joinsep
+PASS test_gate_editvisit
+FAILED: test_gate_colors
+Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:32:30)
+Traceback (most recent call last):
+  File "<path>", line 135, in run
+    fn()
+  File "<path>", line 38, in test_gate_colors
+    gate("sculpt.colors")
+  File "<path>", line 23, in gate
+    L.gate(row, T0.sequences()[row])
+  File "<path>", line 193, in gate
+    check_global(r)
+  File "<path>", line 181, in check_global
+    assert got == want[g], f"global position {g}: {O.diff(want[g], got)[:4]}"
+           ^^^^^^^^^^^^^^
+AssertionError: global position 1: ['/Clay/attr:Attribute|CORNER|BYTE_COLOR: only in second']

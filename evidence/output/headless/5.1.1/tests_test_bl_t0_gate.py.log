@@ -1,0 +1,9 @@
+PASS test_gate_positions
+PASS test_gate_masks
+PASS test_gate_colors
+Info: QuadriFlow: Remeshing completed
+Info: QuadriFlow: Remeshing completed
+PASS test_gate_topology
+PASS test_gate_joinsep
+PASS test_gate_editvisit
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)

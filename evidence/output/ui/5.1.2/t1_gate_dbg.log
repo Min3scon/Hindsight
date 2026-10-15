@@ -1,0 +1,74 @@
+[driver 7.4s] PASS G move: one step -- {'diffs': {}, 'pos': 1, 'len': 1}
+[driver 8.3s] PASS R Z 45, typed: one step -- {'diffs': {}, 'pos': 2, 'len': 2}
+[driver 9.2s] PASS S 1.5, typed: one step -- {'diffs': {}, 'pos': 3, 'len': 3}
+[driver 10.1s] PASS G with Ctrl (snapping): one step -- {'diffs': {}, 'pos': 4, 'len': 4}
+[driver 11.8s] PASS drag with the move gizmo: one step -- {'diffs': {}, 'pos': 5, 'len': 5}
+[driver 12.7s] PASS G with two objects: one step -- {'diffs': {}, 'pos': 6, 'len': 6}
+[driver 13.6s] PASS R about the 3D cursor, two objects: one step -- {'diffs': {}, 'pos': 7, 'len': 7}
+[driver 14.8s] PASS N panel location edit (settle): one step -- {'diffs': {}, 'pos': 8, 'len': 8}
+[driver 15.7s] PASS Apply > Transforms to Deltas: one step -- {'diffs': {}, 'pos': 9, 'len': 9}
+[driver 16.6s] PASS Ctrl+A Apply Scale: one step -- {'diffs': {}, 'pos': 10, 'len': 10}
+[driver 17.9s] PASS Ctrl+P, Object: one step -- {'diffs': {}, 'pos': 11, 'len': 11}
+[driver 19.2s] PASS Alt+P, Clear and Keep Transformation: one step -- {'diffs': {}, 'pos': 12, 'len': 12}
+[driver 20.1s] PASS add a constraint: one step -- {'diffs': {}, 'pos': 13, 'len': 13}
+[driver 21.3s] PASS constraint influence (settle): one step -- {'diffs': {}, 'pos': 14, 'len': 14}
+Info: C moved to Extra
+[driver 22.2s] PASS M, New Collection: one step -- {'diffs': {}, 'pos': 15, 'len': 15}
+00:23.516  operator         | 1 object(s) hidden
+[driver 23.1s] PASS H: one step -- {'diffs': {}, 'pos': 16, 'len': 16}
+[driver 24.0s] PASS Alt+H: one step -- {'diffs': {}, 'pos': 17, 'len': 17}
+[driver 25.4s] PASS F2 rename: one step -- {'diffs': {}, 'pos': 18, 'len': 18}
+[driver 26.6s] PASS Shift+D: one step -- {'diffs': {}, 'pos': 19, 'len': 19}
+Warning: 1 × Draw window and swap: 9.0227 ms, average: 9.02270000 ms
+[driver 27.4s] shot <path>
+[driver 27.4s] PASS Alt+D on a recorded mesh: the shared-mesh warning comes up -- [True]
+[driver 28.2s] PASS Alt+D: one step -- {'diffs': {}, 'pos': 20, 'len': 20}
+00:29.828  operator         | Deleted 1 object(s)
+[driver 29.4s] PASS X, Delete: one step -- {'diffs': {}, 'pos': 21, 'len': 21}
+[driver 30.3s] PASS Shift+A, Monkey: one step -- {'diffs': {}, 'pos': 22, 'len': 22}
+[driver 31.2s] PASS Tab into Edit Mode (no step): one step -- {'diffs': {}, 'pos': 22, 'len': 22}
+[driver 32.1s] PASS selecting (no step): one step -- {'diffs': {}, 'pos': 22, 'len': 22}
+[driver 33.0s] PASS E extrude: one step -- {'diffs': {}, 'pos': 23, 'len': 23}
+[driver 33.9s] PASS Ctrl+B bevel: one step -- {'diffs': {}, 'pos': 24, 'len': 24}
+[driver 34.8s] PASS I inset: one step -- {'diffs': {}, 'pos': 25, 'len': 25}
+[driver 36.7s] PASS Ctrl+R loop cut: one step -- {'diffs': {}, 'pos': 26, 'len': 26}
+[driver 38.4s] PASS K knife: one step -- {'diffs': {}, 'pos': 27, 'len': 27}
+[driver 39.7s] PASS M merge, At Center: one step -- {'diffs': {}, 'pos': 28, 'len': 28}
+[driver 41.0s] PASS X delete vertices: one step -- {'diffs': {}, 'pos': 29, 'len': 29}
+[driver 41.9s] PASS F fill: one step -- {'diffs': {}, 'pos': 30, 'len': 30}
+[driver 42.8s] PASS Tab out of Edit Mode (no step): one step -- {'diffs': {}, 'pos': 30, 'len': 30}
+Warning: 1 × Draw window and swap: 6.6303 ms, average: 6.63030001 ms
+[driver 42.9s] shot <path>
+[driver 53.5s] PASS every object's history is exact through the sidebar slider, both ways -- []
+[driver 54.5s] PASS dragging the on-screen slider moves A's history -- (3, 3)
+[driver 61.9s] PASS global timeline: every operation boundary is exact, both ways -- []
+Warning: 1 × Draw window and swap: 10.2872 ms, average: 10.28720001 ms
+[driver 61.9s] shot <path>
+Warning: 1 × Draw window and swap: 9.5644 ms, average: 9.56440000 ms
+[driver 62.4s] shot <path>
+[dbg] before Ctrl+Z: g=30 active=E/EDIT hists={'7a103c': '7/7', 'ff7f22': '7/7', 'c2455d': '4/4', '57e2cc': '2/2', '43a7f2': '5/5', '0f1987': '8/8'} jumps=[{'hists': {'43a7f2': [4, 5, 5]}, 'undone': False}] E.faces=90
+[dbg] Ctrl+Z 1: g=21 active=Hub/OBJECT hists={'7a103c': '7/7', 'ff7f22': '7/7', 'c2455d': '4/4', '57e2cc': '2/2', '43a7f2': '4/5', '0f1987': '8/8'} jumps=[{'hists': {'43a7f2': [4, 5, 5]}, 'undone': True}] E.faces=64
+[driver 63.6s] PASS Ctrl+Z 1: data and history in sync -- (21, 'X, Delete', [])
+[dbg] Ctrl+Z 2: g=20 active=Hub/OBJECT hists={'7a103c': '7/7', 'ff7f22': '7/7', 'c2455d': '4/4', '57e2cc': '2/2', '43a7f2': '3/5', '0f1987': '8/8'} jumps=[{'hists': {'43a7f2': [4, 5, 5]}, 'undone': True}] E.faces=64
+[driver 64.5s] PASS Ctrl+Z 2: data and history in sync -- (20, 'Alt+D', [])
+[dbg] Ctrl+Z 3: g=19 active=Hub/OBJECT hists={'7a103c': '7/7', 'ff7f22': '7/7', 'c2455d': '4/4', '57e2cc': '2/2', '43a7f2': '2/5', '0f1987': '8/8'} jumps=[{'hists': {'43a7f2': [4, 5, 5]}, 'undone': True}] E.faces=64
+[driver 65.4s] PASS Ctrl+Z 3: data and history in sync -- (19, 'Shift+D', [])
+[dbg] Ctrl+Shift+Z 1: g=20 active=Hub/OBJECT hists={'7a103c': '7/7', 'ff7f22': '7/7', 'c2455d': '4/4', '57e2cc': '2/2', '43a7f2': '3/5', '0f1987': '8/8'} jumps=[{'hists': {'43a7f2': [4, 5, 5]}, 'undone': True}] E.faces=64
+[driver 66.3s] PASS Ctrl+Shift+Z 1: data and history in sync -- (20, 'Alt+D', [])
+[dbg] Ctrl+Shift+Z 2: g=21 active=Hub/OBJECT hists={'7a103c': '7/7', 'ff7f22': '7/7', 'c2455d': '4/4', '57e2cc': '2/2', '43a7f2': '4/5', '0f1987': '8/8'} jumps=[{'hists': {'43a7f2': [4, 5, 5]}, 'undone': True}] E.faces=64
+[driver 67.2s] PASS Ctrl+Shift+Z 2: data and history in sync -- (21, 'X, Delete', [])
+[dbg] Ctrl+Shift+Z 3: g=30 active=Hub/OBJECT hists={'7a103c': '7/7', 'ff7f22': '7/7', 'c2455d': '4/4', '57e2cc': '2/2', '43a7f2': '5/5', '0f1987': '8/8'} jumps=[{'hists': {'43a7f2': [4, 5, 5]}, 'undone': False}] E.faces=64
+[driver 68.1s] FAIL Ctrl+Shift+Z 3: data and history in sync -- (30, 'Tab out of Edit Mode (no step)', ['/E/mesh/attr:UVMap|CORNER|FLOAT2: <f4[792]:cbac7146b095f9daf41bed4b7d0b406a != <f4[512]:70176c7e16a25d1d2889b28a8727ad92', '/E/mesh/attr:sharp_face|FACE|BOOLEAN: |b1[90]:a927cebce3e3373fc6aba3ba3c178747 != |b1[64]:c56ed187f7f55077b6f2ef2bef90eb60', '/E/mesh/c
+[driver 68.1s] PASS undo and redo recorded nothing -- None
+[driver 68.1s] PASS each Ctrl+Z went back at least one operation (a whole Edit Mode visit is one Ctrl+Z) -- [-9, -1, -1]
+[driver 70.3s] FAIL scrub, Ctrl+Z, Ctrl+Shift+Z: data and history in sync -- ((21, 'X, Delete', []), (26, 'Ctrl+R loop cut', ['/E/mesh/attr:UVMap|CORNER|FLOAT2: <f4[1226]:1fd3034dbc8a7bbe813ad8411261de08 != <f4[512]:70176c7e16a25d1d2889b28a8727ad92', '/E/mesh/attr:sharp_face|FACE|BOOLEAN: |b1[150]:23137e288a4615f2c2d95a54ecb53811 != |b1[64]:c56ed187f7f55077b6f2ef2bef90eb60',
+[driver 78.7s] FAIL Ctrl+Z and Ctrl+Shift+Z across Tab: back in sync, nothing recorded -- {'end': (32, None), 'steps': [('edit', 9), ('edit', 8), ('object', False, (30, 'Tab out of Edit Mode (no step)', ['/E/mesh/attr:UVMap|CORNER|FLOAT2: <f4[792]:cbac7146b095f9daf41bed4b7d0b406a != <f4[512]:70176c7e16a25d1d2889b28a8727ad92', '/E/mesh/attr:sharp_face|FACE|BOOLEAN: |b1[90]:a927cebce3e3373
+Warning: 1 × Draw window and swap: 6.9037 ms, average: 6.90369999 ms
+[driver 79.1s] shot <path>
+[driver 79.1s] PASS no Python errors -- []
+[driver 79.1s] finished ok=False
+01:20.594  blend            | Saved session recovery to "<path>"
+01:20.610  blend            | Writing user preferences: "<path>" 
+01:20.610  reports          | Preferences saved
+
+Blender quit

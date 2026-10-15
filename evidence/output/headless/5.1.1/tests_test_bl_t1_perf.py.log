@@ -1,0 +1,7 @@
+PERF {'small': {'move_ms': 1.8, 'relations_ms': 2.7, 'add_ms': 4.0, 'restore_one_ms': 0.069, 'global_jump_ms': 1.6}, 'medium': {'move_ms': 4.9, 'relations_ms': 12.1, 'add_ms': 13.6, 'restore_one_ms': 0.071, 'global_jump_ms': 2.5}, 'heavy': {'move_ms': 15.6, 'relations_ms': 85.4, 'add_ms': 95.8, 'restore_one_ms': 0.071, 'global_jump_ms': 10.8}}
+PASS test_recording_and_restoring_cost
+BYTES {'move': 148, 'constraint': 360, 'add_object': 20122}
+PASS test_memory_per_step
+MESH {10000: 3.6, 100000: 22.0, 1000000: 203.8}
+PASS test_object_mode_mesh_check_cost
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)

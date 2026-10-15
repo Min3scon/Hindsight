@@ -1,0 +1,95 @@
+00:00.562  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:32:30)
+00:00.562  blend            | Read blend: "<path>"
+00:00.828  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.844  blend            | Read blend: "<path>"
+00:01.125  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.125  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.140  blend            | Read blend: "<path>"
+00:01.312  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.328  blend            | Read blend: "<path>"
+00:01.578  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.578  blend            | Read blend: "<path>"
+00:01.859  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.859  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.875  blend            | Read blend: "<path>"
+00:02.047  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.062  blend            | Read blend: "<path>"
+00:02.078  blend            | Read blend: "<path>"
+00:02.328  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.328  blend            | Read blend: "<path>"
+00:02.344  blend            | Read blend: "<path>"
+00:02.625  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.625  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:02.640  blend            | Read blend: "<path>"
+00:02.656  blend            | Read blend: "<path>"
+00:02.953  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.969  blend            | Read blend: "<path>"
+00:03.359  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:03.375  blend            | Read blend: "<path>"
+Info: Saved as "sculpt_positions_sidecar.blend"
+Info: Saved as "sculpt_masks_sidecar.blend"
+Info: Saved as "sculpt_colors_sidecar.blend"
+FAIL test_reload_sidecar
+Info: Saved as "sculpt_positions_embed.blend"
+Info: Saved as "sculpt_masks_embed.blend"
+Info: Saved as "sculpt_colors_embed.blend"
+FAIL test_reload_embed
+Info: Saved as "sculpt_positions_both.blend"
+Info: Saved as "sculpt_masks_both.blend"
+Info: Saved as "sculpt_colors_both.blend"
+FAIL test_reload_both
+Info: Saved as "sculpt_positions_renamed.blend"
+Info: Saved as "sculpt_masks_renamed.blend"
+FAIL test_renamed_object_keeps_its_history
+FAILED: test_reload_sidecar, test_reload_embed, test_reload_both, test_renamed_object_keeps_its_history
+Traceback (most recent call last):
+  File "<path>", line 135, in run
+    fn()
+  File "<path>", line 59, in test_reload_sidecar
+    reload_all_rows("SIDECAR")
+  File "<path>", line 53, in reload_all_rows
+    recheck(r)
+  File "<path>", line 41, in recheck
+    L.check_global(r)
+  File "<path>", line 181, in check_global
+    assert got == want[g], f"global position {g}: {O.diff(want[g], got)[:4]}"
+           ^^^^^^^^^^^^^^
+AssertionError: global position 1: ['/Clay/attr:Attribute|CORNER|BYTE_COLOR: only in second']
+Traceback (most recent call last):
+  File "<path>", line 135, in run
+    fn()
+  File "<path>", line 64, in test_reload_embed
+    reload_all_rows("EMBED")
+  File "<path>", line 53, in reload_all_rows
+    recheck(r)
+  File "<path>", line 41, in recheck
+    L.check_global(r)
+  File "<path>", line 181, in check_global
+    assert got == want[g], f"global position {g}: {O.diff(want[g], got)[:4]}"
+           ^^^^^^^^^^^^^^
+AssertionError: global position 1: ['/Clay/attr:Attribute|CORNER|BYTE_COLOR: only in second']
+Traceback (most recent call last):
+  File "<path>", line 135, in run
+    fn()
+  File "<path>", line 69, in test_reload_both
+    reload_all_rows("BOTH")
+  File "<path>", line 53, in reload_all_rows
+    recheck(r)
+  File "<path>", line 41, in recheck
+    L.check_global(r)
+  File "<path>", line 181, in check_global
+    assert got == want[g], f"global position {g}: {O.diff(want[g], got)[:4]}"
+           ^^^^^^^^^^^^^^
+AssertionError: global position 1: ['/Clay/attr:Attribute|CORNER|BYTE_COLOR: only in second']
+Traceback (most recent call last):
+  File "<path>", line 135, in run
+    fn()
+  File "<path>", line 88, in test_renamed_object_keeps_its_history
+    recheck(r)
+  File "<path>", line 41, in recheck
+    L.check_global(r)
+  File "<path>", line 181, in check_global
+    assert got == want[g], f"global position {g}: {O.diff(want[g], got)[:4]}"
+           ^^^^^^^^^^^^^^
+AssertionError: global position 1: ['/Clay renamed/attr:Attribute|CORNER|BYTE_COLOR: only in second']

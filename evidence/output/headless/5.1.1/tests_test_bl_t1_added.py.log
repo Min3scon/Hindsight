@@ -1,0 +1,31 @@
+00:02.219  blend            | Read blend: "<path>"
+00:03.063  blend            | Read blend: "<path>"
+00:03.141  blend            | Read blend: "<path>"
+PASS test_added_object_is_recorded_fully
+PASS test_duplicate_of_a_child_keeps_its_changes
+PASS test_reference_to_a_deleted_object
+PASS test_restoring_a_parent_keeps_its_inverse
+PASS test_linked_duplicates_record_their_mesh_once
+PASS test_first_edit_visit_is_a_step
+PASS test_dragging_while_a_linked_duplicate_is_in_edit_mode
+PASS test_a_linked_duplicate_gets_its_own_mesh
+PASS test_the_owner_of_a_shared_mesh_deleted
+Info: Saved as "owner.blend"
+PASS test_the_owner_of_a_shared_mesh_after_a_reload
+PASS test_a_name_another_object_holds
+PASS test_a_deleted_object_back_while_its_name_is_taken
+Info: Saved as "rig_lib.blend"
+Hindsight: Linked from another file: it can't be changed here, so Hindsight doesn't record it.
+PASS test_references_to_linked_objects
+PASS test_deleted_objects_come_back_complete
+PASS test_several_objects_in_edit_mode
+PASS test_separate_is_one_operation
+Info: A moved to Outer
+Info: C moved to Outer
+PASS test_a_deleted_collection_comes_back
+PASS test_the_next_operation_while_a_reference_waits
+Info: Saved as "wait.blend"
+Info: Saved as "wait.blend"
+Info: Saved as "wait.blend"
+PASS test_a_reference_that_waits_after_a_reload
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)

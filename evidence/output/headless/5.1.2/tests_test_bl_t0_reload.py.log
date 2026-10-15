@@ -1,0 +1,78 @@
+00:00.531  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+Blender 5.1.2 (hash ec6e62d40fa9 built 2026-05-19 01:37:34)
+00:00.578  blend            | Read blend: "<path>"
+00:00.844  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.859  blend            | Read blend: "<path>"
+00:01.172  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.172  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.187  blend            | Read blend: "<path>"
+00:01.687  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.703  blend            | Read blend: "<path>"
+00:02.203  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.219  blend            | Read blend: "<path>"
+00:02.531  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.547  blend            | Read blend: "<path>"
+00:02.828  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.844  blend            | Read blend: "<path>"
+00:03.140  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:03.140  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:03.156  blend            | Read blend: "<path>"
+00:03.672  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:03.672  blend            | Read blend: "<path>"
+00:04.172  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:04.172  blend            | Read blend: "<path>"
+00:04.500  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:04.531  blend            | Read blend: "<path>"
+00:04.531  blend            | Read blend: "<path>"
+00:04.812  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:04.828  blend            | Read blend: "<path>"
+00:04.844  blend            | Read blend: "<path>"
+00:05.140  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:05.140  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:05.156  blend            | Read blend: "<path>"
+00:05.172  blend            | Read blend: "<path>"
+00:05.672  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:05.703  blend            | Read blend: "<path>"
+00:05.719  blend            | Read blend: "<path>"
+00:06.219  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:06.219  blend            | Read blend: "<path>"
+00:06.234  blend            | Read blend: "<path>"
+00:06.687  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:06.703  blend            | Read blend: "<path>"
+00:07.125  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:07.140  blend            | Read blend: "<path>"
+00:07.625  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:07.625  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:07.640  blend            | Read blend: "<path>"
+00:08.437  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:08.453  blend            | Read blend: "<path>"
+00:09.125  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:09.140  blend            | Read blend: "<path>"
+Info: Saved as "sculpt_positions_sidecar.blend"
+Info: Saved as "sculpt_masks_sidecar.blend"
+Info: Saved as "sculpt_colors_sidecar.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_sidecar.blend"
+Info: Saved as "sculpt_editvisit_sidecar.blend"
+PASS test_reload_sidecar
+Info: Saved as "sculpt_positions_embed.blend"
+Info: Saved as "sculpt_masks_embed.blend"
+Info: Saved as "sculpt_colors_embed.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_embed.blend"
+Info: Saved as "sculpt_editvisit_embed.blend"
+PASS test_reload_embed
+Info: Saved as "sculpt_positions_both.blend"
+Info: Saved as "sculpt_masks_both.blend"
+Info: Saved as "sculpt_colors_both.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_both.blend"
+Info: Saved as "sculpt_editvisit_both.blend"
+PASS test_reload_both
+Info: Saved as "sculpt_positions_renamed.blend"
+Info: Saved as "sculpt_masks_renamed.blend"
+Info: Saved as "sculpt_colors_renamed.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_renamed.blend"
+Info: Saved as "sculpt_editvisit_renamed.blend"
+PASS test_renamed_object_keeps_its_history

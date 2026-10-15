@@ -1,22 +1,22 @@
-00:00.641  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.547  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
 Blender 5.1.2 (hash ec6e62d40fa9 built 2026-05-19 01:37:34)
-00:00.750  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\plain_object\plain.blend"
-00:00.844  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:00.844  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\plain_sculpt\plain.blend"
-00:00.954  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:00.954  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
-00:00.954  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\plain_vertex_paint\plain.blend"
-00:01.063  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\plain_edit\plain.blend"
-00:01.188  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\open_object\untouched.blend"
-00:01.282  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:01.344  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\open_sculpt\untouched.blend"
-00:01.454  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:01.454  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
-00:01.516  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\open_vertex_paint\untouched.blend"
-00:01.641  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.2\temp\hs_meta_ngxs4gc_\open_edit\untouched.blend"
-00:01.735  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:02.579  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:02.688  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.641  blend            | Read blend: "<path>"
+00:00.703  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.703  blend            | Read blend: "<path>"
+00:00.797  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.797  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:00.797  blend            | Read blend: "<path>"
+00:00.844  blend            | Read blend: "<path>"
+00:00.953  blend            | Read blend: "<path>"
+00:01.031  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.063  blend            | Read blend: "<path>"
+00:01.156  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.156  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.203  blend            | Read blend: "<path>"
+00:01.328  blend            | Read blend: "<path>"
+00:01.422  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.047  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.156  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.1\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
 Info: Keyed steps 0-3 on frames 1-7
 Info: Saved as "scene.blend"
 PASS test_session_writes_only_what_is_listed

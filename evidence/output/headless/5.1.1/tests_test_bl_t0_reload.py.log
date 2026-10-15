@@ -1,0 +1,78 @@
+00:00.562  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
+00:00.593  blend            | Read blend: "<path>"
+00:00.875  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.875  blend            | Read blend: "<path>"
+00:01.187  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.187  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.203  blend            | Read blend: "<path>"
+00:01.718  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.750  blend            | Read blend: "<path>"
+00:02.234  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.250  blend            | Read blend: "<path>"
+00:02.562  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.578  blend            | Read blend: "<path>"
+00:02.859  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.859  blend            | Read blend: "<path>"
+00:03.172  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:03.172  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:03.187  blend            | Read blend: "<path>"
+00:03.687  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:03.703  blend            | Read blend: "<path>"
+00:04.187  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:04.203  blend            | Read blend: "<path>"
+00:04.515  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:04.531  blend            | Read blend: "<path>"
+00:04.547  blend            | Read blend: "<path>"
+00:04.843  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:04.859  blend            | Read blend: "<path>"
+00:04.875  blend            | Read blend: "<path>"
+00:05.172  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:05.172  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:05.187  blend            | Read blend: "<path>"
+00:05.203  blend            | Read blend: "<path>"
+00:05.703  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:05.734  blend            | Read blend: "<path>"
+00:05.750  blend            | Read blend: "<path>"
+00:06.234  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:06.265  blend            | Read blend: "<path>"
+00:06.265  blend            | Read blend: "<path>"
+00:06.734  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:06.750  blend            | Read blend: "<path>"
+00:07.156  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:07.172  blend            | Read blend: "<path>"
+00:07.640  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:07.640  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:07.656  blend            | Read blend: "<path>"
+00:08.453  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:08.468  blend            | Read blend: "<path>"
+00:09.140  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:09.156  blend            | Read blend: "<path>"
+Info: Saved as "sculpt_positions_sidecar.blend"
+Info: Saved as "sculpt_masks_sidecar.blend"
+Info: Saved as "sculpt_colors_sidecar.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_sidecar.blend"
+Info: Saved as "sculpt_editvisit_sidecar.blend"
+PASS test_reload_sidecar
+Info: Saved as "sculpt_positions_embed.blend"
+Info: Saved as "sculpt_masks_embed.blend"
+Info: Saved as "sculpt_colors_embed.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_embed.blend"
+Info: Saved as "sculpt_editvisit_embed.blend"
+PASS test_reload_embed
+Info: Saved as "sculpt_positions_both.blend"
+Info: Saved as "sculpt_masks_both.blend"
+Info: Saved as "sculpt_colors_both.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_both.blend"
+Info: Saved as "sculpt_editvisit_both.blend"
+PASS test_reload_both
+Info: Saved as "sculpt_positions_renamed.blend"
+Info: Saved as "sculpt_masks_renamed.blend"
+Info: Saved as "sculpt_colors_renamed.blend"
+Info: QuadriFlow: Remeshing completed
+Info: Saved as "sculpt_topology_renamed.blend"
+Info: Saved as "sculpt_editvisit_renamed.blend"
+PASS test_renamed_object_keeps_its_history

@@ -1,18 +1,17 @@
-00:01.078  reports          | ERROR Only empty objects support collection instances
-Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
 FAIL test_t1_random_sequences
 FAILED: test_t1_random_sequences
+Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
 Traceback (most recent call last):
-  File "<repo>\tests\..\tests\harness.py", line 135, in run
+  File "<path>", line 135, in run
     fn()
     ~~^^
-  File "<repo>\tests\test_bl_t1_prop.py", line 226, in test_t1_random_sequences
+  File "<path>", line 226, in test_t1_random_sequences
     check_sequence([tuple(x) for x in json.load(fh)])
     ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "<repo>\tests\test_bl_t1_prop.py", line 191, in check_sequence
-    L.check_global(r, full=False)
-    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-  File "<repo>\tests\t1_gate_lib.py", line 234, in check_global
-    assert got == r.states[i], f"global timeline after {what}: {O.diff(r.states[i], got)[:4]}"
-           ^^^^^^^^^^^^^^^^^^
-AssertionError: global timeline after dup B True: ['/B.001/canon/attr:UVMap|CORNER|FLOAT2: <f4[96, 2]:e71a4553e5801d5dc086f913f4e72d3d != <f4[0, 2]:cae66941d9efbd404e4d88758ea67670', '/B.001/canon/attr:sharp_face|FACE|BOOLEAN: only in first', '/B.001/mesh/attr:UVMap|CORNER|FLOAT2: <f4[192]:03902346f5ff956214fd2d2c777f1f9d != <f4[0]:cae66941d9efbd404e4d88758ea67670', '/B.001/mesh/attr:sharp_face|FACE|BOOLEAN: only in first']
+  File "<path>", line 189, in check_sequence
+    L.check_object_histories(r, full=False)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "<path>", line 200, in check_object_histories
+    assert got == want[pos], f"{name} at its position {pos}: {O.diff(want[pos], got)[:4]}"
+           ^^^^^^^^^^^^^^^^
+AssertionError: B at its position 1: ["/rna/parent: ('ID', 'Object', 'A') != None"]

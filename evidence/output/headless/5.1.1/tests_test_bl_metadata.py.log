@@ -1,22 +1,22 @@
-00:00.719  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.563  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
 Blender 5.1.1 (hash b70da489d7f4 built 2026-04-14 01:37:22)
-00:00.812  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_object\plain.blend"
-00:00.906  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:00.906  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_sculpt\plain.blend"
-00:01.015  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:01.015  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
-00:01.015  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_vertex_paint\plain.blend"
-00:01.094  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\plain_edit\plain.blend"
-00:01.203  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_object\untouched.blend"
-00:01.281  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:01.344  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_sculpt\untouched.blend"
-00:01.469  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:01.469  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
-00:01.515  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_vertex_paint\untouched.blend"
-00:01.687  blend            | Read blend: "<repo>\.tmp\profiles\headless-5.1.1\temp\hs_meta_hi7s13dx\open_edit\untouched.blend"
-00:01.797  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:02.578  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
-00:02.703  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.657  blend            | Read blend: "<path>"
+00:00.735  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.735  blend            | Read blend: "<path>"
+00:00.875  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:00.875  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:00.891  blend            | Read blend: "<path>"
+00:00.954  blend            | Read blend: "<path>"
+00:01.079  blend            | Read blend: "<path>"
+00:01.172  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.219  blend            | Read blend: "<path>"
+00:01.329  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.329  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_vertex.blend' cannot be made relative for Library 'essentials_brushes-mesh_vertex.blend'
+00:01.375  blend            | Read blend: "<path>"
+00:01.500  blend            | Read blend: "<path>"
+00:01.594  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.297  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:02.422  reports          | WARNING Path '<path> Files (x86)\Steam\steamapps\common\Blender\5.1\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
 Info: Keyed steps 0-3 on frames 1-7
 Info: Saved as "scene.blend"
 PASS test_session_writes_only_what_is_listed

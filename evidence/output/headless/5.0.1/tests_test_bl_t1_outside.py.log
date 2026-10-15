@@ -1,0 +1,24 @@
+00:00.765  blend            | Read blend: "<path>"
+00:00.859  blend            | Read blend: "<path>"
+00:00.968  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+Blender 5.0.1 (hash a3db93c5b259 built 2025-12-16 01:32:30)
+00:00.984  blend            | Read blend: "<path>"
+00:01.109  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.109  blend            | Read blend: "<path>"
+00:01.234  reports          | WARNING Path '<path> Files\Blender Foundation\Blender 5.0\5.0\datafiles\assets\brushes\essentials_brushes-mesh_sculpt.blend' cannot be made relative for Library 'essentials_brushes-mesh_sculpt.blend'
+00:01.234  blend            | Read blend: "<path>"
+PASS test_record_everything_switched_off_and_on
+PASS test_paused_and_resumed
+Info: Saved as "outside.blend"
+Info: Saved as "outside.blend"
+PASS test_values_changed_without_hindsight
+Info: Saved as "outside_mesh.blend"
+Info: Saved as "outside_mesh.blend"
+PASS test_mesh_changed_without_hindsight
+Info: Saved as "normal_object.blend"
+Info: Saved as "normal_sculpt.blend"
+Info: Saved as "normal_edit.blend"
+PASS test_saving_normally_never_raises_the_alarm
+Info: A moved to Props
+PASS test_excluded_by_collection_filtering
+PASS test_hidden_in_another_view_layer

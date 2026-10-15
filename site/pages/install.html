@@ -1,0 +1,58 @@
+<!--page
+title: Install Hindsight and turn on object recording
+description: How to install Hindsight in Blender 4.2 or newer, and how to switch on object recording, which is off until you turn it on.
+path: docs/install/
+root: ../../
+-->
+{{nav:docs}}
+<main id="main" class="wrap">
+  <div class="doc">
+    <aside>
+      <nav aria-label="On this page">
+        <a href="#install">Install</a>
+        <a href="#sculpting">Sculpting is recorded straight away</a>
+        <a href="#objects">Turn on object recording</a>
+        <a href="#global">Global history</a>
+      </nav>
+    </aside>
+    <article>
+      <h1>Install</h1>
+      <p>This is the beta, version {{version}}. <a href="../limitations/">See what it records and what it doesn't.</a></p>
+
+      <h2 id="install">Install</h2>
+      <ol>
+        <li>Download <a href="../../download/hindsight.zip" download>hindsight.zip</a> ({{size}}). Keep it zipped.</li>
+        <li>In Blender, open <strong>Edit &gt; Preferences &gt; Get Extensions</strong>. Click the small arrow at the top right and choose <strong>Install from Disk</strong>. Pick the zip. Hindsight is switched on straight away.</li>
+        <li>In the 3D Viewport, press <kbd>N</kbd> and open the <strong>Undo History</strong> tab.</li>
+      </ol>
+      <p>Hindsight needs Blender 4.2 or newer. To remove it, open the Get Extensions page, find the Hindsight entry and choose Uninstall.</p>
+
+      <h2 id="sculpting">Sculpting is recorded straight away</h2>
+      <p>Enter Sculpt Mode and sculpt. Each stroke is one step. Drag the slider at the bottom of the 3D Viewport to go back, or press <kbd>Ctrl</kbd> <kbd>Z</kbd> and <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> to move one step at a time.</p>
+      <p>Save the file and the history is saved with it.</p>
+
+      <h2 id="objects">Turn on object recording</h2>
+      <p>Object recording is off until you switch it on. Until then, only sculpting is recorded. It works on Blender 5.x.</p>
+      <ol>
+        <li>Open <strong>Edit &gt; Preferences &gt; Add-ons</strong>, find <strong>Hindsight</strong> and open its preferences. Set <strong>Record</strong> to <strong>Everything</strong>. The other choice, and the default, is <strong>Sculpting only</strong>.</li>
+        <li>Select an object. In the 3D Viewport press <kbd>N</kbd>, open the <strong>Undo History</strong> tab, and under <strong>Record:</strong> click <strong>Everything on this object</strong>. From then on, that object's changes are recorded.</li>
+        <li>To also record objects being added, deleted or duplicated, click <strong>Objects added and deleted</strong> under <strong>Record:</strong>. This one is for the whole scene.</li>
+      </ol>
+      <p>On an object that isn't recorded, the sidebar says: "To record this object, switch on Record &gt; Everything on this object." Once it is switched on, the sidebar says: "Hindsight is on. Changes to this object are recorded from here on."</p>
+      <p>For an object that is switched on, Hindsight records:</p>
+      <ul>
+        <li>Transforms: location, rotation with its rotation mode, scale and delta transforms.</li>
+        <li>Parenting: parent, parent type and bone, and parent inverse.</li>
+        <li>Constraints: adding, removing, reordering, renaming and their settings.</li>
+        <li>The collections the object is in, and its visibility: viewport, render, selectable and hidden with H.</li>
+        <li>Adding, deleting, duplicating and renaming objects, when Objects added and deleted is on.</li>
+        <li>Edit Mode step by step: each Edit Mode operation is its own step, on meshes up to 300,000 vertices. Above that, one step per Edit Mode visit.</li>
+      </ul>
+      <p>The full list of limits is on the <a href="../limitations/">limitations page</a>.</p>
+
+      <h2 id="global">Global history</h2>
+      <p>Each object has its own scrubbable history. Open History Menu &gt; Global history to put every object's steps on one timeline, in the order you made them. One operation is one position. <strong>Follow object and mode</strong> selects the object a step belongs to.</p>
+    </article>
+  </div>
+</main>
+{{footer}}
