@@ -632,6 +632,12 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": True,
                           "morph_target": None})
     step.seq = _REG.new_seq()
+    group = OP_GROUP[0]
+    if group is not None:                    # D52: one operator's steps are one global position
+        if group[0] is None:
+            group[0] = step.seq
+        else:
+            step.extra = dict(step.extra or {}, op=group[0])
     at = h.cursor
     removed = h.push(step)
     _apply_to_state(st, step)
@@ -884,6 +890,7 @@ def tick() -> float:
     return 0.02 if (_DIRTY or busy) else 0.1
 
 
+OP_GROUP = [None]             # [first step number] while one operator's changes are recorded (D52)
 UNDO_DIRECTION = ["undo"]      # which way Blender's last undo or redo went (see commit, datarec.on_undo)
 
 

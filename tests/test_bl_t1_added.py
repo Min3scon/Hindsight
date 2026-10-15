@@ -344,6 +344,64 @@ def test_deleted_objects_come_back_complete():
     L.check_global(r, full=True)
 
 
+@covers("obj.editsteps", "STEPS", "EXACT")
+def test_several_objects_in_edit_mode():
+    """D52: with A and B in Edit Mode together, each operation is one step in each of them and one
+    position on the global timeline, exact both ways."""
+    from tests import oracle as O
+    from hindsight.core import globaltl
+    L.fresh_scene()
+    L.track_all()
+    runtime.reg().preserve_modes = False
+    a, b = bpy.data.objects["A"], bpy.data.objects["B"]
+    states = [(O.read_mesh(a, O.mesh_state), O.read_mesh(b, O.mesh_state))]
+    T.select("A", "B", active="B")
+    bpy.ops.object.mode_set(mode="EDIT")
+    runtime.check_mode_transition()
+    L.tick_like("Toggle Edit Mode")
+    bpy.ops.mesh.select_all(action="SELECT")
+    for fn in (lambda: bpy.ops.transform.translate(value=(0, 0, 0.5)),
+               lambda: bpy.ops.transform.resize(value=(1.5, 1.5, 1.5))):
+        fn()
+        L.tick_like("edit")
+        states.append((O.read_mesh(a, O.mesh_state), O.read_mesh(b, O.mesh_state)))
+    bpy.ops.object.mode_set(mode="OBJECT")
+    runtime.check_mode_transition()
+    L.tick_like("Toggle Edit Mode")
+    for ob in (a, b):
+        assert len(runtime.history_of(ob).entries) == 2, (ob.name, [e.meta.get("label") for e in runtime.history_of(ob).entries])
+    groups = globaltl.global_groups(runtime.reg(), runtime._visible_uids())
+    assert len(groups) == 2, len(groups)
+    for g in (1, 0, 2, 1):
+        runtime.global_goto(C, g, True)
+        assert (O.read_mesh(a, O.mesh_state), O.read_mesh(b, O.mesh_state)) == states[g], g
+
+
+@covers("obj.editsteps", "STEPS")
+@covers("obj.addremove", "STEPS")
+def test_separate_is_one_operation():
+    """D58: P (Separate) in Edit Mode: the new object (scene) and the source's Edit Mode step are one
+    position on the global timeline."""
+    from hindsight.core import globaltl
+    L.fresh_scene()
+    L.track_all()
+    b = bpy.data.objects["B"]
+    T.select("B")
+    bpy.ops.object.mode_set(mode="EDIT")
+    runtime.check_mode_transition()
+    L.tick_like("Toggle Edit Mode")
+    bpy.ops.mesh.select_all(action="DESELECT")
+    T._select_faces(3)(b)
+    bpy.ops.mesh.separate(type="SELECTED")
+    runtime.check_mode_transition()
+    L.tick_like("Separate")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    runtime.check_mode_transition()
+    L.tick_like("Toggle Edit Mode")
+    groups = globaltl.global_groups(runtime.reg(), runtime._visible_uids())
+    assert len(groups) == 1, [[s for s, _h, _i in g] for g in groups]
+
+
 def _lengths():
     return {hid: len(h.entries) for hid, h in runtime.reg().histories.items()}
 
@@ -439,6 +497,7 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_dragging_while_a_linked_duplicate_is_in_edit_mode, test_a_linked_duplicate_gets_its_own_mesh,
            test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload,
            test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
-           test_references_to_linked_objects, test_deleted_objects_come_back_complete):
+           test_references_to_linked_objects, test_deleted_objects_come_back_complete,
+           test_several_objects_in_edit_mode, test_separate_is_one_operation):
     H.run(fn)
 H.finish()

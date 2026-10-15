@@ -210,6 +210,12 @@ def read_mesh_snapshot",
      "a deleted object brought back without its modifiers (D49)", ["obj.addremove"], None),
     ("bl/adapters.py", "    for key, hidden in (body.get(\"hidden\") or {}).items():", "    for key, hidden in {}.items():",
      "a deleted object brought back visible though it was hidden (D49)", ["obj.addremove"], None),
+    ("bl/datarec.py", "        editing = [o for o in bpy.context.view_layer.objects if o.mode == \"EDIT\" and o.type == \"MESH\"]",
+     "        editing = [active] if active is not None and active.mode == \"EDIT\" else []",
+     "with several objects in Edit Mode only the active one gets steps (D52)", ["obj.editsteps"], None),
+    ("bl/datarec.py", "    rt.OP_GROUP[0] = [None]\n", "    rt.OP_GROUP[0] = None\n",
+     "one operator's data and Edit Mode steps not one global position (D52, D58)", ["obj.editsteps", "obj.addremove"],
+     None),
 ]
 
 

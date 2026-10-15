@@ -37,10 +37,7 @@ def track_all():
 
 def tick_like(label):
     """What the timer does when an operator finishes (headless runs have no timers)."""
-    C.view_layer.update()
-    datarec.refresh_mesh_users()
-    datarec.commit(label=label, uids=datarec.tracked_uids() | set(datarec._DIRTY), mesh=True)
-    datarec._edit_step(label)
+    datarec.finish_operation(label)
 
 
 def lengths() -> dict:

@@ -386,30 +386,51 @@ def tick() -> None:
     settled = bool(_DIRTY) and time.time() - max(_DIRTY.values()) >= SETTLE
     if finished or settled:
         _OPS["marker"] = marker
-        label = _last_label() if finished else "Change"
-        refresh_mesh_users()
         if finished:
-            # D32: the timer can run before Blender has evaluated what the operator changed; evaluate
-            # now, so its mesh update is seen in this step and not left for a later one
-            try:
-                bpy.context.view_layer.update()
-            except Exception:
-                pass
-        commit(label=label, uids=(tracked_uids() | set(_DIRTY)) if finished else None, mesh=True)
-        if finished:
-            _edit_step(label)
+            finish_operation(_last_label())
+        else:
+            refresh_mesh_users()
+            commit(label="Change", uids=None, mesh=True)
+
+
+def finish_operation(label: str) -> list:
+    """What happens when an operator has finished: everything it changed is recorded as one
+    operation (the scene, object data, meshes, every object in Edit Mode: one position on the
+    global timeline, D52 and D58). Tests call this for what the timer does."""
+    rt = _rt()
+    refresh_mesh_users()
+    # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
+    # so its mesh update is seen in this step and not left for a later one
+    try:
+        bpy.context.view_layer.update()
+    except Exception:
+        pass
+    rt.OP_GROUP[0] = [None]
+    try:
+        steps = commit(label=label, uids=tracked_uids() | set(_DIRTY), mesh=True)
+        _edit_step(label)
+    finally:
+        rt.OP_GROUP[0] = None
+    return steps
 
 
 def _edit_step(label: str) -> None:
-    """Edit Mode step by step: the operation that just finished on a tracked object in Edit Mode."""
+    """Edit Mode step by step: the operation that just finished, on every recorded object in Edit Mode
+    (D52: with several objects in Edit Mode, each gets its step, as one operation)."""
     rt = _rt()
-    obj = rt._active()
-    if obj is not None and getattr(obj, "mode", "") == "EDIT" and rt.edit_steps_on(obj) \
-            and adapter_ok("edit_steps"):
-        try:
-            rt.commit_edit(obj, label)
-        except Exception as e:
-            _adapter_failed("edit_steps", e, "capture")
+    active = rt._active()
+    try:
+        editing = [o for o in bpy.context.view_layer.objects if o.mode == "EDIT" and o.type == "MESH"]
+    except Exception:
+        editing = [active] if active is not None else []
+    editing.sort(key=lambda o: o != active)          # the active object first
+    for obj in editing:
+        if rt.edit_steps_on(obj) and adapter_ok("edit_steps"):
+            try:
+                rt.commit_edit(obj, label)
+            except Exception as e:
+                _adapter_failed("edit_steps", e, "capture")
+                break
 
 
 def _diff(old: dict, new: dict) -> dict:
@@ -467,7 +488,8 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
     # exists before an object's own step from the same operation is replayed (and is removed last)
     targets.sort(key=lambda u: (not _is_scene_uid(u), u))
     steps = []
-    op_first = None          # number of this operation's first step (global timeline: one position)
+    group = rt.OP_GROUP[0]   # set while one operator's changes are recorded (shared with Edit Mode steps)
+    op_first = group[0] if group else None   # this operation's first step (global timeline: one position)
     for uid in targets:
         if uid not in tracked_uids():
             continue
@@ -545,6 +567,8 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
                         kind=DATA, records=records, extra=extra)
         if op_first is None:
             op_first = step.seq
+            if group is not None:
+                group[0] = op_first
         else:
             step.extra = dict(step.extra or {}, op=op_first)
         at = h.cursor
