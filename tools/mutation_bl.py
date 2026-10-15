@@ -147,6 +147,11 @@ MUTANTS = [
     ("bl/runtime.py", 'datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])',
      'datarec.note_jump(acc["hists"], acc["vb"], acc["va"], acc["meshes"])',
      "a global jump's values taken in the middle of the jump (D59)", ["obj.addremove"], None),
+    ("bl/datarec.py", "                if ob is not None:
+                    rt.refresh_state_any_mode(ob)",
+     "                if ob is not None and ob.mode != \"EDIT\":
+                    rt.ensure_state(ob, refresh=True)",
+     "after Blender's undo of a jump, an object in Edit Mode keeps a stale state (D53)", ["obj.editsteps"], None),
 ]
 
 

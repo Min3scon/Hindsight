@@ -278,6 +278,18 @@ def read_mesh_snapshot(obj):
             bpy.data.meshes.remove(tmp)
 
 
+def refresh_state_any_mode(obj) -> MeshState:
+    """Read the object's mesh into its state again (in Edit Mode from a copy), keeping its values."""
+    if obj.mode != "EDIT":
+        return ensure_state(obj, refresh=True)
+    uid = obj_uid(obj, create=True)
+    old = _STATES.get(uid)
+    snap = read_mesh_snapshot(obj)
+    st = MeshState(snap.counts, snap.arrays, old.values if old is not None else None)
+    _STATES[uid] = st
+    return st
+
+
 def ensure_state(obj, refresh: bool = False) -> MeshState:
     uid = obj_uid(obj, create=True)
     st = _STATES.get(uid)
@@ -870,18 +882,25 @@ def _after_native_undo() -> None:
         log.error_once(("restore_ids", str(e)), f"could not restore ids after undo: {e}", e)
     _UID_CACHE.clear()
     _NATIVE_PENDING.update(_STATES.keys())   # objects in other modes are checked on their next commit
+    # D53: Hindsight's jumps on Blender's undo are matched first; an object whose history that moved
+    # is where it belongs and isn't compared again (in Edit Mode that compare would undo the undo)
+    moved = set()
+    try:
+        from . import datarec
+        moved = datarec.on_undo(UNDO_DIRECTION[0]) or set()
+    except Exception as e:
+        log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
     obj = _active()
+    h = history_of(obj) if obj is not None else None
+    if h is not None and h.uid in moved:
+        _NATIVE_PENDING.discard(obj_uid(obj))
+        return
     if obj is not None and obj.type == "MESH" and obj.mode in RECORD_MODES:
         if obj_uid(obj) in _STATES:
             commit(obj)
     elif obj is not None and obj.type == "MESH" and obj.mode == "EDIT" and edit_steps_on(obj):
         if obj_uid(obj) in _STATES:
             commit_edit(obj, "Edit")
-    try:
-        from . import datarec
-        datarec.on_undo(UNDO_DIRECTION[0])
-    except Exception as e:
-        log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
 
 
 _HANDLERS = (("depsgraph_update_post", on_depsgraph), ("undo_post", on_undo), ("redo_post", on_redo))

@@ -110,6 +110,36 @@ def test_new_collection_and_duplicate_keep_their_ids():
         u.close()
 
 
+@covers("obj.editsteps", "UNDO.MODES")
+def test_a_jump_made_in_edit_mode_is_undone():
+    """D53: a jump on the grid's own history made in Edit Mode, then Blender's real Ctrl+Z and
+    Ctrl+Shift+Z: the jump is undone and redone, and Hindsight never reverses Blender's undo."""
+    setup()
+    put_back = []
+    orig = runtime._put_back_after_native_undo
+    runtime._put_back_after_native_undo = lambda *a, **k: (put_back.append(a), orig(*a, **k))
+    u = RealUndo()
+    try:
+        u.op("move A", lambda: T.translate("A", (1, 0, 0)).run())
+
+        def tab_in():
+            T.select("E")
+            bpy.ops.object.mode_set(mode="EDIT")
+            runtime.check_mode_transition()
+        u.op("Tab", tab_in)
+        for o in T.edit_ops("E", 5)[:3]:
+            u.op(o.label, o.run)
+        h = runtime.history_of(bpy.data.objects["E"])
+        runtime.goto(C, h.cursor - 2, final=True)               # E's own slider, in Edit Mode
+        assert bpy.data.objects["E"].mode == "EDIT"
+        for d in ("undo", "redo", "undo", "undo", "undo"):
+            undo_ok(u, d)
+        assert not put_back, "Hindsight reversed Blender's undo of its own jump"
+    finally:
+        runtime._put_back_after_native_undo = orig
+        u.close()
+
+
 @covers(ROWS, "UNDO")
 def test_real_undo_and_redo_for_every_row():
     """Each row's operations, then Blender's undo six times and redo six times, then a jump on the
@@ -139,7 +169,7 @@ def test_real_undo_and_redo_for_every_row():
             u.close()
 
 
-for fn in (test_an_added_object_keeps_its_id, test_an_object_switched_on_keeps_its_id,
+for fn in (test_an_added_object_keeps_its_id, test_an_object_switched_on_keeps_its_id, test_a_jump_made_in_edit_mode_is_undone,
            test_new_collection_and_duplicate_keep_their_ids, test_real_undo_and_redo_for_every_row):
     H.run(fn)
 H.finish()

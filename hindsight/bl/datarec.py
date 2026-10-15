@@ -680,7 +680,7 @@ def on_undo(direction: str = "undo") -> None:
         if idb is not None:
             seen[uid] = capture(idb)
     if not seen:
-        return
+        return set()
     moved = set()
     # Blender's undo reaches the newest jump not undone yet, its redo the oldest undone one; it
     # counts only while the histories are where that jump left them and the data (values and
@@ -693,8 +693,8 @@ def on_undo(direction: str = "undo") -> None:
             moved.add(hid)
             for m in h.members:                     # Blender put the meshes back too
                 ob = rt.find_object(m)
-                if ob is not None and ob.mode != "EDIT":
-                    rt.ensure_state(ob, refresh=True)
+                if ob is not None:
+                    rt.refresh_state_any_mode(ob)
         j["undone"] = not j["undone"]
     for uid, vals in seen.items():
         st = _state(uid)
@@ -724,6 +724,7 @@ def on_undo(direction: str = "undo") -> None:
     _DIRTY.clear()
     _MESH_DIRTY.clear()
     rt.tag_redraw_all()
+    return moved
 
 
 def _step_matches(step, uid, diff: dict, mesh_step, st, inverse: bool) -> bool:
