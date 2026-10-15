@@ -203,6 +203,9 @@ def read_mesh_snapshot",
      "changes made without Hindsight not noticed on opening (D46)", ["obj.transforms", "obj.editsteps"], None),
     ("bl/datarec.py", "        if st.values.get((\"rna\", \"name\")) == wanted and idb.name != wanted:", "        if False:",
      "a name Blender changed on restore recorded as a change (D47)", ["obj.addremove"], None),
+    ("bl/idmap.py", "    lib = getattr(idb, \"library\", None)\n    if lib is not None:\n        coll = _collection_of(idb)",
+     "    lib = None\n    if lib is not None:\n        coll = _collection_of(idb)",
+     "references to linked data recorded as empty (D48)", ["obj.parenting", "obj.constraints"], None),
 ]
 
 

@@ -118,6 +118,44 @@ def claim(idb) -> str | None:
     return u
 
 
+LIB_PREFIX = "lib:"
+_LIB_SEP = "\x1f"
+
+
+def _collection_of(idb):
+    """The bpy.data collection a datablock lives in (for the ones a recorded value can refer to)."""
+    t = type(idb).__name__
+    return {"Object": "objects", "Mesh": "meshes", "Material": "materials", "Collection": "collections",
+            "Scene": "scenes", "World": "worlds", "Camera": "cameras", "Armature": "armatures",
+            "Image": "images", "Text": "texts", "Action": "actions", "Lattice": "lattices",
+            "MetaBall": "metaballs"}.get(t) or ("node_groups" if "NodeTree" in t else
+                                                  "lights" if t.endswith("Light") else
+                                                  "curves" if t in ("Curve", "TextCurve", "SurfaceCurve") else None)
+
+
+def ref_of(idb):
+    """An id to record a reference to idb with: a local datablock's Hindsight id, or for data linked
+    from another file (D48) its library, type and name ("lib:<collection>|<library path>|<name>")."""
+    if idb is None:
+        return None
+    lib = getattr(idb, "library", None)
+    if lib is not None:
+        coll = _collection_of(idb)
+        if coll is None:
+            return None
+        return LIB_PREFIX + _LIB_SEP.join((coll, lib.filepath, idb.name))
+    return claim(idb)
+
+
+def _find_linked(ref: str):
+    try:
+        coll, path, name = ref[len(LIB_PREFIX):].split(_LIB_SEP, 2)
+        col = getattr(bpy.data, coll, None)
+        return col.get((name, path)) if col is not None else None
+    except Exception:
+        return None
+
+
 def _all_with(uid: str):
     for c in COLLECTIONS:
         col = getattr(bpy.data, c, None)
@@ -137,6 +175,8 @@ def find(uid: str):
     carries the same id (D28)."""
     if not uid:
         return None
+    if uid.startswith(LIB_PREFIX):
+        return _find_linked(uid)
     hit = _cache.get(uid)
     if hit is not None:
         col = getattr(bpy.data, hit[0], None)

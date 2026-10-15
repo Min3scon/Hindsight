@@ -264,6 +264,53 @@ def test_the_owner_of_a_shared_mesh_after_a_reload():
     assert O.read_mesh(zed, O.mesh_state) == end, "scrubbing Zed's history undid the edit made through A.001"
 
 
+def _scene_with_a_linked_rig():
+    import os, tempfile
+    lib = os.path.join(tempfile.mkdtemp(prefix="hs_lib_"), "rig_lib.blend")
+    H.fresh(register=False)
+    bpy.ops.object.empty_add(location=(5, 5, 5))
+    C.active_object.name = "Rig"
+    bpy.ops.wm.save_as_mainfile(filepath=lib)
+    L.fresh_scene()
+    with bpy.data.libraries.load(lib, link=True) as (_src, dst):
+        dst.objects = ["Rig"]
+    C.scene.collection.objects.link(dst.objects[0])
+
+
+def _parent_to_rig(name, keep):
+    def run():
+        T.select(name)
+        rig = next(o for o in bpy.data.objects if o.name == "Rig" and o.library is not None)
+        rig.select_set(True)
+        C.view_layer.objects.active = rig
+        return bpy.ops.object.parent_set(type="OBJECT", keep_transform=keep)
+    return T.Op(f"parent {name} to the linked rig", run, [name])
+
+
+def _target_rig(name):
+    def run():
+        T.select(name)
+        bpy.ops.object.constraint_add(type="COPY_ROTATION")
+        bpy.data.objects[name].constraints[-1].target = next(o for o in bpy.data.objects if o.library is not None)
+        return {"FINISHED"}
+    return T.Op(f"constraint on {name} targeting the linked rig", run, [name])
+
+
+@covers("obj.parenting", "EXACT", "RELOAD.APPEND")
+@covers("obj.constraints", "EXACT")
+def test_references_to_linked_objects():
+    """D48: a parent and a constraint target linked from another file are recorded (as library,
+    type and name) and put back; they used to be recorded as empty and cleared by any scrub."""
+    ops = [_parent_to_rig("A", True), _target_rig("A"), T.translate("A", (0, 1, 0)), T.unparent("A", "CLEAR")]
+    r = L.Run(ops, setup=_scene_with_a_linked_rig)
+    L.check_object_histories(r, full=True)
+    L.check_global(r, full=True)
+    h = runtime.history_of(bpy.data.objects["A"])
+    runtime._goto_history(h, 2, True)
+    a = bpy.data.objects["A"]
+    assert a.parent is not None and a.parent.library is not None and a.constraints[-1].target is not None
+
+
 def _lengths():
     return {hid: len(h.entries) for hid, h in runtime.reg().histories.items()}
 
@@ -358,6 +405,7 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
            test_dragging_while_a_linked_duplicate_is_in_edit_mode, test_a_linked_duplicate_gets_its_own_mesh,
            test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload,
-           test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken):
+           test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
+           test_references_to_linked_objects):
     H.run(fn)
 H.finish()

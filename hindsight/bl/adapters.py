@@ -103,7 +103,7 @@ def normalise(v):
     if v is None or isinstance(v, (bool, int, float, str)):
         return v
     if isinstance(v, bpy.types.ID):
-        return idmap.claim(v)
+        return idmap.ref_of(v)
     if hasattr(v, "to_list") and hasattr(v, "col"):          # Matrix
         return [list(map(float, row)) for row in v]
     try:
@@ -320,7 +320,7 @@ def struct_values(st, skip=_UI_PROPS, skip_prefix: tuple = (), anim=None) -> dic
             continue
         if ptype == "POINTER":
             if v is None or isinstance(v, bpy.types.ID):
-                out[ident] = {"ref": idmap.claim(v)} if v is not None else {"ref": None}
+                out[ident] = {"ref": idmap.ref_of(v)} if v is not None else {"ref": None}
             continue
         if is_flag:
             out[ident] = sorted(v)
@@ -451,7 +451,7 @@ def object_body(ob) -> dict:
         "data": idmap.claim(data) if data is not None else None,
         "data_name": data.name if data is not None else None,
         "matrix": [list(map(float, r)) for r in ob.matrix_basis],
-        "parent": idmap.claim(ob.parent) if ob.parent is not None else None,
+        "parent": idmap.ref_of(ob.parent) if ob.parent is not None else None,
         "parent_inverse": [list(map(float, r)) for r in ob.matrix_parent_inverse],
         "collections": sorted(_coll_ref(c) for c in ob.users_collection),
         "materials": [idmap.claim(s.material) if s.material is not None else None for s in ob.material_slots],
