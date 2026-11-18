@@ -26,6 +26,16 @@ def _upd_redraw(self, context):
     runtime.tag_redraw_all()
 
 
+def _upd_movie_rig(self, context):
+    """Movie Mode or one of its camera and lighting settings changed."""
+    try:
+        from . import camrig
+        camrig.on_settings_changed(context)
+    except ImportError:
+        pass
+    _upd_redraw(self, context)
+
+
 class HINDSIGHT_PG_coll_item(bpy.types.PropertyGroup):
     collection: bpy.props.PointerProperty(type=bpy.types.Collection, name="Collection")
 
@@ -38,7 +48,7 @@ class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
         name="Follow object and mode", default=True, update=_upd_preserve,
         description="When global history moves to another object's step, select that object and enter its mode")
     movie_mode: bpy.props.BoolProperty(
-        name="Movie Mode", default=False, update=_upd_redraw,
+        name="Movie Mode", default=False, update=_upd_movie_rig,
         description="Play the global history on the timeline. The history itself can't change while this is on")
     movie_step: bpy.props.IntProperty(
         name="Step", default=0, min=0, update=_upd_movie_step, options={'ANIMATABLE'},
@@ -46,6 +56,35 @@ class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
     frames_per_step: bpy.props.IntProperty(
         name="Frames per step", default=2, min=1, max=1000,
         description="How many frames each step lasts when you use Quick auto key")
+    movie_steps_per_frame: bpy.props.IntProperty(
+        name="Steps per frame", default=1, min=1, max=10000,
+        description="How many steps each frame moves on when you use Quick auto key. "
+                    "Above 1 the movie is shorter and renders sooner")
+    movie_camera: bpy.props.BoolProperty(
+        name="Camera", default=True, update=_upd_movie_rig,
+        description="While Movie Mode is on, keep a camera that has the whole model in frame. "
+                    "Your own camera isn't moved")
+    movie_lighting: bpy.props.EnumProperty(
+        name="Lighting",
+        items=[("AUTO", "When the scene has none", "Add lighting only while the scene has no light of its own"),
+               ("ALWAYS", "Always", "Add lighting as well as the scene's own"),
+               ("OFF", "Off", "Leave the lighting as it is")],
+        default="AUTO", update=_upd_movie_rig,
+        description="Lighting Hindsight adds while Movie Mode is on")
+    movie_view_angle: bpy.props.FloatProperty(
+        name="Angle", subtype='ANGLE', default=0.5235987755982988, min=-3.141592653589793,
+        max=3.141592653589793, update=_upd_movie_rig,
+        description="Where the camera stands, turned around the model from its front")
+    movie_view_height: bpy.props.FloatProperty(
+        name="Height", subtype='ANGLE', default=0.2617993877991494, min=-1.5533430342749532,
+        max=1.5533430342749532, update=_upd_movie_rig,
+        description="How far above or below the model the camera stands")
+    movie_margin: bpy.props.FloatProperty(
+        name="Margin", subtype='PERCENTAGE', default=10.0, min=0.0, max=50.0, update=_upd_movie_rig,
+        description="Space left around the model in the frame")
+    movie_prev_camera: bpy.props.StringProperty(
+        name="Camera before Movie Mode", default="", options={'HIDDEN'},
+        description="The scene camera Hindsight's camera stood in for. It is put back when Movie Mode is switched off")
     filter_mode: bpy.props.EnumProperty(
         name="Collection Filtering",
         items=[("NONE", "Off", "Record every object"),

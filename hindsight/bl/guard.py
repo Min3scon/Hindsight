@@ -19,6 +19,7 @@ LABELS = {
     "overlay": "Viewport warnings",
     "header": "Header button",
     "movie": "Movie Mode playback",
+    "movie_camera": "Movie Mode camera and lighting",
     "saving": "Saving history",
     "loading": "Loading history",
     "morph": "Morph History brush",
