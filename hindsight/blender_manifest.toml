@@ -18,6 +18,8 @@ wheels = [
   "./wheels/hindsight_native-0.2.0-cp311-abi3-win_amd64.whl",
   "./wheels/hindsight_native-0.2.0-cp311-abi3-macosx_11_0_arm64.whl",
   "./wheels/hindsight_native-0.2.0-cp311-abi3-macosx_10_12_x86_64.whl",
+  "./wheels/hindsight_native-0.2.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+  "./wheels/hindsight_native-0.2.0-cp311-abi3-win_arm64.whl",
 ]
 
 [permissions]
