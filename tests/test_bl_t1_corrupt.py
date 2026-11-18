@@ -84,14 +84,24 @@ def test_damage_before_the_saved_step():
         damage(path, hid, n // 2)
         reopen(path)
         notes = damaged_note()
-        assert notes and "none of it could be kept" in notes[0], notes
+        # D98: the steps after the damaged one are kept (each undoes itself), the ones before it can't
+        # be reached from the saved state and go
+        lo = n // 2 + 1
+        assert notes and "could not be kept because part of its history is damaged" in notes[0], notes
         h2 = runtime.reg().histories.get(hid)
-        assert h2 is not None and len(h2.entries) == 0 and h2.cursor == 0, (row, h2 and len(h2.entries))
+        assert h2 is not None and len(h2.entries) == n - lo and h2.cursor == n - lo, \
+            (row, h2 and len(h2.entries), h2 and h2.cursor)
         now = L.snap()
         assert now == saved, f"{row}: the file isn't as saved: {O.diff(saved, now)[:3]}"
-        # every other history still plays back exactly
-        r.names = {u: n_ for u, n_ in r.names.items() if runtime.reg().history_for(u) is not None
-                   and runtime.reg().history_for(u).uid != hid}
+        # every history plays back exactly; the damaged one from where it starts now: its old position p
+        # is p - lo, and the positions before lo are gone
+        members = set(h2.members)
+        for i, ln in enumerate(r.lens):
+            for u in members & set(ln):
+                if ln[u] < lo:
+                    r.names_at[i] = {k: v for k, v in r.names_at[i].items() if k != u}
+                else:
+                    r.lens[i] = dict(r.lens[i], **{u: ln[u] - lo})
         T.select()
         L.check_object_histories(r)
 

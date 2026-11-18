@@ -45,6 +45,10 @@ DESCRIBE = {
         "custom property (on/off)", "in the .blend, on the Text above",
         "when a file that has history is saved: on when the history is in the folder next to the file",
         "Remove Hindsight data from this file"),
+    ".hindsight_history[save_id]": (
+        "custom property (text: a random id of the save)", "in the .blend, on the Text above",
+        "when a file that has history is saved: names the save of the history this file goes with, so crash "
+        "recovery never uses steps from another save of the file", "Remove Hindsight data from this file"),
     ".hindsight_history[hindsight_data]": (
         "custom property (text: the whole history, and how each recorded object was when saved: a fingerprint "
         "of its mesh and its recorded values, to notice changes made without Hindsight)", "in the .blend, on the "
@@ -108,7 +112,7 @@ def found_names() -> dict:
         assert idmap.UID_PROP == runtime.UID_PROP
         out[idmap.UID_PROP] = "hindsight/bl/idmap.py UID_PROP"
         out[persistence.TEXT_NAME] = "hindsight/bl/persistence.py TEXT_NAME"
-        for const in ("SIDECAR_PROP", "DATA_PROP", "UNREADABLE_PROP"):
+        for const in ("SIDECAR_PROP", "DATA_PROP", "UNREADABLE_PROP", "SAVE_ID_PROP"):
             out[f"{persistence.TEXT_NAME}[{getattr(persistence, const)}]"] = f"persistence.{const}"
         folder = os.path.basename(persist.sidecar_dir("<file>.blend")) + "/"
         out[folder] = "persist.sidecar_dir"

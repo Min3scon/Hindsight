@@ -94,8 +94,9 @@ def test_reads_format_1():
 
 def test_damaged_step_is_never_applied():
     """D27: the object was saved as it is at the end (cursor 5). A damaged step 3 is needed to go back
-    from there to steps 1-2, so none of the history can be reached exactly: nothing is kept (keeping
-    steps 1-2 would rebuild states that never existed). The report says so."""
+    from there to steps 1-2, so they can't be reached exactly and go (keeping them would rebuild states
+    that never existed). D98: steps 4-5 undo themselves back to the state after step 3, so they stay,
+    as if the oldest steps had been dropped. The report says so."""
     blob = bytearray(persist.registry_to_bytes(_reg()))
     doc, rest = _split(bytes(blob))
     o, n = _blob_offsets(rest, 5)[2]
@@ -103,9 +104,11 @@ def test_damaged_step_is_never_applied():
     blob[start + n // 2] ^= 0xFF           # flip one byte inside step 3
     reg = persist.registry_from_bytes(bytes(blob))
     h = reg.histories["H1"]
-    assert len(h.entries) == 0 and h.cursor == 0, (len(h.entries), h.cursor)
+    assert len(h.entries) == 2 and h.cursor == 2, (len(h.entries), h.cursor)
+    assert [e.meta["seq"] for e in h.entries] == [e.meta["seq"] for e in _reg().histories["H1"].entries][3:]
     d = reg.load_report["damaged"]
-    assert d == [{"uid": "H1", "members": ["objA"], "kept": 0, "lost": 5, "before_saved": True}], d
+    assert d == [{"uid": "H1", "members": ["objA"], "kept": 2, "lost": 3, "before_saved": True,
+                  "lost_before": 3}], d
 
 
 def test_damage_after_the_saved_step_keeps_what_comes_before():
@@ -175,7 +178,7 @@ def test_two_histories_stay_aligned_after_damage():
     o, n = _blob_offsets(rest, 6)[0]                  # damage H1 step 1
     blob[len(blob) - len(rest) + o + 5] ^= 0x55
     out = persist.registry_from_bytes(bytes(blob))
-    assert len(out.histories["H1"].entries) == 0
+    assert len(out.histories["H1"].entries) == 2 and out.histories["H1"].cursor == 2   # steps 2-3 (D98)
     assert len(out.histories["H2"].entries) == 3      # untouched history fully loaded
 
 
