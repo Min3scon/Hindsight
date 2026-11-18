@@ -393,13 +393,34 @@ class VIEW3D_PT_hindsight_warnings(_SubPanel, bpy.types.Panel):
     bl_label = "Warnings"
     bl_order = 1
 
+    # Blender calls poll and, if it passes, draw right after it in the same layout pass: draw takes
+    # the list poll just made instead of running every check a second time. Taken once; a draw
+    # with no fresh poll result for the same object and region checks again.
+    _polled = [None]
+
+    @staticmethod
+    def _key(context):
+        try:
+            obj = _ctx_active(context)
+            region = getattr(context, "region", None)
+            return (obj.as_pointer() if obj is not None else 0,
+                    region.as_pointer() if region is not None else 0)
+        except Exception:
+            return None
+
     @classmethod
     def poll(cls, context):
-        return bool(_warnings(context))
+        res = _warnings(context)
+        key = cls._key(context)
+        cls._polled[0] = (key, res) if key is not None else None
+        return bool(res)
 
     def draw(self, context):
+        polled = VIEW3D_PT_hindsight_warnings._polled
+        memo, polled[0] = polled[0], None
+        res = memo[1] if memo is not None and memo[0] == VIEW3D_PT_hindsight_warnings._key(context) else None
         col = self.layout.column(align=True)
-        for sev, text in _warnings(context):
+        for sev, text in (res if res is not None else _warnings(context)):
             wrap(col, context, text, 'ERROR' if sev == "ERROR" else 'INFO')
 
 

@@ -146,8 +146,53 @@ def test_wrap_same_lines_kept():
     assert len(ui_panel._WRAPPED) <= 64
 
 
+class _AnyLayout:
+    def __init__(self, log):
+        self.log = log
+
+    def __getattr__(self, name):
+        def fn(*a, **kw):
+            self.log.append((name, kw.get("text"), kw.get("icon")))
+            return self
+        return fn
+
+
+def test_warnings_panel_checks_once_per_redraw():
+    """The Warnings sub-panel's poll ran every check and its draw ran them all again. The draw now
+    takes the list its poll just made, once, for the same object and region."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    a, b = _cube(), _cube()
+    calls = []
+
+    class RT:
+        def warnings_for(self, context, obj):
+            calls.append(obj.name)
+            return [("ERROR", "Bad " + obj.name), ("INFO", "Note")]
+    P = ui_panel.VIEW3D_PT_hindsight_warnings
+    orig = ui_panel._rt
+    ui_panel._rt = lambda: RT()
+    try:
+        ctx = SimpleNamespace(active_object=a, region=None, preferences=bpy.context.preferences)
+
+        def draw():
+            log = []
+            P.draw(SimpleNamespace(layout=_AnyLayout(log)), ctx)
+            return [(t, i) for n, t, i in log if n == "label"]
+        assert P.poll(ctx) is True and calls == [a.name]
+        assert draw() == [("Bad " + a.name, 'ERROR'), ("Note", 'INFO')] and calls == [a.name]
+        assert draw() == [("Bad " + a.name, 'ERROR'), ("Note", 'INFO')] and calls == [a.name] * 2  # taken once
+        P.poll(ctx)
+        ctx.active_object = b                       # another object than the poll saw: checked again
+        assert draw() == [("Bad " + b.name, 'ERROR'), ("Note", 'INFO')] and calls == [a.name] * 3 + [b.name]
+        ui_panel._rt = lambda: None                 # no runtime: the poll says no, draw shows nothing
+        assert P.poll(ctx) is False and draw() == []
+    finally:
+        ui_panel._rt = orig
+        P._polled[0] = None
+
+
 for f in (test_overlay_errors_same_as_collect, test_overlay_draws_errors_without_other_checks,
-          test_wrap_same_lines_kept):
+          test_wrap_same_lines_kept, test_warnings_panel_checks_once_per_redraw):
     run(f)
 
 sys.stdout.flush()
