@@ -337,3 +337,65 @@ MB and the time from 5.1 to 5.1 ms (Python 3.13; 5.9 to 3.5 ms on Python 3.11), 
 commit at 1M is 12 to 23 ms in total, so this does not pay for (b). A Rust rewrite would not reduce
 memory in a way users would notice; the remaining large items (packed steps, baselines, raw tier) are
 data, the same size in any language.
+
+## Rust engine
+
+Measured 2026-11-18 with `bench/bench_native.py` (writes `bench/results_native.json`) on the same shared
+Linux VM as above (Intel Xeon at 2.10 GHz, 4 logical CPUs, load average 2.3 to 3.5 during the runs),
+core only (no Blender), Python 3.11.18 with numpy 1.26.4 (the bpy 5.0 venv) and Python 3.13.18 with
+numpy 2.5.5 (the bpy 5.3 venv), zstandard, and the `hindsight_native` 0.1.0 Linux wheel (PyO3 0.22.6,
+abi3, cargo 1.97, release build with LTO). The stroke is a brush disc over 2% of the vertices of a
+square grid mesh (1,996 of 99,856 and 20,009 of 1,000,000 vertices changed; one step is 6,286 and
+43,346 bytes packed with zstd). Python path = the same process with `native.lib` set to None. Times
+are medians of 30 runs (10 at 1M; 6 and 4 for the jump), in ms, Python / native.
+
+| Operation | 3.11, 100k | 3.11, 1M | 3.13, 100k | 3.13, 1M |
+|---|---|---|---|---|
+| Diff (position channel) | 0.379 / 0.086 | 4.2 / 1.1 | 0.39 / 0.083 | 5.04 / 1.2 |
+| Apply one step | 0.029 / 0.01 | 0.259 / 0.088 | 0.025 / 0.009 | 0.468 / 0.172 |
+| Pack one record | 0.145 / 0.047 | 1.46 / 0.498 | 0.066 / 0.044 | 1.06 / 0.945 |
+| Unpack one record | 0.047 / 0.016 | 0.35 / 0.135 | 0.03 / 0.014 | 0.412 / 0.241 |
+| Pack one step (with zstd) | 0.175 / 0.077 | 1.86 / 0.868 | 0.095 / 0.067 | 1.61 / 1.44 |
+| Unpack one step (with zstd) | 0.076 / 0.04 | 0.51 / 0.231 | 0.052 / 0.034 | 0.57 / 0.368 |
+| Jump over 300 packed steps | 40.5 / 18.9 | 277 / 152 | 49.8 / 27.9 | 275 / 179 |
+
+Peak temporary memory of the operation (tracemalloc, which also sees numpy's buffers and the native
+code's output objects; Python 3.13, MB, Python / native; 3.11 is the same within 0.05 MB):
+
+| Operation | 100k | 1M |
+|---|---|---|
+| Diff (position channel) | 1.70 / 0.03 | 17.00 / 0.32 |
+| Apply one step | 0.04 / 0.00 | 0.40 / 0.00 |
+| Pack one record | 0.33 / 0.06 | 3.32 / 0.56 |
+| Unpack one record | 0.06 / 0.03 | 0.56 / 0.32 |
+| Pack one step (with zstd) | 0.33 / 0.06 | 3.32 / 0.61 |
+| Unpack one step (with zstd) | 0.09 / 0.06 | 0.84 / 0.60 |
+| Jump over 300 packed steps | 0.12 / 0.10 | 1.17 / 0.93 |
+
+The process peak (VmHWM, reset through /proc/self/clear_refs before each run) did not rise over the
+RSS before any of these operations on either path (0.00 MB in every row): the transients are served
+from memory the allocator already holds. The native code's own scratch memory is a 1024-element
+buffer on the stack and the list of changed indices; nothing scales with the mesh.
+
+Run-to-run noise on this VM is about 20 to 40% (two runs of the same build on 3.13 gave 17 and 28 ms
+for the 100k jump), so read the ratios, not the last digit: diff is 4 times faster and its
+transient goes from 1.3 times the position array (17 MB at 1M) to the changed elements only;
+applying a step 2.5 to 3 times; packing a record 1.1 to 3 times and unpacking it 1.7 to 3 times;
+a whole step, where zstd and the step header stay in Python, 1.1 to 2.3 times; a 300-step jump 1.5
+to 2.4 times.
+
+What is in Rust (`native/src/lib.rs`, loaded by `hindsight/core/native.py`): `diff` (changed
+elements and their wrapping differences), `apply` (in place, ADD both ways and XOR), and the
+transforms of a format 3 record in `pack_delta` and `unpack_at` (index coding: gaps and one run when
+writing, gaps, runs and bitmap when reading; per-component prediction orders 0 to 3 with the same
+size estimate and tie rule; zigzag; byte planes). Header parsing, error types, compression (zstd,
+lz4, zlib), format 1 and 2 records and the step body stay in Python. `tests/test_core_native.py`
+checks native against Python bit for bit (about 40,000 records, 6,000 damaged records, 1,600 damaged
+steps, a 1M-vertex channel); 21 mutants of the Rust code were all caught by it.
+
+Stage 2 (the step body encode and decode in `step.py`) was not done. A profile of the 100k jump
+with the native engine (300 steps, 10 jumps) puts 20% of the time in `apply`, 17% in `unpack`, 15%
+in zstd and the rest in Python around them (step header parsing, `unpack_at`'s header, the
+`Step` objects); moving the body loop to Rust would remove part of that last share for one record per
+stroke step, while every exception path of the step format (JSON extras, snapshots, data records)
+would need its own bit-exact twin. Not clearly worth it on these numbers.

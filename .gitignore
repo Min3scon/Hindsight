@@ -18,3 +18,4 @@ node_modules/
 /logs/
 /.cache/
 /tests/site/out/
+/native/target/

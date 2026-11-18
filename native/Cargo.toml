@@ -1,0 +1,24 @@
+[package]
+name = "hindsight_native"
+version = "0.1.0"
+edition = "2021"
+description = "Hindsight's delta engine (bit-exact twin of hindsight/core/delta.py)"
+license = "GPL-3.0-or-later"
+publish = false
+
+[lib]
+name = "hindsight_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+# abi3-py311: one binary for Python 3.11 (Blender 4.2 to 5.0) and 3.13 (Blender 5.1+).
+# generate-import-lib: the Windows import library, so Windows builds need no Python install.
+pyo3 = { version = "=0.22.6", features = ["extension-module", "abi3-py311", "generate-import-lib"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+# panics must unwind (they become Python exceptions), never abort Blender
+panic = "unwind"

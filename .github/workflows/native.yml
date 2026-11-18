@@ -1,0 +1,53 @@
+# Proves the native engine's committed wheels (hindsight/wheels, built from native/) on real
+# machines: each runner installs the wheel for its platform from that folder only, then runs every
+# core test with HINDSIGHT_NATIVE=require (a missing or broken module is an error, never a silent
+# fallback to Python). tests/test_core_native.py compares native and Python results bit for bit.
+name: Native engine
+
+on:
+  push:
+    paths:
+      - "native/**"
+      - "hindsight/wheels/**"
+      - "hindsight/core/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, macos-13, ubuntu-latest]   # macos-latest is arm64, macos-13 x86_64
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install numpy, zstandard and the committed wheel
+        run: |
+          python -m pip install numpy zstandard==0.23.0
+          python -m pip install --no-index --find-links hindsight/wheels hindsight_native
+      - name: The native module loads
+        env:
+          HINDSIGHT_NATIVE: require
+        run: python -c "import platform, sys; from hindsight.core import native; print(platform.platform(), sys.version, native.lib.__file__)"
+      - name: Core tests, native required
+        env:
+          HINDSIGHT_NATIVE: require
+          HINDSIGHT_VERIFY: "1"
+        run: |
+          failed=0
+          for t in tests/test_core_*.py; do
+            echo "::group::$t"
+            python "$t" || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed
