@@ -35,7 +35,9 @@ ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections",
 
 OBJ = st.sampled_from(["A", "B", "C", "Pivot", "E"])
 MESH = st.sampled_from(["A", "B", "C", "E"])
-F = st.floats(-3, 3, allow_nan=False, allow_infinity=False, width=32)
+# Blender runs with flush-to-zero set, so Hypothesis cannot draw subnormal floats there (FloatingPointError).
+# Subnormal float32 values (below 1e-38) are no Tier 1 input anyway.
+F = st.floats(-3, 3, allow_nan=False, allow_infinity=False, width=32, allow_subnormal=False)
 CONS = st.sampled_from(["COPY_LOCATION", "COPY_ROTATION", "LIMIT_LOCATION", "TRACK_TO", "CHILD_OF", "DAMPED_TRACK"])
 EDITS = st.sampled_from(["grab", "rotate", "scale", "extrude", "bevel", "inset", "subdivide", "merge",
                          "dissolve", "delete", "select only"])
@@ -43,7 +45,7 @@ EDITS = st.sampled_from(["grab", "rotate", "scale", "extrude", "bevel", "inset",
 RNA = st.one_of(
     st.tuples(st.just("move"), OBJ, F, F, F),
     st.tuples(st.just("rotate"), OBJ, F, st.sampled_from("XYZ")),
-    st.tuples(st.just("scale"), OBJ, st.floats(0.25, 2.5, width=32)),
+    st.tuples(st.just("scale"), OBJ, st.floats(0.25, 2.5, width=32, allow_subnormal=False)),
     st.tuples(st.just("move2"), OBJ, OBJ, F),
     st.tuples(st.just("deltas"), OBJ),
     st.tuples(st.just("apply"), MESH, st.sampled_from(["location", "rotation", "scale"])),
@@ -58,7 +60,7 @@ OBJECT = st.one_of(
     st.tuples(st.just("con_del"), OBJ, st.integers(0, 2)),
     st.tuples(st.just("con_move"), OBJ, st.integers(0, 2), st.integers(0, 2)),
     st.tuples(st.just("con_copy"), OBJ, st.integers(0, 2)),
-    st.tuples(st.just("con_influence"), OBJ, st.integers(0, 2), st.floats(0, 1, width=32)),
+    st.tuples(st.just("con_influence"), OBJ, st.integers(0, 2), st.floats(0, 1, width=32, allow_subnormal=False)),
     st.tuples(st.just("coll_move"), OBJ, st.sampled_from(["Props", "Extra"])),
     st.tuples(st.just("coll_link"), OBJ, st.sampled_from(["Props", "Extra"])),
     st.tuples(st.just("coll_remove"), OBJ, st.sampled_from(["Props", "Extra"])),
