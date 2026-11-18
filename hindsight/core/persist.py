@@ -96,6 +96,12 @@ def _clamp_hist(h) -> None:
 # registry <-> bytes
 # ---------------------------------------------------------------------------
 def registry_to_bytes(reg, codec: str = "auto") -> bytes:
+    return b"".join(registry_parts(reg, codec))
+
+
+def registry_parts(reg, codec: str = "auto") -> list:
+    """The registry blob as a list of buffers (the step blobs themselves, not copies): written to a
+    file one after another, the history is never held twice while saving."""
     hists = list(reg.histories.values())
     blobs = []
     hjson = []
@@ -135,22 +141,45 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
     parts = [REG_MAGIC, _U32.pack(len(js)), js]
     for b in blobs:
         parts.append(_U64.pack(len(b)))
-        parts.append(bytes(b))
+        parts.append(b)
     parts += [TRAILER, _U32.pack(zlib.crc32(js) & 0xFFFFFFFF)]
-    return b"".join(parts)
+    return parts
 
 
-def registry_from_bytes(b: bytes):
-    """Parse a registry blob. Raises ValueError if it is not a Hindsight blob at all, and
-    NewerFormatError for a format from the future. Damaged or missing steps are dropped (never
-    applied) and reported in ``reg.load_report``."""
+class _FileBytes:
+    """A history file read in slices (each slice is read when asked for), so loading holds each
+    step once instead of the whole file plus every step."""
+
+    def __init__(self, fh):
+        self._fh = fh
+        self._n = os.fstat(fh.fileno()).st_size
+        self._pos = None              # where the file is now (steps are read in order: no seeks)
+
+    def __len__(self) -> int:
+        return self._n
+
+    def __getitem__(self, sl: slice) -> bytes:
+        start, stop = sl.start, sl.stop
+        if start is None or stop is None or start < 0 or stop < 0 or stop > self._n:
+            start, stop, _step = sl.indices(self._n)
+        if start != self._pos:
+            self._fh.seek(start)
+        out = self._fh.read(max(0, stop - start))
+        self._pos = start + len(out)
+        return out
+
+
+def registry_from_bytes(b):
+    """Parse a registry blob (bytes, or a history file through _FileBytes). Raises ValueError if it
+    is not a Hindsight blob at all, and NewerFormatError for a format from the future. Damaged or
+    missing steps are dropped (never applied) and reported in ``reg.load_report``."""
     from .history import History
     from .registry import Registry
 
-    mv = memoryview(b)
+    mv = b if isinstance(b, _FileBytes) else memoryview(b)
     if len(mv) < 8 or bytes(mv[:4]) != REG_MAGIC:
         raise ValueError("not a Hindsight registry blob")
-    (jlen,) = _U32.unpack_from(mv, 4)
+    (jlen,) = _U32.unpack(mv[4:8])
     pos = 8 + jlen
     if pos > len(mv):
         raise ValueError("truncated Hindsight registry blob (header)")
@@ -162,7 +191,7 @@ def registry_from_bytes(b: bytes):
     if found > FORMAT_VERSION:
         raise NewerFormatError(found)
     if found >= 3 and len(mv) >= pos + 8 and bytes(mv[-8:-4]) == TRAILER:
-        (want,) = _U32.unpack_from(mv, len(mv) - 4)
+        (want,) = _U32.unpack(mv[len(mv) - 4:])
         if zlib.crc32(mv[8:pos]) & 0xFFFFFFFF != want:
             raise ValueError("damaged Hindsight registry header (checksum)")
 
@@ -181,6 +210,7 @@ def registry_from_bytes(b: bytes):
         reg.everything = set(doc.get("everything", []))
     max_seq = 0
     truncated = False
+    size = len(mv)
     for hd in doc.get("histories", []):
         h = History(hd["uid"], list(hd.get("members", [])))
         metas = hd.get("metas", [])
@@ -189,13 +219,13 @@ def registry_from_bytes(b: bytes):
         entries = []
         bad_at = None
         for i in range(want):
-            if truncated or pos + 8 > len(mv):
+            if truncated or pos + 8 > size:
                 truncated = True
                 bad_at = i if bad_at is None else bad_at
                 break
-            (n,) = _U64.unpack_from(mv, pos)
+            (n,) = _U64.unpack(mv[pos:pos + 8])
             pos += 8
-            if pos + n > len(mv):
+            if pos + n > size:
                 truncated = True
                 bad_at = i if bad_at is None else bad_at
                 break
@@ -254,8 +284,8 @@ def save_sidecar(reg, blend_path: str) -> None:
     from .types import SETTINGS
     folder = sidecar_dir(blend_path)
     os.makedirs(folder, exist_ok=True)
-    data = registry_to_bytes(reg, getattr(SETTINGS, "compression", "auto") or "auto")
-    atomic_write(os.path.join(folder, HSR_NAME), data)
+    parts = registry_parts(reg, getattr(SETTINGS, "compression", "auto") or "auto")
+    atomic_write(os.path.join(folder, HSR_NAME), parts)
     atomic_write_json(os.path.join(folder, INDEX_NAME), {
         "version": FORMAT_VERSION,
         "format": FORMAT_VERSION,
@@ -269,9 +299,8 @@ def load_sidecar(blend_path: str):
     path = os.path.join(sidecar_dir(blend_path), HSR_NAME)
     if not os.path.isfile(path):
         return None
-    with open(path, "rb") as fh:
-        data = fh.read()
-    return registry_from_bytes(data)
+    with open(path, "rb", buffering=1 << 20) as fh:   # the steps are read one by one
+        return registry_from_bytes(_FileBytes(fh))
 
 
 def sidecar_file(blend_path: str) -> str:

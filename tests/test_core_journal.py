@@ -492,6 +492,78 @@ def test_sidecar():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_sidecar_streamed_both_ways():
+    """Memory work: the history file is written blob by blob and read blob by blob. It must be the
+    same bytes as registry_to_bytes, read back the same as from bytes (damaged files included),
+    and loading must not hold the whole file next to the steps (it used to: 2 times the history)."""
+    import tracemalloc
+    from hindsight.core.history import History
+    from hindsight.core.persist import (HSR_NAME, load_sidecar, registry_from_bytes, registry_to_bytes,
+                                        save_sidecar, sidecar_dir)
+    d = _tmp()
+    try:
+        blend = os.path.join(d, "s.blend")
+        path = os.path.join(sidecar_dir(blend), HSR_NAME)
+        reg, originals = _build_registry()
+        save_sidecar(reg, blend)
+        with open(path, "rb") as fh:
+            data = fh.read()
+        assert data == registry_to_bytes(reg)
+        _assert_reg_matches(load_sidecar(blend), originals, reg)
+
+        def same(a, b):
+            assert a.load_report == b.load_report, (a.load_report, b.load_report)
+            assert set(a.histories) == set(b.histories)
+            for uid, h in a.histories.items():
+                h2 = b.histories[uid]
+                assert (h.cursor, h.members) == (h2.cursor, h2.members)
+                assert [(e.meta, e.blob) for e in h.entries] == [(e.meta, e.blob) for e in h2.entries]
+        rng = np.random.default_rng(5)
+        variants = [data[:n] for n in (len(data) - 10, len(data) // 2, 9, 3, 0)]
+        for _ in range(40):
+            bad = bytearray(data)
+            bad[int(rng.integers(0, len(bad)))] ^= 1 << int(rng.integers(0, 8))
+            variants.append(bytes(bad))
+        for v in variants:
+            with open(path, "wb") as fh:
+                fh.write(v)
+            try:
+                want = registry_from_bytes(v)
+            except ValueError as e:
+                want = e
+            try:
+                got = load_sidecar(blend)
+            except ValueError as e:
+                got = e
+            if isinstance(want, Exception):
+                assert type(got) is type(want) and str(got) == str(want), (got, want)
+            else:
+                same(got, want)
+        # memory: 200 steps of 50 KB; loading peaks near the history size, not twice it
+        big = History("B", ["objB"])
+        big.entries = [Entry(blob=rng.bytes(50_000), meta={"seq": i + 1, "label": "Stroke", "mode": "SCULPT",
+                                                           "target": "objB", "time": 0.0, "kind": "DELTA",
+                                                           "extra": {}}) for i in range(200)]
+        big.cursor = 200
+        reg.histories = {"B": big}
+        reg.by_object = {"objB": "B"}
+        save_sidecar(reg, blend)
+        size = os.path.getsize(path)
+        tracemalloc.start()
+        loaded = load_sidecar(blend)
+        peak = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+        assert [e.blob for e in loaded.histories["B"].entries] == [e.blob for e in big.entries]
+        assert peak < 1.3 * size, peak / size
+        tracemalloc.start()
+        save_sidecar(reg, blend)
+        peak = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+        assert peak < 0.3 * size, peak / size
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_rename_blend_without_folder():
     from hindsight.core.persist import save_sidecar, load_sidecar, sidecar_missing
     d = _tmp()
@@ -638,6 +710,7 @@ TESTS = [
     test_replay_after_save,
     test_replay_semantics,
     test_embed_base64,
+    test_sidecar_streamed_both_ways,
 ]
 
 

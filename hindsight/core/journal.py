@@ -175,16 +175,20 @@ class Journal:
             pass
 
 
-def atomic_write(path: str, data: bytes) -> None:
-    """Write `data` to `path` atomically: tmp file in the same directory,
-    flush + fsync, then os.replace. The tmp file is removed on failure."""
+def atomic_write(path: str, data) -> None:
+    """Write `data` (bytes, or a list of buffers written one after another) to `path` atomically:
+    tmp file in the same directory, flush + fsync, then os.replace. The tmp file is removed on
+    failure."""
     path = os.path.abspath(path)
     parent = os.path.dirname(path)
     os.makedirs(parent, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".", suffix=".tmp", dir=parent)
     try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(data)
+        with os.fdopen(fd, "wb", buffering=1 << 20) as fh:   # a list of parts: few large writes
+            if isinstance(data, list):
+                fh.writelines(data)
+            else:
+                fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)
