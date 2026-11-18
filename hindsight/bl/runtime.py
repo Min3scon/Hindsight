@@ -320,11 +320,31 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
     return st
 
 
+def _exclusion_test():
+    """is_excluded for many objects in a row: the same answers, with what doesn't depend on the
+    object looked up once (the slider asks for every object on every redraw in global mode)."""
+    try:
+        from . import filtering, rigmark
+        sh = filtering._scene_props(bpy.context.scene)
+        if sh is None or sh.filter_mode not in ("BLACKLIST", "WHITELIST"):
+            # Collection Filtering off: only Hindsight's own Movie Mode objects are left out
+            def test(ob):
+                try:
+                    return rigmark.is_rig(ob)
+                except Exception:
+                    return False
+            return test
+    except Exception:
+        pass
+    return is_excluded
+
+
 def _visible_uids() -> set:
     out = set()
+    excluded = _exclusion_test()
     for ob in bpy.data.objects:
         u = any_uid(ob)
-        if u is not None and not is_excluded(ob):
+        if u is not None and not excluded(ob):
             out.add(u)
     try:
         from . import datarec
