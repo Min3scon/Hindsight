@@ -64,38 +64,66 @@ DEPENDENTS: dict = {
 }
 
 
-def _fcurve_paths(action, slot) -> set:
-    out = set()
+def _fcurves(action, slot) -> list:
     if action is None:
-        return out
+        return []
     try:
         from bpy_extras import anim_utils
         cb = anim_utils.action_get_channelbag_for_slot(action, slot)
         if cb is not None:
-            out.update(f.data_path for f in cb.fcurves)
-        return out
+            return list(cb.fcurves)
+        return []
     except Exception:
         pass
     try:                                                    # Blender 4.x: legacy actions
-        out.update(f.data_path for f in action.fcurves)
+        return list(action.fcurves)
     except Exception:
-        pass
+        return []
+
+
+def _live(f) -> bool:
+    """An F-curve that sets its property: not muted, not in a muted group."""
+    if getattr(f, "mute", False):
+        return False
+    g = getattr(f, "group", None)
+    return not (g is not None and getattr(g, "mute", False))
+
+
+def animated_slots(idb) -> dict:
+    """RNA path -> the array indices an animation, an NLA strip or a driver sets on this datablock
+    (muted F-curves, groups, tracks and strips and muted or invalid drivers set nothing)."""
+    ad = getattr(idb, "animation_data", None)
+    if ad is None:
+        return {}
+    out = {}
+
+    def add(f):
+        out.setdefault(f.data_path, set()).add(int(getattr(f, "array_index", 0)))
+    for f in ad.drivers:
+        drv = getattr(f, "driver", None)
+        if _live(f) and getattr(f, "is_valid", True) and (drv is None or getattr(drv, "is_valid", True)):
+            add(f)
+    if ad.action is not None and getattr(ad, "action_influence", 1.0) > 0.0:
+        for f in _fcurves(ad.action, getattr(ad, "action_slot", None)):
+            if _live(f):
+                add(f)
+    if getattr(ad, "use_nla", True):
+        for track in ad.nla_tracks:
+            if getattr(track, "mute", False):
+                continue
+            for strip in track.strips:
+                if getattr(strip, "mute", False):
+                    continue
+                for f in _fcurves(strip.action, getattr(strip, "action_slot", None)):
+                    if _live(f):
+                        add(f)
     return out
 
 
 def animated_paths(idb) -> set:
-    """RNA paths an animation, an NLA strip or a driver sets on this datablock. Their values change
-    with the frame, not with the user, so the generic adapter never records them (Tier 4 records
-    the animation itself)."""
-    ad = getattr(idb, "animation_data", None)
-    if ad is None:
-        return set()
-    out = {f.data_path for f in ad.drivers}
-    out |= _fcurve_paths(ad.action, getattr(ad, "action_slot", None))
-    for track in ad.nla_tracks:
-        for strip in track.strips:
-            out |= _fcurve_paths(strip.action, getattr(strip, "action_slot", None))
-    return out
+    """RNA paths an animation, an NLA strip or a driver sets (any index of them) on this datablock.
+    Their values change with the frame, not with the user (Tier 4 records the animation itself)."""
+    return set(animated_slots(idb))
 
 
 def normalise(v):
@@ -247,9 +275,24 @@ class Adapter:
         return not same(old, new)
 
 
+def _without_animated(a, b) -> bool:
+    """True if a and b differ outside what an animation sets (ANIMATED, whole or per item)."""
+    if a == ANIMATED or b == ANIMATED:
+        return False
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b) and (ANIMATED in a or ANIMATED in b):
+        return any(not same(x, y) for x, y in zip(a, b) if x != ANIMATED and y != ANIMATED)
+    return not same(a, b)
+
+
 class RNAAdapter(Adapter):
     """Properties from ALLOWLIST, read and written by RNA path."""
     id = "rna"
+
+    def changed(self, path, old, new) -> bool:
+        # Keying a value, or a driver taking it over, is not a change the user made: it isn't a step
+        return _without_animated(old, new)
+
+    changed.equal_means_unchanged = True    # identical values are never a change (datarec's fast path)
 
     @property
     def id_types(self):
@@ -260,14 +303,28 @@ class RNAAdapter(Adapter):
 
     def capture(self, idb) -> dict:
         out = {}
-        skip = animated_paths(idb)
+        anim = animated_slots(idb)
         for path, _kind, cat in self.rows(idb):
-            if path in skip or not kind_on(cat):
+            if not kind_on(cat):
                 continue
             try:
-                out[path] = normalise(idb.path_resolve(path))
+                v = normalise(idb.path_resolve(path))
             except Exception:
                 continue
+            idx = anim.get(path)
+            if idx:
+                # What the animation sets is never recorded: the whole value, or (a vector with only
+                # some items keyed) those items, which stand in as ANIMATED and are never written
+                if isinstance(v, list) and len(idx) < len(v) and all(0 <= i < len(v) for i in idx):
+                    v = [ANIMATED if i in idx else x for i, x in enumerate(v)]
+                else:
+                    v = ANIMATED
+            out[path] = v
+        if out.get("parent_type") == "" and getattr(idb, "parent", 1) is None:
+            # Blender 4.2: Clear Parent keeps a vertex parent type with no parent; RNA reads it as ''
+            # and accepts only OBJECT without a parent. OBJECT is what it can be put back as, and what
+            # Blender 5 reads after the same operation.
+            out["parent_type"] = "OBJECT"
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -283,10 +340,16 @@ class RNAAdapter(Adapter):
             if path not in values:
                 continue
             v = values[path]
-            if v is MISSING:
+            if v is MISSING or v == ANIMATED:
                 continue
             try:
                 owner, attr = _split(idb, path)
+                if isinstance(v, list) and ANIMATED in v:
+                    cur = getattr(owner, attr)            # only the items the animation doesn't set
+                    for i, x in enumerate(v):
+                        if x != ANIMATED and i < len(cur):
+                            cur[i] = x
+                    continue
                 if kind == "ref":
                     ref = v
                     v = idmap.find(v) if v else None
@@ -561,6 +624,9 @@ def _id_props(owner) -> dict:
         if k == idmap.UID_PROP:
             continue
         v = owner[k]
+        if isinstance(v, bpy.types.ID):              # a pointer (an object, a material, ...): by its id
+            out[k] = {REF_KEY: idmap.ref_of(v)}
+            continue
         if hasattr(v, "to_dict"):
             v = v.to_dict()
         elif hasattr(v, "to_list"):
@@ -570,8 +636,76 @@ def _id_props(owner) -> dict:
     return out
 
 
+def _gn_inputs(m):
+    """A Geometry Nodes modifier's input values on Blender 5.2 and later, where they are RNA
+    (modifier.properties.inputs.<identifier>: value, type, attribute_name) instead of custom properties.
+    None where the modifier keeps them as custom properties (read by _id_props)."""
+    props = getattr(m, "properties", None)
+    inputs = getattr(props, "inputs", None) if props is not None else None
+    ng = getattr(m, "node_group", None)
+    if inputs is None or ng is None:
+        return None
+    out = {}
+    for it in ng.interface.items_tree:
+        if getattr(it, "item_type", "SOCKET") != "SOCKET" or getattr(it, "in_out", "") != "INPUT":
+            continue
+        x = getattr(inputs, it.identifier, None)
+        if x is None:
+            continue
+        rec = {}
+        for a in ("type", "attribute_name", "value"):
+            if not hasattr(x, a):
+                continue
+            try:
+                v = getattr(x, a)
+            except Exception:
+                continue
+            if isinstance(v, bpy.types.ID):
+                rec[a] = {"ref": idmap.ref_of(v)}
+                continue
+            if v is None:
+                rec[a] = None
+                continue
+            try:
+                v = normalise(v)
+            except Exception:
+                continue
+            if isinstance(v, (int, float, str, list, bool)):
+                rec[a] = v
+        out[it.identifier] = rec
+    return out
+
+
+def _set_gn_inputs(m, recs) -> None:
+    props = getattr(m, "properties", None)
+    inputs = getattr(props, "inputs", None) if props is not None else None
+    if inputs is None or not isinstance(recs, dict):
+        return
+    for ident, rec in recs.items():
+        x = getattr(inputs, ident, None)
+        if x is None or not isinstance(rec, dict):
+            continue
+        for a in ("type", "attribute_name", "value"):      # the type first: it decides what is used
+            if a not in rec:
+                continue
+            v = rec[a]
+            if isinstance(v, dict) and "ref" in v:
+                v = idmap.find(v["ref"]) if v["ref"] else None
+            try:
+                setattr(x, a, to_rna(v) if not isinstance(v, bpy.types.ID) else v)
+            except Exception as e:
+                log.error_once(("gn_input", ident, a, str(e)), f"could not restore input {ident}.{a}: {e}", e)
+
+
+REF_KEY = "__hindsight_ref__"   # a custom property that points to a datablock, recorded by its id
+
+
 def _set_id_props(owner, props: dict) -> None:
     for k, v in (props or {}).items():
+        if isinstance(v, dict) and set(v) == {REF_KEY}:
+            v = idmap.find(v[REF_KEY]) if v[REF_KEY] else None
+            if v is None:
+                continue                              # deleted now: left unset, like other references
         try:
             owner[k] = v
         except Exception:
@@ -611,6 +745,91 @@ def _set_hidden(ob, hidden) -> None:
                 pass
 
 
+# Settings a physics modifier keeps in structs of its own (struct_values leaves nested structs out).
+_MOD_STRUCTS = {"CLOTH": ("settings", "collision_settings"), "SOFT_BODY": ("settings",),
+                "FLUID": ("domain_settings", "flow_settings", "effector_settings")}
+
+
+def _nested_values(m) -> dict:
+    out = {}
+    for name in _MOD_STRUCTS.get(m.type, ()):
+        st = getattr(m, name, None)
+        if st is not None:
+            try:
+                out[name] = struct_values(st)
+            except Exception:
+                continue
+    return out
+
+
+def _particles(m):
+    """A particle system modifier: its settings datablock (by id, and its values in case it is gone
+    when the object comes back) and its seed. Baked particles are not part of it."""
+    ps = getattr(m, "particle_system", None) if m.type == "PARTICLE_SYSTEM" else None
+    if ps is None or ps.settings is None:
+        return None
+    return {"seed": int(ps.seed), "settings": idmap.claim(ps.settings),
+            "values": struct_values(ps.settings)}
+
+
+def _physics(ob) -> dict:
+    """Physics settings that live on the object: collision, force field, rigid body."""
+    out = {}
+    for name, used in (("collision", any(m.type == "COLLISION" for m in ob.modifiers)),
+                       ("field", getattr(getattr(ob, "field", None), "type", "NONE") != "NONE"),
+                       ("rigid_body", getattr(ob, "rigid_body", None) is not None)):
+        st = getattr(ob, name, None)
+        if used and st is not None:
+            try:
+                out[name] = struct_values(st)
+            except Exception:
+                continue
+    return out
+
+
+def _set_physics_modifier(ob, m, w) -> None:
+    for name, vals in (w.get("nested") or {}).items():
+        st = getattr(m, name, None)
+        if st is not None:
+            set_struct_values(st, vals, ob, f'modifiers["{m.name}"].{name}.')
+    pr = w.get("particles")
+    ps = getattr(m, "particle_system", None)
+    if isinstance(pr, dict) and ps is not None:
+        made = ps.settings
+        want = idmap.find(pr["settings"]) if pr.get("settings") else None
+        if want is not None and want != made:
+            ps.settings = want
+            if made is not None and made.users == 0:
+                bpy.data.particles.remove(made)
+        elif want is None and ps.settings is not None:
+            set_struct_values(ps.settings, pr.get("values") or {})
+        ps.seed = int(pr.get("seed", ps.seed))
+
+
+def _set_physics(ob, phys) -> None:
+    if not isinstance(phys, dict):
+        return
+    if phys.get("collision") and getattr(ob, "collision", None) is not None:
+        set_struct_values(ob.collision, phys["collision"])
+    f = phys.get("field")
+    if f and getattr(ob, "field", None) is not None:
+        if "type" in f:                           # the type first: it decides which settings exist
+            set_struct_values(ob.field, {"type": f["type"]})
+        set_struct_values(ob.field, f)
+    rb = phys.get("rigid_body")
+    if rb:
+        try:
+            if ob.rigid_body is None:
+                with bpy.context.temp_override(object=ob, active_object=ob, selected_objects=[ob]):
+                    bpy.ops.rigidbody.object_add()
+            if ob.rigid_body is not None:
+                if "type" in rb:
+                    set_struct_values(ob.rigid_body, {"type": rb["type"]})
+                set_struct_values(ob.rigid_body, rb)
+        except Exception as e:
+            log.error_once(("rigid_body", str(e)), f"could not bring back a rigid body: {e}", e)
+
+
 def object_body(ob) -> dict:
     """What it takes to bring a deleted object back exactly: its settings as values (transforms with
     their rotation mode, deltas, visibility, display, ...), its constraints and modifiers with their
@@ -629,8 +848,10 @@ def object_body(ob) -> dict:
         "hide": [bool(ob.hide_viewport), bool(ob.hide_render), bool(ob.hide_select)],
         "props": struct_values(ob, _BODY_SKIP),
         "constraints": [{"type": c.type, "name": c.name, "values": struct_values(c)} for c in ob.constraints],
-        "modifiers": [{"type": m.type, "name": m.name, "values": struct_values(m), "custom": _id_props(m)}
+        "modifiers": [{"type": m.type, "name": m.name, "values": struct_values(m), "custom": _id_props(m),
+                       "gn": _gn_inputs(m), "nested": _nested_values(m), "particles": _particles(m)}
                       for m in ob.modifiers],
+        "physics": _physics(ob),
         "slots": [[s.link, idmap.ref_of(s.material) if s.material is not None else None] for s in ob.material_slots],
         "hidden": _hidden(ob),
         "custom": _id_props(ob),
@@ -789,6 +1010,8 @@ def _recreate_object(scene, uid, body, snap):
             m.name = w["name"]
             set_struct_values(m, w.get("values") or {}, ob, f'modifiers["{m.name}"].')
             _set_id_props(m, w.get("custom"))
+            _set_gn_inputs(m, w.get("gn"))
+            _set_physics_modifier(ob, m, w)
         except Exception as e:
             log.error_once(("modifier_new", str(e)), f"could not bring back a modifier: {e}", e)
     for i, (link, ref) in enumerate(body.get("slots") or ()):
@@ -802,6 +1025,7 @@ def _recreate_object(scene, uid, body, snap):
                 slot.material = idmap.find(ref) if ref else None
         except Exception:
             pass
+    _set_physics(ob, body.get("physics"))
     _set_hidden(ob, body.get("hidden"))
     _set_id_props(ob, body.get("custom"))
     return ob

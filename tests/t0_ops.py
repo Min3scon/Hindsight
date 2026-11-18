@@ -78,8 +78,43 @@ def mode(name, m):
     return Op(f"{name} to {m}", lambda: enter(name, m), [])
 
 
+# Blender 4.2 without a window (the program with -b and the Python module) crashes in every Paint menu
+# colour operator, with or without Hindsight (paint.vertex_color_set, _invert, _brightness_contrast,
+# _hsv: segmentation fault). There the same change is made through the colour attribute instead, in
+# the Hindsight run and in the replay without it alike, so the gate still compares the two.
+_VP_API = bpy.app.version < (5, 0, 0) and bpy.app.background
+
+
+def _vp_by_api(name, which):
+    me = bpy.data.objects[name].data
+    a = me.color_attributes.active_color
+    if a is None:
+        return {"CANCELLED"}
+    prop = "color" if a.data_type == "FLOAT_COLOR" else "color_srgb"
+    import numpy as np
+    v = np.empty(len(a.data) * 4, np.float32)
+    a.data.foreach_get(prop, v)
+    c = v.reshape(-1, 4)
+    if which == "set":
+        c[:, :3] = 1.0
+    elif which == "invert":
+        c[:, :3] = 1.0 - c[:, :3]
+    elif which == "darken":
+        c[:, :3] = np.clip(c[:, :3] * 0.88, 0.0, 1.0)
+    else:
+        c[:, :3] = np.clip(c[:, :3] * 0.9 + 0.05, 0.0, 1.0)
+    a.data.foreach_set(prop, v)
+    me.update()
+    return {"FINISHED"}
+
+
 def vp_op(name, which):
     """A Vertex Paint operator from the Paint menu."""
+    if _VP_API:
+        def fn_api():
+            enter(name, "VERTEX_PAINT")
+            return _vp_by_api(name, which)
+        return _with_prep(Op(f"vertex paint {which} on {name}", fn_api, [name]), name, "VERTEX_PAINT")
     ops = {"set": lambda: bpy.ops.paint.vertex_color_set(),
            "invert": lambda: bpy.ops.paint.vertex_color_invert(),
            "darken": lambda: bpy.ops.paint.vertex_color_brightness_contrast(brightness=-12, contrast=3),

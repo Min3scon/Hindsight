@@ -585,7 +585,8 @@ def _fast_diff_ok() -> bool:
     Adapter.changed); an adapter with its own comparison always goes through _diff."""
     base = adapters.Adapter.changed
     for a in adapters.ADAPTERS.values():
-        if getattr(a.changed, "__func__", None) is not base:
+        fn = getattr(a.changed, "__func__", None)
+        if fn is not base and not getattr(fn, "equal_means_unchanged", False):
             return False
     return True
 

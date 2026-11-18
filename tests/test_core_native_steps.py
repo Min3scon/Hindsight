@@ -230,7 +230,7 @@ def state_key(states):
 def outcome(fn):
     try:
         r = fn()
-        return ("ok", [(t, sorted(v)) for t, v in r.items()])
+        return ("ok", [(t, sorted(v, key=repr)) for t, v in r.items()])   # keys mix str and tuple
     except Exception as e:
         return ("err", type(e).__name__, str(e))
 
@@ -303,6 +303,13 @@ def test_ends_are_exact():
     print("PASS test_ends_are_exact")
 
 
+try:
+    import zstandard as _zs
+    ZSTD_PY = tuple(_zs.ZSTD_VERSION)
+except Exception:
+    ZSTD_PY = (0, 0, 0)
+
+
 def test_damaged_blobs():
     """A damaged step in the middle of a run: the same exception and the same state on every
     engine (steps before it applied, cursor kept)."""
@@ -321,7 +328,18 @@ def test_damaged_blobs():
         if i % 3:
             b = tc._patch_crc(b)
         bad[at] = Entry(blob=b, meta=dict(e.meta))
-        twins = run_twins(bad, start, 0, [40, 0, at, 40], f"damaged {i}")
+        try:
+            twins = run_twins(bad, start, 0, [40, 0, at, 40], f"damaged {i}")
+        except AssertionError as err:
+            # Damage with its checksum made to match (never what a disk or a cut does) can leave a
+            # zstd frame that libzstd 1.5.7 (in the engine) decodes and older ones refuse. Blender 4.2
+            # bundles zstandard 0.16 with libzstd 1.5.0, so the Python reference refuses it there.
+            # Only that difference is let through, and only with an older libzstd in Python.
+            a = err.args[0] if err.args else ()
+            if not (i % 3 and ZSTD_PY < (1, 5, 7) and len(a) > 5 and a[4][:1] == ("ok",)
+                    and a[5][:2] == ("err", "CorruptStep") and "decompression error" in str(a[5][2])):
+                raise
+            continue
         kinds[twins[0][2].cursor == 40] = kinds.get(twins[0][2].cursor == 40, 0) + 1
         n += 1
     print(f"PASS test_damaged_blobs ({n} damaged steps; reached the end {kinds.get(True, 0)} times)")
