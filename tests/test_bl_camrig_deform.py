@@ -95,6 +95,21 @@ def test_armature_preserve_volume():
     run("armature preserve volume", setup, {"plain": 0.85})
 
 
+def test_armature_bbones():
+    """B-Bones bend along their segments, which their pose matrix doesn't tell: the estimate from
+    the edges' stretch is used, and still holds the model."""
+    def setup(ob):
+        ao = rig_armature(ob, 50.0)
+        for b in ao.data.bones:
+            b.bbone_segments = 8
+        pb = ao.pose.bones["Upper"]
+        pb.bbone_curveinx = 0.8
+        pb.bbone_curveoutz = -0.6
+        pb.bbone_easein = 1.5
+        C.view_layer.update()
+    run("armature b-bones", setup, {})
+
+
 def test_lattice():
     def setup(ob):
         lo = bpy.data.objects.new("Lattice", bpy.data.lattices.new("Lattice"))
@@ -117,6 +132,6 @@ def test_armature_then_subdivision():
 
 if __name__ == "__main__":
     for f in [test_armature_holds_and_is_tight, test_armature_scaled_bone, test_armature_parented,
-              test_armature_preserve_volume, test_lattice, test_armature_then_subdivision]:
+              test_armature_preserve_volume, test_armature_bbones, test_lattice, test_armature_then_subdivision]:
         H.run(f)
     H.finish()

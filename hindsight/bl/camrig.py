@@ -4,6 +4,19 @@ While Movie Mode is on, Hindsight keeps its own camera with the whole model in f
 scene has no light of its own, three sun lamps. They are ordinary objects marked with rigmark, made
 with bpy.data only (works from a timer, a property update and in any mode). Objects without the mark
 are never moved, hidden or deleted. Nothing here records or moves history.
+
+What the camera holds (the model as a render shows it, at every step of the history):
+- the shape now: exact, from the evaluated object; when the viewport doesn't evaluate it the way a
+  render does (render-only modifiers, other render levels, disabled in viewports) from a temporary
+  copy set up for rendering, unless that copy would pass COPY_BUDGET vertices;
+- the other steps (only the base mesh is recorded): exact for no modifier, Mirror and fixed-count
+  Array (framing.envelope), for an Armature on vertex groups without B-Bones, and for shape keys
+  (_measure_deformed); a bound from the stretch measured now for the other modifiers that only move
+  vertices (Lattice, Hook, Curve, ...); a bound from the reach measured now, grown with the history's
+  size, for every other modifier (Subdivision, Multires, Solidify, Displace, Geometry Nodes, ...).
+Known limits: those last two are estimates, not proofs (a Geometry Nodes tree can do anything); a
+render copy over COPY_BUDGET is not made; the history walk stops at a Join or a step it can't read,
+as History.goto does; Simplify's render settings are not read.
 """
 import math
 import time
@@ -495,12 +508,30 @@ def _render_copy_points(ob, scene, dg_getter):
                 dg_getter(refresh=True)           # evaluated now, while our own changes are ignored
 
 
+COPY_BUDGET = 4_000_000     # vertices: a render copy that would be bigger isn't evaluated
+
+
+def _copy_size(ob, ev) -> int:
+    """About how many vertices the render copy evaluates: each level a Subdivision or Multires
+    renders above what the viewport shows multiplies them by four."""
+    n = max(len(ev.data.vertices) if ev.type == "MESH" and ev.data is not None else 0,
+            len(ob.data.vertices) if ob.data is not None else 0)
+    for m in ob.modifiers:
+        if m.show_render and m.type in _LEVELS:
+            shown = m.levels if m.show_viewport else 0
+            n *= 4 ** max(0, m.render_levels - shown)
+    return n
+
+
 def _rendered_points(ob, scene, dg_getter):
-    """(n, 3) float32 of what renders of this mesh object now, in its own space."""
+    """(n, 3) float32 of what renders of this mesh object now, in its own space. A render copy
+    over COPY_BUDGET vertices isn't made: the viewport's mesh is measured (see the module's
+    known limits)."""
     dg = dg_getter() if dg_getter is not None else None
     if dg is not None:
         ev = ob.evaluated_get(dg)
-        if ob.mode != "EDIT" and (not ev.is_evaluated or renders_differently(ob)):
+        if ob.mode != "EDIT" and (not ev.is_evaluated or renders_differently(ob)) \
+                and _copy_size(ob, ev) <= COPY_BUDGET:
             pts = _render_copy_points(ob, scene, dg_getter)
             if pts is not None:
                 return pts
@@ -555,12 +586,15 @@ def deforms_only(ob) -> bool:
 
 def _bone_scale(m) -> float:
     """For an Armature modifier that moves each vertex by a fixed blend of its bones' transforms
-    (vertex groups, not bone envelopes, whose weights change with the position): the largest scale
-    any deforming bone applies (1 for bones that only turn and move). None for any other modifier."""
+    (vertex groups, not bone envelopes, whose weights change with the position; no B-Bones): the
+    largest scale any deforming bone applies (1 for bones that only turn and move). None for any
+    other modifier."""
     arm = getattr(m, "object", None) if m.type == "ARMATURE" else None
     if arm is None or arm.type != "ARMATURE" or arm.pose is None or not m.use_vertex_groups \
             or m.use_bone_envelopes:
         return None
+    if any(pb.bone.use_deform and pb.bone.bbone_segments > 1 for pb in arm.pose.bones):
+        return None                         # B-Bones bend: each segment moves on its own
     s = 1.0
     for pb in arm.pose.bones:
         if pb.bone.use_deform:

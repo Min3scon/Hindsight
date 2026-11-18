@@ -111,6 +111,36 @@ def _no_history(setup):
     return ob
 
 
+def test_render_copy_budget():
+    """A render copy bigger than COPY_BUDGET vertices isn't made (a Multires rendered several levels
+    above what the viewport shows could take gigabytes): the viewport's mesh is framed instead,
+    without an error; under the budget the copy is made."""
+    made = []
+    real = camrig._render_copy_points
+
+    def spy(*a, **k):
+        made.append(1)
+        return real(*a, **k)
+    camrig._render_copy_points = spy
+    budget = camrig.COPY_BUDGET
+    try:
+        H.fresh()
+        ob = H.make_mesh(1200, "Model")
+        m = ob.modifiers.new("Subdivision", "SUBSURF")
+        m.levels, m.render_levels = 0, 3
+        C.scene.hindsight.movie_mode = True
+        assert made, "under the budget: the render copy is evaluated"
+        made.clear()
+        camrig.COPY_BUDGET = len(ob.data.vertices) * 63
+        assert camrig.frame(C.scene)
+        assert not made, "over the budget: no copy"
+        camrig.COPY_BUDGET = len(ob.data.vertices) * 64
+        assert camrig.frame(C.scene) and made
+    finally:
+        camrig.COPY_BUDGET = budget
+        camrig._render_copy_points = real
+
+
 def test_viewport_only_subdivision_without_history():
     """A mesh without a history (framed as it is now): the render shows the cage, which is bigger
     than the subdivided surface the viewport shows."""
@@ -283,7 +313,7 @@ def test_framed_in_edit_mode():
 
 if __name__ == "__main__":
     for f in [test_render_only_displace, test_hidden_in_viewports, test_collection_hidden_in_viewports,
-              test_viewport_only_subdivision_without_history, test_multires_render_levels_without_history,
+              test_render_copy_budget, test_viewport_only_subdivision_without_history, test_multires_render_levels_without_history,
               test_nothing_changed_or_left_behind, test_cache_not_kept_across_files,
               test_framed_in_edit_mode]:
         H.run(f)
