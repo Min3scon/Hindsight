@@ -2,6 +2,39 @@
 
 All notable changes to Hindsight. Dates are when the release went out.
 
+## 1.0.0-beta.3
+
+Movie Mode sets up its own camera and lighting, a timelapse needs fewer frames and less time per frame, long sessions use less memory, and Hindsight now works on Blender 5.2 and 5.3.
+
+This build was tested without a Blender window, on Blender 5.0 to 5.3. It hasn't been through the test rounds in real Blender yet.
+
+New:
+
+- Movie Mode keeps a camera on the whole model. While Movie Mode is on, Hindsight adds its own camera and places it so every step of the timelapse is in frame. Your own camera isn't moved, and it is the scene camera again when Movie Mode goes off.
+- Lighting when the scene has none: three sun lamps around the model, added only while the scene has no light of its own, and taken out again with Movie Mode.
+- Use this view points the Movie Mode camera from the direction your viewport looks. Frame the model places it again after the model has changed.
+- Steps per frame. Quick auto key can move several steps on each frame, so a long history becomes a short movie with fewer frames to render. The panel shows how many frames and seconds the movie will have.
+
+Faster and lighter:
+
+- Playing or rendering a timelapse: Hindsight's own work per frame went from 22.6 ms to 2.7 ms at 5,000 steps on a 100k mesh. A frame that shows the same step as the one before costs about 0.1 ms.
+- With global history on, the slider, the header and the sidebar no longer rebuild the whole timeline on every redraw. That took 18 ms each time at 10,000 steps.
+- Saving and loading history works step by step. Peak memory while saving a 6,000-step history of a 100k mesh went from 89 MB to 43 MB, and loading from 141 MB to 83 MB. Recording a remesh at 1M vertices needs 426 MB instead of 609 MB.
+- What Hindsight remembers about its own jumps for Blender's undo is kept only as far back as Blender can undo. It used to keep up to 512 copies of every recorded value.
+- Once the memory limit is reached, a stroke no longer rescans every step.
+
+Fixed:
+
+- The on-screen slider hung to the right of the viewport. The whole slider is centred now.
+- After the step cap or the memory limit had dropped old steps, recovery after a crash (On open: Interrupted session) could bring the history back with later steps in the wrong place.
+- The memory limit could drop steps that an object you had scrubbed back hadn't reached yet. Going forward again then gave shapes that never existed.
+- Blender 5.2 and 5.3: Remove Hindsight data from this file failed.
+- Blender 5.3: switching an object to a paint mode and saving wrote a history for it, though nothing had been painted.
+- Blender 5.0 and newer: Mask Extract failed, because Blender moved that operator. The Morph History brush was twice the size shown and ignored Lock size to Scene.
+- Blender 5.0: scrubbing back over a colour layer could lose which layer is active.
+- A damaged history block stored with LZ4 is refused cleanly now.
+- After a long session a repeating error could fill the system console.
+
 ## 1.0.0-beta.2
 
 This version records objects as well as sculpting. Object recording is off until you switch it on ([Install](https://min3scon.github.io/Hindsight/docs/install/#objects)). What it records and what it doesn't: [Limitations](https://min3scon.github.io/Hindsight/docs/limitations/).

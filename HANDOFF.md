@@ -109,6 +109,31 @@ steps, ticks, counters, thumbnails, labels or progress.
 
 Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, SITE_PLAN.md, STYLE.md.
 
+## Beta 3 job (owner, 2026-11-18, cloud sandbox: no Blender binary, no GPU)
+Read DECISIONS.md "Beta 3 job" first. Owner's instruction for this job: "don't edit site, just get the
+add-on updated": nothing under site/ was touched; docs/download/hindsight.zip and the generated
+changelog page change with the version.
+- Done and tested headless on Blender 4.2.23, 5.0.1, 5.1.2, 5.2.2 and 5.3.0 (Blender as a Python module):
+  Movie Mode camera and lighting (hindsight/bl/camrig.py, rigmark.py, core/framing.py; INTERFACES.md
+  section 9), the recorder ignoring those objects, the on-screen slider centred (D62), Steps per frame
+  and faster playback (PERF_LOG "Movie Mode playback"), less memory on save, load and topology steps
+  (PERF_LOG "Memory, and the Rust question"), the global timeline kept between redraws, audit fixes
+  D63 to D69, Blender 5.2 and 5.3 fixes D70 to D76 (D74 also closes the 5.0 colour-layer failures of
+  test_bl_t0_gate and test_bl_t0_reload in the module run).
+- NOT done, and why it matters: the release gate (real Blender 5.0.1, 5.1.1, 5.1.2 with a window) was
+  not run for any of this. COVERAGE.md and TEST_EVIDENCE.md are unchanged. Before the next gate run,
+  check in a real window: the slider's position with the toolbar, the sidebar and both open; the Movie
+  Mode panel's new rows; "Use this view"; the camera and lamps being put back after deleting them, and
+  not during a stroke, a drag, playback or a render; a real render of a timelapse (EEVEE and Workbench
+  could not run here: only Cycles on the CPU); Blender 5.3 as a whole in a window.
+- Still open from the audit (report: DECISIONS.md, "The two linked repositories"): duplicate helpers
+  (finding 8) and about 60 lines of dead code (finding 7).
+- tools/mutation_bl.py compiles again; mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
+- Blender 4.2 (below the gate): the module run has failures that were there before this job
+  (test_bl_t0_gate and test_bl_t0_reload crash, test_bl_t1_reload, test_bl_t1_corrupt and others).
+- Test environment here: `HINDSIGHT_PY=/home/user/venvs/bpy53/bin/python python3 tests/run_tests.py`
+  (venvs bpy42, bpy50, bpy51, bpy52, bpy53: `pip install bpy==<version> numpy zstandard hypothesis`).
+
 ## Publish 1.0.0-beta.2 site (owner, 2026-10-15, top priority, live by 09:00 UK)
 Done in worktree `.tmp/wt_site` (branch site-beta2), merged to the default branch without [skip ci].
 - Version 1.0.0-beta.2 (manifest, site, changelog, download button); `hindsight/build_info.json` holds the
