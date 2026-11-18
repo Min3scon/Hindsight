@@ -552,5 +552,6 @@ def main():
     print("\nwrote", path)
 
 
-main()
-H.finish(0)
+if __name__ == "__main__":
+    main()
+    H.finish(0)
