@@ -197,7 +197,9 @@ def test_awkward_values_round_trip():
         ob.location = v
         stored.append(list(ob.location))        # what Blender keeps (it clamps infinities to the float range)
         datarec.commit(uids=[uid])
-    assert F.pack(stored[0][0]) == F.pack(-0.0) and stored[0][2] != 0.0      # -0 and a denormal survive
+    # -0 survives. A denormal survives in Blender as a Python module; the Blender program flushes it to
+    # zero (its CPU denormal mode), so there the round trip below checks the zero it kept
+    assert F.pack(stored[0][0]) == F.pack(-0.0)
     for i in list(range(len(vals))) * 2:
         runtime.goto(C, i + 1)
         assert same_bits(list(ob.location), stored[i]), (i, list(ob.location), stored[i])
