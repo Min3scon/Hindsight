@@ -408,6 +408,13 @@ def test_digits_bounded_and_forgotten_on_load():
         _new_draw(_ctx(Region(1000, 600, ptr), 1.0), _info(5, 12345), prefs, None)
     assert len(S._DIGITS) <= S.DIGITS_MAX, len(S._DIGITS)
     assert S._DIGITS.get(10_099) == 5              # the newest regions are kept
+    # a region that keeps drawing is never the one dropped, however many others come and go
+    for ptr in range(20_000, 20_100):
+        _new_draw(_ctx(Region(1000, 600, ptr), 1.0), _info(5, 12345), prefs, None)
+        if ptr % 5 == 0:
+            _new_draw(_ctx(Region(1000, 600, 10_099), 1.0), _info(5, 12345), prefs, None)
+        assert S._DIGITS.get(10_099) == 5, ptr
+    assert len(S._DIGITS) <= S.DIGITS_MAX, len(S._DIGITS)
     # a region drawn with a 5-digit history, then a file load: a new region at the same address
     # must hit-test like a fresh region (no digits kept), not like the old one
     ctx = _ctx(Region(1000, 600, 10_099), 1.0)

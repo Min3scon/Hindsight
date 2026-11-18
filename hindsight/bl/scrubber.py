@@ -434,9 +434,7 @@ DIGITS_MAX = 16
 
 
 def _note_digits(ptr, digits):
-    if _DIGITS.get(ptr) == digits:
-        return
-    _DIGITS.pop(ptr, None)
+    _DIGITS.pop(ptr, None)                  # (re)inserted last: the least recently drawn goes first
     while len(_DIGITS) >= DIGITS_MAX:
         del _DIGITS[next(iter(_DIGITS))]
     _DIGITS[ptr] = digits
