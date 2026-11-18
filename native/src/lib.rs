@@ -376,10 +376,13 @@ fn put_gaps<const N: usize>(iv: &[u8], out: &mut [u8]) {
 /// idx[0] = first, idx[j] = idx[j - 1] + gap + 1 (wrapping, as numpy's uint32 sums).
 fn get_gaps<const N: usize>(g: &[u8], first: u32, out: &mut [u8]) {
     let mut cur = first;
-    put_idx(out, 0, cur);
-    for j in 1..out.len() / 4 {
-        cur = cur.wrapping_add(rd::<N>(g, j - 1) as u32).wrapping_add(1);
-        put_idx(out, j, cur);
+    let Some((o0, rest)) = out.split_first_chunk_mut::<4>() else { return };
+    *o0 = cur.to_le_bytes();
+    for (o, gb) in rest.chunks_exact_mut(4).zip(g.chunks_exact(N)) {
+        let mut a = [0u8; 8];
+        a[..N].copy_from_slice(gb);
+        cur = cur.wrapping_add(u64::from_le_bytes(a) as u32).wrapping_add(1);
+        o.copy_from_slice(&cur.to_le_bytes());
     }
 }
 
@@ -1004,17 +1007,35 @@ fn decode_apply_t<L: Lane, const OP: u8, const W: usize>(vin: &[u8], k: usize, w
         let n = CHUNK.min(k - s);
         for c in 0..w {
             let col = &mut tmp[c * CHUNK..c * CHUNK + n];
-            let mut pl: [&[u8]; 8] = [&[]; 8];
-            for (b, p) in pl[..L::N].iter_mut().enumerate() {
+            let pl = |b: usize| {
                 let at = (c * L::N + b) * k + s;
-                *p = &planes[at..at + n];
-            }
-            for (i, x) in col.iter_mut().enumerate() {
-                let mut v = L::default();
-                for (b, p) in pl[..L::N].iter().enumerate() {
-                    v = v.or_byte(p[i], b);
+                &planes[at..at + n]
+            };
+            // the bytes of each value from its planes (zipped: no index checks, vectorised)
+            match L::N {
+                1 => {
+                    for (x, &a) in col.iter_mut().zip(pl(0)) {
+                        *x = L::default().or_byte(a, 0);
+                    }
                 }
-                *x = v;
+                2 => {
+                    for ((x, &a), &b) in col.iter_mut().zip(pl(0)).zip(pl(1)) {
+                        *x = L::default().or_byte(a, 0).or_byte(b, 1);
+                    }
+                }
+                4 => {
+                    for ((((x, &a), &b), &c2), &d) in col.iter_mut().zip(pl(0)).zip(pl(1)).zip(pl(2)).zip(pl(3)) {
+                        *x = L::default().or_byte(a, 0).or_byte(b, 1).or_byte(c2, 2).or_byte(d, 3);
+                    }
+                }
+                _ => {
+                    col.fill(L::default());
+                    for b in 0..L::N {
+                        for (x, &p) in col.iter_mut().zip(pl(b)) {
+                            *x = x.or_byte(p, b);
+                        }
+                    }
+                }
             }
             let a = &mut acc[c];
             match tags[c] {
