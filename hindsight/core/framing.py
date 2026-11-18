@@ -349,6 +349,7 @@ def envelope(stack, base_lo, base_hi, exact: bool = True):
     one of them. The L of the groups (and their order) don't depend on the box or on `exact`.
     None when there are more than MAX_GROUPS different L."""
     groups = [(np.eye(3), np.zeros((1, 3)))]
+    actual = True                   # the offsets are real copies (not a range of possible ones)
     lo0, hi0 = np.asarray(base_lo, np.float64), np.asarray(base_hi, np.float64)
     for mod in stack:
         kind = mod[0]
@@ -376,10 +377,21 @@ def envelope(stack, base_lo, base_hi, exact: bool = True):
                 a, b = _group_box(L, Z, lo0, hi0)
                 lo, hi = np.minimum(lo, a), np.maximum(hi, b)
             size = np.maximum(hi - lo, 0.0)
-            # copy j is shifted by j * (const + rel * size); its hull over j = 0 .. count-1 is spanned
-            # by j = 0 and j = count - 1. Without the exact size, any size from 0 up to `size`.
-            last = (count - 1) * (const + rel * size)
-            shifts = last[None, :] if exact else (count - 1) * (const + _corners(np.zeros(3), rel * size))
+            # copy j is shifted by j * (const + rel * size of the input); its hull over j = 0 .. count-1
+            # is spanned by j = 0 and j = count - 1. The size is known exactly when every copy so far
+            # maps the base's box onto a box (axis-aligned mirrors); else it lies between the
+            # unmirrored part's size and `size`; for a history, anywhere from 0 up to `size`.
+            aligned = all(np.count_nonzero(np.abs(L) > 1e-9, axis=1).max() <= 1 for L, _Z in groups)
+            if exact and aligned and actual:
+                low = size
+            elif exact and actual:
+                a, b = _group_box(groups[0][0], groups[0][1], lo0, hi0)     # the identity group
+                low = np.minimum(np.maximum(b - a, 0.0), size)
+                actual = False
+            else:
+                low = np.zeros(3)
+                actual = False
+            shifts = (count - 1) * (const + _corners(rel * low, rel * size))
             groups = [(L, np.vstack([Z] + [Z + s for s in shifts])) for L, Z in groups]
         # anything else: left to the reach
         merged = {}

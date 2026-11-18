@@ -371,9 +371,139 @@ def make_case(seed, **kw):
     return h, start
 
 
+# ---------------------------------------------------------------- modifiers (review S2-1)
+def _rand_view(rng):
+    return F.view_basis(rng.uniform(-3, 3), rng.uniform(-1.2, 1.2)), rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8)
+
+
+def test_extents_multi_and_batched_history():
+    """extents_multi equals extents basis by basis; history_extents_multi (moved vertices measured
+    many steps at a time) equals history_extents basis by basis, with any batch size."""
+    rng = np.random.default_rng(21)
+    for _ in range(30):
+        pts = random_cloud(rng)
+        views = [_rand_view(rng) for _ in range(3)]
+        got = F.extents_multi(pts, [v[0] for v in views], [(v[1], v[2]) for v in views], chunk=37)
+        for i, (b, tx, ty) in enumerate(views):
+            want = F.extents(pts, b, tx, ty)
+            assert close(got[i], want, 1e-9 * (1 + np.abs(want).max())), (got[i], want)
+    assert F.extents_multi(np.zeros((0, 3)), [np.eye(3)], [(1, 1)]) is None
+    h, end = make_case(7)
+    views = [_rand_view(rng) for _ in range(4)]
+    bases, tans = np.stack([v[0] for v in views]), [(v[1], v[2]) for v in views]
+    for batch in (1, 50, 65536):
+        got = F.history_extents_multi(h, end, A, bases, tans, batch=batch)
+        for i, (b, tx, ty) in enumerate(views):
+            want = F.history_extents(h, end, A, b, tx, ty)
+            assert close(got[i], want, 1e-9 * (1 + np.abs(want).max())), (batch, i)
+
+
+def test_plus_and_ball():
+    """plus is the Minkowski sum; ball_extents is a ball's extents under any matrix."""
+    rng = np.random.default_rng(22)
+    for _ in range(30):
+        a, b = random_cloud(rng).astype(np.float64)[:40], random_cloud(rng).astype(np.float64)[:40]
+        m = rng.normal(0, 1, (3, 3))
+        tx, ty = rng.uniform(0.2, 0.8, 2)
+        sums = (a[:, None, :] + b[None, :, :]).reshape(-1, 3)
+        want = F.extents(sums, m, tx, ty)
+        got = F.plus(F.extents(a, m, tx, ty), F.extents(b, m, tx, ty))
+        assert close(got, want, 1e-7 * (1 + np.abs(want).max())), (got, want)
+        r = rng.uniform(0.1, 5)
+        dirs = rng.normal(size=(20000, 3))
+        sphere = dirs / np.linalg.norm(dirs, axis=1)[:, None] * r
+        ball = F.ball_extents(r, m, tx, ty)
+        samp = F.extents(sphere, m, tx, ty)
+        assert (samp[[0, 1, 2, 3, 5]] <= ball[[0, 1, 2, 3, 5]] + 1e-9).all() and samp[4] >= ball[4] - 1e-9
+        assert close(samp, ball, 0.02 * r * (1 + np.abs(m).max() * 3)), (samp, ball)
+    assert F.plus(None, np.zeros(6)) is None
+
+
+def _mirror_points(p, axes, fr):
+    out = [p]
+    inv = np.linalg.inv(fr)
+    for ax in range(3):
+        if axes[ax]:
+            s = np.eye(4)
+            s[ax, ax] = -1
+            m = fr @ s @ inv
+            out = out + [q @ m[:3, :3].T + m[:3, 3] for q in out]
+    return np.vstack(out)
+
+
+def _envelope_points(p, groups):
+    return np.vstack([(p @ np.asarray(L).T)[:, None, :] + np.asarray(Z)[None, :, :] for L, Z in groups]).reshape(-1, 3)
+
+
+def test_envelope_mirror_and_array_exact():
+    """For the shape now the envelope is exactly the mirrored and arrayed copies."""
+    rng = np.random.default_rng(23)
+    for _ in range(25):
+        p = random_cloud(rng).astype(np.float64)[:60] * 1e-3
+        axes = tuple(bool(v) for v in rng.integers(0, 2, 3))
+        rot = np.linalg.qr(rng.standard_normal((3, 3)))[0]
+        fr = np.eye(4)
+        if rng.random() < 0.5:
+            fr[:3, :3] = rot * rng.uniform(0.5, 2)
+            fr[:3, 3] = rng.normal(0, 3, 3)
+        stack = [("MIRROR", axes, fr), ("OTHER", "SUBSURF")]
+        count = int(rng.integers(1, 5))
+        const, rel = rng.normal(0, 2, 3), rng.normal(0, 1, 3)
+        stack.append(("ARRAY", count, const, rel))
+        lo, hi = p.min(0), p.max(0)
+        groups = F.envelope(stack, lo, hi, exact=True)
+        mir = _mirror_points(p, axes, fr)
+        size = mir.max(0) - mir.min(0)
+        truth = np.vstack([mir + j * (const + rel * size) for j in range(count)])
+        b, tx, ty = _rand_view(rng)
+        got = F.extents(_envelope_points(p, groups), b, tx, ty)
+        want = F.extents(truth, b, tx, ty)
+        tol = 1e-6 * (1 + np.abs(want).max())
+        # exact when the mirror frame is a pure rotation and scale (its box of the mesh's box is then
+        # what Blender's array measures only if axis aligned): check it holds, and is exact without
+        # the mirror object
+        assert (got[[0, 1, 2, 3, 5]] >= want[[0, 1, 2, 3, 5]] - tol).all() and got[4] <= want[4] + tol
+        if np.allclose(fr, np.eye(4)):
+            assert close(got, want, tol), (got, want)
+        # a history: every size from 0 up to the box's is held
+        small = p * 0.3 + rng.normal(0, 0.01, 3)
+        wide = F.envelope(stack, np.minimum(lo, small.min(0)), np.maximum(hi, small.max(0)), exact=False)
+        assert [np.round(L, 9).tobytes() for L, _ in wide] == [np.round(L, 9).tobytes() for L, _ in groups]
+        mir_s = _mirror_points(small, axes, fr)
+        truth_s = np.vstack([mir_s + j * (const + rel * (mir_s.max(0) - mir_s.min(0))) for j in range(count)])
+        got_s = F.extents(_envelope_points(small, wide), b, tx, ty)
+        want_s = F.extents(truth_s, b, tx, ty)
+        tol = 1e-6 * (1 + np.abs(want_s).max())
+        assert (got_s[[0, 1, 2, 3, 5]] >= want_s[[0, 1, 2, 3, 5]] - tol).all() and got_s[4] <= want_s[4] + tol
+
+
+def test_reach():
+    """reach: 0 when the envelope holds the evaluated shape; the push past it otherwise."""
+    rng = np.random.default_rng(24)
+    p = rng.normal(size=(500, 3))
+    groups = F.envelope([], p.min(0), p.max(0))
+    assert F.reach(p * 0.9, p, groups) == 0.0
+    n = p / np.linalg.norm(p, axis=1)[:, None]
+    r = F.reach(p + n * 0.25, p, groups)
+    assert 0.1 < r <= 0.25 + 1e-5, r
+    mg = F.envelope([("MIRROR", (True, False, False), np.eye(4))], p.min(0), p.max(0))
+    mirrored = np.vstack([p, p * [-1, 1, 1]])
+    assert F.reach(mirrored, p, mg) < 1e-4
+    assert F.reach(mirrored, p, groups) > 0.0 or np.allclose(p.min(0)[0], -p.max(0)[0])
+    assert F.reach(np.zeros((0, 3)), p, groups) == 0.0
+    many = []
+    for i in range(4):
+        fr = np.eye(4)
+        fr[:3, :3] = np.linalg.qr(rng.standard_normal((3, 3)))[0]
+        many.append(("MIRROR", (True, True, True), fr))
+    assert F.envelope(many, p.min(0), p.max(0)) is None, "more than MAX_GROUPS reflections"
+
+
 TESTS = [test_view_basis, test_lens_tangents, test_fit_invariant, test_merge, test_margin,
          test_degenerate, test_light_rig, test_shifted_equals_world_extents,
-         test_history_extents_covers_every_step, test_history_extents_stops]
+         test_history_extents_covers_every_step, test_history_extents_stops,
+         test_extents_multi_and_batched_history, test_plus_and_ball, test_envelope_mirror_and_array_exact,
+         test_reach]
 
 
 if __name__ == "__main__":
