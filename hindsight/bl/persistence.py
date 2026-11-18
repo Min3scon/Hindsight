@@ -233,6 +233,34 @@ def drop_default_settings() -> int:
     return n
 
 
+def _bridge_paused(reg) -> int:
+    """Changes made to an object while its recording is paused become one step before the file is
+    saved, the step Turn On would make (the history stays paused). Without it the file holds a mesh
+    that isn't the history's state: opened again, that mesh is taken as the state at the cursor, and
+    going back plays the steps onto a mesh they weren't made on."""
+    from . import datarec
+    n = 0
+    thr = SETTINGS.truncation_threshold
+    for h in list(reg.histories.values()):
+        if h.enabled or not h.entries:
+            continue
+        for m in list(h.members):
+            ob = runtime.find_object(m)
+            if ob is None or ob.type != "MESH" or ob.mode == "EDIT":
+                continue
+            h.enabled = True
+            SETTINGS.truncation_threshold = 0     # never ask (and never put the mesh back) while saving
+            try:
+                if datarec.is_tracked(ob):
+                    n += len(datarec.catch_up(ob, "Changes While Off") or ())
+                elif m in runtime._STATES and runtime.commit(ob, label="Changes While Off", full=True):
+                    n += 1
+            finally:
+                h.enabled = False
+                SETTINGS.truncation_threshold = thr
+    return n
+
+
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
 def on_save_pre(*args) -> None:
@@ -242,6 +270,10 @@ def on_save_pre(*args) -> None:
     if not _writes_anything(_handler_path(args)):
         return
     reg = runtime.reg()
+    try:
+        _bridge_paused(reg)
+    except Exception as e:
+        guard.fail("saving", e, "could not record changes made while recording was paused")
     # Every save is a new state of the history: its id goes into the saved history, the .blend and the
     # SAVE record that starts the crash journal again, so recovery never replays a journal onto
     # another save of the file (core.persist.journal_belongs)
