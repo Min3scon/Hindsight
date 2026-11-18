@@ -749,6 +749,13 @@ def _note_eviction(n: int) -> None:
             pass
 
 
+def _journal_drop(h, n) -> None:
+    """The step cap or the memory limit dropped the n oldest steps of h: the crash journal has to
+    know, or recovery puts later steps in the wrong place."""
+    if n:
+        _journal("DROP", {"hist": h.uid, "n": int(n)})
+
+
 def _enforce(h=None) -> None:
     """Keep caps and tiers. Incremental per commit (O(1)); full rescans every 64 commits or when
     the memory estimate crosses the limit, so recording cost does not grow with history length."""
@@ -761,7 +768,7 @@ def _enforce(h=None) -> None:
         if h is not None and _ENFORCE_COUNT[0] % 64 and not over_limit:
             excess = len(h.entries) - SETTINGS.max_steps
             if excess > 0:
-                h.drop_oldest(excess)
+                _journal_drop(h, h.drop_oldest(excess))
             k = len(h.entries) - max(0, SETTINGS.raw_steps) - 1
             if k >= 0 and not h.entries[k].is_packed():
                 if packer is not None:
@@ -771,7 +778,10 @@ def _enforce(h=None) -> None:
             return
         hs = _REG.all()
         stats = {}
+        before = [len(x.entries) for x in hs]
         store.enforce_caps(hs, SETTINGS, stats)
+        for x, n in zip(hs, before):
+            _journal_drop(x, n - len(x.entries))
         if stats.get("memory_dropped"):
             _note_eviction(int(stats["memory_dropped"]))
         store.enforce_tiers(hs, SETTINGS, packer)

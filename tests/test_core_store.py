@@ -424,8 +424,9 @@ def test_caps_memory():
     s = Settings(max_steps=10_000, memory_limit_mb=limit_mb)
     n = store.enforce_caps([a, b], s)
     assert store.total_bytes([a, b]) <= limit_mb * 2 ** 20
-    keep = (limit_mb * 2 ** 20) // per
+    keep = int(limit_mb * 2 ** 20 * store.EVICT_TO) // per      # it drops to a little under the limit
     assert n == 400 - keep, (n, keep)
+    assert store.enforce_caps([a, b], s) == 0, "under the limit again: nothing more to drop"
     remaining = sorted(e.seq for e in a.entries + b.entries)
     assert remaining == list(range(400 - keep, 400)), remaining[:5]  # oldest seqs dropped first
     print("PASS test_caps_memory")
@@ -439,12 +440,61 @@ def test_caps_memory_skewed():
         d.push(tiny_step(i, "d", 10_000))
     per = c.entries[0].nbytes()
     n = store.enforce_caps([c, d], Settings(memory_limit_mb=8))
-    keep = (8 * 2 ** 20) // per
+    keep = int(8 * 2 ** 20 * store.EVICT_TO) // per
     assert n == 130 - keep
     assert len(d.entries) == 30 and len(c.entries) == keep - 30   # all drops from the older history
     assert c.entries[0].seq == 100 - (keep - 30)
     assert c.cursor == len(c.entries)
     print("PASS test_caps_memory_skewed")
+
+
+def test_caps_never_drop_at_or_past_the_cursor():
+    """The memory limit dropped steps an object scrubbed back had not reached: its cursor was
+    clamped to 0 while its mesh still showed a later state, and going forward gave a mesh that
+    never existed."""
+    from hindsight.core.history import History, MeshState
+    key = POSITION_KEY
+    n = 3000
+
+    def make(uid, steps, seq0):
+        h = History(uid)
+        arr = np.zeros(n * 3, np.float32)
+        states = [arr.copy()]
+        for i in range(steps):
+            new = arr.copy()
+            new[i * 900:(i + 1) * 900] += 1.0
+            h.push(Step(seq0 + i, "s", "SCULPT", uid, deltas=[delta.diff(key, arr, new)]))
+            arr = new
+            states.append(arr.copy())
+        return h, states
+
+    b, states_b = make("B", 6, 1)                    # the older history
+    st = {"B": MeshState({"POINT": n}, {key: states_b[6].copy()})}
+    b.goto(1, st)                                    # scrubbed back: the mesh shows the state after step 1
+    a, _ = make("A", 3, 100)
+    per = b.entries[0].nbytes()
+    total = store.total_bytes([b, a])
+
+    class Tight:
+        max_steps = 10_000
+        memory_limit_mb = (total - 3.5 * per) / (1 << 20)     # asks for 4 of B's steps
+
+    stats = {}
+    store.enforce_caps([b, a], Tight, stats)
+    assert b.cursor == 0 and len(b.entries) == 5, (b.cursor, len(b.entries))    # only the step before the cursor went
+    # the rest of what the limit asks for comes from A, which is at its end: its past may go
+    assert a.cursor == len(a.entries) and stats["memory_dropped"] == 1 + (3 - len(a.entries)), stats
+    b.goto(len(b.entries), st)
+    assert np.array_equal(st["B"].arrays[key], states_b[6]), "going forward no longer reaches the real last state"
+    # the step cap keeps to the cursor too (the cap lowered while an object is scrubbed back)
+    c, states_c = make("C", 6, 200)
+    st = {"C": MeshState({"POINT": n}, {key: states_c[6].copy()})}
+    c.goto(2, st)
+    assert store.enforce_caps([c], Settings(max_steps=3, memory_limit_mb=4096)) == 2
+    assert c.cursor == 0 and len(c.entries) == 4
+    c.goto(len(c.entries), st)
+    assert np.array_equal(st["C"].arrays[key], states_c[6])
+    print("PASS test_caps_never_drop_at_or_past_the_cursor")
 
 
 def main():

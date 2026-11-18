@@ -181,16 +181,22 @@ def _drop(h, n: int) -> int:
     return n if r is None else int(r)
 
 
+EVICT_TO = 0.95     # past the memory limit, drop down to this share of it: the next full pass then
+                    # comes 5% of the limit later instead of on every stroke
+
+
 def enforce_caps(histories: list, settings, stats: dict | None = None) -> int:
     """Apply max_steps per history, then the global memory limit (oldest seq first).
 
+    A step at or past a history's cursor is never dropped: the mesh shows the state at the cursor,
+    so only steps before it can go without the mesh and the history coming apart.
     Returns the number of entries dropped. If `stats` is given it receives "memory_dropped"
     (steps dropped because of the memory limit) and "total" (bytes after dropping).
     """
     dropped = 0
     max_steps = max(1, int(settings.max_steps))
     for h in histories:
-        over = len(h.entries) - max_steps
+        over = min(len(h.entries) - max_steps, int(h.cursor))
         if over > 0:
             dropped += _drop(h, over)
 
@@ -203,15 +209,16 @@ def enforce_caps(histories: list, settings, stats: dict | None = None) -> int:
         return dropped
     # plan: merge histories by seq of their oldest remaining entry; count drops per history
     plan = [0] * len(histories)
-    heap = [(h.entries[0].meta.get("seq", 0), i) for i, h in enumerate(histories) if h.entries]
+    heap = [(h.entries[0].meta.get("seq", 0), i) for i, h in enumerate(histories) if h.entries and h.cursor > 0]
     heapq.heapify(heap)
-    while total > limit and heap:
+    target = int(limit * EVICT_TO)
+    while total > target and heap:
         _seq, i = heapq.heappop(heap)
         entries = histories[i].entries
         j = plan[i]
         total -= entries[j].nbytes()
         plan[i] = j + 1
-        if j + 1 < len(entries):
+        if j + 1 < min(len(entries), int(histories[i].cursor)):
             heapq.heappush(heap, (entries[j + 1].meta.get("seq", 0), i))
     for i, n in enumerate(plan):
         dropped += _drop(histories[i], n)

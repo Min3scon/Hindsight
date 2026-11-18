@@ -132,7 +132,58 @@ def test_clamped_weights_note_goes_away():
     assert not runtime.WEIGHTS_CLAMPED
 
 
-for fn in (test_error_once_stays_once_after_many_errors, test_jumps_kept_only_as_far_as_blender_can_undo,
+def _journal_and_live(strokes, verts=2000, n=50):
+    """Record strokes with the crash journal captured; return (live step numbers, replayed ones)."""
+    from hindsight.core import persist
+    from hindsight.core.registry import Registry
+    recs = []
+    hook = runtime.journal_hook
+    runtime.journal_hook = lambda rtype, header, fn=None: recs.append((rtype, dict(header), fn() if fn else b""))
+    try:
+        ob = H.make_mesh(verts)
+        H.enter(ob, "SCULPT")
+        for i in range(strokes):
+            H.fake_stroke(ob, i, n=n)
+            assert runtime.commit(ob) is not None
+        live = [e.seq for e in runtime.history_of(ob).entries]
+    finally:
+        runtime.journal_hook = hook
+    r = Registry()
+    persist.replay(r, recs)
+    return live, [e.seq for e in list(r.histories.values())[0].entries], recs
+
+
+def test_crash_journal_knows_what_the_step_cap_dropped():
+    """Steps dropped by the step cap were never written to the crash journal, so recovery after a
+    crash put later steps on top of the wrong ones (history [4..8] came back as [1,2,3,4,5,8])."""
+    from hindsight.core.types import SETTINGS
+    H.fresh()
+    cap = SETTINGS.max_steps
+    SETTINGS.max_steps = 5
+    try:
+        live, replayed, recs = _journal_and_live(8)
+    finally:
+        SETTINGS.max_steps = cap
+    assert len(live) == 5 and replayed == live, (live, replayed)
+    assert sum(1 for r in recs if r[0] == "DROP") == 3
+
+
+def test_crash_journal_knows_what_the_memory_limit_dropped():
+    from hindsight.core.types import SETTINGS
+    H.fresh()
+    limit, raw = SETTINGS.memory_limit_mb, SETTINGS.raw_steps
+    SETTINGS.memory_limit_mb = 1
+    SETTINGS.raw_steps = 1000              # steps stay unpacked, so 1 MB is passed after a few dozen
+    try:
+        live, replayed, recs = _journal_and_live(90, verts=20000, n=2000)
+    finally:
+        SETTINGS.memory_limit_mb, SETTINGS.raw_steps = limit, raw
+    assert len(live) < 90, "the memory limit dropped nothing: the test needs bigger strokes"
+    assert replayed == live, (live[:5], replayed[:5], len(live), len(replayed))
+
+
+for fn in (test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
+           test_error_once_stays_once_after_many_errors, test_jumps_kept_only_as_far_as_blender_can_undo,
            test_exclusion_check_is_free_without_collection_filtering, test_topology_undo_match_is_bit_exact,
            test_clamped_weights_note_goes_away):
     H.run(fn)
