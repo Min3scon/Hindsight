@@ -36,6 +36,10 @@ Fixed:
 - Recovery after a crash (On open: Interrupted session) could bring back a history that didn't match the mesh in the file, so scrubbing showed shapes that never existed. It happened after the step cap or the memory limit dropped old steps, after going back past the last save and sculpting there, and after a join.
 - Steps that can't be reached from the saved file are left out of the recovered history now. The Undo History tab says how many, and for which object.
 - After opening a file that was changed without Hindsight, an interrupted session lost what was recorded next. Those steps come back now.
+- Crash recovery no longer brings back steps from another save of the file (a .blend1 renamed back, a copy, a backup) or from the same file open in a second Blender.
+- Crash recovery keeps one operation on several objects whole, and handles a crash in the middle of a join.
+- Saving while recording is paused on an object that changed adds one step for those changes, so going back later starts from the right mesh.
+- When the history can't be stored in the .blend (out of memory), it goes into the history folder next to it instead of being lost.
 - Crash recovery on a full or failing disk: a record cut off part way no longer hides the steps written after it, and a save point that didn't reach the disk is reported.
 - The memory limit could drop steps that an object you had scrubbed back hadn't reached yet. Going forward again then gave shapes that never existed.
 - Blender 5.2 and 5.3: Remove Hindsight data from this file failed.
