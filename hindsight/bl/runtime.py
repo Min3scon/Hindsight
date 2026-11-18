@@ -1180,6 +1180,14 @@ def _find_any(uid):
         return None
 
 
+def _after_mesh_write(ob) -> None:
+    try:
+        from . import adapters
+        adapters.after_mesh_write(ob)      # D108: UV map flags, once the UV maps exist again
+    except Exception as e:
+        log.error_once(("after_mesh_write", str(e)), f"could not finish restoring {ob.name}: {e}", e)
+
+
 def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     """Move one history to pos and write what changed to Blender. With acc (a global jump), the
     move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
@@ -1230,6 +1238,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
             if relink_last:
                 datarec.write(ob, st, data_keys)
                 wrote_data = True
+            _after_mesh_write(ob)
             continue
         # the mesh can be in Edit Mode through the object itself or (D51) through a linked duplicate
         editor = ob if ob.mode == "EDIT" else _mesh_editor(ob)
@@ -1240,6 +1249,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         if fp and target not in meshes:
             meshes[target] = [mesh_fingerprint(ob), None]
         _write_state(ob, st, mesh_keys, final)
+        _after_mesh_write(ob)
         if fp:
             meshes[target][1] = mesh_fingerprint(ob)
         if editor is not None:
