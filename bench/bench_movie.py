@@ -5,6 +5,16 @@
 
 Writes bench/results_movie.json. Histories are built as tests/test_bl_movie.py does (meshes made
 with numpy + foreach_set, strokes of about 2% of the vertices written to the mesh, then commit).
+
+The 300-frame grid (100k and 1M vertices, Object and Sculpt Mode, Steps per frame 1 and 8, plus
+500 other objects) and a Cycles CPU render of 30 frames at 320 x 180 with 1 sample:
+
+    bench/bench_movie.py --grid                 writes bench/results_movie_grid.json
+    bench/bench_movie.py --case N MODE SPF [--extra K] [--root PATH]    one case, one JSON line
+    bench/bench_movie.py --render-case [--root PATH]                    the render, one JSON line
+
+--root times another checkout's `hindsight` (an A/B against an older commit: run the two
+alternately, at least five rounds, and compare min and median).
 """
 import cProfile
 import json
@@ -14,8 +24,11 @@ import pstats
 import sys
 import tempfile
 import time
+import tracemalloc
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+if "--root" in sys.argv:            # time another checkout's add-on (A/B runs)
+    sys.path.insert(0, os.path.abspath(sys.argv[sys.argv.index("--root") + 1]))
 import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 import tests.harness as H  # noqa: E402
@@ -328,7 +341,199 @@ def renders():
     return out
 
 
+# ----------------------------------------------------------------------------- the 300-frame grid
+def stroke_patch(ob, rng, share=0.02):
+    """stroke(), computed on the patch only (the same kind of change, quick enough at 1M)."""
+    me = ob.data
+    n = len(me.vertices)
+    side = int(round(math.sqrt(n)))
+    co = np.empty(n * 3, np.float32)
+    me.attributes["position"].data.foreach_get("vector", co)
+    co = co.reshape(-1, 3)
+    r = math.sqrt(share * n / math.pi)
+    cx, cy = rng.uniform(r + 2, side - r - 2, 2)
+    ys, xs = np.mgrid[int(cy - r) - 1:int(cy + r) + 2, int(cx - r) - 1:int(cx + r) + 2]
+    d = np.hypot(xs - cx, ys - cy)
+    m = d < r
+    co[(ys * side + xs)[m], 2] += (0.002 * (1 - d[m] / r)).astype(np.float32)
+    me.attributes["position"].data.foreach_set("vector", co.reshape(-1))
+    me.update()
+
+
+def _vmhwm_mb():
+    try:
+        with open("/proc/self/status") as fh:
+            for line in fh:
+                if line.startswith("VmHWM"):
+                    return round(int(line.split()[1]) / 1024, 1)
+    except OSError:
+        pass
+    return None
+
+
+def _timed_all(spent):
+    """Wrap every Hindsight handler that can run while a frame changes or renders; time each."""
+    swaps = []
+    for nm in ("frame_change_pre", "frame_change_post", "depsgraph_update_pre", "depsgraph_update_post",
+               "render_init", "render_pre", "render_post", "render_complete"):
+        hl = getattr(bpy.app.handlers, nm)
+        for i, fn in enumerate(list(hl)):
+            if "hindsight" not in getattr(fn, "__module__", ""):
+                continue
+
+            def timed(*a, _fn=fn, _k=f"{nm}:{fn.__name__}"):
+                t = time.perf_counter()
+                try:
+                    return _fn(*a)
+                finally:
+                    v = spent.setdefault(_k, [0.0, 0])
+                    v[0] += time.perf_counter() - t
+                    v[1] += 1
+            hl[i] = timed
+            swaps.append((hl, i, fn))
+
+    def restore():
+        for hl, i, fn in swaps:
+            hl[i] = fn
+    return restore
+
+
+def grid_build(n_verts, n_steps, mode="OBJECT", extra=0):
+    H.fresh()
+    ob = grid_mesh(n_verts, "M")
+    rng = np.random.default_rng(1)
+    H.enter(ob, "SCULPT")
+    t0 = time.perf_counter()
+    for _ in range(n_steps):
+        stroke_patch(ob, rng)
+        assert H.commit(ob) is not None
+    if runtime.packer is not None:
+        runtime.packer.drain(600)
+    build_s = time.perf_counter() - t0
+    runtime.set_global(C, True)
+    for i in range(extra):                     # other objects in the file, never recorded
+        e = bpy.data.objects.new(f"E{i}", bpy.data.meshes.new(f"E{i}"))
+        C.scene.collection.objects.link(e)
+    if mode == "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+    return ob, build_s
+
+
+def grid_case(n_verts, mode, spf, frames=300, extra=0):
+    """frame_set over a movie of `frames` frames (Frames per step 1, Steps per frame spf), forward,
+    then the jump back to the first frame (a loop), then backwards. Add-on = Hindsight's handlers."""
+    ob, build_s = grid_build(n_verts, frames * spf, mode, extra)
+    f0, f1 = key_movie(fps_step=1, spf=spf)
+    sc = C.scene
+    sc.frame_end = f1
+    assert f1 - f0 == frames, (f0, f1)
+    sc.frame_set(f0)
+    spent = {}
+    unwrap = _timed_all(spent)
+
+    def run(seq):
+        tot, ours = [], []
+        for f in seq:
+            b = sum(v[0] for v in spent.values())
+            t = time.perf_counter()
+            sc.frame_set(f)
+            tot.append(time.perf_counter() - t)
+            ours.append(sum(v[0] for v in spent.values()) - b)
+        return np.array(tot) * 1000, np.array(ours) * 1000
+    try:
+        tracemalloc.start()
+        tot, ours = run(range(f0 + 1, f1 + 1))
+        peak = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+        assert runtime.scrub_info(C)["pos"] == frames * spf
+        lt, lo = run([f0])                         # the loop: from the last frame to the first
+        run([f1])
+        bt, bo = run(range(f1 - 1, f0 - 1, -1))
+    finally:
+        unwrap()
+    med = lambda a: round(float(np.median(a)), 3)  # noqa: E731
+    return {"vertices": n_verts, "mode": mode, "steps_per_frame": spf, "frames": frames, "steps": frames * spf,
+            "extra_objects": extra, "build_s": round(build_s, 1),
+            "frame_set_median_ms": med(tot), "frame_set_min_ms": round(float(tot.min()), 3),
+            "addon_median_ms": med(ours), "addon_min_ms": round(float(ours.min()), 3),
+            "blender_median_ms": med(tot - ours), "addon_total_s": round(float(ours.sum()) / 1000, 3),
+            "frame_set_total_s": round(float(tot.sum()) / 1000, 3),
+            "loop_jump_ms": round(float(lt[0]), 2), "loop_jump_addon_ms": round(float(lo[0]), 2),
+            "backwards_frame_set_median_ms": med(bt), "backwards_addon_median_ms": med(bo),
+            "handler_calls": {k: v[1] for k, v in spent.items()},
+            "playback_tracemalloc_peak_mb": round(peak / 1e6, 2), "vmhwm_mb": _vmhwm_mb()}
+
+
+def render_case(n_verts=100_000, steps=300, frames=30, size=(320, 180)):
+    """Cycles on the CPU, 1 sample, an animation render of `frames` frames that each show a new step."""
+    grid_build(n_verts, steps, "OBJECT")
+    key_movie(fps_step=1, spf=1)
+    sc = C.scene
+    sc.render.engine = "CYCLES"
+    sc.render.resolution_x, sc.render.resolution_y = size
+    sc.render.resolution_percentage = 100
+    sc.cycles.samples = 1
+    sc.cycles.device = "CPU"
+    sc.cycles.use_denoising = False
+    if sc.camera is None:
+        cam = bpy.data.objects.new("Cam", bpy.data.cameras.new("Cam"))
+        sc.collection.objects.link(cam)
+        cam.location = (0.5, 0.5, 2.0)
+        sc.camera = cam
+    sc.render.filepath = os.path.join(tempfile.mkdtemp(prefix="hs_movie_"), "f_")
+    sc.render.image_settings.file_format = "PNG"
+    sc.frame_start, sc.frame_end = 1, frames
+    sc.frame_set(1)
+    stamps = []
+
+    def post(*_a):
+        stamps.append(time.perf_counter())
+    bpy.app.handlers.render_post.append(post)
+    spent = {}
+    unwrap = _timed_all(spent)
+    t = time.perf_counter()
+    try:
+        bpy.ops.render.render(animation=True)
+    finally:
+        unwrap()
+        bpy.app.handlers.render_post.remove(post)
+    dt = time.perf_counter() - t
+    per = np.diff([t] + stamps) * 1000
+    ours = sum(v[0] for v in spent.values()) * 1000
+    return {"vertices": n_verts, "frames": frames, "size": list(size), "samples": 1, "total_s": round(dt, 3),
+            "per_frame_median_ms": round(float(np.median(per)), 2), "addon_total_ms": round(ours, 2),
+            "addon_per_frame_ms": round(ours / frames, 3),
+            "handler_calls": {k: v[1] for k, v in spent.items()}, "vmhwm_mb": _vmhwm_mb()}
+
+
+def grid_main():
+    if "--case" in sys.argv:
+        i = sys.argv.index("--case")
+        n, mode, spf = int(sys.argv[i + 1]), sys.argv[i + 2], int(sys.argv[i + 3])
+        extra = int(sys.argv[sys.argv.index("--extra") + 1]) if "--extra" in sys.argv else 0
+        print("RESULT", json.dumps(grid_case(n, mode, spf, extra=extra)), flush=True)
+        return
+    if "--render-case" in sys.argv:
+        print("RESULT", json.dumps(render_case()), flush=True)
+        return
+    res = {"blender": bpy.app.version_string, "cases": [], "render": None}
+    for n in (100_000, 1_000_000):
+        for mode in ("OBJECT", "SCULPT"):
+            for spf in (1, 8):
+                res["cases"].append(grid_case(n, mode, spf))
+                print(res["cases"][-1], flush=True)
+    res["cases"].append(grid_case(100_000, "OBJECT", 1, extra=500))
+    res["render"] = render_case()
+    path = os.path.join(HERE, "results_movie_grid.json")
+    with open(path, "w") as fh:
+        json.dump(res, fh, indent=1)
+    print("wrote", path)
+
+
 def main():
+    if any(a in sys.argv for a in ("--grid", "--case", "--render-case")):
+        grid_main()
+        return
     res = {"blender": bpy.app.version_string, "scenes": [], "renders": [],
            "not_measured": "EEVEE and Workbench: Blender aborts without a GPU (libEGL.so.1 missing)"}
     if "--render-only" not in sys.argv:
