@@ -64,38 +64,66 @@ DEPENDENTS: dict = {
 }
 
 
-def _fcurve_paths(action, slot) -> set:
-    out = set()
+def _fcurves(action, slot) -> list:
     if action is None:
-        return out
+        return []
     try:
         from bpy_extras import anim_utils
         cb = anim_utils.action_get_channelbag_for_slot(action, slot)
         if cb is not None:
-            out.update(f.data_path for f in cb.fcurves)
-        return out
+            return list(cb.fcurves)
+        return []
     except Exception:
         pass
     try:                                                    # Blender 4.x: legacy actions
-        out.update(f.data_path for f in action.fcurves)
+        return list(action.fcurves)
     except Exception:
-        pass
+        return []
+
+
+def _live(f) -> bool:
+    """An F-curve that sets its property: not muted, not in a muted group."""
+    if getattr(f, "mute", False):
+        return False
+    g = getattr(f, "group", None)
+    return not (g is not None and getattr(g, "mute", False))
+
+
+def animated_slots(idb) -> dict:
+    """RNA path -> the array indices an animation, an NLA strip or a driver sets on this datablock
+    (muted F-curves, groups, tracks and strips and muted or invalid drivers set nothing)."""
+    ad = getattr(idb, "animation_data", None)
+    if ad is None:
+        return {}
+    out = {}
+
+    def add(f):
+        out.setdefault(f.data_path, set()).add(int(getattr(f, "array_index", 0)))
+    for f in ad.drivers:
+        drv = getattr(f, "driver", None)
+        if _live(f) and getattr(f, "is_valid", True) and (drv is None or getattr(drv, "is_valid", True)):
+            add(f)
+    if ad.action is not None and getattr(ad, "action_influence", 1.0) > 0.0:
+        for f in _fcurves(ad.action, getattr(ad, "action_slot", None)):
+            if _live(f):
+                add(f)
+    if getattr(ad, "use_nla", True):
+        for track in ad.nla_tracks:
+            if getattr(track, "mute", False):
+                continue
+            for strip in track.strips:
+                if getattr(strip, "mute", False):
+                    continue
+                for f in _fcurves(strip.action, getattr(strip, "action_slot", None)):
+                    if _live(f):
+                        add(f)
     return out
 
 
 def animated_paths(idb) -> set:
-    """RNA paths an animation, an NLA strip or a driver sets on this datablock. Their values change
-    with the frame, not with the user, so the generic adapter never records them (Tier 4 records
-    the animation itself)."""
-    ad = getattr(idb, "animation_data", None)
-    if ad is None:
-        return set()
-    out = {f.data_path for f in ad.drivers}
-    out |= _fcurve_paths(ad.action, getattr(ad, "action_slot", None))
-    for track in ad.nla_tracks:
-        for strip in track.strips:
-            out |= _fcurve_paths(strip.action, getattr(strip, "action_slot", None))
-    return out
+    """RNA paths an animation, an NLA strip or a driver sets (any index of them) on this datablock.
+    Their values change with the frame, not with the user (Tier 4 records the animation itself)."""
+    return set(animated_slots(idb))
 
 
 def normalise(v):
@@ -247,9 +275,24 @@ class Adapter:
         return not same(old, new)
 
 
+def _without_animated(a, b) -> bool:
+    """True if a and b differ outside what an animation sets (ANIMATED, whole or per item)."""
+    if a == ANIMATED or b == ANIMATED:
+        return False
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b) and (ANIMATED in a or ANIMATED in b):
+        return any(not same(x, y) for x, y in zip(a, b) if x != ANIMATED and y != ANIMATED)
+    return not same(a, b)
+
+
 class RNAAdapter(Adapter):
     """Properties from ALLOWLIST, read and written by RNA path."""
     id = "rna"
+
+    def changed(self, path, old, new) -> bool:
+        # Keying a value, or a driver taking it over, is not a change the user made: it isn't a step
+        return _without_animated(old, new)
+
+    changed.equal_means_unchanged = True    # identical values are never a change (datarec's fast path)
 
     @property
     def id_types(self):
@@ -260,14 +303,23 @@ class RNAAdapter(Adapter):
 
     def capture(self, idb) -> dict:
         out = {}
-        skip = animated_paths(idb)
+        anim = animated_slots(idb)
         for path, _kind, cat in self.rows(idb):
-            if path in skip or not kind_on(cat):
+            if not kind_on(cat):
                 continue
             try:
-                out[path] = normalise(idb.path_resolve(path))
+                v = normalise(idb.path_resolve(path))
             except Exception:
                 continue
+            idx = anim.get(path)
+            if idx:
+                # What the animation sets is never recorded: the whole value, or (a vector with only
+                # some items keyed) those items, which stand in as ANIMATED and are never written
+                if isinstance(v, list) and len(idx) < len(v) and all(0 <= i < len(v) for i in idx):
+                    v = [ANIMATED if i in idx else x for i, x in enumerate(v)]
+                else:
+                    v = ANIMATED
+            out[path] = v
         if out.get("parent_type") == "" and getattr(idb, "parent", 1) is None:
             # Blender 4.2: Clear Parent keeps a vertex parent type with no parent; RNA reads it as ''
             # and accepts only OBJECT without a parent. OBJECT is what it can be put back as, and what
@@ -288,10 +340,16 @@ class RNAAdapter(Adapter):
             if path not in values:
                 continue
             v = values[path]
-            if v is MISSING:
+            if v is MISSING or v == ANIMATED:
                 continue
             try:
                 owner, attr = _split(idb, path)
+                if isinstance(v, list) and ANIMATED in v:
+                    cur = getattr(owner, attr)            # only the items the animation doesn't set
+                    for i, x in enumerate(v):
+                        if x != ANIMATED and i < len(cur):
+                            cur[i] = x
+                    continue
                 if kind == "ref":
                     ref = v
                     v = idmap.find(v) if v else None

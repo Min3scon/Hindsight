@@ -180,11 +180,48 @@ def test_animation_is_not_recorded():
     for f in (1, 5, 12, 20):
         C.scene.frame_set(f)
         assert not datarec.commit(uids=[uid]), f
-    assert "location" not in adapters.ADAPTERS["rna"].capture(ob)
-    assert "scale" not in adapters.ADAPTERS["rna"].capture(ob)
+    cap = adapters.ADAPTERS["rna"].capture(ob)
+    assert cap["location"] == adapters.ANIMATED, cap["location"]          # every item keyed
+    assert cap["scale"][0] == adapters.ANIMATED and adapters.ANIMATED not in cap["scale"][1:], cap["scale"]
     ob.rotation_euler = (0.5, 0, 0)                      # a property that isn't animated still records
     steps = datarec.commit(uids=[uid])
     assert len(steps) == 1 and set(steps[0].records[0].changes) == {"rotation_euler"}, steps
+
+
+
+def test_partly_animated_and_muted():
+    """D103: only X of location keyed: a change of Y is recorded and comes back, X is never written.
+    A muted F-curve or a muted driver sets nothing, so its property is recorded. Keying a value (the
+    property becomes animated) is no step."""
+    ob = setup()
+    datarec.set_tracked(ob, True)
+    uid = runtime.obj_uid(ob)
+    ob.keyframe_insert("location", index=0, frame=1)
+    datarec.baseline(ob, uid, refresh=True)
+    assert not datarec.commit(uids=[uid]), "keying is no step"
+    y0 = ob.location[1]
+    ob.location[1] = y0 + 2.5
+    steps = datarec.commit(uids=[uid])
+    assert len(steps) == 1 and set(steps[0].records[0].changes) == {"location"}, steps
+    h = runtime.reg().history_for(uid)
+    ob.location[0] = 9.0                                  # what the animation would set
+    runtime._goto_history(h, h.cursor - 1, True)
+    assert ob.location[1] == y0 and ob.location[0] == 9.0, list(ob.location)
+    runtime._goto_history(h, h.cursor + 1, True)
+    assert ob.location[1] == y0 + 2.5 and ob.location[0] == 9.0, list(ob.location)
+    # muted: recorded like any value
+    fc = ob.driver_add("scale", 1)
+    fc.driver.expression = "2"
+    fc.mute = True
+    ad = ob.animation_data
+    for f in adapters._fcurves(ad.action, getattr(ad, "action_slot", None)):
+        f.mute = True
+    datarec.baseline(ob, uid, refresh=True)
+    cap = adapters.ADAPTERS["rna"].capture(ob)
+    assert adapters.ANIMATED not in cap["location"] and adapters.ANIMATED not in cap["scale"], cap
+    ob.location[0] = 1.25
+    steps = datarec.commit(uids=[uid])
+    assert len(steps) == 1 and set(steps[0].records[0].changes) == {"location"}, steps
 
 
 def test_awkward_values_round_trip():
@@ -228,7 +265,7 @@ def test_rotation_mode_switches():
 
 
 for t in (test_records_transforms_and_plays_back, test_rotation_mode_switches, test_packed_and_saved, test_scope_and_opt_in,
-          test_ids_survive_copies, test_capture_budget, test_animation_is_not_recorded,
+          test_ids_survive_copies, test_capture_budget, test_animation_is_not_recorded, test_partly_animated_and_muted,
           test_awkward_values_round_trip):
     H.run(t)
 datarec.FORCE_SCOPE[0] = None
