@@ -1,5 +1,69 @@
 # Decisions log
 
+## Beta 3 job (owner, 2026-11-18, in a cloud sandbox)
+
+Owner's requests, in order: Movie Mode camera that has the whole model in frame, good lighting even
+with no camera or light in the scene; "don't edit site, just get the add-on updated"; works on Blender
+5.3; less memory; centre the on-screen slider; faster timelapse rendering; optimise for weaker computers;
+use the Ponytail and CodeOptiX repositories to optimise; rewrite in Rust.
+
+### Environment and what it means for the tests
+- No Blender binary and no GPU here (download.blender.org is blocked). Everything ran on Blender as a
+  Python module from PyPI: 4.2.23, 5.0.1, 5.1.2, 5.2.2 and 5.3.0. Nothing ran in a Blender window: no
+  drawing, no real brush strokes, no real mouse. The release gate (HANDOFF, "Test guarantee") was NOT run:
+  COVERAGE statuses and TEST_EVIDENCE are unchanged, and this build goes out on headless tests plus Cycles
+  CPU renders that were looked at.
+- Three test cases can't pass here on any version: test_bl_metadata::test_opens_without_hindsight (needs
+  a Blender binary), test_bl_t1_migrate (needs .tmp/old/b1.zip), and anything that draws.
+- The venvs also have the optional `lz4` package, which the owner's Blender doesn't: it showed a real bug
+  (a damaged lz4 frame raised instead of being refused).
+
+### Movie Mode camera and lighting (contract: INTERFACES.md section 9)
+- Hindsight adds its own objects ("Hindsight Camera", three sun lamps) instead of moving the user's:
+  moving someone's camera is not undoable in spirit even when Ctrl+Z works. The user's camera becomes the
+  scene camera again when Movie Mode goes off.
+- They exist only while Movie Mode is on. Leaving them in the scene after Movie Mode would change what
+  the user's own renders look like.
+- Sun lamps, not area or point lamps: their strength doesn't depend on distance, so the same three
+  values light a 2 cm model and a 200 m one.
+- Lighting is added only when the scene has no light object of its own that renders. A scene that has
+  one is lit as its owner set it up.
+- The camera frames every position of the history, not just the mesh as it is now: a timelapse that
+  crops the big block it started from isn't "the whole model in frame". It is exact (not sampled): one
+  walk over the history that looks only at the vertices each step moves, cached. First version sampled
+  48 positions and took 4 s at 100k vertices with 3,000 steps (51 s at 1M); now 0.22 s for both.
+- Following the Ponytail rules, options nobody asked for were cut: no margin setting (10% fixed), no
+  angle sliders (the "Use this view" button sets the direction), no three-way lighting choice, no
+  "remove" button (the two switches do it).
+- Known limit: an object of the user's that is parented or constrained to one of Hindsight's objects
+  gives it a Hindsight id (the recorder ids whatever a recorded value refers to).
+- Guess to verify in real Blender: the timer puts a deleted camera or lamp back within half a second
+  while Movie Mode is on, but never during a render, timeline playback, a brush stroke or a drag.
+
+### On-screen slider (D62)
+The owner said it "hangs to the right". From the layout code: the bar was centred between the toolbar
+and the right edge, and the counter sat on its right with only the small dot to balance it. Now the
+whole slider is centred on the viewport; only a panel wider than 96 px (the sidebar, a toolbar showing
+names) moves the centre. Not seen in a real window: verify.
+
+### The two linked repositories
+- Ponytail (dietrichgebert/ponytail) is a ruleset for AI coding agents plus an audit procedure, not a
+  program that optimises code. Used as working rules for this job and to run its audit over the add-on:
+  13 measured findings, report kept in HANDOFF. Fixed: D63 to D69, the global timeline rebuilt on every
+  redraw, the extra mesh copy in the topology compare. Not done: merging duplicate helpers and deleting
+  about 60 lines of dead code in delta.py, step.py and types.py (left until the Rust work on those files
+  is merged).
+- CodeOptiX (SuperagenticAI/codeoptix) evaluates AI coding agents with an LLM provider (OpenAI,
+  Anthropic or a local Ollama). No provider is connected here and it doesn't optimise a codebase. Its
+  command line didn't start (its `acp` dependency changed), so its linters were run through its Python
+  API: 2,357 flags, nearly all line length and false positives from Blender's property syntax; four
+  unused imports; nothing about speed, memory or correctness.
+
+### tools/mutation_bl.py
+Had not compiled since an earlier session (string literals with raw line breaks). Repaired. 7 of its 78
+mutants no longer match the code they patch (already so before this job): numbers 6, 7, 8, 17, 35, 56, 60.
+They need re-targeting before the next mutation run.
+
 ## Status "partial" (owner, 2026-10-15)
 Owner's instruction for the beta 2 site: mark rows "partial" only where part of the release gate really
 passed, with exact limits in COVERAGE.md, never faked. make_evidence used to require every gate item for
