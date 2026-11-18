@@ -351,12 +351,13 @@ def test_envelope_and_reach_used():
     assert camrig.has_stack(ob)
 
 
-for f in [test_no_modifier_reference, test_mirror_x, test_mirror_two_axes, test_mirror_object,
-          test_subdivision, test_solidify_outward, test_displace, test_array, test_array_after_mirror,
-          test_shape_key, test_parent_with_scale, test_geometry_nodes_scale, test_crop_report, test_scrubbed_back_then_framed,
-          test_envelope_and_reach_used]:
-    H.run(f)
-print("spans (share of the frame the union of every step fills; 0.9 = exact):")
-for k, s in SPANS.items():
-    print(f"  {k[0]:>18} {k[1]:>5}: {s:.3f}")
-H.finish()
+if __name__ == "__main__":
+    for f in [test_no_modifier_reference, test_mirror_x, test_mirror_two_axes, test_mirror_object,
+              test_subdivision, test_solidify_outward, test_displace, test_array, test_array_after_mirror,
+              test_shape_key, test_parent_with_scale, test_geometry_nodes_scale, test_crop_report, test_scrubbed_back_then_framed,
+              test_envelope_and_reach_used]:
+        H.run(f)
+    print("spans (share of the frame the union of every step fills; 0.9 = exact):")
+    for k, s in SPANS.items():
+        print(f"  {k[0]:>18} {k[1]:>5}: {s:.3f}")
+    H.finish()

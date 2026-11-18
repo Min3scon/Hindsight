@@ -1,0 +1,191 @@
+"""Movie Mode camera frames what a RENDER shows, not what the viewport shows (review S2-1, follow-up).
+
+The viewport's evaluated mesh isn't what renders when a modifier is on for renders only (or for the
+viewport only), when Subdivision or Multires have other render levels, or when the object isn't
+evaluated in the viewport at all (disabled in viewports, or its collection is). The camera must hold
+the rendered model at every step of the history all the same. The oracle here evaluates a copy of
+the object with every modifier set the way a render uses it.
+"""
+import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
+
+import bpy
+import numpy as np
+
+import tests.harness as H
+from hindsight.bl import camrig, runtime
+import test_bl_camrig_modifiers as T
+
+C = bpy.context
+
+
+def render_world(ob):
+    """World positions of what a render shows of `ob` (oracle)."""
+    with runtime.suspended():
+        tmp = ob.copy()
+        tmp.data = ob.data.copy()
+        tmp.hide_viewport = False
+        for m in tmp.modifiers:
+            m.show_viewport = m.show_render
+            if m.type in ("SUBSURF", "MULTIRES"):
+                m.levels = m.render_levels
+                if m.type == "MULTIRES":
+                    m.sculpt_levels = m.render_levels
+        C.scene.collection.objects.link(tmp)
+        try:
+            C.view_layer.update()
+            pts = T._evaluated_world(tmp)
+        finally:
+            me = tmp.data
+            bpy.data.objects.remove(tmp)
+            bpy.data.meshes.remove(me)
+    return pts
+
+
+T.rendered_world = render_world
+
+
+def in_frame(ob, msg):
+    sc = C.scene
+    cam = camrig.rig(sc)["camera"]
+    u, v, depth = T.view_coords(sc, cam, render_world(ob))
+    assert (depth > 0).all(), msg
+    m = camrig.MARGIN / 2 - 1e-3
+    assert u.min() >= m and u.max() <= 1 - m and v.min() >= m and v.max() <= 1 - m, \
+        f"{msg}: {u.min():.3f} {u.max():.3f} {v.min():.3f} {v.max():.3f}"
+
+
+def with_history(name, setup, after=None):
+    for early in ("big", "small"):
+        H.fresh()
+        ob = H.make_mesh(1200, "Model")
+        setup(ob)
+        C.view_layer.update()
+        n = T.make_history(ob, early)
+        if after is not None:
+            bpy.ops.object.mode_set(mode="OBJECT")
+            after(ob)
+        T.check_every_step(ob, n, False, f"{name}/{early}", 0.3)
+
+
+def test_render_only_displace():
+    def setup(ob):
+        m = ob.modifiers.new("Displace", "DISPLACE")
+        m.strength = 0.8
+        m.show_viewport = False
+    with_history("render-only displace", setup)
+
+
+def test_hidden_in_viewports():
+    """The model is disabled in viewports (it still renders): the viewport doesn't evaluate it."""
+    def setup(ob):
+        ob.modifiers.new("Displace", "DISPLACE").strength = 0.8
+
+    def hide(ob):
+        ob.hide_viewport = True
+    with_history("disabled in viewports", setup, hide)
+
+
+def test_collection_hidden_in_viewports():
+    def setup(ob):
+        ob.modifiers.new("Displace", "DISPLACE").strength = 0.8
+
+    def hide(ob):
+        coll = bpy.data.collections.new("Sculpt")
+        C.scene.collection.children.link(coll)
+        coll.objects.link(ob)
+        C.scene.collection.objects.unlink(ob)
+        coll.hide_viewport = True
+    with_history("collection disabled in viewports", setup, hide)
+
+
+def _no_history(setup):
+    H.fresh()
+    ob = H.make_mesh(1200, "Model")
+    setup(ob)
+    C.view_layer.update()
+    assert runtime.history_of(ob) is None
+    C.scene.hindsight.movie_mode = True
+    return ob
+
+
+def test_viewport_only_subdivision_without_history():
+    """A mesh without a history (framed as it is now): the render shows the cage, which is bigger
+    than the subdivided surface the viewport shows."""
+    ob = _no_history(lambda ob: None)
+    m = ob.modifiers.new("Subdivision", "SUBSURF")
+    m.levels = 3
+    m.show_render = False
+    co = np.empty(len(ob.data.vertices) * 3, np.float32)
+    ob.data.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    co[co[:, 0] > 0.9, 0] += 0.8                        # a spike the subdivided surface shrinks a lot
+    ob.data.vertices.foreach_set("co", co.ravel())
+    ob.data.update()
+    assert camrig.frame(C.scene)
+    in_frame(ob, "viewport-only subdivision")
+
+
+def test_multires_render_levels_without_history():
+    """Multires shown at level 2 in the viewport, rendered at level 0 (the cage, with a spike the
+    smoothed levels pull in)."""
+    ob = _no_history(lambda ob: None)
+    co = np.empty(len(ob.data.vertices) * 3, np.float32)
+    ob.data.vertices.foreach_get("co", co)
+    co = co.reshape(-1, 3)
+    co[co[:, 0] > 0.9, 0] += 0.8
+    ob.data.vertices.foreach_set("co", co.ravel())
+    ob.data.update()
+    C.view_layer.objects.active = ob
+    ob.modifiers.new("Multires", "MULTIRES")
+    for _ in range(2):
+        bpy.ops.object.multires_subdivide(modifier="Multires", mode="CATMULL_CLARK")
+    m = ob.modifiers["Multires"]
+    m.levels = 2
+    m.render_levels = 0
+    assert camrig.frame(C.scene)
+    in_frame(ob, "multires render levels")
+
+
+def test_nothing_changed_or_left_behind():
+    """Framing through the render copy leaves the user's data, the histories and bpy.data as they
+    were: no object, mesh or step added, no cursor moved, the modifiers' settings untouched."""
+    H.fresh()
+    ob = H.make_mesh(1200, "Model")
+    m = ob.modifiers.new("Displace", "DISPLACE")
+    m.strength = 0.5
+    m.show_viewport = False
+    s = ob.modifiers.new("Subdivision", "SUBSURF")
+    s.levels, s.render_levels = 0, 2
+    T.make_history(ob, "plain")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    runtime.set_global(C, True)
+    C.view_layer.update()
+
+    def hist():
+        return sorted((h.uid, h.cursor, len(h.entries)) for h in runtime.reg().histories.values())
+    before = (hist(), runtime.scrub_info(C)["pos"], runtime.scrub_info(C)["len"])
+    sc = C.scene
+    sc.hindsight.movie_mode = True
+    n_obj, n_me = len(bpy.data.objects), len(bpy.data.meshes)
+    names = sorted(o.name for o in bpy.data.objects)
+    for _ in range(3):
+        assert camrig.frame(sc)
+    C.view_layer.update()
+    for _ in range(3):
+        runtime.tick()
+    assert len(bpy.data.objects) == n_obj and len(bpy.data.meshes) == n_me
+    assert sorted(o.name for o in bpy.data.objects) == names
+    assert (m.show_viewport, m.show_render, s.levels, s.render_levels) == (False, True, 0, 2)
+    assert ob.users_collection[0] == sc.collection and len(sc.collection.objects) == n_obj
+    assert (hist(), runtime.scrub_info(C)["pos"], runtime.scrub_info(C)["len"]) == before
+    sc.hindsight.movie_mode = False
+    assert not camrig.rig(sc)
+
+
+if __name__ == "__main__":
+    for f in [test_render_only_displace, test_hidden_in_viewports, test_collection_hidden_in_viewports,
+              test_viewport_only_subdivision_without_history, test_multires_render_levels_without_history,
+              test_nothing_changed_or_left_behind]:
+        H.run(f)
+    H.finish()

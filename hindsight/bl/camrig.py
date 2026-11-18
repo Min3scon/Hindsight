@@ -417,18 +417,92 @@ def stack_of(ob) -> list:
     return out
 
 
-def _depsgraph(scene):
-    """The evaluated depsgraph of the scene's view layer, or None."""
+def _depsgraph(scene, refresh: bool = False):
+    """The evaluated depsgraph of the scene's view layer, or None. `refresh`: evaluate what
+    changed since (another scene's depsgraph is only evaluated on request)."""
     try:
         if getattr(bpy.context, "scene", None) == scene:
             return bpy.context.evaluated_depsgraph_get()
         vl = scene.view_layers[0] if len(scene.view_layers) else None
-        return vl.depsgraph if vl is not None else None
+        dg = vl.depsgraph if vl is not None else None
+        if dg is not None and refresh:
+            dg.update()
+        return dg
     except Exception:
         return None
 
 
-def _evaluated_points(ob, dg) -> np.ndarray:
+_LEVELS = ("SUBSURF", "MULTIRES")
+
+
+def renders_differently(ob) -> bool:
+    """True when the viewport shows a different modifier stack than a render: a modifier on for
+    renders but not in the viewport (or the other way round), or a Subdivision or Multires with
+    other levels for renders. The viewport's evaluated mesh then isn't what renders."""
+    for m in ob.modifiers:
+        if bool(m.show_viewport) != bool(m.show_render):
+            return True
+        if m.show_render and m.type in _LEVELS:
+            if m.levels != m.render_levels:
+                return True
+            if m.type == "MULTIRES" and ob.mode == "SCULPT" and m.sculpt_levels != m.render_levels:
+                return True
+    return False
+
+
+def _render_copy_points(ob, scene, dg_getter):
+    """What a render shows of `ob`, for a mesh the viewport doesn't evaluate the way a render does
+    (`renders_differently`, or not evaluated at all: hidden in viewports, or in a collection
+    switched off in viewports). A temporary copy of the object (sharing its mesh) with each
+    modifier set as it is for renders is evaluated, measured and removed again; nothing of the
+    user's is changed. None when it can't be done."""
+    if scene is None:
+        return None
+    tmp = None
+    with runtime.suspended():
+        try:
+            tmp = ob.copy()
+            for key in (runtime.UID_PROP, rigmark.RIG_PROP):    # not a second object with our id
+                if key in tmp:
+                    del tmp[key]
+            tmp.hide_viewport = False
+            tmp.hide_render = False
+            for m in tmp.modifiers:
+                m.show_viewport = m.show_render
+                if m.type in _LEVELS:
+                    m.levels = m.render_levels
+                    if m.type == "MULTIRES":
+                        m.sculpt_levels = m.render_levels
+            scene.collection.objects.link(tmp)
+            dg = dg_getter(refresh=True)
+            if dg is None:
+                return None
+            return _evaluated_points(tmp, dg, ob.matrix_world)
+        except Exception as e:
+            log.error_once(("camrig_render_copy", type(e).__name__), f"Movie Mode camera: {e}", e)
+            return None
+        finally:
+            if tmp is not None:
+                try:
+                    bpy.data.objects.remove(tmp, do_unlink=True)
+                except (ReferenceError, RuntimeError):
+                    pass
+                dg_getter(refresh=True)           # evaluated now, while our own changes are ignored
+
+
+def _rendered_points(ob, scene, dg_getter):
+    """(n, 3) float32 of what renders of this mesh object now, in its own space."""
+    dg = dg_getter() if dg_getter is not None else None
+    if dg is not None:
+        ev = ob.evaluated_get(dg)
+        if not ev.is_evaluated or renders_differently(ob):
+            pts = _render_copy_points(ob, scene, dg_getter)
+            if pts is not None:
+                return pts
+    return _evaluated_points(ob, dg)
+
+
+def _evaluated_points(ob, dg, matrix_world=None) -> np.ndarray:
     """(n, 3) float32: what renders of this object now, in its own space: the evaluated mesh, and
     the corners of the boxes of the instances its Geometry Nodes make. Without a depsgraph, the
     corners of the object's box (Blender keeps the evaluated one on it)."""
@@ -437,7 +511,7 @@ def _evaluated_points(ob, dg) -> np.ndarray:
     ev = ob.evaluated_get(dg)
     pts = _positions(ev.data if ev.type == "MESH" else None).reshape(-1, 3)
     if any(m.type == "NODES" and _live(m) for m in ob.modifiers):
-        inv = np.linalg.pinv(_np_matrix(ob.matrix_world))
+        inv = np.linalg.pinv(_np_matrix(ob.matrix_world if matrix_world is None else matrix_world))
         extra = []
         for inst in dg.object_instances:
             if not inst.is_instance or inst.parent is None or inst.parent.original != ob:
@@ -450,14 +524,14 @@ def _evaluated_points(ob, dg) -> np.ndarray:
     return pts
 
 
-def _measure_stack(ob, base, local_basis, tx, ty, dg):
+def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
     """Extents (mesh space, camera axes) of a mesh with modifiers or shape keys, and its points now.
 
     Now: exact, from the evaluated object. Every other position of its history (only the base mesh
     is recorded): the envelope of the stack (framing.envelope: Mirror and Array exactly) around the
     base mesh there, grown by the reach the evaluated shape has past that envelope now, scaled up
     when the history's base mesh is bigger than now's."""
-    ev = _evaluated_points(ob, dg)
+    ev = _rendered_points(ob, scene, dg_getter)
     if not len(ev):
         ev = base.reshape(-1, 3)
     ext = framing.extents(ev, local_basis, tx, ty)
@@ -498,18 +572,22 @@ def _measure_stack(ob, base, local_basis, tx, ty, dg):
     return ext, ev
 
 
-def _measure(ob, basis, tx, ty, depsgraph=None):
+def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
     """(extents in camera axes, world bounds) of one model object: what renders of it now and, for
     a mesh with a history, every earlier and later shape. The mesh is measured in its own space, so
-    no world-space copy of it is made. `depsgraph`: a callable that gives the evaluated depsgraph
-    (only asked for when the mesh has modifiers or shape keys)."""
+    no world-space copy of it is made. `depsgraph`: a callable (refresh=False) that gives the
+    evaluated depsgraph (only asked for when the mesh has modifiers or shape keys)."""
     mw = _np_matrix(ob.matrix_world)
     local_basis = mw[:3, :3].T @ basis                 # local points @ local_basis == world @ basis
     if ob.type == "MESH" and ob.mode != "EDIT" and ob.data is not None:
         pts = _positions(ob.data)
         if has_stack(ob):
-            dg = depsgraph() if depsgraph is not None else _depsgraph(ob.users_scene[0] if ob.users_scene else None)
-            ext, pts = _measure_stack(ob, pts, local_basis, tx, ty, dg)
+            if scene is None:
+                scene = ob.users_scene[0] if ob.users_scene else None
+            if depsgraph is None:
+                def depsgraph(refresh=False):
+                    return _depsgraph(scene, refresh)
+            ext, pts = _measure_stack(ob, pts, local_basis, tx, ty, scene, depsgraph)
         else:
             ext = framing.extents(pts, local_basis, tx, ty)
             past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
@@ -579,13 +657,13 @@ def frame(scene) -> bool:
     bnd = None
     dg = []
 
-    def depsgraph():
-        if not dg:
-            dg.append(_depsgraph(scene))
+    def depsgraph(refresh=False):
+        if refresh or not dg:
+            dg[:] = [_depsgraph(scene, refresh)]
         return dg[0]
 
     for ob in model_objects(scene):
-        e, b = _measure(ob, basis, tx, ty, depsgraph)
+        e, b = _measure(ob, basis, tx, ty, depsgraph, scene)
         ext = framing.merge(ext, e)
         bnd = framing.merge_bounds(bnd, b)
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
