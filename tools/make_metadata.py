@@ -31,7 +31,8 @@ DESCRIBE = {
         "Record everything is switched on, and on data a recorded value refers to (a parent, a collection)",
         "Remove Hindsight data from this file (Advanced panel); deleting the object"),
     "Scene.hindsight": (
-        "property group on the scene (Blender 5 keeps it with the scene's system properties)", "in the .blend",
+        "property group on the scene (Blender 5 keeps it with the scene's system properties, Blender 4 with "
+        "its custom properties, as `hindsight`)", "in the .blend",
         "only once one of its settings is changed (Blender doesn't store unchanged defaults)",
         "Remove Hindsight data from this file"),
     "WindowManager.hindsight_step": (
