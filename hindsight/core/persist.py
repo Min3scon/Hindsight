@@ -24,7 +24,8 @@ Loading formats 1 and 2 needs no conversion: their steps are read as they are (a
 background later, see store.Packer); every step gets a checksum on the next save.
 A file with a format newer than FORMAT_VERSION is refused with NewerFormatError (nothing is
 guessed and nothing is overwritten). Damaged steps are never applied: a history keeps the steps
-before the first damaged one and the loss is listed in ``reg.load_report``.
+between the damaged ones that are reachable from the saved position, and the loss is listed
+in ``reg.load_report``.
 """
 from __future__ import annotations
 
@@ -261,25 +262,22 @@ def registry_from_bytes(b):
         metas = hd.get("metas", [])
         crcs = hd.get("crcs")
         want = int(hd.get("n_entries", 0))
-        entries = []
-        bad_at = None
+        slots = []       # per stored step: its Entry, or None when it is damaged or missing
         for i in range(want):
             if truncated or pos + 8 > size:
                 truncated = True
-                bad_at = i if bad_at is None else bad_at
-                break
+                slots.append(None)
+                continue
             (n,) = _U64.unpack(mv[pos:pos + 8])
             pos += 8
             if pos + n > size:
                 truncated = True
-                bad_at = i if bad_at is None else bad_at
-                break
+                slots.append(None)
+                continue
             blob = bytes(mv[pos:pos + n])
             pos += n
-            if bad_at is not None:
-                continue   # keep reading past it so later histories stay aligned
             if crcs is not None and i < len(crcs) and (zlib.crc32(blob) & 0xFFFFFFFF) != int(crcs[i]):
-                bad_at = i
+                slots.append(None)
                 continue
             meta = metas[i] if i < len(metas) else None
             if meta is None:
@@ -287,27 +285,38 @@ def registry_from_bytes(b):
                     from .step import step_from_bytes
                     meta = step_from_bytes(blob).meta()
                 except Exception:
-                    bad_at = i
+                    slots.append(None)
                     continue
-            entries.append(Entry(blob=blob, meta=meta))
+            slots.append(Entry(blob=blob, meta=meta))
             try:
                 max_seq = max(max_seq, int(meta.get("seq", 0)))
             except (TypeError, ValueError):
                 pass
-        saved_cursor = int(hd.get("cursor", want))
-        if bad_at is not None:
-            if bad_at < saved_cursor:
-                # The object was saved as it is after the damaged step: going back to any earlier
-                # step needs that step. Nothing before it can be reached exactly, so nothing is kept
-                # (keeping it would put together states that never existed).
-                entries = []
-            report["damaged"].append({"uid": h.uid, "members": list(h.members), "kept": len(entries),
-                                      "lost": want - len(entries), "before_saved": bad_at < saved_cursor})
-        h.entries = entries
-        h.cursor = saved_cursor if bad_at is None or bad_at >= saved_cursor else 0
-        h.enabled = bool(hd.get("enabled", True))
+        saved_cursor = max(0, min(int(hd.get("cursor", want)), want))
+        bad = [i for i, e in enumerate(slots) if e is None]
         mt = hd.get("morph_target")
-        h.morph_target = None if mt is None else int(mt)
+        mt = None if mt is None else int(mt)
+        if not bad:
+            entries, cursor = slots, saved_cursor
+        else:
+            # Every step undoes and redoes itself, so a damaged step cuts the history in two: the
+            # object was saved after the steps up to the cursor, and only the steps between the last
+            # damaged one before the cursor and the first damaged one after it can be reached from
+            # there. That run is kept (as if the oldest steps had been dropped by the step cap).
+            early = [i for i in bad if i < saved_cursor]
+            late = [i for i in bad if i >= saved_cursor]
+            lo = early[-1] + 1 if early else 0
+            hi = late[0] if late else want
+            entries, cursor = slots[lo:hi], saved_cursor - lo
+            if mt is not None:
+                mt = mt - lo if lo <= mt <= hi else None
+            report["damaged"].append({"uid": h.uid, "members": list(h.members), "kept": len(entries),
+                                      "lost": want - len(entries), "before_saved": bool(early),
+                                      "lost_before": lo})
+        h.entries = entries
+        h.cursor = cursor
+        h.enabled = bool(hd.get("enabled", True))
+        h.morph_target = mt
         _clamp_hist(h)
         reg.histories[h.uid] = h
     if reg.next_seq <= max_seq:

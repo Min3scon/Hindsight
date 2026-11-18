@@ -39,6 +39,7 @@ Fixed:
 - Crash recovery no longer brings back steps from another save of the file (a .blend1 renamed back, a copy, a backup) or from the same file open in a second Blender.
 - Crash recovery keeps one operation on several objects whole, and handles a crash in the middle of a join.
 - Saving while recording is paused on an object that changed adds one step for those changes, so going back later starts from the right mesh.
+- A saved history with a damaged step keeps the steps after it that can still be reached, instead of losing all of it.
 - When the history can't be stored in the .blend (out of memory), it goes into the history folder next to it instead of being lost.
 - Crash recovery on a full or failing disk: a record cut off part way no longer hides the steps written after it, and a save point that didn't reach the disk is reported.
 - The memory limit could drop steps that an object you had scrubbed back hadn't reached yet. Going forward again then gave shapes that never existed.
