@@ -536,3 +536,47 @@ Blender 5.3. Microseconds per call, minimum over the rounds.
   collection in the file, for every object, three times per redraw in global mode.
 - Not changed by this: global history with 50 objects and no filter. Nearly all of that redraw is
   `runtime.scrub_info`, which the runtime work below takes on.
+
+## Saving with the history in the .blend, and the background re-packer (2026-11-18)
+
+Blender 5.3 as a module, headless, on a shared machine (load 5 to 14 on 4 cores; whole-file save and
+open times swung 20 to 40% between runs, so only memory and CPU-seconds are read from this).
+`bench/saveload_bench.py` builds one history, caches its steps, and saves and opens it with the old
+build (66fcdf8) and the new one in alternating runs, 5 rounds, 3 saves and 3 opens per run.
+
+Where Hindsight's own time goes at save and open was profiled first. At 1M vertices its share is under
+10% of what Blender needs to open the file, and most of that share is reading the mesh for the
+fingerprint and the baseline, not the storage code. Reading the history file is 18 ms per 1,000 steps,
+most of it the checks that find damaged steps, which stay.
+
+Embed (history inside the .blend). Python held the joined history, its base64 bytes and the string at
+once, while Blender still held the copy from the last save. Now the text is built piece by piece into
+one buffer of the final size, and the old copy is let go first. The stored text is the same string
+(tested on 200 random layouts and a real registry).
+
+| history | Python peak, before to after | process peak above RSS, before to after |
+|---|---|---|
+| 100k vertices, 1,000 steps (10 MB) | 26.9 to 24.1 MB | 11.8 to 5.2 MB |
+| 100k vertices, 6,000 steps (54 MB) | 159.7 to 143.1 MB | 143 to 74-86 MB |
+| 1M vertices, 300 steps (39 MB) | 75.4 to 67.1 MB | 74 to 33 MB |
+
+Save time did not change (store plus save at 6,000 steps, both builds in one process, 6 alternations:
+1,026 ms before, 1,001 ms after, minimum). Saving to the history folder and opening are unchanged.
+
+The background re-packer (zstd 19 on steps when idle; about 3 ms of CPU per step at 100k vertices and
+26 ms at 1M) did not wait for the user when strokes came more than a second apart. `bench/packer_bench.py`,
+1M vertices, 20 s per phase, thread CPU from /proc:
+
+| phase | before | after |
+|---|---|---|
+| strokes every 2 s, first strokes after opening | 0.58 s of CPU, 15 steps | none |
+| strokes every 2 s, each packing a step | 0.41 s, 10 steps | 0.01 s, none |
+| idle | 0.57 s, 15 steps | 0.46 s, 14 steps (starts 5 s later) |
+| steps already in the strong form, idle | 19 looked at | 1 looked at |
+
+It now waits 5 s after the last stroke or jump. Its pace when idle (one step per idle second) and the
+bytes it writes are unchanged.
+
+Not done: the journal's cost per stroke (0.19 ms at 100k, 0.62 ms at 1M, no fsync) is small next to
+the stroke itself. Dropping the embedded string from memory after a save would free 69 MB at 6,000
+steps, but Blender's autosave runs no handlers, so the history would be missing from an autosave.

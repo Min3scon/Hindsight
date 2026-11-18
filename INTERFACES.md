@@ -90,7 +90,10 @@ def same_step(a: Step, b: Step) -> bool
 class Packer:                                    # background thread that packs entries off the main thread;
                                                  # when idle, recompresses packed entries (throttled)
     def __init__(self, recompress_idle: bool = True): ...
-    def queue_recompress(self, entries) -> None  # e.g. everything loaded from a file
+    def queue_recompress(self, entries) -> None  # e.g. everything loaded from a file; steps that can't get
+                                                 # smaller are skipped; wakes the worker
+    def note_activity(self) -> None              # the user recorded or jumped: idle recompression waits
+                                                 # USER_IDLE_S (5 s) from now
     def submit(self, entry: Entry, codec: str) -> None   # packs in a worker thread (numpy+codec only);
                                                          # swap is atomic: sets entry.blob then entry.step=None
     def drain(self, timeout: float | None = None) -> None   # wait until queue empty (used by tests / save)

@@ -22,6 +22,8 @@ Faster and lighter:
 - Saving and loading history works step by step. Peak memory while saving a 6,000-step history of a 100k mesh went from 89 MB to 43 MB, and loading from 141 MB to 83 MB. Recording a remesh at 1M vertices needs 426 MB instead of 609 MB.
 - What Hindsight remembers about its own jumps for Blender's undo is kept only as far back as Blender can undo. It used to keep up to 512 copies of every recorded value.
 - Once the memory limit is reached, a stroke no longer rescans every step.
+- Saving with the history inside the .blend needs about half the extra memory it did: 74 to 86 MB instead of 143 MB at 6,000 steps.
+- Background recompression of steps waits while you sculpt or scrub. It also starts after a file is opened now, not only after the first new stroke was packed.
 - Redraws cost less. The on-screen slider keeps its drawing between redraws and rebuilds only the handle while you drag. The viewport warning and Collection Filtering do less work on each redraw: with 50 objects, global history and a filter list, a redraw went from 3.9 ms to 1.2 ms.
 - The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 
@@ -31,6 +33,7 @@ Fixed:
 - Recovery after a crash (On open: Interrupted session) could bring back a history that didn't match the mesh in the file, so scrubbing showed shapes that never existed. It happened after the step cap or the memory limit dropped old steps, after going back past the last save and sculpting there, and after a join.
 - Steps that can't be reached from the saved file are left out of the recovered history now. The Undo History tab says how many, and for which object.
 - After opening a file that was changed without Hindsight, an interrupted session lost what was recorded next. Those steps come back now.
+- Crash recovery on a full or failing disk: a record cut off part way no longer hides the steps written after it, and a save point that didn't reach the disk is reported.
 - The memory limit could drop steps that an object you had scrubbed back hadn't reached yet. Going forward again then gave shapes that never existed.
 - Blender 5.2 and 5.3: Remove Hindsight data from this file failed.
 - Blender 5.3: switching an object to a paint mode and saving wrote a history for it, though nothing had been painted.
