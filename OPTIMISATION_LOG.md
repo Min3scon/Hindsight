@@ -135,3 +135,5 @@ machine and profile the embed path at 6,000 steps.
 
 The owner's target was at least 100 rounds. 26 kept and 4 reverted is the true count of what was
 measured so far.
+
+| R-MS1 | 2026-11-18 | global timeline | runtime._groups rebuilt every group (walk + sort of every step) after each recorded step with global history on; 25-90 ms per stroke at 50,000 steps | the kept groups are extended by the one step appended to one history; anything else builds them again; a test compares with a full build over 120 random operations | 25.1 / 86.4 ms (min / median) | 0.30 / 0.32 ms | 5 histories x 10,000 steps, 300-vertex meshes, Blender 5.3 module, old (66fcdf8) and new alternating, 2 rounds each, 15 strokes per round | test_bl_runtime_groups, test_bl_audit, test_bl_panels, test_bl_scrubber, test_bl_movie on 5.3 and 4.2 | kept | main-session-2 |

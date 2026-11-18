@@ -1305,23 +1305,74 @@ def mesh_fingerprint(ob) -> str:
 _GROUPS = {}   # the global timeline's operations and the position on it, kept until they change
 
 
+def _hist_sig(h):
+    return (tuple(h.members), len(h.entries), h.entries[0].seq if h.entries else 0,
+            h.entries[-1].seq if h.entries else 0)
+
+
 def _groups(vis) -> list:
     """globaltl.global_groups, kept between calls: the slider, the header, the sidebar and Movie
     Mode ask for it on every redraw and every frame, and building it walks and sorts every step.
-    Built again when a step is recorded (every new step takes a new number), a history gains,
-    loses or replaces steps or objects, or what is visible changes."""
-    key = (id(_REG), _REG.next_seq, frozenset(vis), tuple(
-        (h.uid, tuple(h.members), len(h.entries), h.entries[0].seq if h.entries else 0,
-         h.entries[-1].seq if h.entries else 0) for h in _REG.histories.values()))
-    if _GROUPS.get("key") != key:
-        _GROUPS.clear()
-        _GROUPS.update(key=key, groups=globaltl.global_groups(_REG, vis))
-    return _GROUPS["groups"]
+    A step recorded at the end of one history (the usual case) extends the kept groups; anything else
+    (a history gains, loses or replaces steps or objects, what is visible changes) builds them again."""
+    vis = frozenset(vis)
+    sigs = {h.uid: _hist_sig(h) for h in _REG.histories.values()}
+    key = (id(_REG), _REG.next_seq, vis, tuple(sorted(sigs.items())))
+    if _GROUPS.get("key") == key:
+        return _GROUPS["groups"]
+    groups = _extend_groups(vis, sigs)
+    if groups is None:
+        groups = globaltl.global_groups(_REG, vis)
+    _GROUPS.clear()
+    _GROUPS.update(key=key, groups=groups, vis=vis, reg=id(_REG), sigs=sigs,
+                   ver=_GROUPS_VER[0] + 1)
+    _GROUPS_VER[0] += 1
+    return groups
+
+
+_GROUPS_VER = [0]
+
+
+def _extend_groups(vis, sigs):
+    """The kept groups with the one step appended since they were built, or None to build again."""
+    old = _GROUPS.get("sigs")
+    if old is None or _GROUPS.get("vis") != vis or _GROUPS.get("reg") != id(_REG) or set(old) != set(sigs):
+        return None
+    grown = [u for u in sigs if sigs[u] != old[u]]
+    if len(grown) != 1:
+        return None
+    u = grown[0]
+    om, olen, ofirst, olast = old[u]
+    m, n, first, last = sigs[u]
+    if m != om or n != olen + 1 or (olen and first != ofirst) or last <= olast:
+        return None
+    h = _REG.histories[u]
+    groups = list(_GROUPS["groups"])
+    if vis is not None and not (set(h.members) & vis):
+        return groups                                    # not on the visible timeline
+    if groups and last <= groups[-1][-1][0]:
+        return None                                      # not after every kept step: build again
+    e = h.entries[-1]
+    item = (e.seq, h.uid, n - 1)
+    gk = globaltl._group_key(e)
+    if gk != e.seq:                                      # D52: part of an operation already on it
+        for gi in range(len(groups) - 1, -1, -1):
+            g = groups[gi]
+            if globaltl._group_key(_entry(g[0])) == gk:
+                groups[gi] = sorted(g + [item])
+                return groups
+    groups.append([item])
+    return groups
+
+
+def _entry(t):
+    _seq, hid, i = t
+    return _REG.histories[hid].entries[i]
 
 
 def _position(vis, groups) -> int:
     """globaltl.global_position, kept until a cursor moves."""
-    key = (id(groups), tuple(h.cursor for h in _REG.histories.values()))
+    key = (_GROUPS.get("ver"), id(groups), tuple(h.cursor for h in _REG.histories.values()))
     if _GROUPS.get("pos_key") != key:
         _GROUPS.update(pos_key=key, pos=globaltl.global_position(_REG, vis, groups))
     return _GROUPS["pos"]

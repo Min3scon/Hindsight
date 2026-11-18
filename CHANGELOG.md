@@ -49,6 +49,7 @@ Fixed:
 - Blender 5.0: scrubbing back over a colour layer could lose which layer is active.
 - A damaged history block stored with LZ4 is refused cleanly now.
 - After a long session a repeating error could fill the system console.
+- Steps per object can be raised to 100,000 in Preferences (the default stays 10,000). With global history on, recording a step no longer rebuilds the whole timeline: at 50,000 steps that took 25 to 90 ms after every stroke, now 0.3 ms.
 - Linked duplicates (Alt+D) share one history, as the tab says: going back on one no longer wipes strokes made on the other.
 - Record everything: when only some items of a value are keyed (only X of Location), the others are recorded. Muted keys and drivers no longer stop a value from being recorded, and adding a keyframe makes no step.
 - An object the global history deleted and brings back keeps its physics and particle settings: cloth, soft body, fluid, collision, particles, force field and rigid body. Dynamic Paint surfaces and baked caches still don't come back.
