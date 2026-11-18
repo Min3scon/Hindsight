@@ -81,8 +81,8 @@ _WORLD_LIGHT_NODES = ("ShaderNodeTexEnvironment", "ShaderNodeTexSky")
 
 def world_lights(scene) -> bool:
     """True when the scene's world is an image or a sky (an Environment or Sky Texture node feeds
-    its active World Output): that lights a render. A plain colour (the default grey world) doesn't
-    count."""
+    its active World Output, not through a Background or Emission of strength 0): that lights a
+    render. A plain colour (the default grey world) doesn't count, whatever its strength."""
     w = getattr(scene, "world", None)
     if w is None or w.node_tree is None:
         return False
@@ -101,6 +101,10 @@ def world_lights(scene) -> bool:
         if n.bl_idname in _WORLD_LIGHT_NODES and not n.mute and \
                 (n.bl_idname != "ShaderNodeTexEnvironment" or n.image is not None):
             return True
+        if n.bl_idname in ("ShaderNodeBackground", "ShaderNodeEmission") and not n.mute:
+            st = n.inputs.get("Strength")
+            if st is not None and not st.is_linked and st.default_value <= 0.0:
+                continue                    # strength 0: what feeds it lights nothing
         for sock in n.inputs:
             for link in sock.links:
                 if link.is_valid and not getattr(link, "is_muted", False):

@@ -130,6 +130,10 @@ def test_world():
     sky = nt.nodes.new("ShaderNodeTexSky")
     nt.links.new(sky.outputs["Color"], bg.inputs["Color"])
     assert not lights_added(sc), "a sky world lights the scene"
+    bg.inputs["Strength"].default_value = 0.0
+    assert lights_added(sc), "a sky at strength 0 lights nothing"
+    bg.inputs["Strength"].default_value = 1.0
+    assert not lights_added(sc)
     sc.world = None
     assert lights_added(sc)
 
