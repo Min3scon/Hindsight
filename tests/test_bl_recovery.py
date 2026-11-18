@@ -303,6 +303,8 @@ def test_strokes_after_a_mesh_changed_without_hindsight():
     bpy.ops.wm.open_mainfile(filepath=path)
     H.fake_stroke(bpy.data.objects[NAME], 99, n=80)
     bpy.ops.wm.save_mainfile()
+    if os.path.isfile(path + "1"):
+        os.remove(path + "1")                    # no backup copy: the history is left out (D107 aside)
     setup()
     bpy.ops.wm.open_mainfile(filepath=path)
     ob = bpy.data.objects[NAME]
@@ -324,10 +326,39 @@ def test_strokes_after_a_mesh_changed_without_hindsight():
     bpy.ops.wm.open_mainfile(filepath=path)
     H.fake_stroke(bpy.data.objects[NAME], 98, n=80)
     bpy.ops.wm.save_mainfile()
+    if os.path.isfile(path + "1"):
+        os.remove(path + "1")
     setup()
     bpy.ops.wm.open_mainfile(filepath=path)
     assert runtime.history_of(bpy.data.objects[NAME]) is None
     assert any(runtime.OUTSIDE_MESH_TEXT.format(name=NAME) == t for t in notes()), notes()
+
+
+
+# D107 with D82: the change is bridged from Blender's backup copy; strokes after it come back after an
+# interruption, and the file's state is after the bridging step
+def test_strokes_after_a_change_bridged_by_the_backup():
+    setup()
+    ob, after, path = start("outside_bridge", 3)
+    save(ob, path)
+    H.fresh(register=False)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    H.fake_stroke(bpy.data.objects[NAME], 99, n=80)
+    bpy.ops.wm.save_mainfile()
+    setup()
+    bpy.ops.wm.open_mainfile(filepath=path)
+    ob = bpy.data.objects[NAME]
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == 4 and h.entries[-1].load().label == runtime.OUTSIDE_LABEL
+    H.enter(ob, "SCULPT")
+    file_state = H.snapshot(ob)
+    after[h.entries[-1].seq] = file_state
+    stroke(ob, 50, after)
+    live = seqs(ob)
+    ob = interrupt(path)
+    h = runtime.history_of(ob)
+    assert h is not None and seqs(ob) == live and h.cursor == 4, (h and seqs(ob), h and h.cursor)
+    check(ob, after, file_state)
 
 
 # D83: values changed in a session without Hindsight become one step when the file is opened. The

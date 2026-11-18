@@ -1,6 +1,7 @@
 """Hindsight runtime: recorder (stroke detection, capture), playback and the API used by the UI."""
 from __future__ import annotations
 
+import os
 import time
 
 import bpy
@@ -1658,6 +1659,8 @@ def reset_all(context) -> None:
 
 
 OUTSIDE_LABEL = "Changes Outside Hindsight"
+OUTSIDE_BRIDGED_TEXT = ("{name} was changed while Hindsight wasn't running. Its history goes on, with the "
+                        "change as one step, read from the backup copy Blender keeps of the file")
 OUTSIDE_MESH_TEXT = ("{name} was changed while Hindsight wasn't running, so its history no longer matches its "
                      "mesh and was left out")
 
@@ -1695,6 +1698,57 @@ def saved_prints() -> dict:
     return out
 
 
+def _bridge_from_backup(ob, uid, h, fp) -> bool:
+    """D107: the mesh was changed in a session without Hindsight. Blender keeps the file as it was
+    before that session's save in <file>.blend1 (Save Versions). When that copy's mesh is exactly the
+    one Hindsight saved, the change becomes one topology step from it to the mesh now, and the history
+    is kept. False when there is no such copy or it doesn't match (then the history is left out)."""
+    path = bpy.data.filepath
+    if not path or ob.mode == "EDIT" or not os.path.isfile(path + "1"):
+        return False
+    name = ob.data.name
+    kinds = ("meshes", "materials", "images", "textures", "node_groups")
+    before_ids = {k: {d.as_pointer() for d in getattr(bpy.data, k)} for k in kinds}
+    loaded = None
+    try:
+        with suspended():
+            with bpy.data.libraries.load(path + "1", link=False) as (src, dst):
+                if name not in src.meshes:
+                    return False
+                dst.meshes = [name]
+            loaded = dst.meshes[0] if dst.meshes else None
+        if loaded is None:
+            return False
+        ext = extras_on(ob)
+        if meshio.fingerprint(loaded, ob if ext else None) != fp:
+            return False
+        with_extras = ext or topo_extras_on(ob)
+        before = meshio.read_snapshot(loaded, ob=ob, extras=with_extras)
+        after = meshio.read_snapshot(ob.data, ob=ob, extras=with_extras)
+        step = Step(seq=_REG.new_seq(), label=OUTSIDE_LABEL, mode="OBJECT", target=uid, time=time.time(),
+                    kind=TOPO, before=before, after=after)
+        at = h.cursor
+        removed = h.push(step)
+        if removed:
+            _journal("TRUNC", {"hist": h.uid, "keep": at})
+        entry = h.entries[-1]
+        _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
+        return True
+    except Exception as e:
+        log.error_once(("blend1_bridge", str(e)), f"could not read the backup copy of the file: {e}", e)
+        return False
+    finally:
+        # what loading the copy brought in goes again (the mesh and anything it pulled with it)
+        with suspended():
+            for k in kinds:
+                col = getattr(bpy.data, k)
+                for d in [d for d in col if d.as_pointer() not in before_ids[k] and d.users == 0]:
+                    try:
+                        col.remove(d)
+                    except Exception:
+                        pass
+
+
 def check_outside_changes(saved: dict) -> None:
     """D46: after opening a file, compare every recorded object with how Hindsight saved it. Values
     changed in a session without Hindsight become one step; a changed mesh can't be rebuilt from
@@ -1708,7 +1762,14 @@ def check_outside_changes(saved: dict) -> None:
         h = _REG.history_for(u)
         fp = rec.get("mesh")
         if fp and isinstance(ob, bpy.types.Object) and ob.type == "MESH" and h is not None and h.entries:
-            if mesh_fingerprint(ob) != fp:
+            if (mesh_fingerprint(ob) != fp and h.cursor == len(h.entries) and len(h.members) == 1
+                    and _bridge_from_backup(ob, u, h, fp)):
+                # D107 (only with nothing recovered ahead of the saved position, and for one object):
+                # the file's state is after the new step, for crash recovery as for D83
+                load_notes.append(("INFO", OUTSIDE_BRIDGED_TEXT.format(name=ob.name)))
+                ensure_state(ob, refresh=True)
+                outside.add(u)
+            elif mesh_fingerprint(ob) != fp:
                 h.reset()
                 # with the meshes as they are now: steps recorded from here on belong to them, and
                 # crash recovery must not take this history for a stale one again (D82)
