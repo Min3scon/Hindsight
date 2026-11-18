@@ -845,10 +845,51 @@ def sync_taken_names() -> None:
             st.values[("rna", "name")] = idb.name
 
 
+_ID_DATA = {"OBJECT": "objects", "MESH": "meshes", "MATERIAL": "materials", "COLLECTION": "collections",
+            "NODETREE": "node_groups", "WORLD": "worlds", "SCENE": "scenes", "CAMERA": "cameras",
+            "LIGHT": "lights", "IMAGE": "images", "TEXT": "texts", "ACTION": "actions"}
+
+
+def resolve_taken_names() -> int:
+    """D105: after a jump, a datablock that couldn't get its recorded name because another one held
+    it gets it now if that one has moved on (two objects that swapped names, a chain of renames).
+    A name another datablock still holds is left alone: renaming a datablock the user didn't scrub is
+    never done. Returns how many were renamed."""
+    done = 0
+    for _ in range(8):                                    # chains: each pass frees names for the next
+        moved = 0
+        for u, wanted in list(adapters.NAME_TAKEN.items()):
+            idb = idmap.find(u)
+            if idb is None or not isinstance(wanted, str) or idb.name == wanted:
+                adapters.NAME_TAKEN.pop(u, None)
+                continue
+            col = getattr(bpy.data, _ID_DATA.get(getattr(idb, "id_type", ""), ""), None)
+            if col is None:
+                continue
+            holder = col.get(wanted)
+            if holder is not None and holder != idb:
+                continue
+            try:
+                idb.name = wanted
+            except Exception:
+                continue
+            adapters.note_name(idb, wanted)
+            if idb.name == wanted:
+                st = _rt()._STATES.get(u)
+                if st is not None and ("rna", "name") in st.values:
+                    st.values[("rna", "name")] = wanted
+                moved += 1
+        done += moved
+        if not moved:
+            break
+    return done
+
+
 def resolve_missing_refs() -> None:
     """D37: an object a restore couldn't refer to is back (the global history brought it back): put
     the recorded references in now, so Blender matches the history again. D55: then collections
     Hindsight made again that the jump took out and left empty are removed."""
+    resolve_taken_names()
     if not adapters.MISSING_REFS:
         adapters.drop_recreated_orphans()
         return
