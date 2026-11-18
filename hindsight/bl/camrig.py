@@ -365,8 +365,9 @@ def tick() -> None:
     sh = _props(scene)
     if sh is None or not sh.movie_mode:     # nothing to keep in place: costs nothing while off
         return
-    if runtime.IN_HANDLER[0] or _render_running() or _playing():
-        return
+    from . import datarec
+    if runtime.IN_HANDLER[0] or _render_running() or _playing() or datarec._operation_running():
+        return                              # never in the middle of a render, playback, a stroke or a drag
     if needs_attention(scene):
         res = ensure(scene, reframe=False)
         if res["created"] or res["removed"]:

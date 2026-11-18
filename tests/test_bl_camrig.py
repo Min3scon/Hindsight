@@ -251,6 +251,16 @@ def test_tick_puts_missing_pieces_back():
     finally:
         runtime.IN_HANDLER[0] = False
     assert "fill" not in camrig.rig(sc)
+    # not in the middle of a brush stroke or a drag (a modal operator is running)
+    from hindsight.bl import datarec
+    real = datarec._operation_running
+    datarec._operation_running = lambda: True
+    try:
+        camrig._LAST[0] = -1e9
+        camrig.tick()
+    finally:
+        datarec._operation_running = real
+    assert "fill" not in camrig.rig(sc)
     camrig._LAST[0] = -1e9
     camrig.tick()
     assert set(camrig.rig(sc)) == ROLES
