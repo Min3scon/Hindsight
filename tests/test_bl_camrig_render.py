@@ -183,9 +183,49 @@ def test_nothing_changed_or_left_behind():
     assert not camrig.rig(sc)
 
 
+def test_cache_not_kept_across_files():
+    """The history walk is cached per history and object id with the history's length and step
+    numbers. Two files saved from one session can hold histories with the same ids, length and
+    step numbers but other shapes: the cache of the first must not frame the second."""
+    import tempfile
+    tmp = tempfile.mkdtemp(prefix="hs_camrig_cache_")
+    H.fresh()
+    ob = H.make_mesh(1200, "Model")
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 1)
+    assert H.commit(ob)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    runtime.set_global(C, True)
+    a = os.path.join(tmp, "a.blend")
+    b = os.path.join(tmp, "b.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=a)
+    H.enter(ob, "SCULPT")
+    T.scale_mesh(ob, 3.0)                       # B: a second step three times as big
+    assert H.commit(ob)
+    T.scale_mesh(ob, 1.0 / 3.0)
+    assert H.commit(ob)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.wm.save_as_mainfile(filepath=b)
+    bpy.ops.wm.open_mainfile(filepath=a)        # A: two small steps, same step numbers as B's
+    ob = bpy.data.objects["Model"]
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 2)
+    assert H.commit(ob)
+    H.fake_stroke(ob, 3)
+    assert H.commit(ob)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    C.scene.hindsight.movie_mode = True         # frames A: the walk is cached
+    bpy.ops.wm.open_mainfile(filepath=b)
+    ob = bpy.data.objects["Model"]
+    n = runtime.scrub_info(C)["len"]
+    T.check_every_step(ob, n, False, "file B after file A", 0.3)
+    import shutil
+    shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     for f in [test_render_only_displace, test_hidden_in_viewports, test_collection_hidden_in_viewports,
               test_viewport_only_subdivision_without_history, test_multires_render_levels_without_history,
-              test_nothing_changed_or_left_behind]:
+              test_nothing_changed_or_left_behind, test_cache_not_kept_across_files]:
         H.run(f)
     H.finish()

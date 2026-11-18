@@ -982,17 +982,33 @@ def _on_save_pre(*_args) -> None:
         log.error_once(("camrig_save_pre", type(e).__name__), f"Movie Mode camera before save: {e}", e)
 
 
+@persistent
+def _on_load_post(*_args) -> None:
+    """Another file: its histories may have the same ids, lengths and step numbers as the ones
+    the caches were made for, with other shapes."""
+    _PAST.clear()
+    _REACH.clear()
+
+
 def register():
     _LAST[0] = 0.0
+    _PAST.clear()
+    _REACH.clear()
     for c in classes:
         bpy.utils.register_class(c)
     if _on_save_pre not in bpy.app.handlers.save_pre:
         bpy.app.handlers.save_pre.append(_on_save_pre)
+    if _on_load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_on_load_post)
 
 
 def unregister():
     while _on_save_pre in bpy.app.handlers.save_pre:
         bpy.app.handlers.save_pre.remove(_on_save_pre)
+    while _on_load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_on_load_post)
+    _PAST.clear()
+    _REACH.clear()
     for c in reversed(classes):
         try:
             bpy.utils.unregister_class(c)
