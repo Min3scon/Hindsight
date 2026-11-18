@@ -240,3 +240,100 @@ In the heavy scene, an operation that changes relations (parenting, constraints,
 Blender report every object as updated, and with the scene recorded each object's stored details
 (what brings a deleted object back exactly, D18) are read again: 129 of 160 ms in a profile. Reading
 only the objects that can be deleted next would need to predict the selection; not done.
+
+## Memory, and the Rust question
+
+Measured 2026-11-18 with `bench/mem_profile.py` (writes `bench/results_mem.json`) on a shared Linux
+VM: Intel Xeon at 2.10 GHz, 4 logical CPUs, 16 GB, Blender 5.3.0 as a Python module (Python 3.13),
+headless, strokes simulated as in `bench/bench_bl.py` (about 2% of the vertices each, newest 64 steps
+raw). Python-side numbers are tracemalloc (numpy reports its buffers to it) and `sys.getsizeof`;
+process numbers are VmRSS and VmHWM, the peak reset before each measured operation. Blender's own
+allocations (the mesh, ID properties) show only in RSS.
+
+### Where it goes (held while sculpting)
+
+| | 100k vertices, 6,000 strokes | 1M vertices, 300 strokes |
+|---|---|---|
+| Packed steps (blob bytes) | 51.6 MB (9,120 B per step) | 19.3 MB (85,900 B per step) |
+| Mesh baseline (`MeshState`, one per recorded object) | 6.1 MB (topology 4.9 MB) | 61.0 MB (topology 49.5 MB) |
+| Entry and metadata objects | 3.5 MB (605 B per step; 698 B after loading a file) | 0.2 MB |
+| Raw tier (newest 64 steps, arrays) | 1.9 MB | 19.4 MB |
+| meshio's reusable read buffers | 1.1 MB | 11.4 MB |
+| Process RSS, Blender alone / with the mesh / after recording | 455 / 481 / 548 MB | 751 / 951 / 985 MB |
+
+A second recorded object keeps its baseline while idle (6.1 MB at 100k): the baseline is what a
+change made while it was not being edited is compared against, so it stays. A topology step (the mesh
+rebuilt) holds a full `before` and `after` while it is in the raw tier: 6.1 + 6.1 MB at 100k, 61 + 61
+MB at 1M (packed: 5 MB and 55 MB). Commits and jumps have small transients: a stroke commit 1.6 MB
+at 100k and 16 MB at 1M (numpy temporaries of the diff, 1.3 times the position array), a jump over
+all 6,000 steps 0.5 MB.
+
+### What was cut (transients, measured before and after, same machine)
+
+| Operation | Before | After |
+|---|---|---|
+| Save, history folder, 100k / 6,000 steps (Python peak, times the history) | 88.7 MB (1.29x) | 43.0 MB (0.63x) |
+| Save, embedded (and Both), 100k | 251.5 MB (3.67x) | 205.8 MB (3.00x) |
+| Save, history folder, 1M with three raw topology steps | 540 MB (2.81x) | 418 MB (2.17x) |
+| Load, history folder, 100k | 140.7 MB (2.05x) | 83.3 MB (1.22x) |
+| Load, embedded, 100k | 182.9 MB (2.67x) | 160.1 MB (2.34x) |
+| Topology step commit, 100k (12 MB step) | 60.6 MB | 42.3 MB |
+| Topology step commit, 1M (122 MB step) | 609 MB | 426 MB |
+| Mesh fingerprint (saving, loading, jumps of objects recorded with Record everything), 1M | 61.0 MB, 2,424 ms | 30.5 MB, 2,044 ms |
+
+What changed: the history file is written step by step from the blobs already in memory instead of
+being joined into one bytes object (`persist.registry_parts`, `atomic_write` takes a list), and read
+step by step from the file instead of reading it whole first; the embedded form drops each full-size
+copy as soon as the next exists and decodes base64 from the stored text in place (`binascii`); a
+step's snapshots are joined once, straight from the arrays (no `tobytes` copies, no second join for
+the checksum); a topology step takes the baseline's arrays as its `before` instead of copying them
+(the baseline gets fresh ones right after); the mesh fingerprint hashes one array at a time. File
+formats are unchanged (same bytes as before, checked by the tests), every step is still stored and
+restored bit for bit.
+
+Speed (old build against new, alternated runs, medians; the VM was shared with other jobs, load
+average 7 to 12, so differences under about 15% are noise). Storage engine alone
+(`bench/mem_speed_core.py`, 100k mesh, 6,000-step history, last 3 pairs): writing a topology step
+49 / 33 ms, writing a stroke step 0.064 / 0.064 ms, saving the history folder 90 / 80 ms (it needs a
+1 MB write buffer: with Python's default 8 KB, writing step by step was 30% slower), loading it
+43 / 48 ms (about 1 µs more per step in Python calls; on 9 KB random steps 82 to 111 ms old against
+69 to 80 ms new), embedded form out 117 / 110 ms, in 117 / 71 ms. In Blender (`bench/mem_speed.py`,
+300 steps, 5 alternated runs): commit 1.01 / 1.05 ms, 1-step jump 0.46 / 0.43 ms, 300-step jump
+18.7 / 20.2 ms (neither path changed), topology commit 205 / 161 ms; whole-file save and open varied
+from 90 to 240 ms run to run in both builds, so no difference could be measured there. The 5 ms
+the history folder's loading can cost at 6,000 steps is under 1% of opening that file in Blender
+(1.3 to 1.5 s in `bench/mem_profile.py`).
+
+Not done, and why: the raw tier and the baselines are the biggest items left at 1M (19 MB and 61 MB),
+but making them smaller means compressing what jumps and commits read directly (slower jumps), or a
+new layer that unpacks the topology arrays on demand; the Entry/metadata objects are 6% of the
+history at 100k (interning the label, mode and target strings after loading would save about 200 B
+per step, 1.2 MB at 6,000 steps); meshio's read buffers (11 MB at 1M) are reused by every commit, and
+freeing them when idle would make the next commit allocate again. Writing a topology step still peaks
+at about 2.5 times its size: the compressor needs the joined body and its own output buffer;
+streaming compression would remove that, at the cost of a codec change.
+
+### The Rust question
+
+(a) At 100k with 6,000 strokes, 60.7 of the 64.2 MB Hindsight holds (95%) is step bytes and numpy
+arrays that a native core would hold at the same size. Python object overhead is the 3.5 MB of Entry
+and metadata objects (605 to 698 B per step); a native core could get that to roughly 50 B per step,
+saving about 3 MB (5%). At 1M with 300 strokes the Python share is 0.2 of 111 MB. The large
+transients were copies made by the algorithm (joining, base64 strings, snapshot copies), not by
+the language, and were fixed in Python.
+
+(b) Shipping native code in a Blender extension means bundling wheels in the extension and listing
+them in `blender_manifest.toml`: Windows x64, macOS arm64, macOS x64 and Linux x64, for Python 3.11
+(Blender 4.2 to 5.0) and 3.13 (5.1 and later), or one abi3 wheel per platform built against 3.11
+(the spike below loaded the same abi3 build in Python 3.11 and 3.13). That needs a CI matrix that
+builds and tests on each platform (macOS signing and notarisation for the libraries), a per-platform
+extension zip or one zip with all wheels, and the pure Python path kept as a fallback that stays
+correct and tested, so every test would run twice.
+
+(c) Spike (`delta.diff` for a 32-bit channel, PyO3 0.22 abi3 built with cargo 1.97, kept outside the
+repository): on a 1M-vertex position channel with a 2% stroke the transient goes from 16.2 MB to 0.3
+MB and the time from 5.1 to 5.1 ms (Python 3.13; 5.9 to 3.5 ms on Python 3.11), result identical. The
+16 MB is returned to the allocator straight away (the RSS peak of a commit at 1M did not move), and a
+commit at 1M is 12 to 23 ms in total, so this does not pay for (b). A Rust rewrite would not reduce
+memory in a way users would notice; the remaining large items (packed steps, baselines, raw tier) are
+data, the same size in any language.

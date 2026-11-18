@@ -176,6 +176,71 @@ def test_topology_snapshot():
     H.assert_same(H.snapshot(ob), s2)
 
 
+def test_topology_step_owns_its_before():
+    """Memory work: a topology step takes the state's arrays as its `before` instead of copying
+    them; the state must get its own arrays right after, so later strokes never touch the step."""
+    import numpy as np
+    H.fresh()
+    ob = H.make_mesh(1500)
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 1)
+    H.commit(ob)
+    s0 = H.snapshot(ob)
+    H.enter(ob, "EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.subdivide()
+    H.enter(ob, "SCULPT")
+    h = runtime.history_of(ob)
+    step = h.entries[-1].step
+    assert step is not None and step.kind == "TOPO"
+    st = runtime._STATES[runtime.obj_uid(ob)]
+    for k, a in st.arrays.items():
+        for b in list(step.before.arrays.values()) + list(step.after.arrays.values()):
+            assert not np.shares_memory(a, b), k
+    for seed in (3, 4, 5):
+        H.fake_stroke(ob, seed)
+        H.commit(ob)
+    runtime.goto(C, 1)
+    H.assert_same(H.snapshot(ob), s0)
+
+
+def test_fingerprint_streamed_same_digest():
+    """Memory work: meshio.fingerprint hashes one array at a time; the digest must be the one of
+    the whole snapshot (fingerprints are saved in files, D46), and it must not copy the whole mesh."""
+    import hashlib
+    import tracemalloc
+    import numpy as np
+    from hindsight.bl import meshio
+
+    def reference(me, ob=None):
+        snap = meshio.read_snapshot(me, ob=ob, extras=ob is not None)
+        h = hashlib.blake2b(digest_size=16)
+        h.update(repr(sorted(snap.counts.items())).encode())
+        for key in sorted(snap.arrays):
+            a = np.ascontiguousarray(snap.arrays[key])
+            h.update(key.encode() + b"\0" + str(a.dtype).encode() + b"\0")
+            h.update(a.view(np.uint8))
+        return h.hexdigest()
+    H.fresh()
+    ob = H.make_mesh(20000)
+    for ch in ("mask", "fset", "hide", "color", "bytecolor"):
+        H.fake_stroke(ob, 7, n=300, channel=ch)
+    g = ob.vertex_groups.new(name="G")
+    g.add(list(range(0, 4000, 3)), 0.25, "REPLACE")
+    ob.shape_key_add(name="Basis")
+    ob.shape_key_add(name="K").data[5].co.x += 1.0
+    me = ob.data
+    assert meshio.fingerprint(me) == reference(me)
+    assert meshio.fingerprint(me, ob) == reference(me, ob)
+    assert meshio.fingerprint(me, ob) != meshio.fingerprint(me)
+    whole = meshio.read_snapshot(me).nbytes()
+    tracemalloc.start()
+    meshio.fingerprint(me)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert peak < 0.5 * whole, peak / whole
+
+
 def test_turn_off_on_and_reset():
     H.fresh()
     ob = H.make_mesh(1500)
@@ -315,7 +380,8 @@ def test_materials_warning():
 
 for f in [test_stroke_end_debounce, test_materials_warning, test_first_stroke_starts_history, test_all_channels_scrub_exact, test_vertex_paint_starts_history,
           test_step_back_forward_ops, test_branch_silent_and_confirm, test_native_undo_sync_and_f9_replace,
-          test_edit_mode_grouping, test_topology_snapshot, test_turn_off_on_and_reset,
+          test_edit_mode_grouping, test_topology_snapshot, test_topology_step_owns_its_before,
+          test_fingerprint_streamed_same_digest, test_turn_off_on_and_reset,
           test_delete_past_keeps_later, test_per_object_and_global, test_excluded_objects,
           test_cap_and_memory_eviction]:
     H.run(f)

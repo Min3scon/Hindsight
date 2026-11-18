@@ -1,0 +1,352 @@
+{
+ "environment": {
+  "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 4,
+  "machine": "x86_64",
+  "os": "Linux-6.18.44-fc-v595-x86_64-with-glibc2.39",
+  "python": "3.13.18",
+  "bpy": "5.3.0",
+  "numpy": "2.5.5",
+  "codecs": [
+   "zstd",
+   "lz4",
+   "zlib",
+   "none"
+  ],
+  "codec_used": "zstd",
+  "mode": "headless bpy module (pip bpy), background, no GPU/viewport; simulated strokes",
+  "blender_kind": "bpy module"
+ },
+ "results": [
+  {
+   "verts_requested": 100000,
+   "strokes": 6000,
+   "rss_start": 476946432,
+   "verts": 99904,
+   "rss_mesh": 503754752,
+   "stroke_verts": 1998,
+   "record_s": 13.658719121000104,
+   "rss_recorded": 574132224,
+   "history": {
+    "steps": 6000,
+    "packed_steps": 5936,
+    "raw_steps": 64,
+    "packed_blob_bytes": 54137394,
+    "packed_bytes_per_step": 9120.180929919137,
+    "raw_array_bytes": 2035248,
+    "raw_snapshot_bytes": 0,
+    "raw_object_bytes": 38912,
+    "entry_overhead_bytes": 3628299,
+    "entry_overhead_per_1000": 604716.5
+   },
+   "states": {
+    "0b1838b478a241f7": {
+     "topology": 5175300,
+     "channels": 1198848
+    }
+   },
+   "meshio_buffers": 1198848,
+   "sculpt_stroker_copy": 1198848,
+   "commit": {
+    "ms": 2.8,
+    "py_peak_extra": 1700081,
+    "py_kept": 34260,
+    "rss_peak_extra": 368640,
+    "rss_after_extra": 368640
+   },
+   "jump_1": {
+    "ms": 1.5,
+    "py_peak_extra": 2671,
+    "py_kept": 1454,
+    "rss_peak_extra": 0,
+    "rss_after_extra": 0
+   },
+   "jump_all_back": {
+    "ms": 1658.4,
+    "py_peak_extra": 547580,
+    "py_kept": 27281,
+    "rss_peak_extra": 1060864,
+    "rss_after_extra": 1060864
+   },
+   "jump_all_forward": {
+    "ms": 1336.5,
+    "py_peak_extra": 454714,
+    "py_kept": 16369,
+    "rss_peak_extra": 188416,
+    "rss_after_extra": 188416
+   },
+   "history_bytes": 56961844,
+   "topology": {
+    "steps": [
+     {
+      "ms": 385.2,
+      "py_peak_extra": 44416351,
+      "py_kept": 12878529,
+      "rss_peak_extra": 32718848,
+      "rss_after_extra": 14348288,
+      "before_bytes": 6374276,
+      "after_bytes": 6431532
+     },
+     {
+      "ms": 285.7,
+      "py_peak_extra": 44193488,
+      "py_kept": 13021123,
+      "rss_peak_extra": 25972736,
+      "rss_after_extra": 13393920,
+      "before_bytes": 6431532,
+      "after_bytes": 6503400
+     },
+     {
+      "ms": 348.4,
+      "py_peak_extra": 44454811,
+      "py_kept": 13136643,
+      "rss_peak_extra": 26783744,
+      "rss_after_extra": 14139392,
+      "before_bytes": 6503400,
+      "after_bytes": 6561232
+     }
+    ],
+    "raw_bytes_each": [
+     12806064,
+     12935188,
+     13064888
+    ],
+    "packed_bytes_each": [
+     5875218,
+     5251027,
+     5136923
+    ]
+   },
+   "save": {
+    "SIDECAR": {
+     "ms": 1086.5,
+     "py_peak_extra": 45076537,
+     "py_kept": 31488,
+     "rss_peak_extra": 49999872,
+     "rss_after_extra": 25092096,
+     "sidecar_bytes": 71929471,
+     "blend_bytes": 2726995
+    },
+    "EMBED": {
+     "ms": 1026.6,
+     "py_peak_extra": 215796376,
+     "py_kept": 21934,
+     "rss_peak_extra": 212058112,
+     "rss_after_extra": 113876992,
+     "sidecar_bytes": 0,
+     "blend_bytes": 73323109
+    },
+    "BOTH": {
+     "ms": 1512.7,
+     "py_peak_extra": 215796515,
+     "py_kept": 13002,
+     "rss_peak_extra": 191586304,
+     "rss_after_extra": 6496256,
+     "sidecar_bytes": 71929471,
+     "blend_bytes": 73323116
+    }
+   },
+   "load": {
+    "SIDECAR": {
+     "ms": 1118.6,
+     "py_peak_extra": 87335322,
+     "py_kept": 82412952,
+     "rss_peak_extra": 51376128,
+     "rss_after_extra": 51376128,
+     "entry_overhead_per_1000": 698052.4650233178
+    },
+    "EMBED": {
+     "ms": 1558.6,
+     "py_peak_extra": 167837734,
+     "py_kept": 82393733,
+     "rss_peak_extra": 169078784,
+     "rss_after_extra": 35696640,
+     "entry_overhead_per_1000": 698052.4650233178
+    },
+    "BOTH": {
+     "ms": 1496.1,
+     "py_peak_extra": 87316781,
+     "py_kept": 82394411,
+     "rss_peak_extra": 168931328,
+     "rss_after_extra": 1695744,
+     "entry_overhead_per_1000": 698052.4650233178
+    }
+   },
+   "history_bytes_at_save": 71831168,
+   "rss_end": 861929472,
+   "rss_hwm": 1028706304,
+   "two_objects": {
+    "states": {
+     "0b1838b478a241f7": {
+      "topology": 5327144,
+      "channels": 1233960
+     },
+     "b369975943db4d76": {
+      "topology": 5175300,
+      "channels": 1198848
+     }
+    },
+    "idle_kept": true
+   }
+  },
+  {
+   "verts_requested": 1000000,
+   "strokes": 300,
+   "rss_start": 765526016,
+   "verts": 999698,
+   "rss_mesh": 997257216,
+   "stroke_verts": 19993,
+   "record_s": 3.514569344999927,
+   "rss_recorded": 1033433088,
+   "history": {
+    "steps": 300,
+    "packed_steps": 236,
+    "raw_steps": 64,
+    "packed_blob_bytes": 20275481,
+    "packed_bytes_per_step": 85913.05508474576,
+    "raw_array_bytes": 20371056,
+    "raw_snapshot_bytes": 0,
+    "raw_object_bytes": 38912,
+    "entry_overhead_bytes": 179799,
+    "entry_overhead_per_1000": 599330.0
+   },
+   "states": {
+    "e2eadf3cf3ed4010": {
+     "topology": 51922084,
+     "channels": 11996376
+    }
+   },
+   "meshio_buffers": 11996376,
+   "sculpt_stroker_copy": 11996376,
+   "commit": {
+    "ms": 12.2,
+    "py_peak_extra": 16996579,
+    "py_kept": 320788,
+    "rss_peak_extra": 0,
+    "rss_after_extra": 0
+   },
+   "jump_1": {
+    "ms": 2.9,
+    "py_peak_extra": 2670,
+    "py_kept": 1454,
+    "rss_peak_extra": 0,
+    "rss_after_extra": 0
+   },
+   "jump_all_back": {
+    "ms": 238.3,
+    "py_peak_extra": 1147749,
+    "py_kept": 6353,
+    "rss_peak_extra": 0,
+    "rss_after_extra": 0
+   },
+   "jump_all_forward": {
+    "ms": 313.9,
+    "py_peak_extra": 1233315,
+    "py_kept": 91883,
+    "rss_peak_extra": 0,
+    "rss_after_extra": 0
+   },
+   "history_bytes": 40783166,
+   "topology": {
+    "steps": [
+     {
+      "ms": 3585.6,
+      "py_peak_extra": 447260595,
+      "py_kept": 128014983,
+      "rss_peak_extra": 325521408,
+      "rss_after_extra": 71839744,
+      "before_bytes": 63918588,
+      "after_bytes": 63963792
+     },
+     {
+      "ms": 3607.4,
+      "py_peak_extra": 441895966,
+      "py_kept": 128193242,
+      "rss_peak_extra": 346140672,
+      "rss_after_extra": 103956480,
+      "before_bytes": 63963792,
+      "after_bytes": 64054200
+     },
+     {
+      "ms": 3472.2,
+      "py_peak_extra": 440574959,
+      "py_kept": 128286984,
+      "rss_peak_extra": 350887936,
+      "rss_after_extra": 112054272,
+      "before_bytes": 64054200,
+      "after_bytes": 64099620
+     }
+    ],
+    "raw_bytes_each": [
+     127882636,
+     128018248,
+     128154076
+    ],
+    "packed_bytes_each": [
+     62980315,
+     57165667,
+     55478727
+    ]
+   },
+   "save": {
+    "SIDECAR": {
+     "ms": 6609.5,
+     "py_peak_extra": 438467949,
+     "py_kept": 263600,
+     "rss_peak_extra": 419422208,
+     "rss_after_extra": 60411904,
+     "sidecar_bytes": 201928448,
+     "blend_bytes": 27715014
+    },
+    "EMBED": {
+     "ms": 4227.3,
+     "py_peak_extra": 605875891,
+     "py_kept": 94748,
+     "rss_peak_extra": 538234880,
+     "rss_after_extra": 345649152,
+     "sidecar_bytes": 0,
+     "blend_bytes": 213008827
+    },
+    "BOTH": {
+     "ms": 4358.8,
+     "py_peak_extra": 605793496,
+     "py_kept": 12940,
+     "rss_peak_extra": 538255360,
+     "rss_after_extra": 39170048,
+     "sidecar_bytes": 201928448,
+     "blend_bytes": 213008831
+    }
+   },
+   "load": {
+    "SIDECAR": {
+     "ms": 7146.4,
+     "py_peak_extra": 314473665,
+     "py_kept": 266396263,
+     "rss_peak_extra": 124665856,
+     "rss_after_extra": 124665856,
+     "entry_overhead_per_1000": 699036.1842105263
+    },
+    "EMBED": {
+     "ms": 8577.5,
+     "py_peak_extra": 471168614,
+     "py_kept": 266228708,
+     "rss_peak_extra": 481947648,
+     "rss_after_extra": -140029952,
+     "entry_overhead_per_1000": 699036.1842105263
+    },
+    "BOTH": {
+     "ms": 7253.1,
+     "py_peak_extra": 314305270,
+     "py_kept": 266228100,
+     "rss_peak_extra": 482070528,
+     "rss_after_extra": 4096,
+     "entry_overhead_per_1000": 699036.1842105263
+    }
+   },
+   "history_bytes_at_save": 201923427,
+   "rss_end": 1807769600,
+   "rss_hwm": 2289836032
+  }
+ ],
+ "table": "\n99,904 vertices, 6000 strokes of 1,998 vertices\n  RSS: start 454.9 MB, with mesh 480.4 MB, recorded 547.5 MB, end 822.0 MB, peak 981.1 MB\n  packed step data (blobs)                                                    51.6 MB\n  raw tier (64 steps, arrays)                                                  1.9 MB\n  raw tier Python objects                                                      0.0 MB\n  Entry/meta objects (604,716 B per 1,000 steps... per step 605 B)             3.5 MB\n  MeshState baseline (topology 4.9 MB)                                         6.1 MB\n  meshio read buffers                                                          1.1 MB\n  packed bytes per step: 9,120\n  Entry overhead per step after load (SIDECAR): 698 B\n  transient commit             python peak     1.6 MB, RSS peak     0.4 MB, 3 ms\n  transient jump_1             python peak     0.0 MB, RSS peak     0.0 MB, 2 ms\n  transient jump_all_back      python peak     0.5 MB, RSS peak     1.0 MB, 1658 ms\n  transient jump_all_forward   python peak     0.4 MB, RSS peak     0.2 MB, 1336 ms\n  save SIDECAR  python peak    43.0 MB (0.63x history), RSS peak    47.7 MB (0.70x), 1086 ms\n  save EMBED    python peak   205.8 MB (3.00x history), RSS peak   202.2 MB (2.95x), 1027 ms\n  save BOTH     python peak   205.8 MB (3.00x history), RSS peak   182.7 MB (2.67x), 1513 ms\n  load SIDECAR  python peak    83.3 MB (1.22x history), RSS peak    49.0 MB (0.72x), 1119 ms\n  load EMBED    python peak   160.1 MB (2.34x history), RSS peak   161.2 MB (2.35x), 1559 ms\n  load BOTH     python peak    83.3 MB (1.22x history), RSS peak   161.1 MB (2.35x), 1496 ms\n  topology step: before 6.1 MB + after 6.1 MB, commit python peak 42.4 MB, kept 12.3 MB\n  topology step: before 6.1 MB + after 6.2 MB, commit python peak 42.1 MB, kept 12.4 MB\n  topology step: before 6.2 MB + after 6.3 MB, commit python peak 42.4 MB, kept 12.5 MB\n  topology steps packed: 5.6 MB, 5.0 MB, 4.9 MB\n  two objects: idle object's state kept = True; states 6.3 MB, 6.1 MB\n\n999,698 vertices, 300 strokes of 19,993 vertices\n  RSS: start 730.1 MB, with mesh 951.1 MB, recorded 985.6 MB, end 1,724.0 MB, peak 2,183.8 MB\n  packed step data (blobs)                                                    19.3 MB\n  raw tier (64 steps, arrays)                                                 19.4 MB\n  raw tier Python objects                                                      0.0 MB\n  Entry/meta objects (599,330 B per 1,000 steps... per step 599 B)             0.2 MB\n  MeshState baseline (topology 49.5 MB)                                       61.0 MB\n  meshio read buffers                                                         11.4 MB\n  packed bytes per step: 85,913\n  Entry overhead per step after load (SIDECAR): 699 B\n  transient commit             python peak    16.2 MB, RSS peak     0.0 MB, 12 ms\n  transient jump_1             python peak     0.0 MB, RSS peak     0.0 MB, 3 ms\n  transient jump_all_back      python peak     1.1 MB, RSS peak     0.0 MB, 238 ms\n  transient jump_all_forward   python peak     1.2 MB, RSS peak     0.0 MB, 314 ms\n  save SIDECAR  python peak   418.2 MB (2.17x history), RSS peak   400.0 MB (2.08x), 6610 ms\n  save EMBED    python peak   577.8 MB (3.00x history), RSS peak   513.3 MB (2.67x), 4227 ms\n  save BOTH     python peak   577.7 MB (3.00x history), RSS peak   513.3 MB (2.67x), 4359 ms\n  load SIDECAR  python peak   299.9 MB (1.56x history), RSS peak   118.9 MB (0.62x), 7146 ms\n  load EMBED    python peak   449.3 MB (2.33x history), RSS peak   459.6 MB (2.39x), 8578 ms\n  load BOTH     python peak   299.7 MB (1.56x history), RSS peak   459.7 MB (2.39x), 7253 ms\n  topology step: before 61.0 MB + after 61.0 MB, commit python peak 426.5 MB, kept 122.1 MB\n  topology step: before 61.0 MB + after 61.1 MB, commit python peak 421.4 MB, kept 122.3 MB\n  topology step: before 61.1 MB + after 61.1 MB, commit python peak 420.2 MB, kept 122.3 MB\n  topology steps packed: 60.1 MB, 54.5 MB, 52.9 MB"
+}

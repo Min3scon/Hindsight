@@ -67,14 +67,19 @@ def _dumps(obj) -> bytes:
 
 
 # --------------------------------------------------------------------------- snapshots
-def snapshot_to_bytes(s: Snapshot) -> bytes:
+def _snapshot_parts(s: Snapshot) -> list:
+    """The snapshot blob as a list of buffers (the arrays themselves, not copies of them)."""
     descr, parts = [], []
     for key, arr in s.arrays.items():
         a = np.ascontiguousarray(arr).reshape(-1)
         descr.append([key, a.dtype.str, int(a.size)])
-        parts.append(a.tobytes())
+        parts.append(a.view(np.uint8))
     head = _dumps({"counts": {k: int(v) for k, v in s.counts.items()}, "arrays": descr})
-    return b"".join([SNAP_MAGIC, _U32.pack(len(head)), head] + parts)
+    return [SNAP_MAGIC, _U32.pack(len(head)), head] + parts
+
+
+def snapshot_to_bytes(s: Snapshot) -> bytes:
+    return b"".join(_snapshot_parts(s))
 
 
 def snapshot_from_bytes(b) -> Snapshot:
@@ -151,12 +156,17 @@ def _parts(step: Step, effort: int):
     extra = dict(step.extra or {})
     snaps = extra.pop(SNAPSHOTS_KEY, None)
     parts = [pack_delta(d, effort) for d in step.deltas]
-    before = snapshot_to_bytes(step.before) if step.before is not None else None
-    after = snapshot_to_bytes(step.after) if step.after is not None else None
+    # snapshots stay lists of buffers until the one join of the body (no full-size copies before it)
+    before = _snapshot_parts(step.before) if step.before is not None else None
+    after = _snapshot_parts(step.after) if step.after is not None else None
     snap_parts = None
     if snaps is not None:
-        snap_parts = [(str(uid), snapshot_to_bytes(s)) for uid, s in snaps.items()]
+        snap_parts = [(str(uid), _snapshot_parts(s)) for uid, s in snaps.items()]
     return extra, parts, before, after, snap_parts
+
+
+def _nbytes(parts: list) -> int:
+    return sum(memoryview(p).nbytes for p in parts)
 
 
 def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
@@ -169,18 +179,18 @@ def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong:
     tail = b""
     if before is not None:
         flags |= 1
-        body_parts.append(before)
-        tail += _U32.pack(len(before))
+        body_parts += before
+        tail += _U32.pack(_nbytes(before))
     if after is not None:
         flags |= 2
-        body_parts.append(after)
-        tail += _U32.pack(len(after))
+        body_parts += after
+        tail += _U32.pack(_nbytes(after))
     if snap_parts is not None:
         flags |= 4
         tail += struct.pack("<H", len(snap_parts))
-        for uid, blob in snap_parts:
-            body_parts.append(blob)
-            tail += _str8(uid) + _U32.pack(len(blob))
+        for uid, sparts in snap_parts:
+            body_parts += sparts
+            tail += _str8(uid) + _U32.pack(_nbytes(sparts))
     if step.records:
         flags |= RECORDS_FLAG
         rec_b = records_to_bytes(step.records)
@@ -189,6 +199,7 @@ def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong:
     if effort == QUICK and step.deltas:
         flags |= QUICK_FLAG
     raw = b"".join(body_parts)
+    del body_parts, before, after, snap_parts
     extra_b = _dumps(extra) if extra else b""
     head = b"".join((
         _FIXED.pack(4 if step.records else 3, _KINDS[step.kind], flags, 0, int(step.seq),
@@ -196,8 +207,9 @@ def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong:
         _str16(step.label or ""), _str8(step.mode or ""), _str8(step.target or ""),
         _U32.pack(len(extra_b)), extra_b, struct.pack("<H", len(parts)), tail))
     body = _codec.compress(raw, codec, strong=strong)
-    rest = b"".join((struct.pack("<H", len(head)), head, body))
-    blob = b"".join((STEP_MAGIC, _U32.pack(zlib.crc32(rest)), rest))
+    del raw
+    prefix = struct.pack("<H", len(head)) + head
+    blob = b"".join((STEP_MAGIC, _U32.pack(zlib.crc32(body, zlib.crc32(prefix))), prefix, body))
     if VERIFY and not same_step(step, step_from_bytes(blob)):
         raise AssertionError(f"step {step.seq}: written blob does not read back the same")
     return blob

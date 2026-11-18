@@ -220,6 +220,36 @@ def test_snapshot_roundtrip():
     print("PASS test_snapshot_roundtrip")
 
 
+def test_topology_step_written_without_full_copies():
+    """Memory work (PERF_LOG "Memory, and the Rust question"): snapshot blobs are joined straight
+    from the arrays, so they're the same bytes as before, and writing a topology step peaks at most
+    3 times its size (it was 3.8 to 5 times: copies of each snapshot, the body, the blob)."""
+    import tracemalloc
+    s = make_snapshot()
+    blob = stepmod.snapshot_to_bytes(s)
+    head_len = int.from_bytes(blob[4:8], "little")
+    assert blob[:4] == b"HSN1"
+    assert blob[8 + head_len:] == b"".join(np.ascontiguousarray(a).tobytes() for a in s.arrays.values())
+    big = make_snapshot(nv=400_000, nf=100_000)
+    big2 = make_snapshot(nv=400_000, nf=100_000)
+    st = Step(seq=3, label="Remesh", mode="SCULPT", target="o", kind=TOPO, before=big, after=big2,
+              extra={"_snapshots": {"x": make_snapshot()}, "op": 2})
+    size = big.nbytes() + big2.nbytes()
+    verify, stepmod.VERIFY = stepmod.VERIFY, False
+    try:
+        for name in codec.available():
+            for effort in (delta.QUICK, delta.NORMAL):
+                tracemalloc.start()
+                b = stepmod.step_to_bytes(st, name, effort)
+                peak = tracemalloc.get_traced_memory()[1]
+                tracemalloc.stop()
+                assert steps_equal(st, stepmod.step_from_bytes(b)), name
+                assert peak < 3.2 * size, (name, effort, peak / size)
+    finally:
+        stepmod.VERIFY = verify
+    print("PASS test_topology_step_written_without_full_copies")
+
+
 def test_step_roundtrip_all_codecs():
     names = codec.available()
     assert "zlib" in names and "none" in names

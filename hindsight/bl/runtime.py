@@ -11,7 +11,7 @@ from ..core import globaltl
 from ..core.history import MeshState
 from ..core.registry import Registry, new_uid
 from ..core.types import (
-    SETTINGS, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
+    SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
 from . import guard, log, meshio
 from .ctx import active_object as _ctx_active
@@ -391,8 +391,10 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
     ext = full and extras_on(obj)
     if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=deep)):
         after = meshio.read_snapshot(me, ob=obj, extras=ext)
+        # `before` takes the state's arrays without copying them: every caller either drops the step
+        # or calls _apply_to_state, whose set_snapshot gives the state fresh arrays (never in place)
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
-                    kind=TOPO, before=st.to_snapshot(), after=after)
+                    kind=TOPO, before=Snapshot(dict(st.counts), dict(st.arrays)), after=after)
     extra_vals = meshio.read_extras(obj, me) if ext else {}
     keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)

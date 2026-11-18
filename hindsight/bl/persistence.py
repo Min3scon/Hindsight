@@ -14,6 +14,7 @@ Crash Recovery (``SETTINGS.crash_recovery``):
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import os
 import tempfile
@@ -226,8 +227,9 @@ def on_save_pre(*args) -> None:
         if _PROTECT["embed"]:
             pass   # history from a newer Hindsight: keep it exactly as it was
         elif mode in ("EMBED", "BOTH"):
-            data = persist.registry_to_bytes(runtime.reg(), _codec())
-            text[DATA_PROP] = base64.b64encode(data).decode("ascii")
+            # one expression: each full-size copy is let go as soon as the next one is made
+            text[DATA_PROP] = base64.b64encode(
+                persist.registry_to_bytes(runtime.reg(), _codec())).decode("ascii")
         elif DATA_PROP in text:
             del text[DATA_PROP]
     except Exception as e:
@@ -282,7 +284,8 @@ def _load_registry(path: str, text):
 
     def from_text():
         try:
-            return persist.registry_from_bytes(base64.b64decode(text[DATA_PROP]))
+            # a2b_base64 reads the stored text in place (b64decode would first copy it to bytes)
+            return persist.registry_from_bytes(binascii.a2b_base64(text[DATA_PROP]))
         except persist.NewerFormatError as e:
             _PROTECT["embed"] = True
             _note("ERROR", NEWER_TEXT.format(found=e.found))

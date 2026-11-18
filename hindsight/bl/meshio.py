@@ -99,16 +99,25 @@ def _corner_ints(me, attr_name: str, legacy: str, n: int) -> np.ndarray:
     return out
 
 
+def _topology_readers(me, c: dict) -> dict:
+    def ev():
+        out = np.empty(c["EDGE"] * 2, np.int32)
+        me.edges.foreach_get("vertices", out)
+        return out
+
+    def fo():
+        out = np.empty(c["FACE"] + 1, np.int32)
+        me.polygons.foreach_get("loop_start", out[:-1])
+        out[-1] = c["CORNER"]
+        return out
+    return {EDGE_VERTS_KEY: ev,
+            CORNER_VERT_KEY: lambda: _corner_ints(me, ".corner_vert", "vertex_index", c["CORNER"]),
+            CORNER_EDGE_KEY: lambda: _corner_ints(me, ".corner_edge", "edge_index", c["CORNER"]),
+            FACE_OFFSETS_KEY: fo}
+
+
 def read_topology(me) -> dict:
-    c = counts(me)
-    ev = np.empty(c["EDGE"] * 2, np.int32)
-    me.edges.foreach_get("vertices", ev)
-    cv = _corner_ints(me, ".corner_vert", "vertex_index", c["CORNER"])
-    ce = _corner_ints(me, ".corner_edge", "edge_index", c["CORNER"])
-    fo = np.empty(c["FACE"] + 1, np.int32)
-    me.polygons.foreach_get("loop_start", fo[:-1])
-    fo[-1] = c["CORNER"]
-    return {EDGE_VERTS_KEY: ev, CORNER_VERT_KEY: cv, CORNER_EDGE_KEY: ce, FACE_OFFSETS_KEY: fo}
+    return {k: read() for k, read in _topology_readers(me, counts(me)).items()}
 
 
 def read_snapshot(me, sculpt_only: bool = False, ob=None, extras: bool = False) -> Snapshot:
@@ -248,13 +257,24 @@ def fingerprint(me, ob=None) -> str:
     """A digest of the whole mesh as Hindsight records it (counts, topology, every recorded
     channel; with ob, its weights and shape keys too). Used to tell which recorded state Blender's
     undo put back after a Hindsight jump."""
-    snap = read_snapshot(me, ob=ob, extras=ob is not None)
+    # the same digest as hashing read_snapshot(me, ob=ob, extras=ob is not None), but each array is
+    # read, hashed and let go in turn, so the whole mesh is never copied at once
+    c = counts(me)
+    readers = _topology_readers(me, c)
+    for key in channel_keys(me, False):
+        readers[key] = lambda key=key: read_channel(me, key)
+    if ob is not None:
+        readers.update({k: (lambda a=a: a) for k, a in read_extras(ob, me).items()})
     h = hashlib.blake2b(digest_size=16)
-    h.update(repr(sorted(snap.counts.items())).encode())
-    for key in sorted(snap.arrays):
-        a = np.ascontiguousarray(snap.arrays[key])
+    h.update(repr(sorted(c.items())).encode())
+    for key in sorted(readers):
+        a = readers[key]()
+        if a is None:
+            continue
+        a = np.ascontiguousarray(a)
         h.update(key.encode() + b"\0" + str(a.dtype).encode() + b"\0")
         h.update(a.view(np.uint8))
+        a = None                   # let it go before the next one is read
     return h.hexdigest()
 
 
