@@ -25,6 +25,9 @@ Faster and lighter:
 - Saving with the history inside the .blend needs about half the extra memory it did: 74 to 86 MB instead of 143 MB at 6,000 steps.
 - Background recompression of steps waits while you sculpt or scrub. It also starts after a file is opened now, not only after the first new stroke was packed.
 - Redraws cost less. The on-screen slider keeps its drawing between redraws and rebuilds only the handle while you drag. The viewport warning and Collection Filtering do less work on each redraw: with 50 objects, global history and a filter list, a redraw went from 3.9 ms to 1.2 ms.
+- Scrubbing and Movie Mode are 2 to 3 times faster through packed history: a run of steps is checked, unpacked and applied in one call of the Rust engine. A jump over 3,000 steps of a 1M-vertex mesh went from 1.4 s to 0.5 s.
+- Edit Mode step by step and topology changes read the mesh's edges and corners through its attributes, which is many times faster than the old way.
+- Record everything costs less in big scenes: with 500 recorded objects an operation is recorded in under half the time, and each object takes about a third less memory. With Record set to Sculpting only the recorder does no work.
 - The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 
 Fixed:
@@ -41,6 +44,7 @@ Fixed:
 - Blender 5.0: scrubbing back over a colour layer could lose which layer is active.
 - A damaged history block stored with LZ4 is refused cleanly now.
 - After a long session a repeating error could fill the system console.
+- Putting constraints back when one of them can't be made again no longer gives the others the wrong settings.
 
 ## 1.0.0-beta.2
 

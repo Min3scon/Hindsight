@@ -580,3 +580,55 @@ bytes it writes are unchanged.
 Not done: the journal's cost per stroke (0.19 ms at 100k, 0.62 ms at 1M, no fsync) is small next to
 the stroke itself. Dropping the embedded string from memory after a save would free 69 MB at 6,000
 steps, but Blender's autosave runs no handlers, so the history would be missing from an autosave.
+
+## Rust engine, stage 2: runs of steps (2026-11-18)
+
+`History.goto` gives each run of packed stroke steps of one object to one native call
+(`hindsight_native.apply_steps`, engine 0.2.0, API 2) that checks, decompresses, decodes and applies
+them with the GIL released. Any other step (topology, join, data, old formats, zlib or lz4, anything
+damaged) stops the run and is crossed by the Python code, which also raises every error.
+
+Method: 5,000 packed zstd strokes (2% brush discs on a grid), the old build (66fcdf8) and the new one
+in alternating processes, 4-core VM at load 9 to 12. Minimum, ms, old to new, Python 3.13:
+
+| case | 100k vertices | 1M vertices |
+|---|---|---|
+| 1 step | 0.054 to 0.039 | 0.28 to 0.13 |
+| 30 steps | 1.66 to 0.59 | 12.0 to 4.9 |
+| 300 steps | 17.2 to 5.7 | 133 to 57 |
+| 3,000 steps | 176 to 60 | 1,366 to 508 |
+| drag across 5,000 steps | 329 to 114 | 2,721 to 1,104 |
+
+Python 3.11 (Blender 4.2) is the same. The Python-side peak memory of a jump went from 0.1 to 0.95 MB to
+0.005 MB. Engine off: unchanged. What is left at 1M: about a third zstd, two thirds decoding and
+applying values. Helper threads (up to 3) are used only for long runs on big meshes; on this loaded VM
+they only break even, and on smaller runs they were slower, so they are off there. An accelerator for
+very long jumps (merged blocks or checkpoints) was not built: it would cost 12 MB per block at 1M.
+Full report: dev/reports/NATIVE.md. Rows R019 to R024 of OPTIMISATION_LOG.md.
+
+## Data recorder (Record everything) cost (2026-11-18)
+
+Blender 5.3 as a module, N cubes (a third with a constraint), old and new in alternating runs, 5 rounds.
+Medians, ms, old to new, with every object recorded:
+
+| objects | operator that changes nothing | a move | depsgraph handler | reading baselines at load | bytes held per object |
+|---|---|---|---|---|---|
+| 50 | 10.7 to 4.65 | 10.8 to 4.62 | 0.196 to 0.053 | 16.3 to 12.0 | 15,174 to 10,359 |
+| 500 | 110 to 45.8 | 120 to 49.1 | 7.41 to 0.20 | 240 to 117 | 16,851 to 10,742 |
+
+With Record set to Sculpting only the timer reads nothing (counted in tests, not timed). Every shortcut
+gives exactly the old result: each Tier 1 sequence is recorded with the shortcuts and without, and the
+steps are compared byte for byte, also with Blender's undo and redo in between. Not done: comparing only
+the objects the depsgraph names, because several recorded values change without a tag (view-layer hide,
+selectability, renames). Full report: dev/reports/DATAREC.md.
+
+## Runtime (2026-11-18)
+
+The agent that did this work was cut off before it reported, so only what its commits and tests state is
+recorded here; the numbers below were not re-measured by anyone else yet and are marked as such in
+OPTIMISATION_LOG.md. Topology (edges, corners) is read and written through the mesh's attributes
+instead of the legacy collections (commit 6d8f06d: 70 to 150 times faster for those reads). The memory
+limit no longer rescans every step when nothing may be dropped (D89). The steps list builds labels only
+for the rows it shows, memory totals are kept per history, and the slider's position in global history
+is kept between redraws until something it depends on changes (wired into the slider, header, panel and
+the range timer). The benchmark suite (bench/suite.py) re-measures all of this.

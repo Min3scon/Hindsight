@@ -292,7 +292,7 @@ class FakeRuntime:
         self._chk()
         return self.hist
 
-    def scrub_info(self, context):
+    def scrub_info(self, context, cached=False):
         self._chk()
         return self.info
 

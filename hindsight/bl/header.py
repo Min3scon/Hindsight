@@ -44,7 +44,7 @@ def draw_header_button(self, context):
     obj = _ctx_active(context)
     if obj is None or getattr(obj, "type", None) != 'MESH':
         return
-    info = _call("scrub_info", context)
+    info = _call("scrub_info", context, True)
     text = f"{info['pos']} / {info['len']}" if info not in (None, _FAIL) and info.get("len") else ""
     self.layout.popover(panel="VIEW3D_PT_hindsight_popover", text=text, icon='RECOVER_LAST')
 

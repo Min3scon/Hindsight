@@ -468,7 +468,7 @@ def slider_info(context):
     """What the slider shows: runtime.scrub_info, or an empty track in Sculpt / Vertex Paint Mode
     on an object that will record its first stroke. None = draw nothing."""
     rt = _runtime()
-    info = rt.scrub_info(context)
+    info = rt.scrub_info(context, True)      # asked several times per redraw: the kept answer
     if info and info.get("len"):
         return info
     if rt.use_global(context):

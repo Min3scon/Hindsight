@@ -20,7 +20,7 @@ def _info():
         if not _RT:
             from . import runtime
             _RT.append(runtime)
-        return _RT[0].scrub_info(bpy.context)
+        return _RT[0].scrub_info(bpy.context, True)
     except Exception:
         return None
 

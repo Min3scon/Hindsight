@@ -214,7 +214,7 @@ def draw_main(layout, context, units=None):
         wrap(layout, context, "Recording is off for this object.", 'PAUSE', units)
         _operator(layout, "hindsight.turn_on", "Enable for this object", 'REC')
 
-    info = _call("scrub_info", context)
+    info = _call("scrub_info", context, True)
     if info is _FAIL:
         wrap(layout, context, "History unavailable. Run self-check.", 'ERROR', units)
         return
@@ -249,7 +249,7 @@ def _tracked(obj) -> bool:
 def _draw_other_object(layout, context, obj, units=None):
     """An empty or another non-mesh object with Record set to Everything: its history (if it has
     one) and the switches. Sculpting doesn't apply to it."""
-    info = _call("scrub_info", context)
+    info = _call("scrub_info", context, True)
     if info in (None, _FAIL) or not info.get("len"):
         text = NO_HISTORY_EVERYTHING if _tracked(obj) else NO_HISTORY_OTHER
         wrap(layout, context, text, 'INFO', units)

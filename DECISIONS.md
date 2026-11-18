@@ -1,5 +1,39 @@
 # Decisions log
 
+## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
+
+The owner asked for Hindsight to be finished: every line of the site's Limitations page dealt with,
+recording and rewinding of everything in a Blender file including what third-party add-ons store,
+a Rust core, at least 100 measured optimisation rounds, all from cloud sessions with this repository
+as the only persistent state. Decisions taken for that plan:
+
+- Rust is required. As each part moves to Rust, its Python implementation moves to `tests/reference/`
+  as the bit-exact oracle and leaves the add-on. If the engine can't load, the add-on shows an error
+  panel and records nothing. Wheels are built for every platform Blender supports.
+- "Everything" means: specialised adapters for data that needs its own way of being put back
+  (mesh data lists, modifiers, materials and node trees, images, animation, armatures, other object
+  types, scene settings), and under them one generic recorder that walks RNA and custom properties of
+  any datablock, so add-on data is covered without knowing the add-on. Data that RNA can't express
+  exactly falls back to a snapshot of the datablock (libraries.write and load).
+- Datablocks used by objects (materials, node groups, images, actions, armature, light, camera and curve
+  data) are recorded in the history of the recorded object that uses them, with the shared-mesh owner
+  rule (D39) when several do. Data no object owns goes into the scene's history.
+- New kinds of records make a file format 5, written only when such records exist. Builds up to beta 3
+  refuse format 5 cleanly (the .blend still opens there, without its history).
+- Moving a node is not a step; a node's position is stored with the node.
+- Texture paint is its own kind and off by default: Blender only lets Python read a whole image.
+- Multires (one exact step per Sculpt Mode visit) and Dyntopo (a step per stroke up to about 200k
+  triangles) stay off until real strokes have passed in a windowed CI run. Recording Multires goes
+  through Blender's save-to-disk operators, so it must be transactional: a failure may never lose a sculpt.
+- Not recordable, each with a note in the tab: data linked from another .blend, an add-on's own Python
+  state, files on disk (image files, baked caches), preferences and window layout.
+- Step cap: preference up to 100,000, default 10,000. Names: swaps inside one jump are resolved; an
+  object the user didn't scrub is never renamed. Collections are recorded with Record > Everything.
+- The site is changed only by a release (the download and the generated changelog page). A line of the
+  Limitations page changes when its feature has passed the gate in real Blender.
+- Work is done by at most four agents at a time (two bursts of ten hit the usage limit); the main
+  session reviews, re-runs the tests and merges. Nothing counts as done on an agent's word.
+
 ## Beta 3 job (owner, 2026-11-18, in a cloud sandbox)
 
 Owner's requests, in order: Movie Mode camera that has the whole model in frame, good lighting even
