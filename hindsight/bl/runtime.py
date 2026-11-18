@@ -77,6 +77,7 @@ def set_registry(r: Registry) -> None:
     _WROTE.clear()
     _UID_CACHE.clear()
     _NATIVE_PENDING.clear()
+    WEIGHTS_CLAMPED.clear()
     _TRACK.update(name=None, uid=None, mode=None)
     try:
         from . import datarec, idmap
@@ -371,13 +372,16 @@ def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool
     if new.kind == DELTA:
         return _deltas_match(new, old, st, inverse)
     if new.kind == TOPO and old.kind == TOPO and old.before is not None:
+        from ..core.delta import view_bits
+
         def same(s1, s2):
             if s1.counts != s2.counts:
                 return False
             for k in set(s1.arrays) | set(s2.arrays):
                 if k not in s1.arrays or k not in s2.arrays:
                     return False
-                if s1.arrays[k].tobytes() != s2.arrays[k].tobytes():
+                a, b = s1.arrays[k], s2.arrays[k]      # bit for bit, without a bytes copy of each mesh
+                if a.dtype != b.dtype or not np.array_equal(view_bits(a), view_bits(b)):
                     return False
             return True
         return (same(new.after, old.before) and same(new.before, old.after)) or \
@@ -453,6 +457,8 @@ def _clamp_state_weights(obj, st: MeshState) -> None:
     uid = obj_uid(obj)
     if clamped:
         WEIGHTS_CLAMPED.add(uid)
+    else:
+        WEIGHTS_CLAMPED.discard(uid)       # the note goes when a later restore needed no clamping
 
 
 def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:

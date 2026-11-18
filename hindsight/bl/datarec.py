@@ -142,6 +142,9 @@ def check_exclusion() -> None:
     """D54: objects excluded by Collection Filtering record nothing; when one stops being excluded,
     what changed meanwhile becomes one step, so its history stays a line of real states."""
     rt = _rt()
+    sh = getattr(getattr(bpy.context, "scene", None), "hindsight", None)
+    if not _EXCLUDED and (sh is None or sh.filter_mode == 'NONE'):
+        return      # nothing is or was excluded: don't walk every recorded object on every tick
     for uid in tracked_uids():
         ob = idmap.find(uid)
         if not isinstance(ob, bpy.types.Object):
@@ -760,7 +763,17 @@ def note_jump(hists: dict, values_before: dict, values_after: dict, meshes: dict
     drop_undone_jumps()
     _JUMPS.append({"hists": {k: list(v) for k, v in hists.items()}, "vb": values_before,
                    "va": values_after, "meshes": dict(meshes or {}), "undone": False})
-    del _JUMPS[:-JUMPS_MAX]
+    del _JUMPS[:-_jumps_max()]
+
+
+def _jumps_max() -> int:
+    """Jumps worth remembering: each one is a Blender undo step, and Blender keeps only its own
+    number of those (Preferences > System > Undo Steps; 0 means no limit there)."""
+    try:
+        n = int(bpy.context.preferences.edit.undo_steps)
+    except Exception:
+        n = 0
+    return n if n > 0 else JUMPS_MAX
 
 
 def recorded_values() -> dict:

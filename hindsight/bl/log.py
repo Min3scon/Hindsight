@@ -12,7 +12,6 @@ from collections import deque
 PREFIX = "Hindsight"
 _LINES = deque(maxlen=400)
 _SEEN = set()
-_MAX_SEEN = 256
 
 
 def _emit(level, text):
@@ -41,8 +40,7 @@ def error_once(key, text, exc=None):
     """Log `text` (plus the traceback of `exc`) once per key. Returns True if it was logged now."""
     if key in _SEEN:
         return False
-    if len(_SEEN) < _MAX_SEEN:
-        _SEEN.add(key)
+    _SEEN.add(key)      # no cap: once full, a repeating error would print its traceback on every tick
     _emit("ERROR", text)
     if exc is not None:
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
