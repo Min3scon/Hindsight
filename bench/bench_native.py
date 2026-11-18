@@ -9,6 +9,17 @@ None in the same process. Times: median of repeated runs (ms). Memory: the peak 
 over what was held before it, as tracemalloc (Python allocations, numpy's included) and VmHWM
 (the process peak, reset through /proc/self/clear_refs before each run; native allocations show
 only here).
+
+    ... bench/bench_native.py --jumps [--nv 100000] [--rounds 5] [--fixtures DIR]
+
+History.goto over a 5,000-step history of packed zstd strokes (the newest 64 kept raw, as
+SETTINGS.raw_steps does): jumps of 1, 30, 300 and 3,000 steps both ways, and a drag over the whole
+history (100 slider events of 50 steps, each way). Three engines in the same process, in
+alternating rounds: "steps" (apply_steps, a run of steps in one native call), "per step" (the
+module's API 1 functions only, which is how goto ran before apply_steps) and "python" (no module).
+Every engine must end on the same bytes. The history is built once and kept in --fixtures (default:
+a folder in the system temp directory). Prints min and median ms per case, and the peak memory of
+a 300 and a 3,000-step jump (tracemalloc, and VmHWM over VmRSS).
 """
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -151,7 +162,121 @@ def case(nv):
     return res
 
 
+# ------------------------------------------------------------------------------------- jumps
+JUMP_STEPS = 5000
+JUMP_CASES = [("1 fwd", 2500, 2501), ("1 back", 2501, 2500), ("30 fwd", 2500, 2530), ("30 back", 2530, 2500),
+              ("300 fwd", 2000, 2300), ("300 back", 2300, 2000), ("3000 fwd", 1000, 4000),
+              ("3000 back", 4000, 1000), ("30 back, raw steps", 5000, 4970)]
+
+
+class _PerStep:
+    """The module as API 1 had it: no apply_steps, so goto crosses one step at a time."""
+    def __init__(self, m):
+        for name in ("diff", "apply", "pack", "unpack"):
+            setattr(self, name, getattr(m, name))
+
+
+def _jump_fixture(nv, folder):
+    path = os.path.join(folder, f"jumps_{nv}.npz")
+    if not os.path.exists(path):
+        os.makedirs(folder, exist_ok=True)
+        side = int(round(nv ** 0.5))
+        yy, xx = np.divmod(np.arange(side * side), side)
+        pos = np.stack([xx / side, yy / side, np.zeros(side * side)], 1).astype(np.float32).reshape(-1)
+        cur, blobs = pos, []
+        for i in range(JUMP_STEPS):
+            nxt = grid_stroke(side * side, cur)
+            s = Step(i + 1, "Draw", "SCULPT", "obj", float(i), DELTA, [delta.diff(POSITION_KEY, cur, nxt)])
+            blobs.append(stepmod.step_to_bytes(s, "zstd"))
+            cur = nxt
+        np.savez(path, start=pos, end=cur, lens=np.array([len(b) for b in blobs]),
+                 data=np.frombuffer(b"".join(blobs), np.uint8))
+    z = np.load(path)
+    data = z["data"].tobytes()
+    offs = np.concatenate(([0], np.cumsum(z["lens"])))
+    h = History("obj")
+    for i in range(JUMP_STEPS):
+        b = data[offs[i]:offs[i + 1]]
+        if i >= JUMP_STEPS - 64:
+            h.entries.append(Entry(stepmod.step_from_bytes(b)))
+        else:
+            h.entries.append(Entry(blob=b, meta=stepmod.read_header(b)["meta"]))
+    h.cursor = JUMP_STEPS
+    return h, z["start"], z["end"]
+
+
+def jumps(nv, rounds, folder):
+    import hashlib
+    h, start, end = _jump_fixture(nv, folder)
+    engines = {"steps": LIB, "per step": _PerStep(LIB), "python": None}
+    states = {"obj": MeshState({"POINT": end.size // 3}, {POSITION_KEY: end.copy()})}
+    arr = lambda: states["obj"].arrays[POSITION_KEY]     # noqa: E731
+    times = {e: {} for e in engines}
+    sums = {}
+    for _ in range(rounds):
+        for name, lib in engines.items():
+            native.lib = lib
+            try:
+                for case, a, b in JUMP_CASES:
+                    reps = 20 if abs(b - a) == 1 else (1 if abs(b - a) >= 3000 else 3)
+                    for _ in range(reps):
+                        h.goto(a, states)
+                        t0 = time.perf_counter()
+                        h.goto(b, states)
+                        times[name].setdefault(case, []).append((time.perf_counter() - t0) * 1000)
+                    sums.setdefault(case, set()).add(hashlib.sha1(arr().tobytes()).hexdigest())
+                for way, lo, hi, d in (("drag fwd", 0, JUMP_STEPS, 50), ("drag back", JUMP_STEPS, 0, -50)):
+                    h.goto(lo, states)
+                    t0 = time.perf_counter()
+                    for p in range(lo + d, hi + d, d):
+                        h.goto(p, states)
+                    times[name].setdefault(way, []).append((time.perf_counter() - t0) * 1000)
+                assert arr().tobytes() == start.tobytes()
+                h.goto(JUMP_STEPS, states)
+                assert arr().tobytes() == end.tobytes()
+            finally:
+                native.lib = LIB
+    assert all(len(v) == 1 for v in sums.values()), "engines disagree"
+    res = {"vertices": nv, "rounds": rounds, "load": os.getloadavg(), "ms": {}}
+    print(f"\n{nv:,} vertices, {rounds} rounds (min / median ms)")
+    print(f"  {'case':20s}" + "".join(f"{e:>22s}" for e in engines))
+    for case in list(times["steps"]):
+        cells = "".join(f"{min(times[e][case]):11.2f} /{statistics.median(times[e][case]):9.2f}" for e in engines)
+        print(f"  {case:20s}{cells}", flush=True)
+        res["ms"][case] = {e: [round(min(times[e][case]), 3), round(statistics.median(times[e][case]), 3)]
+                           for e in engines}
+    res["peak_MB"] = {}
+    print("  peak memory of the jump, MB (tracemalloc / VmHWM over RSS)")
+    for name, lib in engines.items():
+        native.lib = lib
+        try:
+            for case, a, b in (("300 fwd", 2000, 2300), ("3000 back", 4000, 1000)):
+                h.goto(a, states)
+                hw = reset_hwm()
+                rss0 = proc("VmRSS")
+                tracemalloc.start()
+                h.goto(b, states)
+                pk = tracemalloc.get_traced_memory()[1] / 1e6
+                tracemalloc.stop()
+                hwm = round((proc("VmHWM") - rss0) / 1e6, 3) if hw else None
+                res["peak_MB"][f"{name}, {case}"] = [round(pk, 3), hwm]
+                print(f"    {name:10s} {case:10s} {pk:8.3f} / {hwm}")
+        finally:
+            native.lib = LIB
+    h.goto(JUMP_STEPS, states)
+    return res
+
+
 def main():
+    if "--jumps" in sys.argv:
+        import tempfile
+        arg = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d     # noqa: E731
+        assert hasattr(LIB, "apply_steps"), "this module has no apply_steps (API 1)"
+        folder = arg("--fixtures", os.path.join(tempfile.gettempdir(), "hindsight_bench_jumps"))
+        out = [jumps(nv, int(arg("--rounds", 5)), folder)
+               for nv in ([int(arg("--nv", 0))] if "--nv" in sys.argv else (100_000, 1_000_000))]
+        print(json.dumps({"python": sys.version.split()[0], "cpus": os.cpu_count(), "jumps": out}))
+        return
     out = {"date": time.strftime("%Y-%m-%d"), "machine": platform.platform(), "cpu": platform.processor(),
            "cpus": os.cpu_count(), "python": sys.version.split()[0], "numpy": np.__version__,
            "codecs": codec.available(), "native": LIB.__file__, "load": os.getloadavg(), "cases": []}

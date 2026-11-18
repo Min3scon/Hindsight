@@ -265,9 +265,6 @@ def _idx_bitmap(idx: np.ndarray) -> bytes:
     return struct.pack("<II", lo, span) + np.packbits(m, bitorder="little").tobytes()
 
 
-_IDX_ENC = {IDX_GAPS: _idx_gaps, IDX_RUNS: _idx_runs, IDX_BITMAP: _idx_bitmap}
-
-
 def _read(mv, off, n, end):
     if n < 0 or off + n > end:
         raise CorruptDelta("delta: index data is cut short")
@@ -312,18 +309,14 @@ def _decode_idx(code: int, mv, off: int, end: int, k: int) -> np.ndarray:
         if int(ln.sum()) != k:
             raise CorruptDelta("delta: run lengths don't add up")
         # element i of run j is offset[j] + i, with offset[j] = first + sum over earlier runs of (gap + 1)
-        offs = np.empty(nr, dtype=np.int64)
+        offs = np.empty(nr, dtype=np.int64)       # nr > 1 here (one run returned above)
         offs[0] = first
-        if nr > 1:
-            np.cumsum(gaps + 1, out=offs[1:])
-            offs[1:] += first
+        np.cumsum(gaps + 1, out=offs[1:])
+        offs[1:] += first
         if int(offs[-1]) + k - 1 > 0xFFFFFFFF:
             raise CorruptDelta("delta: index out of range")
         out = np.arange(k, dtype=_U32)
-        if nr == 1:
-            out += _U32(first)
-        else:
-            out += np.repeat(offs.astype(_U32), ln)
+        out += np.repeat(offs.astype(_U32), ln)
         return out
     elif code == IDX_BITMAP:
         lo, span = struct.unpack_from("<II", _read(mv, off, 8, end))

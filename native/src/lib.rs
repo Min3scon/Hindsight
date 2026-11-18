@@ -21,10 +21,10 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
-use pyo3::types::{PyByteArray, PyBytes};
+use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 1;
+const API: u32 = 2;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -255,6 +255,50 @@ fn apply_rows<const N: usize>(dst: &mut [u8], iv: &[u8], v: &[u8], w: usize, xor
     }
 }
 
+/// apply_op on buffers aligned to their types (numpy's are): no byte shuffling per value.
+fn apply_t<L: Lane, const OP: u8, const W: usize>(dst: &mut [L], idx: &[u32], v: &[L], w: usize) {
+    let w = if W > 0 { W } else { w };
+    for (&i, vr) in idx.iter().zip(v.chunks_exact(w)) {
+        let at = i as usize * w;
+        for (x, &d) in dst[at..at + w].iter_mut().zip(vr) {
+            *x = match OP {
+                0 => x.xor(d),
+                1 => x.wadd(d),
+                _ => x.wsub(d),
+            };
+        }
+    }
+}
+
+/// The typed apply_op, when every buffer is aligned; false (nothing done) otherwise.
+fn apply_lane<L: Lane>(dst: &mut [u8], iv: &[u8], v: &[u8], w: usize, op: u8) -> bool {
+    // SAFETY: any bit pattern is a valid unsigned integer; align_to only hands out the aligned
+    // middle part, and each whole buffer must be that part.
+    let (p0, d, q0) = unsafe { dst.align_to_mut::<L>() };
+    let (p1, ix, q1) = unsafe { iv.align_to::<u32>() };
+    let (p2, vv, q2) = unsafe { v.align_to::<L>() };
+    if !(p0.is_empty() && q0.is_empty() && p1.is_empty() && q1.is_empty() && p2.is_empty() && q2.is_empty()) {
+        return false;
+    }
+    macro_rules! by_w {
+        ($op:expr) => {
+            match w {
+                1 => apply_t::<L, $op, 1>(d, ix, vv, w),
+                2 => apply_t::<L, $op, 2>(d, ix, vv, w),
+                3 => apply_t::<L, $op, 3>(d, ix, vv, w),
+                4 => apply_t::<L, $op, 4>(d, ix, vv, w),
+                _ => apply_t::<L, $op, 0>(d, ix, vv, w),
+            }
+        };
+    }
+    match op {
+        0 => by_w!(0),
+        1 => by_w!(1),
+        _ => by_w!(2),
+    }
+    true
+}
+
 /// apply(array, indices, values, itemsize, width, xor, forward) -> True when applied in place,
 /// False (array untouched) for anything the fast path doesn't cover: indices not sorted and
 /// unique, past the end, a value count that doesn't match, overlapping buffers. The caller then
@@ -296,7 +340,16 @@ fn apply(
         }
         let v = vb.bytes();
         let dst = ab.bytes_mut();
-        by_size!(isz, apply_rows(dst, iv, v, w, xor, forward));
+        let op = if xor { 0 } else if forward { 1 } else { 2 };
+        let typed = match isz {
+            1 => apply_lane::<u8>(dst, iv, v, w, op),
+            2 => apply_lane::<u16>(dst, iv, v, w, op),
+            4 => apply_lane::<u32>(dst, iv, v, w, op),
+            _ => apply_lane::<u64>(dst, iv, v, w, op),
+        };
+        if !typed {
+            by_size!(isz, apply_rows(dst, iv, v, w, xor, forward));
+        }
         Ok(true)
     })
 }
@@ -548,7 +601,7 @@ fn decode_idx(code: u8, iv: &[u8], k: usize, out: &mut [u8]) -> Result<(), &'sta
             let h = take(iv, 0, 8)?;
             let lo = le(h, 0, 4) as u128;
             let span = le(&h[4..8], 0, 4) as usize;
-            let bits = take(iv, 8, (span as u128 + 7) / 8)?;
+            let bits = take(iv, 8, (span as u128).div_ceil(8))?;
             let bit = |p: usize| (bits[p >> 3] >> (p & 7)) & 1 == 1;
             let full = span / 8;
             let mut count: usize = bits[..full].iter().map(|b| b.count_ones() as usize).sum();
@@ -589,8 +642,9 @@ fn undo<const N: usize, const T: usize>(col: &mut [u64], acc: &mut [u64; 3]) {
     }
 }
 
-fn decode_vals<const N: usize>(vin: &[u8], k: usize, w: usize, add: bool, out: &mut [u8]) -> Result<(), &'static str> {
-    let (tags, planes) = vin.split_at(w);
+/// The predictor tags of a record are valid (as delta.unpack_at checks them).
+fn check_tags(tags: &[u8], add: bool) -> Result<(), &'static str> {
+    let w = tags.len();
     let hi = *tags.iter().max().unwrap_or(&0);
     let n_raw = tags.iter().filter(|&&t| t == TAG_RAW).count();
     if hi <= MAX_ORDER {
@@ -602,6 +656,19 @@ fn decode_vals<const N: usize>(vin: &[u8], k: usize, w: usize, add: bool, out: &
     {
         return Err(E_TAG);
     }
+    Ok(())
+}
+
+fn decode_vals<const N: usize>(vin: &[u8], k: usize, w: usize, add: bool, out: &mut [u8]) -> Result<(), &'static str> {
+    check_tags(&vin[..w], add)?;
+    decode_cols::<N>(vin, k, w, |e, c, x| wr::<N>(out, e * w + c, x));
+    Ok(())
+}
+
+/// The values of a record (tags checked), column by column: `sink(element, component, value)`.
+#[inline(always)]
+fn decode_cols<const N: usize>(vin: &[u8], k: usize, w: usize, mut sink: impl FnMut(usize, usize, u64)) {
+    let (tags, planes) = vin.split_at(w);
     let mut buf = [0u64; CHUNK];
     for c in 0..w {
         let mut acc = [0u64; 3];
@@ -624,12 +691,11 @@ fn decode_vals<const N: usize>(vin: &[u8], k: usize, w: usize, add: bool, out: &
                 _ => {} // stored as is (checked above)
             }
             for (i, &x) in col.iter().enumerate() {
-                wr::<N>(out, (s + i) * w + c, x);
+                sink(s + i, c, x);
             }
             s += n;
         }
     }
-    Ok(())
 }
 
 /// unpack(index bytes, coding, k, tags + planes, itemsize, width, op_add, idx_out, vals_out):
@@ -668,9 +734,528 @@ fn unpack(
     })
 }
 
+// ------------------------------------------------------------------------------ apply_steps
+// A run of packed steps crossed in one call (history.History.goto). Only the plain case is taken:
+// a format 3 DELTA step (no snapshots, data records or JSON extras), zstd or uncompressed, whose
+// records are format 3, change channels that exist on both sides and are already in the state's
+// arrays with the right item size. Anything else, and any damage at all, stops the run before
+// that step with the arrays untouched by it; Python then crosses that step itself, so every
+// exception and every unusual case keeps exactly its Python behaviour.
+
+const STEP_MAGIC: &[u8; 4] = b"HSS3";
+const REC_MAGIC: &[u8; 2] = b"HE";
+const REC_HDR: usize = 16; // <2sBBBBHII
+const STEP_FIXED: usize = 24; // <BBBBQdI
+const QUICK_FLAG: u8 = 8;
+const MAX_RAW: u64 = 1 << 30; // codec.MAX_RAW
+const MAX_WIDTH: usize = 16;
+
+/// One channel array of the state: a writable byte buffer and its numpy item size.
+struct Arr {
+    key: Vec<u8>,
+    ptr: usize,
+    len: usize,
+    isz: usize,
+}
+
+/// One record of a decoded step, checked against its array and ready to apply.
+struct Rec {
+    arr: usize,
+    isz: usize,
+    w: usize,
+    k: usize,
+    vals: (usize, usize), // tags + planes, a range of the body
+    idx: usize,           // where its k indices start in the step's index scratch
+    xor: bool,
+}
+
+#[inline]
+fn u16_at(b: &[u8], o: usize) -> Option<usize> {
+    Some(u16::from_le_bytes(b.get(o..o + 2)?.try_into().ok()?) as usize)
+}
+
+#[inline]
+fn u32_at(b: &[u8], o: usize) -> Option<usize> {
+    Some(u32::from_le_bytes(b.get(o..o + 4)?.try_into().ok()?) as usize)
+}
+
+/// The step's header: Some((record count, raw body length, payload)) for a plain DELTA step.
+fn step_header(blob: &[u8]) -> Option<(usize, usize, &[u8])> {
+    if blob.len() < 10 || &blob[..4] != STEP_MAGIC {
+        return None;
+    }
+    if crc32fast::hash(&blob[8..]) as usize != u32_at(blob, 4)? {
+        return None;
+    }
+    let hl = u16_at(blob, 8)?;
+    let h = blob.get(10..10 + hl)?;
+    if hl < STEP_FIXED {
+        return None;
+    }
+    // version 3 (4 has data records), kind DELTA, no flag but "written quickly"
+    if h[0] != 3 || h[1] != 0 || h[2] & !QUICK_FLAG != 0 {
+        return None;
+    }
+    let raw = u32_at(h, 20)?;
+    let mut off = STEP_FIXED;
+    let n = u16_at(h, off)?; // label
+    std::str::from_utf8(h.get(off + 2..off + 2 + n)?).ok()?;
+    off += 2 + n;
+    for _ in 0..2 {
+        // mode, target
+        let n = *h.get(off)? as usize;
+        std::str::from_utf8(h.get(off + 1..off + 1 + n)?).ok()?;
+        off += 1 + n;
+    }
+    if u32_at(h, off)? != 0 {
+        return None; // extra JSON: Python reads it
+    }
+    off += 4;
+    let nd = u16_at(h, off)?;
+    off += 2;
+    if off != hl {
+        return None;
+    }
+    Some((nd, raw, &blob[10 + hl..]))
+}
+
+/// Where the raw body of a step is, as codec.decompress(payload, raw) would return it: the
+/// payload itself when stored as is (Some(true)), or one zstd frame of exactly `raw` bytes,
+/// decompressed into `buf` (Some(false)).
+fn step_body(payload: &[u8], raw: usize, dctx: &mut zstd_safe::DCtx<'static>, buf: &mut Vec<u8>) -> Option<bool> {
+    let (&cid, data) = payload.split_first()?;
+    let raw64 = raw as u64;
+    if raw64 > MAX_RAW || raw64 > 65536 * data.len() as u64 + 65536 {
+        return None;
+    }
+    match cid {
+        0 => (data.len() == raw).then_some(true),
+        3 | 4 => {
+            if zstd_safe::get_frame_content_size(data).ok()?? != raw64 {
+                return None;
+            }
+            if zstd_safe::find_frame_compressed_size(data).ok()? != data.len() {
+                return None; // more than one frame, or trailing bytes: Python decides
+            }
+            buf.clear();
+            buf.try_reserve_exact(raw).ok()?;
+            let n = dctx.decompress(buf, data).ok()?;
+            (n == raw && buf.len() == raw).then_some(false)
+        }
+        _ => None, // zlib, lz4: Python
+    }
+}
+
+/// One step decoded and checked, ready to apply (buffers are reused from step to step).
+#[derive(Default)]
+struct Decoded {
+    ok: bool,
+    stored: bool, // the body is the blob's payload (stored as is), not `buf`
+    buf: Vec<u8>,
+    recs: Vec<Rec>,
+    idx: Vec<u32>,
+}
+
+impl Decoded {
+    fn body<'a>(&'a self, blob: &'a [u8]) -> &'a [u8] {
+        if self.stored {
+            let hl = u16::from_le_bytes([blob[8], blob[9]]) as usize;
+            &blob[10 + hl + 1..]
+        } else {
+            &self.buf
+        }
+    }
+}
+
+/// Header, body and records of one step, all checked (d.ok false: not taken).
+fn decode_step(blob: &[u8], arrs: &[Arr], dctx: &mut zstd_safe::DCtx<'static>, d: &mut Decoded) {
+    d.ok = false;
+    let Some((nd, raw, payload)) = step_header(blob) else { return };
+    let Some(stored) = step_body(payload, raw, dctx, &mut d.buf) else { return };
+    d.stored = stored;
+    let body = if stored { &payload[1..] } else { &d.buf[..] };
+    d.ok = step_records(body, nd, arrs, &mut d.recs, &mut d.idx).is_some();
+}
+
+/// Parses and checks every record of the body against the arrays; indices are decoded into
+/// `idx`. None if any record isn't one this path takes, or is damaged.
+fn step_records(body: &[u8], nd: usize, arrs: &[Arr], recs: &mut Vec<Rec>, idx: &mut Vec<u32>) -> Option<()> {
+    recs.clear();
+    idx.clear();
+    let mut off = 0usize;
+    for _ in 0..nd {
+        let hdr = body.get(off..off + REC_HDR)?;
+        if &hdr[..2] != REC_MAGIC {
+            return None;
+        }
+        let (flags, isz, w, code) = (hdr[2], hdr[3] as usize, hdr[4] as usize, hdr[5]);
+        let klen = u16_at(hdr, 6)?;
+        let k = u32_at(hdr, 8)?;
+        let ilen = u32_at(hdr, 12)?;
+        // exists on both sides (the array stays); any other flag, size or width: Python
+        if flags & !7 != 0 || flags & 3 != 3 || !matches!(isz, 1 | 2 | 4 | 8) || w == 0 || w > MAX_WIDTH {
+            return None;
+        }
+        off += REC_HDR;
+        let key = body.get(off..off + klen)?;
+        std::str::from_utf8(key).ok()?;
+        off += klen;
+        let a = arrs.iter().position(|a| a.key == key)?;
+        if k == 0 {
+            recs.push(Rec { arr: a, isz, w, k: 0, vals: (0, 0), idx: 0, xor: false });
+            continue;
+        }
+        let row = isz * w;
+        let nx = (k as u128) * row as u128;
+        let stop = off as u128 + ilen as u128 + w as u128 + nx;
+        if stop > body.len() as u128 {
+            return None;
+        }
+        let stop = stop as usize;
+        let arr = &arrs[a];
+        if arr.isz != isz || arr.len % row != 0 {
+            return None;
+        }
+        let add = flags & 4 != 0;
+        let vin = &body[off + ilen..stop];
+        check_tags(&vin[..w], add).ok()?;
+        let at = idx.len();
+        idx.try_reserve(k).ok()?;
+        idx.resize(at + k, 0);
+        let out = &mut idx[at..];
+        // SAFETY: the same memory as bytes (u8 has no alignment; the target is little-endian)
+        let ob = unsafe { std::slice::from_raw_parts_mut(out.as_mut_ptr() as *mut u8, k * 4) };
+        decode_idx(code, &body[off..off + ilen], k, ob).ok()?;
+        // decoded indices always increase: the last one is the largest
+        if out[k - 1] as usize >= arr.len / row {
+            return None;
+        }
+        recs.push(Rec { arr: a, isz, w, k, vals: (off + ilen, stop), idx: at, xor: !add });
+        off = stop;
+    }
+    (off == body.len()).then_some(())
+}
+
+/// An unsigned value of 1, 2, 4 or 8 bytes, for the typed path of apply_steps.
+trait Lane: Copy + Default {
+    const N: usize;
+    fn or_byte(self, p: u8, b: usize) -> Self;
+    fn unzz(self) -> Self;
+    fn wadd(self, o: Self) -> Self;
+    fn wsub(self, o: Self) -> Self;
+    fn xor(self, o: Self) -> Self;
+}
+
+macro_rules! lane {
+    ($t:ty, $n:expr) => {
+        impl Lane for $t {
+            const N: usize = $n;
+            #[inline(always)]
+            fn or_byte(self, p: u8, b: usize) -> Self {
+                self | ((p as $t) << (8 * b))
+            }
+            #[inline(always)]
+            fn unzz(self) -> Self {
+                (self >> 1) ^ (0 as $t).wrapping_sub(self & 1)
+            }
+            #[inline(always)]
+            fn wadd(self, o: Self) -> Self {
+                self.wrapping_add(o)
+            }
+            #[inline(always)]
+            fn wsub(self, o: Self) -> Self {
+                self.wrapping_sub(o)
+            }
+            #[inline(always)]
+            fn xor(self, o: Self) -> Self {
+                self ^ o
+            }
+        }
+    };
+}
+lane!(u8, 1);
+lane!(u16, 2);
+lane!(u32, 4);
+lane!(u64, 8);
+
+#[inline(always)]
+fn undo_t<L: Lane, const T: usize>(col: &mut [L], acc: &mut [L; 3]) {
+    for x in col.iter_mut() {
+        let mut y = x.unzz();
+        for a in acc[..T].iter_mut() {
+            *a = a.wadd(y);
+            y = *a;
+        }
+        *x = y;
+    }
+}
+
+/// decode_apply on an aligned array: a chunk of every component is decoded, then the chunk's
+/// rows are updated in one pass (OP 0 xor, 1 add, 2 subtract, wrapping).
+/// W: the width when it is 1 to 4 (the compiler unrolls the rows), 0 for any other.
+fn decode_apply_t<L: Lane, const OP: u8, const W: usize>(vin: &[u8], k: usize, w: usize, idx: &[u32], dst: &mut [L], tmp: &mut Vec<L>) {
+    let w = if W > 0 { W } else { w };
+    let (tags, planes) = vin.split_at(w);
+    tmp.clear();
+    tmp.resize(w * CHUNK, L::default());
+    let mut acc = [[L::default(); 3]; MAX_WIDTH];
+    let mut s = 0;
+    while s < k {
+        let n = CHUNK.min(k - s);
+        for c in 0..w {
+            let col = &mut tmp[c * CHUNK..c * CHUNK + n];
+            let mut pl: [&[u8]; 8] = [&[]; 8];
+            for (b, p) in pl[..L::N].iter_mut().enumerate() {
+                let at = (c * L::N + b) * k + s;
+                *p = &planes[at..at + n];
+            }
+            for (i, x) in col.iter_mut().enumerate() {
+                let mut v = L::default();
+                for (b, p) in pl[..L::N].iter().enumerate() {
+                    v = v.or_byte(p[i], b);
+                }
+                *x = v;
+            }
+            let a = &mut acc[c];
+            match tags[c] {
+                0 => undo_t::<L, 0>(col, a),
+                1 => undo_t::<L, 1>(col, a),
+                2 => undo_t::<L, 2>(col, a),
+                3 => undo_t::<L, 3>(col, a),
+                _ => {}
+            }
+        }
+        for (i, &r) in idx[s..s + n].iter().enumerate() {
+            let row = &mut dst[r as usize * w..r as usize * w + w];
+            for (c, x) in row.iter_mut().enumerate() {
+                let d = tmp[c * CHUNK + i];
+                *x = match OP {
+                    0 => x.xor(d),
+                    1 => x.wadd(d),
+                    _ => x.wsub(d),
+                };
+            }
+        }
+        s += n;
+    }
+}
+
+fn decode_apply_lane<L: Lane>(vin: &[u8], k: usize, w: usize, idx: &[u32], dst: &mut [u8], op: u8, tmp: &mut Vec<L>) -> bool {
+    // SAFETY: any bit pattern is a valid unsigned integer; align_to_mut only hands out the
+    // aligned middle part, and the whole buffer must be that part.
+    let (pre, mid, post) = unsafe { dst.align_to_mut::<L>() };
+    if !pre.is_empty() || !post.is_empty() {
+        return false;
+    }
+    macro_rules! by_w {
+        ($op:expr) => {
+            match w {
+                1 => decode_apply_t::<L, $op, 1>(vin, k, w, idx, mid, tmp),
+                2 => decode_apply_t::<L, $op, 2>(vin, k, w, idx, mid, tmp),
+                3 => decode_apply_t::<L, $op, 3>(vin, k, w, idx, mid, tmp),
+                4 => decode_apply_t::<L, $op, 4>(vin, k, w, idx, mid, tmp),
+                _ => decode_apply_t::<L, $op, 0>(vin, k, w, idx, mid, tmp),
+            }
+        };
+    }
+    match op {
+        0 => by_w!(0),
+        1 => by_w!(1),
+        _ => by_w!(2),
+    }
+    true
+}
+
+#[derive(Default)]
+struct Scratch {
+    t1: Vec<u8>,
+    t2: Vec<u16>,
+    t4: Vec<u32>,
+    t8: Vec<u64>,
+}
+
+/// Decodes the values of a record and applies them to the rows `idx` of `dst` in place.
+fn decode_apply_any(isz: usize, vin: &[u8], k: usize, w: usize, idx: &[u32], dst: &mut [u8], op: u8, sc: &mut Scratch) {
+    let typed = match isz {
+        1 => decode_apply_lane::<u8>(vin, k, w, idx, dst, op, &mut sc.t1),
+        2 => decode_apply_lane::<u16>(vin, k, w, idx, dst, op, &mut sc.t2),
+        4 => decode_apply_lane::<u32>(vin, k, w, idx, dst, op, &mut sc.t4),
+        _ => decode_apply_lane::<u64>(vin, k, w, idx, dst, op, &mut sc.t8),
+    };
+    if !typed {
+        // an array not aligned to its item size (numpy's are, unless made from an offset buffer)
+        // SAFETY: u32 to bytes, same memory
+        let iv = unsafe { std::slice::from_raw_parts(idx.as_ptr() as *const u8, idx.len() * 4) };
+        by_size!(isz, decode_apply(vin, k, w, iv, dst, op));
+    }
+}
+
+fn decode_apply<const N: usize>(vin: &[u8], k: usize, w: usize, iv: &[u8], dst: &mut [u8], op: u8) {
+    decode_cols::<N>(vin, k, w, |e, c, d| {
+        let at = idx_at(iv, e) as usize * w + c;
+        let x = rd::<N>(dst, at);
+        let y = match op {
+            0 => x ^ d,
+            1 => x.wrapping_add(d),
+            _ => x.wrapping_sub(d),
+        };
+        wr::<N>(dst, at, y & mask::<N>());
+    });
+}
+
+/// The plain arrays of a dict {key: numpy array}: (views to hold, arrays). An entry that isn't a
+/// str key and a writable C-contiguous array with an item size of 1, 2, 4 or 8 is left out (a
+/// record that names it stops the run), as are arrays sharing memory.
+fn dict_arrays(arrays: &Bound<'_, PyDict>) -> (Vec<Buf>, Vec<Arr>, Vec<Py<PyAny>>) {
+    let (mut bufs, mut arrs, mut keys) = (Vec::new(), Vec::new(), Vec::new());
+    // a list of the items first: nothing run below can change what is iterated
+    for item in arrays.items().iter() {
+        let Ok((k, v)) = item.extract::<(Bound<'_, PyAny>, Bound<'_, PyAny>)>() else { continue };
+        let Ok(ks) = k.downcast::<PyString>() else { continue };
+        let Ok(kb) = ks.to_str() else { continue };
+        let Ok(isz) = v.getattr("itemsize").and_then(|x| x.extract::<usize>()) else { continue };
+        if !matches!(isz, 1 | 2 | 4 | 8) {
+            continue;
+        }
+        let Ok(b) = Buf::new(&v, true) else { continue };
+        arrs.push(Arr { key: kb.as_bytes().to_vec(), ptr: b.view.buf as usize, len: b.len(), isz });
+        keys.push(k.unbind());
+        bufs.push(b);
+    }
+    // arrays sharing memory are left out, all of them
+    let shared: Vec<bool> = (0..bufs.len()).map(|i| (0..bufs.len()).any(|j| j != i && bufs[i].overlaps(&bufs[j]))).collect();
+    let mut i = 0;
+    arrs.retain(|_| { i += 1; !shared[i - 1] });
+    let mut i = 0;
+    keys.retain(|_| { i += 1; !shared[i - 1] });
+    let mut i = 0;
+    bufs.retain(|_| { i += 1; !shared[i - 1] });
+    (bufs, arrs, keys)
+}
+
+/// apply_steps(blobs, arrays, forward, threads=None) -> (number of steps applied, keys of the
+/// arrays changed). Crosses the packed steps in `blobs` (a list of bytes, in the order crossed)
+/// one after the other on the channel arrays of one state (`arrays`, MeshState.arrays), in place,
+/// exactly as History.goto does step by step. Stops before the first step it doesn't take (see
+/// above), which it leaves untouched. The GIL is released while it works. Decompressing and
+/// decoding run ahead on up to `threads` helper threads (None: up to 3, fewer on machines with
+/// fewer cores, none for a short run); the steps are applied in order on the calling thread.
+#[pyfunction]
+#[pyo3(signature = (blobs, arrays, forward, threads=None))]
+fn apply_steps(
+    py: Python<'_>,
+    blobs: &Bound<'_, PyList>,
+    arrays: &Bound<'_, PyDict>,
+    forward: bool,
+    threads: Option<usize>,
+) -> PyResult<(usize, Vec<Py<PyAny>>)> {
+    guard(|| {
+        // the blobs: bytes objects (immutable), kept alive by these references
+        let owned: Vec<Bound<'_, PyBytes>> = blobs.iter().map_while(|b| b.downcast_into::<PyBytes>().ok()).collect();
+        let slices: Vec<&[u8]> = owned.iter().map(|b| b.as_bytes()).collect();
+        let (bufs, arrs, keys) = dict_arrays(arrays);
+        let mut touched = vec![false; arrs.len()];
+        let nt = threads.unwrap_or_else(|| auto_threads(&slices)).min(MAX_THREADS);
+        let done = py.allow_threads(|| run_steps(&slices, &arrs, &mut touched, forward, nt));
+        drop(bufs);
+        let changed = touched.iter().zip(keys).filter(|(t, _)| **t).map(|(_, k)| k).collect();
+        Ok((done, changed))
+    })
+}
+
+const MAX_THREADS: usize = 3;
+/// Compressed bytes worth a helper thread (starting one costs about as much as decoding this).
+const BYTES_PER_THREAD: usize = 32 << 10;
+
+fn auto_threads(blobs: &[&[u8]]) -> usize {
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let total: usize = blobs.iter().map(|b| b.len()).sum();
+    if blobs.len() < 3 {
+        return 0;
+    }
+    (cores.saturating_sub(1)).min(MAX_THREADS).min(total / BYTES_PER_THREAD).min(blobs.len() - 1)
+}
+
+/// Applies one decoded step (checked: nothing here can fail).
+fn apply_decoded(blob: &[u8], d: &Decoded, arrs: &[Arr], touched: &mut [bool], forward: bool, sc: &mut Scratch) {
+    let body = d.body(blob);
+    for r in d.recs.iter() {
+        touched[r.arr] = true;
+        if r.k == 0 {
+            continue;
+        }
+        let a = &arrs[r.arr];
+        // SAFETY: `ptr`/`len` describe a writable buffer exported by a live array (the view is
+        // held by apply_steps for the whole call) that overlaps no other array's buffer and none
+        // of the blobs (bytes objects are immutable, numpy can't export them writable). Only this
+        // thread writes to it, one record at a time.
+        let dst = unsafe { std::slice::from_raw_parts_mut(a.ptr as *mut u8, a.len) };
+        let op = if r.xor { 0 } else if forward { 1 } else { 2 };
+        let (vin, iv) = (&body[r.vals.0..r.vals.1], &d.idx[r.idx..r.idx + r.k]);
+        decode_apply_any(r.isz, vin, r.k, r.w, iv, dst, op, sc);
+    }
+}
+
+fn run_steps(blobs: &[&[u8]], arrs: &[Arr], touched: &mut [bool], forward: bool, nt: usize) -> usize {
+    let mut sc = Scratch::default();
+    if nt == 0 || blobs.len() < 2 {
+        let mut dctx = zstd_safe::DCtx::create();
+        let mut d = Decoded::default();
+        for (i, blob) in blobs.iter().enumerate() {
+            decode_step(blob, arrs, &mut dctx, &mut d);
+            if !d.ok {
+                return i;
+            }
+            apply_decoded(blob, &d, arrs, touched, forward, &mut sc);
+        }
+        return blobs.len();
+    }
+    // helper t decodes steps t, t + nt, t + 2 nt, ... into a channel of AHEAD; the decoded steps
+    // come back to it for reuse. Memory: at most nt * (AHEAD + 2) decoded steps at a time.
+    const AHEAD: usize = 2;
+    use std::sync::mpsc::{channel, sync_channel};
+    std::thread::scope(|scope| {
+        let mut rx = Vec::new();
+        let mut back = Vec::new();
+        for t in 0..nt {
+            let (tx, r) = sync_channel::<Box<Decoded>>(AHEAD);
+            let (btx, brx) = channel::<Box<Decoded>>();
+            rx.push(r);
+            back.push(btx);
+            scope.spawn(move || {
+                let mut dctx = zstd_safe::DCtx::create();
+                for i in (t..blobs.len()).step_by(nt) {
+                    let mut d = brx.try_recv().unwrap_or_default();
+                    decode_step(blobs[i], arrs, &mut dctx, &mut d);
+                    let ok = d.ok;
+                    if tx.send(d).is_err() || !ok {
+                        return; // the caller stopped, or this step isn't taken: no later step is
+                    }
+                }
+            });
+        }
+        let mut done = blobs.len();
+        for (i, blob) in blobs.iter().enumerate() {
+            let Ok(d) = rx[i % nt].recv() else {
+                done = i;
+                break;
+            };
+            if !d.ok {
+                done = i;
+                break;
+            }
+            apply_decoded(blob, &d, arrs, touched, forward, &mut sc);
+            let _ = back[i % nt].send(d);
+        }
+        drop(rx); // wakes any helper waiting to hand over a step
+        done
+    })
+}
+
 #[pymodule]
 fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("API", API)?;
+    m.add_function(wrap_pyfunction!(apply_steps, m)?)?;
     m.add_function(wrap_pyfunction!(diff, m)?)?;
     m.add_function(wrap_pyfunction!(apply, m)?)?;
     m.add_function(wrap_pyfunction!(pack, m)?)?;

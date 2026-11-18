@@ -14,6 +14,7 @@ from __future__ import annotations
 import numpy as np
 
 from . import delta as _delta
+from . import native as _native
 from .types import (
     DATA, DELTA, JOIN, MISSING,
     ChannelDelta, DataChange, Entry, Snapshot, Step,
@@ -168,17 +169,61 @@ class History:
             forward = pos > cur
             order = range(cur, pos) if forward else range(cur - 1, pos - 1, -1)
             entries = [self.entries[i] for i in order]
-            for entry, step in zip(entries, _steps(entries, states)):
-                if step is not None:       # None: object not being moved, skipped without unpacking
-                    self._cross(entry, step, forward, states, join_hook, changed)
+            run = getattr(_native.lib, "apply_steps", None)
+            if run is None:
+                for entry, step in zip(entries, _steps(entries, states)):
+                    if step is not None:       # None: object not being moved, skipped without unpacking
+                        self._cross(entry, step, forward, states, join_hook, changed)
+            else:
+                self._cross_runs(run, entries, forward, states, join_hook, changed)
         self.cursor = pos
         return changed
+
+    @staticmethod
+    def _cross_runs(run, entries: list, forward: bool, states: dict, join_hook, changed: dict) -> None:
+        """The loop of goto with the native engine: consecutive packed DELTA steps of one object
+        are crossed by one native call (apply_steps), which stops before any step it doesn't take
+        (other kinds and formats, extras, channels that appear or go, damage); that step is then
+        crossed here as without the engine, so results and exceptions are the same. The native
+        call releases the GIL; its helper threads (decompressing ahead) run no Python, so they
+        don't compete with Blender's main thread for the interpreter as Python threads did."""
+        i, n = 0, len(entries)
+        while i < n:
+            e = entries[i]
+            target = e.target
+            if target not in states:
+                i += 1                 # object not being moved: skipped without unpacking
+                continue
+            blobs = []
+            j = i
+            while j < n:
+                x = entries[j]
+                if x.step is not None or x.target != target or x.meta.get("kind", DELTA) != DELTA:
+                    break
+                b = x.blob
+                if type(b) is not bytes:
+                    break
+                blobs.append(b)
+                j += 1
+            if blobs:
+                st = states[target]
+                done, keys = run(blobs, st.arrays, forward)
+                if keys:
+                    changed.setdefault(target, set()).update(keys)
+                    st.removed.difference_update(keys)
+                i += done
+                if done < len(blobs):
+                    e = entries[i]     # the step it stopped at, crossed below
+                else:
+                    continue
+            step = e.load()
+            History._cross(e, step, forward, states, join_hook, changed)
+            i += 1
 
     @staticmethod
     def _cross(entry: Entry, step: Step, forward: bool, states: dict, join_hook, changed: dict) -> None:
         target = entry.target
         st = states[target]
-        kind = step.kind
         if step.records:
             # data records: applied before the mesh part going forward, after it going back, so a
             # step is undone in the reverse order of how it was done

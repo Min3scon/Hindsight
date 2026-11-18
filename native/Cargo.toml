@@ -14,6 +14,9 @@ crate-type = ["cdylib"]
 # abi3-py311: one binary for Python 3.11 (Blender 4.2 to 5.0) and 3.13 (Blender 5.1+).
 # generate-import-lib: the Windows import library, so Windows builds need no Python install.
 pyo3 = { version = "=0.22.6", features = ["extension-module", "abi3-py311", "generate-import-lib"] }
+# zstd (the C library, built from source by the cc crate) for decompressing steps in apply_steps
+zstd-safe = { version = "=8.3.0", default-features = false, features = ["std"] }
+crc32fast = "1"
 
 [profile.release]
 opt-level = 3
