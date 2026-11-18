@@ -15,21 +15,20 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 1. Clone `Min3scon/Hindsight` and stay on the default branch `claude/lucid-brahmagupta-9gsdsn`. Read this
    file, then `dev/AGENT_RULES.md`.
-2. Environment. `tools/dev_env.sh` is planned to build everything and does not exist yet. Until it does,
-   the cloud container of 2026-11-18 had, built by hand and not reproducible:
-   - one virtual environment per Blender version with `bpy` as a Python module and `numpy`,
-     `zstandard`, `hypothesis` (the plan also lists `lz4`, which the venvs had by accident):
-     `bpy42` (4.2.23) and `bpy50` (5.0.1) on Python 3.11.18, `bpy51` (5.1.2), `bpy52` (5.2.2) and
-     `bpy53` (5.3.0) on Python 3.13.18. Make them with
-     `python3.11 -m venv` or `python3.13 -m venv`, then `pip install bpy==<version> numpy zstandard
-     hypothesis` (about 1 GB each).
-   - the Rust engine wheel `hindsight_native` 0.2.0 installed in every venv (from `hindsight/wheels/`,
-     the Linux x86-64 file). The tests with `HINDSIGHT_NATIVE=require` fail on import without it.
-   - Rust 1.97 (in the base image) plus `maturin` and `zig` to rebuild the wheels. The commands are in
-     `PERF_LOG.md` section "Rust engine"; the helper script `rust/build_wheels.sh` was in the scratchpad
-     and is lost. It is planned as `tools/build_native.sh`.
-   - `download.blender.org` is blocked in the container, so there is no Blender binary and no GPU. GitHub
-     Actions runners can reach it.
+2. Environment. Run `bash tools/dev_env.sh` (add `--all` for Blender 5.0, 5.1 and 5.2): it builds one
+   virtual environment per Blender version under `/home/user/venvs` with `bpy` as a Python module
+   (`bpy42` 4.2.23 and `bpy50` 5.0.1 on Python 3.11; `bpy51` 5.1.2, `bpy52` 5.2.2 and `bpy53` 5.3.0 on
+   Python 3.13), the test dependencies, the committed engine wheel, and a `tools` venv with maturin and
+   zig. The claude.ai cloud environment named "Hindsight" (personal, saved for this repository) runs
+   that script when a session's container is built; it was created on 2026-11-18 and its setup script
+   is unproven until a fresh session has started on it. `bash tools/build_native.sh` rebuilds the six
+   engine wheels into `hindsight/wheels/`.
+   - There is no Blender binary and no GPU in the container (`download.blender.org` is blocked).
+     Real Blender runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
+     hand with inputs `versions`, `filter`, `run_module`, `run_ui`) runs the suite in Blender binaries
+     4.2 to 5.3, on Windows and macOS as a module, and a windowed probe under Xvfb. Workflow
+     `Native engine` proves the wheels on Windows, macOS and Linux, x64 and ARM64. Both are triggered
+     from a session with the GitHub tools (`actions_run_trigger`); commits carry `[skip ci]`.
 3. Tests (from `dev/AGENT_RULES.md` and `HANDOFF.md`):
    - all: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py`
    - some: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py recovery` (a substring of the file name)
@@ -47,21 +46,15 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 - Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default and the
   Pages source. There is no open pull request and none is planned: work goes straight to this branch.
-- Main line at the time of writing: `04af744` "Merge runtime work". On it: crash recovery D77 to D83,
-  redraw work (D84), save and load work (D85, D86), data recorder work, the Rust engine 0.2.0
-  (`apply_steps`), the runtime work (S4-2, S4-3, topology reads through attributes, cached slider info).
-  Whether `04af744` was pushed to origin at the end of the session was not checked.
-- Not on the main line: this record (branch `worktree-agent-a3a6f625269ac2fdc`, to be merged), and two
-  agent branches that exist only as local branches in the session's container and are lost if it goes:
-  - `worktree-agent-ac952619567257298` (CAMERA, 2 commits `1840b2f`, `3345e81`, 1,401 + 147 lines): review
-    findings S2-1, S3-1, S3-2 with tests. No report, not reviewed, not merged.
-  - `worktree-agent-a8aa53ed15586afaa` (MOVIE, 2 commits `b6da845`, `58aa22a`): the visible objects of
-    Movie Mode are listed once per frame (13.7 to 9.6 ms per frame at 100k vertices with 500 other
-    objects, commit message), and `bench/bench_movie.py --grid`. No report, incomplete, not merged. The
-    commit message says `runtime.goto` should take the list too once it accepts `vis=`; that patch is in
-    the lost MOVIE report.
-- Other `worktree-agent-*` branches exist in the container (one per agent, including the analysis agents).
-  RECORD did not inspect them beyond the two above; the merged ones are on the main line.
+- Main line: see `git log`. Merged and tested by the orchestrator on 2026-11-18: crash recovery D77 to
+  D83, redraw work (D84), save and load work (D85, D86), data recorder work (D87), the Rust engine 0.2.0
+  (`apply_steps`), the runtime work (D88 to D90, topology reads through attributes, cached slider info
+  wired into the slider, header and panel), Movie Mode listing the visible objects once per frame, this
+  record, the CI workflow and scripts, and engine wheels for Windows ARM64 and Linux ARM64.
+- In progress on agent branches (local to the session's container until merged; check `git branch`):
+  CAMERA-FINISH (review and completion of the Movie Mode camera fixes S2-1, S3-1, S3-2 from the
+  unmerged branch `worktree-agent-ac952619567257298`), BENCH (`bench/suite.py`, `bench/ab.py`),
+  RECOVERY-REVIEW (fault injection for the journal and saves), RUST (core design, then migration).
 - Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and `docs/download/hindsight.zip`
   is the beta.2 zip. `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
 - The site (`site/`, `docs/`) was not edited in this job (owner: "don't edit site, just get the add-on
