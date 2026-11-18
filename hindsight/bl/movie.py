@@ -2,6 +2,7 @@
 
 Movie Mode only plays history back, it never changes it: no step is ever recorded from here.
 """
+import inspect
 import math
 
 import bpy
@@ -11,7 +12,18 @@ from . import guard, runtime
 
 DATA_PATH = "hindsight.movie_step"
 _BUSY = [False]   # re-entrancy guard (goto / keying write meshes and the Step value)
-_SHOWN = {}       # the Step value last applied, the histories right after, the whole frame it was for
+_SHOWN = {}       # the Step value last applied, what that jump was planned from, the whole frame it was for
+
+
+def _takes_vis(fn) -> bool:
+    """True if runtime.goto takes the visible objects listed by its caller (vis=)."""
+    try:
+        return "vis" in inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+_GOTO_TAKES_VIS = _takes_vis(runtime.goto)
 
 
 def _props(scene):
@@ -39,29 +51,45 @@ def _no_operator_context(context):
     return _Proxy(context, scene=_Proxy(sc, hindsight=_Proxy(sc.hindsight, preserve_modes=False)))
 
 
-def _histories_now() -> tuple:
-    """Everything a jump depends on: every history's cursor and length, and what is visible."""
+def _histories_key(vis) -> tuple:
+    """Everything a jump depends on: what is visible (vis) and every history's cursor and length."""
     r = runtime.reg()
-    return (id(r), frozenset(runtime._visible_uids()),
-            tuple((h.uid, h.cursor, len(h.entries)) for h in r.histories.values()))
+    return (id(r), vis, tuple((h.uid, h.cursor, len(h.entries)) for h in r.histories.values()))
+
+
+def _histories_now() -> tuple:
+    return _histories_key(frozenset(runtime._visible_uids()))
 
 
 def _apply(context, value) -> bool:
-    """Move the global timeline to `value` if Movie Mode is active. True if it moved."""
+    """Move the global timeline to `value` if Movie Mode is active. True if it moved.
+
+    Listing the visible objects walks every object in the file, so it is done once per call and
+    the list is used for the check, the timeline and the record of what is shown. The record keeps
+    the list from before the jump: the jump was planned from it, so a later call that finds the
+    same list, cursors and Step value would plan the same jump and find nothing to do."""
     if _BUSY[0]:
         return False
     sh = _props(getattr(context, "scene", None))
     if not _active(sh):
         return False
     want = int(round(value))
-    if _SHOWN.get("want") == want and _SHOWN.get("histories") == _histories_now():
-        return False      # the step already shown (Frames per step above 1, or a render's sub-frames)
-    info = runtime.scrub_info(context)
-    if info is None or not info.get("global"):
+    try:
+        vis = frozenset(runtime._visible_uids())
+    except Exception:                  # as scrub_info: no timeline, nothing to play
         return False
-    target = max(0, min(want, int(info["len"])))
-    if target == info["pos"]:
-        _SHOWN.update(want=want, histories=_histories_now())
+    if _SHOWN.get("want") == want and _SHOWN.get("histories") == _histories_key(vis):
+        return False      # the step already shown (Frames per step above 1, or a render's sub-frames)
+    try:                               # what scrub_info reads, without listing the objects again
+        groups = runtime._groups(vis)
+        pos = runtime._position(vis, groups) if groups else 0
+    except Exception:                  # as scrub_info: no timeline, nothing to play
+        return False
+    if not groups:
+        return False
+    target = max(0, min(want, len(groups)))
+    if target == pos:
+        _SHOWN.update(want=want, histories=_histories_key(vis))
         return False
     prev = getattr(runtime.goto, "_movie", False)
     _BUSY[0] = True
@@ -69,12 +97,15 @@ def _apply(context, value) -> bool:
     runtime.IN_HANDLER[0] = True
     try:
         with runtime.suspended():
-            runtime.goto(context, target, final=True)
+            if _GOTO_TAKES_VIS:
+                runtime.goto(context, target, final=True, vis=vis)
+            else:
+                runtime.goto(context, target, final=True)
     finally:
         runtime.goto._movie = prev
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
-    _SHOWN.update(want=want, histories=_histories_now())
+    _SHOWN.update(want=want, histories=_histories_key(vis))
     return True
 
 
