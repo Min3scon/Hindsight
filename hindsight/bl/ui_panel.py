@@ -7,6 +7,7 @@ a failing runtime draws a short note instead of breaking the panel.
 The drawing helpers (draw_main, draw_history_options, draw_help) are shared with the header
 popover in header.py.
 """
+import sys
 import textwrap
 
 import bpy
@@ -30,10 +31,21 @@ SWITCH_SCENE = "Objects added and deleted"
 CATEGORY = "Undo History"
 
 
+_MODS = {}   # sibling modules, imported once (an import statement on every redraw costs more than the
+             # lookup it guards)
+
+
+def _mod(name):
+    m = _MODS.get(name)
+    if m is None:
+        import importlib
+        m = _MODS[name] = importlib.import_module("." + name, __package__)
+    return m
+
+
 def _rt():
     try:
-        from . import runtime
-        return runtime
+        return _mod("runtime")
     except Exception:
         return None
 
@@ -103,9 +115,24 @@ def wrap(layout, context, text, icon='NONE', units=None):
         width = 260 * scale
     chars = max(18, int((width - (44 if icon != 'NONE' else 24) * scale) / (6.3 * scale)))
     col = layout.column(align=True)
-    for i, line in enumerate(textwrap.wrap(str(text), chars, break_on_hyphens=False) or [""]):
+    for i, line in enumerate(_wrapped(str(text), chars)):
         col.label(text=line, icon=icon if i == 0 else ('BLANK1' if icon != 'NONE' else 'NONE'))
     return col
+
+
+_WRAPPED = {}
+
+
+def _wrapped(text, chars):
+    """textwrap.wrap(text, chars) or [""], kept: the same few texts are wrapped on every redraw."""
+    key = (text, chars)
+    lines = _WRAPPED.get(key)
+    if lines is None:
+        lines = tuple(textwrap.wrap(text, chars, break_on_hyphens=False) or [""])
+        if len(_WRAPPED) >= 64:
+            _WRAPPED.clear()
+        _WRAPPED[key] = lines
+    return lines
 
 
 def _warnings(context):
@@ -124,8 +151,10 @@ def _warnings(context):
 
 def _startup_errors():
     try:
-        import importlib
-        top = importlib.import_module(__package__.rsplit(".", 1)[0])
+        top = sys.modules.get(__package__.rsplit(".", 1)[0])
+        if top is None:
+            import importlib
+            top = importlib.import_module(__package__.rsplit(".", 1)[0])
         return [n for n, _, _ in getattr(top, "_errors", [])]
     except Exception:
         return []
@@ -133,8 +162,9 @@ def _startup_errors():
 
 def _draw_problems(layout, context, units=None):
     """A short box when part of the add-on is switched off or failed to start."""
-    off = [lbl for name, lbl, _, _ in guard.failed() if name not in guard.SOFT]
-    soft = [lbl for name, lbl, _, _ in guard.failed() if name in guard.SOFT and name != "registration"]
+    failed = guard.failed()
+    off = [lbl for name, lbl, _, _ in failed if name not in guard.SOFT]
+    soft = [lbl for name, lbl, _, _ in failed if name in guard.SOFT and name != "registration"]
     start = _startup_errors()
     if not (off or soft or start):
         return
@@ -158,9 +188,9 @@ def draw_main(layout, context, units=None):
     if obj is None:
         wrap(layout, context, "Select a mesh object to see its history.", 'INFO', units)
         return
-    from . import rigmark
+    rigmark = _mod("rigmark")
     if rigmark.is_rig(obj):                 # checked before Collection Filtering and the object type
-        from .datarec import RIG_TEXT
+        RIG_TEXT = _mod("datarec").RIG_TEXT
         wrap(layout, context, RIG_TEXT, 'INFO', units)
         return
     if getattr(obj, "type", None) != 'MESH' and not everything:
@@ -202,7 +232,7 @@ def draw_main(layout, context, units=None):
 
 def _everything_on() -> bool:
     try:
-        from . import datarec
+        datarec = _mod("datarec")
         return datarec.scope_everything()
     except Exception:
         return False
@@ -210,7 +240,7 @@ def _everything_on() -> bool:
 
 def _tracked(obj) -> bool:
     try:
-        from . import datarec
+        datarec = _mod("datarec")
         return bool(datarec.is_tracked(obj))
     except Exception:
         return False
@@ -286,7 +316,7 @@ def draw_history_options(layout, context):
 def _draw_everything(layout, context, obj):
     """The switches for recording more than sculpting (preference Record: Everything)."""
     try:
-        from . import datarec
+        datarec = _mod("datarec")
         if not datarec.scope_everything():
             if obj is not None and getattr(obj, "mode", "") == 'OBJECT':
                 wrap(layout, context, OBJECTS_OFF, 'INFO')
@@ -561,7 +591,7 @@ class VIEW3D_PT_hindsight_advanced(_SubPanel, bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         try:
-            from . import datarec
+            datarec = _mod("datarec")
             everything = datarec.scope_everything()
         except Exception:
             everything = False

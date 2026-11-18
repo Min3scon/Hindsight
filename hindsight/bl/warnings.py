@@ -87,18 +87,36 @@ def blocking(context, obj) -> bool:
         return False
 
 
+def _errors(context, obj) -> list:
+    """The ERROR entries of collect(), in the same order (no other check gives an ERROR)."""
+    out = []
+    if _has_dyntopo(obj):
+        out.append((ERROR, TXT_DYNTOPO))
+    if _has_multires(obj):
+        out.append((ERROR, TXT_MULTIRES))
+    if not _global_undo_on(context):
+        out.append((ERROR, TXT_GLOBAL_UNDO))
+    return out
+
+
+def error_texts(context, obj) -> list:
+    """The texts of collect()'s ERROR entries, without the other checks (the viewport overlay
+    draws only these, on every redraw)."""
+    if obj is None:
+        return []
+    try:
+        return [text for _sev, text in _errors(context, obj)]
+    except ReferenceError:
+        return []
+
+
 def collect(context, obj) -> list:
     """Return [(severity, text), ...] for obj, errors first, then warnings, then info."""
     out = []
     if obj is None:
         return out
     try:
-        if _has_dyntopo(obj):
-            out.append((ERROR, TXT_DYNTOPO))
-        if _has_multires(obj):
-            out.append((ERROR, TXT_MULTIRES))
-        if not _global_undo_on(context):
-            out.append((ERROR, TXT_GLOBAL_UNDO))
+        out = _errors(context, obj)
 
         data = getattr(obj, "data", None)
         if data is not None and getattr(obj, "type", 'MESH') == 'MESH':
@@ -282,7 +300,7 @@ def _draw_overlay():
         obj = _ctx_active(context)
         if obj is None or obj.mode not in OVERLAY_MODES:
             return
-        errors = [text for sev, text in collect(context, obj) if sev == ERROR]
+        errors = error_texts(context, obj)
         if not errors:
             return
         import blf
