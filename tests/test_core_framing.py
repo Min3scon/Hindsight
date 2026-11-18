@@ -211,25 +211,89 @@ def test_light_rig():
 
 
 # ---------------------------------------------------------------- sampling
-def test_sample_positions():
-    for length in (0, 1, 2, 5, 47, 48, 49, 100, 1001, 99999):
-        for cursor in (-5, 0, 1, length // 3, length - 1, length, length + 9):
-            for ms in (2, 3, 10, 48):
-                s = F.sample_positions(length, cursor, ms)
-                cur = min(max(cursor, 0), length)
-                assert s == sorted(set(s)) and all(isinstance(v, int) for v in s)
-                assert s[0] == 0 and s[-1] == length and cur in s
-                assert len(s) <= ms + 1, (length, cursor, ms, len(s))
-                if length + 1 <= ms:
-                    assert s == list(range(length + 1))
-                else:
-                    gaps = np.diff(s)
-                    assert gaps.max() <= math.ceil(length / (ms - 1)) + 1
-                    assert len(s) >= ms
-    assert F.sample_positions(10, 3) == list(range(11))
+def test_shifted_equals_world_extents():
+    """A mesh measured in its own space, then shifted, gives the extents of its world positions."""
+    rng = np.random.default_rng(11)
+    for _ in range(50):
+        local = random_cloud(rng).astype(np.float32)
+        m = rng.normal(0, 1, (3, 3)) * rng.uniform(0.2, 4)          # rotation, scale and shear
+        t = rng.normal(0, 30, 3)
+        basis = F.view_basis(rng.uniform(-3, 3), rng.uniform(-1, 1))
+        tx, ty = rng.uniform(0.1, 1), rng.uniform(0.1, 1)
+        world = local.astype(np.float64) @ m.T + t
+        want = F.extents(world, basis, tx, ty)
+        got = F.shifted(F.extents(local, m.T @ basis, tx, ty), t @ basis, tx, ty)
+        assert close(got, want, 1e-4 * (1 + np.abs(want).max())), (got, want)
+    assert F.shifted(None, (0, 0, 0), 1, 1) is None
 
 
-# ---------------------------------------------------------------- positions_along
+def _all_extents(arrays, basis, tx, ty):
+    return F.extents(np.vstack([a.reshape(-1, 3) for a in arrays]), basis, tx, ty)
+
+
+def test_history_extents_covers_every_step():
+    """Merged with the mesh at the cursor it equals the extents of every position of the history;
+    the history and the state are left as they were."""
+    for seed in (1, 2, 3):
+        h, end = make_case(seed)                      # delta steps, a topology step, a second object
+        n = len(h.entries)
+        assert any(e.kind == TOPO for e in h.entries) and any(e.target == B for e in h.entries)
+        truth = truth_at(h, end, range(n + 1))
+        assert len({a.size for a in truth.values()}) == 2, "the vertex count changes at the topology step"
+        rng = np.random.default_rng(4)
+        topo = next(i for i, e in enumerate(h.entries) if e.kind == TOPO)
+        for cursor in (n, 0, n // 2, topo, topo + 1):
+            hc = copy.deepcopy(h)
+            st = copy.deepcopy(end)
+            hc.goto(cursor, {A: st})
+            before = fingerprint(hc, st)
+            for _ in range(8):
+                basis = F.view_basis(rng.uniform(-3, 3), rng.uniform(-1.2, 1.2))
+                tx, ty = rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8)
+                past = F.history_extents(hc, st, A, basis, tx, ty)
+                assert past is not None
+                got = F.merge(F.extents(st.arrays[POSITION_KEY], basis, tx, ty), past)
+                want = _all_extents(truth.values(), basis, tx, ty)
+                assert close(got, want, 1e-9 * (1 + np.abs(want).max())), (cursor, got, want)
+            assert fingerprint(hc, st) == before, "history_extents changed the history or the state"
+        assert F.history_extents(h, None, A, basis, tx, ty) is None
+        assert F.history_extents(h, end, "nobody", basis, tx, ty) is None
+
+
+def test_history_extents_stops():
+    """A JOIN, a missing snapshot or a bad delta ends the walk on that side without raising: only
+    the positions before it count."""
+    basis, tx, ty = F.view_basis(0.3, 0.2), 0.5, 0.4
+
+    def check(h, end, truth, reachable):
+        got = F.merge(F.extents(end.arrays[POSITION_KEY], basis, tx, ty),
+                      F.history_extents(h, end, A, basis, tx, ty))
+        want = _all_extents([truth[p] for p in reachable], basis, tx, ty)
+        assert close(got, want, 1e-9 * (1 + np.abs(want).max())), (got, want)
+
+    h, end = make_case(4, pack=False)
+    n = len(h.entries)
+    truth = truth_at(h, end, range(n + 1))
+    j = n // 2
+    h.entries[j].meta = dict(h.entries[j].meta, kind=JOIN)
+    check(h, end, truth, range(j + 1, n + 1))
+    h, end = make_case(5, pack=False)
+    n = len(h.entries)
+    truth = truth_at(h, end, range(n + 1))
+    t = next(i for i, e in enumerate(h.entries) if e.kind == TOPO)
+    h.entries[t].step.before = None
+    check(h, end, truth, range(t + 1, n + 1))
+    h, end = make_case(6, pack=False)
+    n = len(h.entries)
+    truth = truth_at(h, end, range(n + 1))
+    k = next(i for i in range(n - 1, -1, -1)
+             if h.entries[i].target == A and h.entries[i].kind == DELTA and h.entries[i].step.deltas)
+    d = h.entries[k].step.deltas[-1]
+    h.entries[k].step.deltas[-1] = ChannelDelta(d.key, np.array([10 ** 6], np.uint32),
+                                                d.vals[:1], d.exists, d.op)
+    check(h, end, truth, range(k + 1, n + 1))
+
+
 def snap_of(rng, nv):
     return Snapshot({"POINT": nv, "EDGE": nv, "FACE": 0, "CORNER": 0},
                     {POSITION_KEY: rng.standard_normal(nv * 3).astype(np.float32),
@@ -287,24 +351,15 @@ def fingerprint(h, st):
             dict(st.counts), {k: v.tobytes() for k, v in st.arrays.items()}, set(st.removed))
 
 
-def run_along(h, end_state, cursor, wanted):
-    """Move a deep copy to `cursor`, then compare positions_along with real gotos."""
-    hc = copy.deepcopy(h)
-    st = copy.deepcopy(end_state)
-    hc.goto(cursor, {A: st})
-    before = fingerprint(hc, st)
-    got = {}
-    for p, arr in F.positions_along(hc, st, A, wanted):
-        assert arr.dtype == np.float32 and arr.ndim == 1
-        got[p] = arr.copy()
-    assert fingerprint(hc, st) == before, "positions_along changed the history or the state"
-    for p, arr in got.items():
-        hr = copy.deepcopy(hc)
-        sr = copy.deepcopy(st)
+def truth_at(h, end_state, positions):
+    """{position: A's positions there}, from real gotos on deep copies."""
+    out = {}
+    for p in positions:
+        hr = copy.deepcopy(h)
+        sr = copy.deepcopy(end_state)
         hr.goto(p, {A: sr})
-        ref = sr.arrays[POSITION_KEY]
-        assert arr.tobytes() == ref.tobytes(), p
-    return got
+        out[p] = sr.arrays[POSITION_KEY].copy()
+    return out
 
 
 def make_case(seed, **kw):
@@ -316,61 +371,9 @@ def make_case(seed, **kw):
     return h, start
 
 
-def test_positions_along_matches_goto():
-    for seed in (1, 2, 3):
-        h, end = make_case(seed)
-        n = len(h.entries)
-        topo = [i for i, e in enumerate(h.entries) if e.kind == TOPO]
-        assert topo and any(e.target == B for e in h.entries)
-        for cursor in (0, n, n // 2, topo[0], topo[0] + 1, 7):
-            wanted = F.sample_positions(n, cursor, 12) + [cursor, -3, n + 5]
-            got = run_along(h, end, cursor, wanted)
-            assert sorted(got) == sorted({w for w in wanted if 0 <= w <= n}), (cursor, sorted(got))
-        got = run_along(h, end, n // 2, list(range(n + 1)))
-        assert len(got) == n + 1
-        # vertex count changes across the topology step
-        sizes = {got[p].size for p in got}
-        assert len(sizes) == 2
-        assert run_along(h, end, 5, []) == {}
-
-
-def test_positions_along_stops():
-    h, end = make_case(4, pack=False)
-    n = len(h.entries)
-    # a JOIN in the middle stops the walk in that direction only
-    j = n // 2
-    h.entries[j].meta = dict(h.entries[j].meta, kind=JOIN)
-    hc = copy.deepcopy(h)
-    st = copy.deepcopy(end)
-    hc.cursor = n    # end state is valid at n
-    got = dict((p, a.copy()) for p, a in F.positions_along(hc, st, A, list(range(n + 1))))
-    assert sorted(got) == list(range(j + 1, n + 1)), sorted(got)
-    # a missing snapshot stops too
-    h, end = make_case(5, pack=False)
-    n = len(h.entries)
-    t = next(i for i, e in enumerate(h.entries) if e.kind == TOPO)
-    h.entries[t].step.before = None
-    got = [p for p, _ in F.positions_along(h, end, A, list(range(n + 1)))]
-    assert got == list(range(n, t, -1)), (t, got)
-    # a bad delta (index out of range) stops without raising
-    h, end = make_case(6, pack=False)
-    n = len(h.entries)
-    k = next(i for i in range(n - 1, -1, -1)
-             if h.entries[i].target == A and h.entries[i].kind == DELTA and h.entries[i].step.deltas)
-    d = h.entries[k].step.deltas[-1]
-    h.entries[k].step.deltas[-1] = ChannelDelta(d.key, np.array([10 ** 6], np.uint32),
-                                                d.vals[:1], d.exists, d.op)
-    got = sorted(p for p, _ in F.positions_along(h, end, A, list(range(n + 1))))
-    assert got == list(range(k + 1, n + 1)), (k, got)
-    # garbage input never raises
-    assert list(F.positions_along(h, None, A, [0])) == []
-    assert list(F.positions_along(h, end, A, ["x"])) == []
-    assert list(F.positions_along(h, MeshState({}, {}), A, [0])) == []
-
-
 TESTS = [test_view_basis, test_lens_tangents, test_fit_invariant, test_merge, test_margin,
-         test_degenerate, test_light_rig, test_sample_positions,
-         test_positions_along_matches_goto, test_positions_along_stops]
+         test_degenerate, test_light_rig, test_shifted_equals_world_extents,
+         test_history_extents_covers_every_step, test_history_extents_stops]
 
 
 if __name__ == "__main__":

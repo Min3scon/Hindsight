@@ -110,19 +110,48 @@ def _points(points):
     return p if len(p) else None
 
 
-def extents(points, basis, tan_x, tan_y):
+def extents(points, basis, tan_x, tan_y, chunk: int = 65536):
     """[max(x+z*tx), max(-x+z*tx), max(y+z*ty), max(-y+z*ty), min z, max z] (float64) with
-    x,y,z = points @ basis; None when there are no finite points."""
-    p = _points(points)
-    if p is None:
+    x,y,z = points @ basis; None when there are no finite points. `basis` may be any 3x3 matrix
+    (see `shifted`). Worked through in chunks, so a big float32 mesh is never copied whole."""
+    try:
+        p = np.asarray(points)
+        if p.dtype.kind != "f":
+            p = p.astype(np.float64)
+    except (TypeError, ValueError):
         return None
-    c = p @ np.asarray(basis, dtype=np.float64)
-    x, y, z = c[:, 0], c[:, 1], c[:, 2]
+    if p.size == 0 or p.size % 3:
+        return None
+    p = p.reshape(-1, 3)
+    b = np.asarray(basis, dtype=np.float64)
     tx, ty = float(tan_x), float(tan_y)
-    zx = z * tx
-    zy = z * ty
-    return np.array([np.max(x + zx), np.max(zx - x), np.max(y + zy), np.max(zy - y),
-                     np.min(z), np.max(z)], np.float64)
+    out = None
+    for a in range(0, len(p), chunk):
+        with np.errstate(invalid="ignore", over="ignore"):
+            c = p[a:a + chunk].astype(np.float64, copy=False) @ b
+        if not np.isfinite(c).all():
+            c = c[np.isfinite(c).all(axis=1)]
+            if not len(c):
+                continue
+        x, y, z = c[:, 0], c[:, 1], c[:, 2]
+        zx = z * tx
+        zy = z * ty
+        e = np.array([np.max(x + zx), np.max(zx - x), np.max(y + zy), np.max(zy - y),
+                      np.min(z), np.max(z)], np.float64)
+        out = e if out is None else merge(out, e)
+    return out
+
+
+def shifted(ext, offset, tan_x, tan_y):
+    """Extents of points that were all moved by `offset` = (x, y, z) in camera axes. With it a mesh
+    is measured in its own space: extents(local, matrix.T @ basis, ...) shifted by translation @ basis
+    equals extents(world points, basis, ...), without making a world-space copy of the mesh."""
+    if ext is None:
+        return None
+    ox, oy, oz = (float(v) for v in offset)
+    tx, ty = float(tan_x), float(tan_y)
+    return np.asarray(ext, np.float64) + np.array(
+        [ox + oz * tx, -ox + oz * tx, oy + oz * ty, -oy + oz * ty, oz, oz], np.float64)
 
 
 def merge(a, b):
@@ -212,89 +241,49 @@ def light_rig(basis, center, radius: float) -> list:
     return out
 
 
-# ------------------------------------------------------------------ history sampling
-def sample_positions(length: int, cursor: int, max_samples: int = 48) -> list:
-    """Sorted unique positions in [0, length], always with 0, length and the (clamped) cursor,
-    evenly spread, at most max(max_samples, 2) + 1 values."""
-    n = max(0, int(length))
-    cur = min(max(int(cursor), 0), n)
-    k = max(2, int(max_samples))
-    if n + 1 <= k:
-        vals = set(range(n + 1))
-    else:
-        vals = {int(round(v)) for v in np.linspace(0.0, n, k)}
-    vals.update((0, n, cur))
-    return sorted(vals)
+# ------------------------------------------------------------------ the history
+def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
+    """Extents (as `extents` gives them) of the mesh of `target_uid` over every position of History
+    `h` other than the cursor's, or None when it has none.
 
-
-def positions_along(h, state, target_uid: str, wanted):
-    """Yield (position, flat float32 positions) of `target_uid` at each reachable wanted position.
-
-    `state` is the object's MeshState at ``h.cursor``. Works on private copies: the history,
-    its entries and `state` are left unchanged. Walks backward from the cursor to the smallest
-    wanted position, then forward to the largest, mirroring what History.goto does to the
-    positions; a direction stops at a JOIN, at a step it can't apply, or on bad data.
-    The yielded array is valid only until the next iteration.
+    Merged with the extents of the mesh at the cursor, a camera fitted to the result has every step
+    of the timelapse in frame, exactly. One walk over the history that looks only at the vertices
+    each step moves, so it costs about as much as one scrub from end to end, whatever the mesh
+    size. Works on private copies: the history, its entries and `state` are left unchanged; a
+    direction stops at a JOIN or at a step that can't be applied.
     """
     try:
-        if state is None:
-            return
-        pos0 = state.arrays.get(POSITION_KEY)
-        if pos0 is None:
-            return
+        pos0 = state.arrays.get(POSITION_KEY) if state is not None else None
         n = len(h.entries)
         cur = int(h.cursor)
-        if cur < 0 or cur > n:
-            return
-        want = sorted({int(w) for w in wanted if 0 <= int(w) <= n})
-        counts = dict(state.counts)
-        base = np.array(pos0, dtype=np.float32, copy=True).reshape(-1)
+        if pos0 is None or cur < 0 or cur > n:
+            return None
     except Exception:
-        return
-    if not want:
-        return
-    if cur in want:
-        yield cur, np.array(base, copy=True)
-    back = [w for w in want if w < cur]
-    if back:
-        yield from _walk(h, counts, base, target_uid, cur, back, False)
-    fwd = [w for w in want if w > cur]
-    if fwd:
-        yield from _walk(h, counts, base, target_uid, cur, fwd, True)
+        return None
+    out = None
+    for forward, order in ((False, range(cur - 1, -1, -1)), (True, range(cur, n))):
+        ms = MeshState(dict(state.counts), {POSITION_KEY: np.array(pos0, dtype=np.float32, copy=True).reshape(-1)})
+        for i in order:
+            try:
+                e = h.entries[i]
+                if e.kind == JOIN:
+                    break
+                if e.target != target_uid:
+                    continue
+                changed = []
+                if not _cross(ms, e.load(), forward, changed):
+                    break
+                arr = ms.arrays[POSITION_KEY].reshape(-1, 3)
+                for idx in changed:
+                    out = merge(out, extents(arr if idx is None else arr[idx], basis, tan_x, tan_y))
+            except Exception:
+                break
+    return out
 
 
-def _walk(h, counts, base, target_uid, cur, want, forward):
-    """One direction of positions_along. `want` is sorted and all on that side of `cur`."""
-    ms = MeshState(dict(counts), {POSITION_KEY: np.array(base, copy=True)})
-    if forward:
-        order = range(cur, want[-1])
-        targets = set(want)
-    else:
-        order = range(cur - 1, want[0] - 1, -1)
-        targets = set(want)
-    for i in order:
-        try:
-            e = h.entries[i]
-            if e.kind == JOIN:
-                return
-            if e.target != target_uid:
-                ok = True
-            else:
-                ok = _cross(ms, e.load(), forward)
-        except Exception:
-            return
-        if not ok:
-            return
-        p = i + 1 if forward else i
-        if p in targets:
-            arr = ms.arrays.get(POSITION_KEY)
-            if arr is None or arr.size != int(ms.counts.get("POINT", -1)) * 3:
-                return
-            yield p, arr
-
-
-def _cross(ms: MeshState, step, forward: bool) -> bool:
-    """Apply what History._mesh does to the positions for one step of this object."""
+def _cross(ms: MeshState, step, forward: bool, changed=None) -> bool:
+    """Apply what History._mesh does to the positions for one step of this object. `changed`, if
+    given, receives the vertex indices the step moved (None for every vertex)."""
     kind = step.kind
     if kind == JOIN:
         return False
@@ -306,6 +295,8 @@ def _cross(ms: MeshState, step, forward: bool) -> bool:
             if len(d.idx) and int(d.idx[-1]) >= nverts:
                 return False
             ms.apply_delta(d, forward)
+            if changed is not None:
+                changed.append(d.idx)
         return True
     if kind == TOPO:
         snap = step.after if forward else step.before
@@ -317,5 +308,7 @@ def _cross(ms: MeshState, step, forward: bool) -> bool:
             return False
         ms.counts = dict(snap.counts)
         ms.arrays = {POSITION_KEY: np.array(p, dtype=np.float32, copy=True).reshape(-1)}
+        if changed is not None:
+            changed.append(None)
         return True
     return True     # DATA and other kinds don't touch the mesh

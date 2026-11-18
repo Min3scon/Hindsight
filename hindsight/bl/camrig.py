@@ -155,6 +155,8 @@ def ensure(scene, reframe: bool = True) -> dict:
         return res
     want = wanted(scene)
     have = rig(scene)
+    if not want:
+        _PAST.clear()
     with runtime.suspended():
         for role in rigmark.ROLES:
             if role in have and role not in want:
@@ -195,41 +197,48 @@ def _np_matrix(m) -> np.ndarray:
     return np.array([list(row) for row in m], dtype=np.float64)
 
 
-def _to_world(flat, mw) -> np.ndarray:
-    pts = np.asarray(flat, dtype=np.float64).reshape(-1, 3)
-    return pts @ mw[:3, :3].T + mw[:3, 3]
+_PAST = {}             # (history uid, object uid) -> (signature, extents of the mesh's other history positions)
 
 
-def _object_point_sets(ob):
-    """Yield world-space (N,3) arrays for one model object: its current shape and, for a mesh with
-    a history, sampled shapes along that history (read from private copies)."""
+def _history_extents(ob, uid, local_basis, tx, ty):
+    """Extents of every earlier and later shape of this mesh (framing.history_extents), in the
+    mesh's own space. One walk over the history, kept until the history, the object's transform or
+    the view changes."""
+    h = runtime.history_of(ob) if uid is not None else None
+    if h is None or not h.entries or ob.mode == "EDIT":
+        return None
+    sig = (len(h.entries), h.entries[0].seq, h.entries[-1].seq, local_basis.tobytes(), tx, ty)
+    hit = _PAST.get((h.uid, uid))
+    if hit is None or hit[0] != sig:
+        st = runtime._STATES.get(uid) or runtime.ensure_state(ob)
+        ext = framing.history_extents(h, st, uid, local_basis, tx, ty) if st is not None and st.counts else None
+        hit = _PAST[(h.uid, uid)] = (sig, ext)
+    return hit[1]
+
+
+def _measure(ob, basis, tx, ty):
+    """(extents in camera axes, world bounds) of one model object: its shape now and, for a mesh
+    with a history, every earlier and later shape. The mesh is measured in its own space, so no
+    world-space copy of it is made."""
     mw = _np_matrix(ob.matrix_world)
+    local_basis = mw[:3, :3].T @ basis                 # local points @ local_basis == world @ basis
     if ob.type == "MESH" and ob.mode != "EDIT" and ob.data is not None:
         attr = ob.data.attributes.get("position")
-        n = len(attr.data) if attr is not None else 0
-        if n:
-            buf = np.empty(n * 3, np.float32)
-            attr.data.foreach_get("vector", buf)
-            yield _to_world(buf, mw)
+        pts = np.empty((len(attr.data) if attr is not None else 0) * 3, np.float32)
+        if pts.size:
+            attr.data.foreach_get("vector", pts)
     else:
-        yield _to_world([c[:] for c in ob.bound_box], mw)
-    if ob.type != "MESH":
-        return
-    uid = runtime.obj_uid(ob)
-    h = runtime.history_of(ob) if uid is not None else None
-    if h is None or not h.entries:
-        return
-    st = runtime._STATES.get(uid)
-    if st is None:
-        if ob.mode == "EDIT":
-            return
-        st = runtime.ensure_state(ob)
-    if st is None or not st.counts:
-        return
-    wanted_pos = framing.sample_positions(len(h.entries), h.cursor)
-    for _pos, flat in framing.positions_along(h, st, uid, wanted_pos):
-        if flat is not None and len(flat):
-            yield _to_world(flat, mw)
+        pts = np.array([c[:] for c in ob.bound_box], np.float32)
+    ext = framing.extents(pts, local_basis, tx, ty)
+    if ob.type == "MESH":
+        ext = framing.merge(ext, _history_extents(ob, runtime.obj_uid(ob), local_basis, tx, ty))
+    bnd = None
+    box = framing.bounds(pts)
+    if box is not None:                                # the 8 corners of its box, in world space
+        lo, hi = box
+        corners = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
+        bnd = framing.bounds(corners @ mw[:3, :3].T + mw[:3, 3])
+    return framing.shifted(ext, mw[:3, 3] @ basis, tx, ty), bnd
 
 
 def _tangents(scene, cam_ob):
@@ -284,9 +293,9 @@ def frame(scene) -> bool:
     ext = None
     bnd = None
     for ob in model_objects(scene):
-        for pts in _object_point_sets(ob):
-            ext = framing.merge(ext, framing.extents(pts, basis, tx, ty))
-            bnd = framing.merge_bounds(bnd, framing.bounds(pts))
+        e, b = _measure(ob, basis, tx, ty)
+        ext = framing.merge(ext, e)
+        bnd = framing.merge_bounds(bnd, b)
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
     with runtime.suspended():
         if fitted is None or bnd is None:
@@ -318,10 +327,13 @@ def _camera_data(cd, near, far) -> None:
 
 
 # ----------------------------------------------------------------------------- entry points
+_HOLD = [False]         # True while several settings are set at once (one framing at the end)
+
+
 @guard.guarded(FEATURE)
 def on_settings_changed(context) -> None:
     scene = getattr(context, "scene", None)
-    if scene is None or _props(scene) is None:
+    if scene is None or _props(scene) is None or _HOLD[0]:
         return
     ensure(scene, reframe=True)
     runtime.tag_redraw_all()
@@ -368,8 +380,12 @@ def view_from_region(scene, view_rotation) -> None:
     angle = math.atan2(back.x, -back.y)
     height = math.asin(max(-1.0, min(1.0, back.z)))
     sh = scene.hindsight
-    sh.movie_view_angle = max(_ANGLE_RANGE[0], min(_ANGLE_RANGE[1], angle))
-    sh.movie_view_height = max(_HEIGHT_RANGE[0], min(_HEIGHT_RANGE[1], height))
+    _HOLD[0] = True
+    try:
+        sh.movie_view_angle = max(_ANGLE_RANGE[0], min(_ANGLE_RANGE[1], angle))
+    finally:
+        _HOLD[0] = False
+    sh.movie_view_height = max(_HEIGHT_RANGE[0], min(_HEIGHT_RANGE[1], height))   # frames once
 
 
 # ----------------------------------------------------------------------------- operators

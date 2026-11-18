@@ -317,79 +317,61 @@ Goal: while Movie Mode is on, Hindsight keeps its own camera with the whole mode
 lighting, so a timelapse renders well even when the scene has no camera or light. Hindsight never moves
 or deletes the user's own camera or light objects.
 
-Behaviour (the contract; tests check these):
+Behaviour (tests: tests/test_bl_camrig.py, test_bl_rig_ignored.py, test_core_framing.py, test_bl_metadata.py):
 - The camera and lighting are ordinary objects linked to the scene's root collection, marked with the
   custom property `_hindsight_rig` (`bl/rigmark.py`: `RIG_PROP`, `ROLES = ("camera", "key", "fill", "rim")`,
   `role_of(ob)`, `is_rig(ob)`, `mark(ob, role)`, `unmark(ob)`). Object names: "Hindsight Camera",
-  "Hindsight Key", "Hindsight Fill", "Hindsight Rim". Created with `bpy.data` only, never `bpy.ops`.
-- They exist only while Movie Mode is on (`scene.hindsight.movie_mode`) and the matching setting asks
+  "Hindsight Key", "Hindsight Fill", "Hindsight Rim" (three sun lamps: their strength doesn't depend on
+  the model's size). Created with `bpy.data` only, never `bpy.ops`.
+- They exist only while Movie Mode is on (`scene.hindsight.movie_mode`) and the matching switch asks
   for them. Switching Movie Mode off removes them and makes the user's camera the scene camera again.
-- Settings on `scene.hindsight` (`bl/props.py`, every one calls `camrig.on_settings_changed(context)`):
-  `movie_camera` (bool, default on), `movie_lighting` ('AUTO' = only while the scene has no light object
-  of its own that renders, 'ALWAYS', 'OFF'; default 'AUTO'), `movie_view_angle` (radians, default 30
-  degrees; 0 = from the front, the model's front faces -Y; positive turns the camera toward +X),
-  `movie_view_height` (radians, default 15 degrees, positive = above), `movie_margin` (percent of the
-  frame left free, default 10), `movie_prev_camera` (hidden string: name of the scene camera that
-  Hindsight's camera replaced; restored by name).
-- The model = the mesh objects in the scene that have a Hindsight history (any member of a history in
-  `runtime.reg()`); if none, every mesh object in the scene that renders (`hide_render` off); if none,
-  every other object that renders except cameras, lights and Hindsight's own. Hindsight's objects are
-  never part of the model.
-- Framing covers the model at its current state and at sampled positions of each object's own sculpt
+- Settings on `scene.hindsight` (`bl/props.py`, each calls `camrig.on_settings_changed(context)`):
+  `movie_camera` (bool, default on), `movie_lighting` (bool, default on: lighting is added only while
+  the scene has no light object of its own that renders), hidden `movie_view_angle` and
+  `movie_view_height` (radians; set by "Use this view"; defaults 30 and 15 degrees; angle 0 = from the
+  front, the model's front faces -Y; positive turns the camera toward +X), hidden `movie_prev_camera`
+  (name of the scene camera that Hindsight's camera replaced; restored by name). The margin is the
+  constant `camrig.MARGIN` (10% of the frame left free).
+- The model = the mesh objects in the scene that have a Hindsight history; if none, every mesh object
+  in the scene that renders; if none, every other object that renders except cameras, lights and
+  Hindsight's own.
+- Framing is exact for the mesh as it is now and for every other position of each object's own
   history (so a shape that was bigger earlier in the timelapse still fits), at the object's current
-  transform. The camera never changes history: the walk works on private copies.
-- The recorder ignores marked objects: they are never recorded, never get `_hindsight_uid`, never
-  appear in a step, and the global history never removes or re-creates them.
-- A missing piece (deleted by the user, or by Blender's undo) is put back by a timer check while Movie
-  Mode is on. Nothing is created while a render job runs.
+  transform. The history part is one walk that looks only at the vertices each step moves, on private
+  copies (nothing is recorded, no cursor moves), cached until the history, the transform or the view
+  changes (`camrig._PAST`).
+- The recorder ignores marked objects: never recorded, never given `_hindsight_uid`, never in a step,
+  never removed or re-created by the global history; `runtime.is_excluded` is true for them.
+- A missing piece (deleted by the user, or by Blender's undo) is put back by `camrig.tick()` (called
+  from `runtime.tick`, checked twice a second, only while Movie Mode is on). Nothing is created while
+  a render job runs or the timeline plays.
+- Remove Hindsight data from this file takes the objects out too; METADATA.md lists them.
 
 ```python
 # hindsight/core/framing.py  (pure numpy, no bpy; angles in radians; world = Blender: Z up, front = -Y)
-def view_basis(azimuth: float, elevation: float) -> np.ndarray
-    # (3,3) float64, COLUMNS = camera right (local X), up (local Y), back (local Z) in world space.
-    # azimuth 0, elevation 0: camera in front of the model on -Y looking toward +Y:
-    # right=(1,0,0), up=(0,0,1), back=(0,-1,0). back = (sin(az)cos(el), -cos(az)cos(el), sin(el)).
-def lens_tangents(lens_mm, sensor_width, sensor_height, sensor_fit, res_x, res_y,
-                  aspect_x=1.0, aspect_y=1.0) -> tuple[float, float]
-    # (tan_x, tan_y): tangents of half the horizontal and vertical field of view, as Blender computes
-    # them for a perspective camera (sensor_fit 'AUTO' | 'HORIZONTAL' | 'VERTICAL').
-def shrink(tan_x, tan_y, margin: float) -> tuple[float, float]     # tangents scaled by (1 - margin), margin clamped to [0, 0.9]
-def extents(points, basis, tan_x, tan_y) -> np.ndarray | None
-    # points: (N,3) or flat N*3 world positions. With x,y,z = points @ basis:
-    # [max(x + z*tan_x), max(-x + z*tan_x), max(y + z*tan_y), max(-y + z*tan_y), min(z), max(z)], float64.
-    # None for no points. Non-finite points are ignored.
-def merge(a, b) -> np.ndarray | None      # union of two extents (None-safe)
-def fit(ext, basis, tan_x, tan_y, min_distance: float = 1e-3) -> dict | None
-    # the closest camera position on that viewing direction that has every point inside the frame:
-    # {"location": (x,y,z), "near": float, "far": float, "center": (x,y,z), "depth": float}
-    # near/far: distance along the view axis to the nearest and farthest point (near >= min_distance);
-    # center: the point on the view axis at mid depth; depth: its distance from the camera.
-def bounds(points) -> tuple[np.ndarray, np.ndarray] | None           # world min xyz, max xyz
-def merge_bounds(a, b)                                                # union (None-safe)
-def light_rig(basis, center, radius: float) -> list[dict]
-    # three sun lamps placed around the model relative to the camera, each
-    # {"role": "key"|"fill"|"rim", "direction": unit vector the light travels along (world),
-    #  "location": center - direction * 3 * radius, "strength": W/m2, "angle": radians, "color": (r,g,b)}
-def sample_positions(length: int, cursor: int, max_samples: int = 48) -> list[int]
-    # sorted unique history positions in [0, length], always with 0, length and cursor, evenly spread
-def positions_along(h, state, target_uid: str, wanted: list[int])
-    # generator of (position, flat float32 position array) for the mesh of target_uid at each wanted
-    # position of History `h`, never changing h, state or any entry. Stops in a direction at a JOIN or
-    # when a step can't be applied. The yielded array is valid only until the next iteration.
+def view_basis(azimuth, elevation) -> np.ndarray      # (3,3) float64, columns = camera right, up, back
+def lens_tangents(lens_mm, sensor_width, sensor_height, sensor_fit, res_x, res_y, aspect_x=1.0, aspect_y=1.0)
+def shrink(tan_x, tan_y, margin)                       # tangents scaled by (1 - margin)
+def extents(points, basis, tan_x, tan_y) -> np.ndarray | None   # [A, B, C, D, zmin, zmax], see the docstring
+def shifted(ext, offset, tan_x, tan_y)                 # extents of the same points moved by offset (camera axes)
+def merge(a, b)                                        # union of two extents (None-safe)
+def fit(ext, basis, tan_x, tan_y, min_distance=1e-3) -> dict | None   # location, near, far, center, depth
+def bounds(points); def merge_bounds(a, b)             # min xyz, max xyz
+def light_rig(basis, center, radius) -> list[dict]     # key, fill, rim: direction, location, strength, angle, color
+def history_extents(h, state, target_uid, basis, tan_x, tan_y)   # extents over every other history position
 
 # hindsight/bl/camrig.py
-NAMES = {"camera": "Hindsight Camera", "key": "Hindsight Key", "fill": "Hindsight Fill", "rim": "Hindsight Rim"}
+NAMES; MARGIN
 def rig(scene) -> dict                 # role -> object, for marked objects that are in scene.objects
 def model_objects(scene) -> list
 def scene_has_own_light(scene) -> bool
 def wanted(scene) -> set               # roles that should exist now
-def ensure(scene, reframe: bool = True) -> dict    # {"created": [...], "removed": [...], "framed": bool}
+def ensure(scene, reframe=True) -> dict    # {"created": [...], "removed": [...], "framed": bool}
 def frame(scene) -> bool               # place the camera and lighting; False when there is nothing to frame
 def remove(scene) -> int               # take Hindsight's objects out, give the scene its camera back
-def needs_attention(scene) -> bool     # cheap: is something wanted missing, or something unwanted there
+def needs_attention(scene) -> bool
 def on_settings_changed(context) -> None
-def tick() -> None                     # called from runtime.tick(); puts missing pieces back
-def view_from_region(scene, view_rotation) -> None   # set movie_view_angle/height from a viewport rotation (quaternion)
-# operators: hindsight.movie_frame "Frame the model", hindsight.movie_view_from_viewport "Use this view",
-#            hindsight.movie_remove_rig "Remove camera and lighting"
+def tick() -> None
+def view_from_region(scene, view_rotation) -> None
+# operators: hindsight.movie_frame "Frame the model", hindsight.movie_view_from_viewport "Use this view"
 ```
