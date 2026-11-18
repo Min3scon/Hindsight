@@ -1200,30 +1200,50 @@ def mesh_fingerprint(ob) -> str:
             bpy.data.meshes.remove(tmp)
 
 
+_MOVIE_GROUPS = {}   # Movie Mode playback: the global timeline's operations, kept between frames
+
+
+def _groups(vis) -> list:
+    """globaltl.global_groups. While Movie Mode is on, the history is only played back, so the list
+    is kept between frames. It is built again when a history gains, loses or replaces steps or
+    objects, or what is visible changes, and dropped when Movie Mode is off."""
+    if not _movie_locked():
+        _MOVIE_GROUPS.clear()
+        return globaltl.global_groups(_REG, vis)
+    key = (id(_REG), frozenset(vis), tuple(
+        (h.uid, tuple(h.members), len(h.entries), h.entries[0].seq if h.entries else 0,
+         h.entries[-1].seq if h.entries else 0) for h in _REG.histories.values()))
+    if _MOVIE_GROUPS.get("key") != key:
+        _MOVIE_GROUPS.clear()
+        _MOVIE_GROUPS.update(key=key, groups=globaltl.global_groups(_REG, vis))
+    return _MOVIE_GROUPS["groups"]
+
+
 def global_goto(context, g: int, final: bool = True) -> None:
     """Move the global timeline to position g. Steps are undone and redone across histories in
     step-number order (globaltl.transition), and the whole jump is one entry on Blender's undo."""
     from . import datarec
     vis = _visible_uids()
-    old = globaltl.global_position(_REG, vis)
+    groups = _groups(vis)
+    old = globaltl.global_position(_REG, vis, groups)
     acc = {"hists": {}, "vb": {}, "va": {}, "meshes": {}, "wrote": False, "object_mode": True}
     held = _leave_edit_for_push(context, final) if g != old else None
     pre = datarec.recorded_values()          # the whole scene before the jump (objects it brings back
                                              # or removes must not count on the wrong side)
-    for hid, cur in globaltl.transition(_REG, g, vis):
+    for hid, cur in globaltl.transition(_REG, g, vis, groups):
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
             _goto_history(h, cur, final, acc)
     datarec.resolve_missing_refs()          # D37: objects brought back get their references back
-    new_g = globaltl.global_position(_REG, vis)
+    p = _scene_props(context)
+    preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
+    new_g = globaltl.global_position(_REG, vis, groups) if preserve and final else old
     if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
         if datarec.push_undo():
             datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])
     _reenter_edit(context, held)
-    p = _scene_props(context)
-    preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
     if preserve and final and new_g != old:
-        piv = globaltl.pivot_entry(_REG, old, new_g, vis)
+        piv = globaltl.pivot_entry(_REG, old, new_g, vis, groups)
         if piv is not None:
             h = _REG.histories.get(piv[0])
             e = h.entries[piv[1]] if h else None
@@ -1261,10 +1281,11 @@ def scrub_info(context):
         locked = _movie_locked(context)
         if use_global(context):
             vis = _visible_uids()
-            n = globaltl.global_length(_REG, vis)
+            groups = _groups(vis)
+            n = globaltl.global_length(_REG, vis, groups)
             if not n:
                 return None
-            return {"pos": globaltl.global_position(_REG, vis), "len": n,
+            return {"pos": globaltl.global_position(_REG, vis, groups), "len": n,
                     "cap": SETTINGS.max_steps, "global": True, "locked": locked, "morph_target": None}
         obj = _ctx_active(context)
         h = history_of(obj)

@@ -45,16 +45,16 @@ def global_groups(reg, visible=None) -> list:
     return groups
 
 
-def global_length(reg, visible=None) -> int:
-    return len(global_groups(reg, visible))
+def global_length(reg, visible=None, groups=None) -> int:
+    return len(global_groups(reg, visible) if groups is None else groups)
 
 
-def global_position(reg, visible=None) -> int:
+def global_position(reg, visible=None, groups=None) -> int:
     """How many operations from the start are applied (up to the first one that isn't, when
-    histories were moved one by one)."""
+    histories were moved one by one). groups: global_groups(reg, visible) when the caller has it."""
     cur = {h.uid: h.cursor for h in _visible_histories(reg, visible)}
     n = 0
-    for g in global_groups(reg, visible):
+    for g in global_groups(reg, visible) if groups is None else groups:
         if all(i < cur[hid] for _seq, hid, i in g):
             n += 1
         else:
@@ -62,9 +62,10 @@ def global_position(reg, visible=None) -> int:
     return n
 
 
-def plan_global_goto(reg, g: int, visible=None) -> dict:
+def plan_global_goto(reg, g: int, visible=None, groups=None) -> dict:
     """History uid -> cursor that applies exactly the first g operations."""
-    groups = global_groups(reg, visible)
+    if groups is None:
+        groups = global_groups(reg, visible)
     g = max(0, min(int(g), len(groups)))
     cur = {h.uid: 0 for h in _visible_histories(reg, visible)}
     for grp in groups[:g]:
@@ -73,13 +74,13 @@ def plan_global_goto(reg, g: int, visible=None) -> dict:
     return cur
 
 
-def transition(reg, g: int, visible=None) -> list:
+def transition(reg, g: int, visible=None, groups=None) -> list:
     """How to get every visible history to global position g, as moves [(history uid, cursor)] in
     step-number order: the steps to undo newest first, then the steps to redo oldest first, so a
     step is never applied before an earlier step of another history (an object brought back by the
     scene history exists before its own steps are replayed). Consecutive moves of one history are
     merged. Works from any starting point, also after histories were moved one by one."""
-    target = plan_global_goto(reg, g, visible)
+    target = plan_global_goto(reg, g, visible, groups)
     undo, redo = [], []
     for h in _visible_histories(reg, visible):
         t = target.get(h.uid, h.cursor)
@@ -101,10 +102,11 @@ def transition(reg, g: int, visible=None) -> list:
     return [(hid, cur) for hid, cur, _ in moves]
 
 
-def pivot_entry(reg, old_g: int, new_g: int, visible=None):
+def pivot_entry(reg, old_g: int, new_g: int, visible=None, groups=None):
     """(hist_uid, entry_index) of the step that decides which object is 'current' after a move: the
     first step of the operation the move ended on (or, going back, the one just undone)."""
-    groups = global_groups(reg, visible)
+    if groups is None:
+        groups = global_groups(reg, visible)
     if not groups:
         return None
     if new_g < old_g:

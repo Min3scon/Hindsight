@@ -337,3 +337,109 @@ MB and the time from 5.1 to 5.1 ms (Python 3.13; 5.9 to 3.5 ms on Python 3.11), 
 commit at 1M is 12 to 23 ms in total, so this does not pay for (b). A Rust rewrite would not reduce
 memory in a way users would notice; the remaining large items (packed steps, baselines, raw tier) are
 data, the same size in any language.
+
+## Movie Mode playback
+
+Measured 2026-11-18 with `bench/bench_movie.py` (results in `bench/results_movie.json`) on Blender
+5.3.0 as a Python module, headless, 4-core Xeon at 2.1 GHz with no GPU. Each scene is a numpy grid
+with strokes of about 2% of the vertices, recorded with commit as the tests do. Movie Mode on, Quick
+auto key with Frames per step 2, then `scene.frame_set(f)` on every frame of the movie, which is what
+a render does before it draws each frame. "Add-on" is the time spent in Hindsight's frame change and
+depsgraph handlers, timed around each call; "Blender" is the rest of `frame_set`. The before run
+shared the machine with short test runs for part of the time, so Blender's own numbers moved by up to
+15% between the runs; the add-on numbers are from the handlers alone.
+
+| Scene | Frames | Add-on per frame, step changed | Add-on per frame, same step | Add-on total | `frame_set` total |
+|---|---|---|---|---|---|
+| 100k x 2 objects, 1,000 steps, before | 2,001 | 3.64 ms | 1.13 ms | 5.2 s | 12.0 s |
+| same, after | 2,001 | 1.33 ms | 0.12 ms | 1.6 s | 11.0 s |
+| 100k, 5,000 steps, before | 10,001 | 22.6 ms | 8.3 ms | 216 s | 307 s |
+| same, after | 10,001 | 2.7 ms | 0.13 ms | 15.9 s | 93 s |
+| 500k, 300 steps, before | 601 | 3.65 ms | 0.63 ms | 1.5 s | 36.2 s |
+| same, after | 601 | 2.6 ms | 0.15 ms | 1.0 s | 24.9 s |
+
+Medians. The worst frame in each scene is the first one, which undoes every step (1.5 to 1.8 s at
+5,000 steps, 90 ms at 500k); that is the same work as a jump from the end to the start and did not
+change.
+
+What the profile showed (cProfile, own time per frame including the profiler's overhead, before):
+the handler's bookkeeping was 88% at 1,000 steps and 92% at 5,000 steps. Every frame built the global
+order of all steps from scratch (`globaltl.global_groups`, a sort of every step of every history) five
+times: twice in `scrub_info`, then in `global_goto` for the position before, the plan and the
+position after. Applying steps (decode and apply) was 6 to 8%, writing the mesh under 2%, the crash
+journal 0.2% (one small record per frame, no fsync), redraw tagging 0.1% and Blender's undo nothing
+(no undo push happens inside the handler). At 500k vertices the split was bookkeeping 30%, applying
+28%, writing 7%, the rest numpy and Blender calls.
+
+Changes, in order of what they saved:
+
+1. While Movie Mode is on, the global order is built once and kept between frames
+   (`runtime._groups`). It is built again when any history gains, loses or replaces steps or
+   objects, when what is visible changes, and dropped when Movie Mode is off. The globaltl functions
+   take the list instead of building it again (`groups=`); without it they work as before.
+2. A frame that shows the step already shown does no history work: `movie._apply` remembers the
+   Step value it applied and every history's cursor and length right after, and returns before
+   `scrub_info` when both are unchanged (0.12 to 0.15 ms left, mostly listing the visible objects).
+3. `global_goto` reads the position after a jump only when Follow object and mode needs it (it is
+   off inside the handler).
+4. Sub-frames: Cycles with motion blur calls the handler at (f, 0), (f - 1, +0.75), (f, +0.25) and
+   (f, 0) for each frame f. The Step value at a sub-frame is the F-Curve between two steps, so the
+   mesh went back and forth between two steps inside one frame (17 history jumps for 10 frames; the
+   blur then mixes two states). Sub-frame calls now keep the step of the whole frame being rendered
+   (7 jumps, the same as without motion blur), and a sub-frame call on its own uses the Step value of
+   its whole frame.
+5. Steps per frame in Quick auto key: the last key is at `frame_start + ceil(steps x Frames per step /
+   Steps per frame)`. Steps per frame 1 keys exactly as before. When the scene's range ended at the
+   old last key, re-keying also makes it shorter, so a shorter movie is not padded with frames that
+   repeat the last step. `movie.movie_length(scene)` returns the steps, frames and seconds for the
+   panel.
+
+Not changed, measured too small to matter: the crash journal record per frame (0.03 ms) and redraw
+tagging (0.01 to 0.03 ms). The position stored for crash recovery is therefore still written on every
+jump and is right when playback stops (tested). Left as it is: after the cache, the remaining
+bookkeeping on a frame that moves is reading the global position from the cursors, linear in the
+number of steps (about 2 ms at 5,000 steps).
+
+Handler calls in a real Cycles render of 10 frames (64 x 36, 1 sample, CPU): 11 calls without motion
+blur, 41 with it (20 at sub-frames). History jumps: 7 and 7 now, 7 and 17 before. Frames per step 2
+means every second frame repeats a step; those frames now cost the add-on 0.12 to 0.15 ms.
+
+### Other ways to cut render time
+
+Measured on a 100k grid with 40 steps, Cycles on the CPU at 64 x 36, 10 frames, Movie Mode on.
+
+| Setting | Time per frame | Of which Hindsight |
+|---|---|---|
+| Frames per step 1, 1 sample (baseline) | 42.7 ms | 1.7 ms |
+| Movie Mode off, so the mesh never changes | 36.3 ms | 0 |
+| Frames per step 2 | 44.9 ms | 1.3 ms |
+| Frames per step 2 with Persistent Data | 24.5 ms | 1.0 ms |
+| Frames per step 1 with Persistent Data | 39.5 ms | 1.5 ms |
+| Motion blur on | 41.3 ms | 1.7 ms |
+| 16 samples | 48.9 ms | 1.5 ms |
+| 1 sample at 320 x 180 | 77 ms | 1.4 ms |
+| 16 samples at 320 x 180 | 276 ms | 1.4 ms |
+
+`frame_set` with the recorded object left in Sculpt Mode: 15.0 ms of Blender per frame at 100k
+vertices, against 0.26 ms in Object Mode (Blender rebuilds its sculpt data after every mesh write).
+At 500k in Sculpt Mode Blender took 56 to 67 ms per frame against 2 to 4 ms for Hindsight.
+
+Hindsight's share of a frame is 4% at this tiny size and shrinks as the picture grows: the renderer's
+time goes up with pixels and samples (3.6 times from 1 to 16 samples at 320 x 180), Hindsight's does
+not. From most to least effect:
+
+1. Fewer frames. Every rendered frame costs a full render; a frame that repeats a step is no cheaper
+   (44.9 ms against 42.7 ms). Steps per frame 4 renders a quarter of the frames (5,001 to 1,251 at
+   5,000 steps; `frame_set` alone went from 294 s to 21 s with the other changes).
+2. Frames per step 1 with a lower frame rate instead of Frames per step 2 at 24 fps: the same
+   length on screen with half the frames to render.
+3. Samples and resolution: the renderer's own cost, which dominates at real sizes.
+4. With Frames per step above 1, turn on Persistent Data (Render Properties, Performance): repeated
+   frames then reuse the scene and cost about half (24.5 ms against 44.9 ms).
+5. Leave Sculpt Mode before rendering: 15 ms per frame at 100k in `frame_set`, more on bigger meshes.
+6. Motion blur: no measurable cost here (41.3 against 42.7 ms), and since sub-frames keep their
+   frame's step it no longer blurs two steps together. It adds nothing to a timelapse either, so off
+   is the safe choice.
+
+Not measured here: EEVEE and Workbench (Blender aborts without a GPU: libEGL.so.1 is missing), GPU
+rendering, and renders at full resolution, where the renderer's share is larger still.

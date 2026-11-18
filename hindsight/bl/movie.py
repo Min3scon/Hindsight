@@ -2,6 +2,8 @@
 
 Movie Mode only plays history back, it never changes it: no step is ever recorded from here.
 """
+import math
+
 import bpy
 from bpy.app.handlers import persistent
 
@@ -9,6 +11,7 @@ from . import guard, runtime
 
 DATA_PATH = "hindsight.movie_step"
 _BUSY = [False]   # re-entrancy guard (goto / keying write meshes and the Step value)
+_SHOWN = {}       # the Step value last applied, the histories right after, the whole frame it was for
 
 
 def _props(scene):
@@ -36,6 +39,13 @@ def _no_operator_context(context):
     return _Proxy(context, scene=_Proxy(sc, hindsight=_Proxy(sc.hindsight, preserve_modes=False)))
 
 
+def _histories_now() -> tuple:
+    """Everything a jump depends on: every history's cursor and length, and what is visible."""
+    r = runtime.reg()
+    return (id(r), frozenset(runtime._visible_uids()),
+            tuple((h.uid, h.cursor, len(h.entries)) for h in r.histories.values()))
+
+
 def _apply(context, value) -> bool:
     """Move the global timeline to `value` if Movie Mode is active. True if it moved."""
     if _BUSY[0]:
@@ -43,11 +53,15 @@ def _apply(context, value) -> bool:
     sh = _props(getattr(context, "scene", None))
     if not _active(sh):
         return False
+    want = int(round(value))
+    if _SHOWN.get("want") == want and _SHOWN.get("histories") == _histories_now():
+        return False      # the step already shown (Frames per step above 1, or a render's sub-frames)
     info = runtime.scrub_info(context)
     if info is None or not info.get("global"):
         return False
-    target = max(0, min(int(round(value)), int(info["len"])))
+    target = max(0, min(want, int(info["len"])))
     if target == info["pos"]:
+        _SHOWN.update(want=want, histories=_histories_now())
         return False
     prev = getattr(runtime.goto, "_movie", False)
     _BUSY[0] = True
@@ -60,6 +74,7 @@ def _apply(context, value) -> bool:
         runtime.goto._movie = prev
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
+    _SHOWN.update(want=want, histories=_histories_now())
     return True
 
 
@@ -77,13 +92,22 @@ def on_frame_change(scene, depsgraph=None) -> None:
     sh = _props(scene)
     if not _active(sh):
         return  # off (or no global history): playback paused, keyframes stay
-    value = sh.movie_step
-    if depsgraph is not None:
-        try:
-            value = scene.evaluated_get(depsgraph).hindsight.movie_step
-        except Exception:
-            pass
+    frame = scene.frame_current
+    if scene.frame_subframe and _SHOWN.get("frame") in (frame, frame + 1) and \
+            _SHOWN.get("histories") == _histories_now():
+        return  # motion blur samples around the frame being rendered: keep that frame's step
+    fc = _step_fcurve(scene) if scene.frame_subframe else None
+    if fc is not None:
+        value = math.floor(fc.evaluate(frame) + 0.5)    # the step of the whole frame
+    else:
+        value = sh.movie_step
+        if depsgraph is not None:
+            try:
+                value = scene.evaluated_get(depsgraph).hindsight.movie_step
+            except Exception:
+                pass
     _apply(_no_operator_context(bpy.context), value)
+    _SHOWN["frame"] = frame
 
 
 def _step_fcurve(scene):
@@ -108,6 +132,28 @@ def action_fcurves(ad):
         return cb.fcurves if cb is not None else None
     except Exception:
         return None
+
+
+def _movie_frames(n: int, sh) -> int:
+    """Frames from the first key to the last for n steps: Frames per step for each step, or, with
+    Steps per frame above 1, that many steps on each frame."""
+    return math.ceil(n * sh.frames_per_step / max(1, sh.movie_steps_per_frame))
+
+
+def movie_length(scene) -> dict | None:
+    """The movie Quick auto key makes with the settings as they are now: steps, frames rendered
+    (first and last key included) and seconds at the scene's frame rate. None without a global
+    history."""
+    sh = _props(scene)
+    if sh is None or not sh.use_global:
+        return None
+    info = runtime.scrub_info(_Proxy(bpy.context, scene=scene))
+    if info is None or not info.get("global"):
+        return None
+    n = int(info["len"])
+    frames = _movie_frames(n, sh) + 1
+    fps = scene.render.fps / (scene.render.fps_base or 1.0)
+    return {"steps": n, "frames": frames, "seconds": frames / fps}
 
 
 class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
@@ -135,11 +181,13 @@ class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
             self.report({'WARNING'}, "No global history to keyframe yet")
             return {'CANCELLED'}
         f0 = scene.frame_start
-        f1 = f0 + n * sh.frames_per_step
+        f1 = f0 + _movie_frames(n, sh)
         _BUSY[0] = True
         try:
             fc = _step_fcurve(scene)
+            old_end = None
             if fc is not None:  # re-keying replaces the previous first/last keys
+                old_end = max((kp.co[0] for kp in fc.keyframe_points), default=None)
                 fc.keyframe_points.clear()
             sh.movie_step = 0
             scene.keyframe_insert(data_path=DATA_PATH, frame=f0)
@@ -150,8 +198,8 @@ class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
                 for kp in fc.keyframe_points:
                     kp.interpolation = 'LINEAR'
                 fc.update()
-            if scene.frame_end < f1:
-                scene.frame_end = f1
+            if scene.frame_end < f1 or old_end is not None and scene.frame_end == old_end:
+                scene.frame_end = f1     # also shorter, when the range ended at the old last key
             value = fc.evaluate(scene.frame_current) if fc is not None else sh.movie_step
             sh.movie_step = max(0, int(round(value)))
         finally:
