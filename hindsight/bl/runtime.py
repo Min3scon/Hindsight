@@ -278,6 +278,55 @@ def extras_on(obj) -> bool:
         return False
 
 
+EXTRAS_TOPO_MAX = 300_000    # D106: up to this many vertices, topology steps keep weights and shapes
+_SHAPES_STALE: set = set()   # D106: uids whose kept shape keys may be older than the mesh's
+
+
+def topo_extras_on(obj) -> bool:
+    """D106: an object not recorded with Record everything whose mesh has vertex groups or shape keys:
+    its topology steps (remesh, decimate, ...) carry the weights and shape keys from before and after,
+    so going back over one gives them back. Strokes don't (they don't change them)."""
+    if extras_on(obj):
+        return False
+    me = getattr(obj, "data", None)
+    if me is None or getattr(obj, "type", None) != "MESH":
+        return False
+    if not (len(getattr(obj, "vertex_groups", ())) or getattr(me, "shape_keys", None) is not None):
+        return False
+    return len(me.vertices) <= EXTRAS_TOPO_MAX
+
+
+def refresh_extras(obj, st=None, me=None, shapes_only: bool = False) -> None:
+    """D106: the state's vertex group weights and shape key positions read again (they change outside
+    recorded strokes: Weight Paint, Edit Mode, shape key edits). No step: the state follows the mesh.
+    shapes_only: after a stroke, which can change a shape key but never a weight (reading weights
+    goes through every vertex in Python)."""
+    if not topo_extras_on(obj):
+        return
+    st = st or _STATES.get(obj_uid(obj))
+    if st is None or not st.counts:
+        return
+    me = me or obj.data
+    if len(me.vertices) != st.counts.get("POINT", -1):
+        return
+    if shapes_only:
+        sk = getattr(me, "shape_keys", None)
+        vals = {}
+        if sk is not None:
+            for i, kb in enumerate(sk.key_blocks):
+                co = np.empty(len(kb.data) * 3, np.float32)
+                kb.data.foreach_get("co", co)
+                vals[meshio.sk_key(i, kb.name)] = co
+        drop = [k for k in st.arrays if k.startswith(meshio.SK_PREFIX)]
+    else:
+        vals = meshio.read_extras(obj, me)
+        drop = [k for k in st.arrays if meshio.is_extra(k)]
+    for k in drop:
+        del st.arrays[k]
+    st.arrays.update(vals)
+    _SHAPES_STALE.discard(obj_uid(obj))
+
+
 def read_mesh_snapshot(obj):
     """The object's mesh as a Snapshot. In Edit Mode the mesh attributes are the edit-mode layers,
     so the edit mesh is written back first and a plain copy is read instead."""
@@ -417,11 +466,16 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
     c = meshio.counts(me)
     ext = full and extras_on(obj)
     if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=deep)):
-        after = meshio.read_snapshot(me, ob=obj, extras=ext)
+        after = meshio.read_snapshot(me, ob=obj, extras=ext or topo_extras_on(obj))
         # `before` takes the state's arrays without copying them: every caller either drops the step
         # or calls _apply_to_state, whose set_snapshot gives the state fresh arrays (never in place)
+        before = dict(st.arrays)
+        if not ext and uid in _SHAPES_STALE:
+            # D106: strokes since the shape keys were last read: they may be older than the mesh was.
+            # No shapes rather than shapes that never existed (going back rebuilds them from positions)
+            before = {k: v for k, v in before.items() if not k.startswith(meshio.SK_PREFIX)}
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
-                    kind=TOPO, before=Snapshot(dict(st.counts), dict(st.arrays)), after=after)
+                    kind=TOPO, before=Snapshot(dict(st.counts), before), after=after)
     extra_vals = meshio.read_extras(obj, me) if ext else {}
     keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
@@ -733,6 +787,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     at = h.cursor
     removed = h.push(step)
     _apply_to_state(st, step)
+    if step.kind == DELTA and getattr(obj.data, "shape_keys", None) is not None:
+        _SHAPES_STALE.add(uid)   # D106: a stroke can change a shape key; read again when leaving
     if removed:
         _journal("TRUNC", {"hist": h.uid, "keep": at})
     entry = h.entries[-1]
@@ -908,6 +964,7 @@ def _enter(obj) -> None:
         commit(obj, label="Changes Outside History", mode=obj.mode, full=True)
     else:
         ensure_state(obj, refresh=True)
+    refresh_extras(obj)          # D106: weights and shapes as they are now (Weight Paint isn't a step)
 
 
 def check_mode_transition() -> None:
@@ -928,6 +985,8 @@ def check_mode_transition() -> None:
             commit(prev, label="Edit Mode", mode="EDIT", full=True)
     elif prev is not None and pmode in RECORD_MODES and obj_uid(prev) in _DIRTY:
         commit(prev, mode=pmode)
+    if prev is not None and pmode in RECORD_MODES and prev.mode != pmode and obj_uid(prev) in _SHAPES_STALE:
+        refresh_extras(prev, shapes_only=True)
     if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and not is_excluded(obj):
         if mode == "VERTEX_PAINT" and not len(obj.data.color_attributes):
             # Blender adds a colour layer on entering Vertex Paint; 5.3 does it after the mode's first
