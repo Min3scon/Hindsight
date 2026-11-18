@@ -570,6 +570,48 @@ def edit_steps_on(obj) -> bool:
         return False
 
 
+def _shared_owner(obj, uid):
+    """D104: the object whose history records obj's mesh when obj shares it with others (a linked
+    duplicate, Alt+D): the one that already has a history for it. None if obj's mesh is its own, or
+    no other user of it has a history yet."""
+    me = getattr(obj, "data", None)
+    if me is None or me.users < 2 or getattr(obj, "library", None) is not None:
+        return None
+    h = _REG.history_for(uid)
+    if h is not None and h.members and h.members[0] != uid:
+        o = find_object(h.members[0])
+        if o is not None and o.data == me:
+            return o, h.members[0]
+    if h is not None and any(e.target == uid for e in h.entries):
+        return None                       # obj records this mesh itself
+    best = None
+    for o in bpy.data.objects:
+        if o == obj or o.type != "MESH" or o.data != me or o.library is not None:
+            continue
+        ou = obj_uid(o)
+        ho = _REG.history_for(ou) if ou else None
+        if ho is None or not ho.entries or ou in _REG.disabled:
+            continue
+        key = (o.name,)
+        if best is None or key < best[0]:
+            best = (key, o, ou)
+    return (best[1], best[2]) if best else None
+
+
+def _leave_shared(obj, uid) -> None:
+    """D104: obj was in another object's history only through a shared mesh, and has its own mesh now
+    (Make Single User, the owner's mesh replaced): it leaves that history and starts its own."""
+    h = _REG.history_for(uid)
+    if h is None or len(h.members) < 2 or h.members[0] == uid or getattr(obj, "data", None) is None:
+        return
+    if obj.data.users > 1 or any(e.target == uid for e in h.entries):
+        return
+    _REG.remove_object(uid)
+    _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": h.enabled,
+                      "morph_target": h.morph_target})
+    ensure_state(obj, refresh=obj.mode != "EDIT")
+
+
 def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False):
     """Record what changed on obj since the last commit as ONE step. Returns the Step or None."""
     if obj is None or obj.type != "MESH":
@@ -577,6 +619,24 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     uid = obj_uid(obj, create=True)
     _DIRTY.pop(uid, None)
     _STROKE_SEEN.discard(uid)
+    if not _edit and obj.mode != "EDIT":
+        _leave_shared(obj, uid)
+        shared = _shared_owner(obj, uid)
+        if shared is not None:
+            # D104: one mesh, one history. The step is the owner's (it writes the one mesh); obj
+            # joins that history, so its slider shows it too.
+            o, ou = shared
+            ho = _REG.history_for(ou)
+            if _REG.history_for(uid) is not ho and uid not in _REG.disabled:
+                _REG.attach(uid, ho)
+                _journal("META", {"hist": ho.uid, "members": list(ho.members), "enabled": ho.enabled,
+                                  "morph_target": ho.morph_target})
+            if ou not in _STATES or not _STATES[ou].counts:
+                ensure_state(o, refresh=True)
+                _STATES[uid] = _STATES[ou]
+                return None
+            _STATES[uid] = _STATES[ou]
+            return commit(o, label=label, mode=mode or obj.mode, full=full)
     if obj.mode == "EDIT" and not _edit:
         return None  # Edit Mode changes are grouped and recorded when leaving Edit Mode
     if uid in _REG.disabled or is_excluded(obj):
