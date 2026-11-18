@@ -9,6 +9,7 @@ operator finished), or (2) changes have settled for SETTLE seconds (property edi
 """
 from __future__ import annotations
 
+import marshal
 import time
 
 import bpy
@@ -26,7 +27,7 @@ _PASSIVE_PREFIXES = ("VIEW3D_OT_rotate", "VIEW3D_OT_move", "VIEW3D_OT_zoom", "VI
                      "GRAPH_OT_view", "ACTION_OT_view", "ANIM_OT_change_frame")
 
 _DIRTY: dict = {}            # uid -> time of the last update seen
-_BODIES: dict = {}           # object uid -> its latest body (to bring it back if it gets deleted)
+_BODIES: dict = {}           # object uid -> its latest body, packed (see _body): to bring it back if deleted
 _BODY_DIRTY: set = set()     # object uids whose body must be read again
 _OPS = {"marker": None}      # (count, pointer of the newest) of window_manager.operators
 _JUMPS: list = []            # Hindsight jumps pushed onto Blender's undo stack (see on_undo)
@@ -145,6 +146,11 @@ def check_exclusion() -> None:
     sh = getattr(getattr(bpy.context, "scene", None), "hindsight", None)
     if not _EXCLUDED and (sh is None or sh.filter_mode == 'NONE'):
         return      # nothing is or was excluded: don't walk every recorded object on every tick
+    with idmap.frame():
+        _check_exclusion(rt)
+
+
+def _check_exclusion(rt) -> None:
     for uid in tracked_uids():
         ob = idmap.find(uid)
         if not isinstance(ob, bpy.types.Object):
@@ -169,10 +175,23 @@ def catch_up(idb, label: str = CHANGES_WHILE_OFF) -> list:
 
 
 def tracked_uids() -> set:
+    """A new set every call (callers may keep it)."""
     if not scope_everything():
         return set()
-    rt = _rt()
-    return set(rt.reg().everything) - set(rt.reg().disabled)
+    r = _rt().reg()
+    return r.everything - r.disabled
+
+
+def any_tracked() -> bool:
+    """bool(tracked_uids()), without building the set."""
+    if not scope_everything():
+        return False
+    r = _rt().reg()
+    dis = r.disabled
+    for u in r.everything:
+        if u not in dis:
+            return True
+    return False
 
 
 def _state(uid: str) -> MeshState:
@@ -203,9 +222,21 @@ FORCE_KINDS = [None]          # tests: a set of kind ids
 
 def capture(idb) -> dict:
     """(adapter, path) -> value for every adapter that handles this datablock and is switched on."""
-    adapters.ENABLED_KINDS[0] = enabled_kinds()
+    fc = idmap.frame_cache()
+    if fc is None:
+        adapters.ENABLED_KINDS[0] = enabled_kinds()
+        ads = adapters.for_datablock(idb)
+    else:
+        # in a frame the preferences and the adapters for a type can't change: read them once
+        if "kinds" not in fc:
+            fc["kinds"] = enabled_kinds()
+        adapters.ENABLED_KINDS[0] = fc["kinds"]
+        key = ("adapters", getattr(getattr(idb, "bl_rna", None), "identifier", None))
+        ads = fc.get(key)
+        if ads is None:
+            ads = fc[key] = adapters.for_datablock(idb)
     out = {}
-    for a in adapters.for_datablock(idb):
+    for a in ads:
         if not adapter_ok(a.id):
             continue
         try:
@@ -213,9 +244,20 @@ def capture(idb) -> dict:
         except Exception as e:
             _adapter_failed(a.id, e, "capture")
             continue
+        keys = _KEYS.get(a.id)
+        if keys is None:
+            keys = _KEYS[a.id] = {}
         for path, v in vals.items():
-            out[(a.id, path)] = v
+            k = keys.get(path)
+            if k is None:
+                k = keys[path] = (a.id, path)
+            out[k] = v
     return out
+
+
+# adapter -> path -> the (adapter, path) key: every object's recorded values share the same key
+# tuples instead of each holding its own (about a quarter of what an object's values take)
+_KEYS: dict = {}
 
 
 def refresh_mesh_users() -> None:
@@ -223,6 +265,12 @@ def refresh_mesh_users() -> None:
     by linked duplicates (Alt+D) is recorded once, by its owner: the object that recorded it first
     (kept while it uses the mesh), otherwise the first by name. Any other user of the mesh records
     only its own object data, and an object that becomes the owner starts from its mesh as it is."""
+    with idmap.frame():
+        _refresh_mesh_users()
+
+
+def _refresh_mesh_users(read=None) -> None:
+    """read: a set that gets the uid of every object whose mesh state this read again."""
     users = {}
     for uid in tracked_uids():
         ob = idmap.find(uid)
@@ -247,6 +295,8 @@ def refresh_mesh_users() -> None:
             # that was never an owner): its state starts from that mesh as it is
             rt.ensure_state(ob, refresh=True)
             _MESH_OF[uid] = ptr
+            if read is not None:
+                read.add(uid)
         owners[ptr] = uid
     _MESH_OWNER.clear()
     _MESH_OWNER.update(owners)
@@ -282,11 +332,12 @@ def _mesh_busy(ob) -> bool:
         return False
 
 
-def baseline(idb, uid: str | None = None, refresh: bool = False) -> MeshState:
+def baseline(idb, uid: str | None = None, refresh: bool = False, _mesh_read: bool = False) -> MeshState:
     """The recorded values of a datablock (read from Blender the first time, or on refresh). A mesh
-    object also gets a baseline of its mesh (to record Object Mode changes such as Apply)."""
+    object also gets a baseline of its mesh (to record Object Mode changes such as Apply).
+    _mesh_read: its mesh state was read a moment ago with nothing changed since (prime)."""
     uid = uid or idmap.uid_of(idb, create=True)
-    if isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode != "EDIT":
+    if not _mesh_read and isinstance(idb, bpy.types.Object) and idb.type == "MESH" and idb.mode != "EDIT":
         cur = _rt()._STATES.get(uid)
         if refresh or cur is None or not cur.counts:
             _rt().ensure_state(idb, refresh=True)
@@ -311,7 +362,7 @@ def on_update(depsgraph) -> None:
     except Exception:
         pass
     now = time.time()
-    scenes = [u for u in uids if _is_scene_uid(u)]
+    scenes = _scene_uids_in(uids)
     for u in depsgraph.updates:
         idv = u.id
         orig = getattr(idv, "original", idv)
@@ -333,9 +384,37 @@ def on_update(depsgraph) -> None:
 _SCENE_UIDS: set = set()
 
 
+def _local_scene_ids() -> set:
+    out = set()
+    try:
+        for sc in bpy.data.scenes:
+            if sc.library is None:
+                u = sc.get(idmap.UID_PROP)
+                if isinstance(u, str):
+                    out.add(u)
+    except Exception:
+        return None
+    return out
+
+
+def _scene_uids_in(uids) -> list:
+    """[u for u in uids if _is_scene_uid(u)], reading the scenes once."""
+    local = _local_scene_ids()
+    if local is None:
+        return [u for u in uids if _is_scene_uid(u)]
+    return [u for u in uids if u in _SCENE_UIDS or (u in local and _is_scene_uid(u))]
+
+
 def _is_scene_uid(uid: str) -> bool:
     if uid in _SCENE_UIDS:
         return True
+    # find() only returns a local datablock that carries this id: if no local scene does, it can't
+    # be a scene (a few scenes to look at instead of a search of every object, mesh, ...)
+    try:
+        if not any(sc.library is None and sc.get(idmap.UID_PROP) == uid for sc in bpy.data.scenes):
+            return False
+    except Exception:
+        pass
     idb = idmap.find(uid)
     if isinstance(idb, bpy.types.Scene):
         _SCENE_UIDS.add(uid)
@@ -351,9 +430,26 @@ def refresh_bodies(scene, only=None) -> None:
         u = idmap.claim(ob)
         if u and (only is None or u in only):
             try:
-                _BODIES[u] = adapters.object_body(ob)
+                _BODIES[u] = _pack_body(adapters.object_body(ob))
             except Exception as e:
                 log.error_once(("body", str(e)), f"could not read an object's details: {e}", e)
+
+
+def _pack_body(body):
+    """A body is kept as marshal bytes (less than half the memory of the dict; it's read back only
+    when its object is deleted or added). Values that marshal can't take keep the dict."""
+    try:
+        return marshal.dumps(body, 2)
+    except Exception:
+        return body
+
+
+def _body(uid):
+    """The body kept for uid (a new dict, equal to the one read from Blender), or None."""
+    b = _BODIES.get(uid)
+    if isinstance(b, bytes):
+        return marshal.loads(b)
+    return b
 
 
 def _mesh_snapshot(body):
@@ -405,7 +501,9 @@ def tick() -> None:
     rt = _rt()
     if rt._SUSPEND[0] or _operation_running():
         return
-    check_exclusion()
+    idle = not any_tracked()
+    if not idle:
+        check_exclusion()
     marker = _ops_marker()
     finished = marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
     if marker is not None and _OPS["marker"] is None:
@@ -415,6 +513,13 @@ def tick() -> None:
     settled = bool(_DIRTY) and time.time() - max(_DIRTY.values()) >= SETTLE
     if finished or settled:
         _OPS["marker"] = marker
+        if idle:
+            # nothing is recorded: what finish_operation or commit would leave behind, without
+            # reading anything (no evaluation, no walk over the objects)
+            _DIRTY.clear()
+            _MESH_OWNER.clear()
+            _MESH_USERS.clear()
+            return
         if finished:
             finish_operation(_last_label())
         else:
@@ -463,12 +568,36 @@ def _edit_step(label: str) -> None:
                 break
 
 
+def _same_values(old: dict, new: dict) -> bool:
+    """True only if the two value dicts are identical: same keys in the same order, same types,
+    floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
+    _diff finds nothing. False says nothing: _diff decides."""
+    if len(old) != len(new):
+        return False
+    try:
+        return marshal.dumps(old, 2) == marshal.dumps(new, 2)
+    except Exception:
+        return False
+
+
+def _fast_diff_ok() -> bool:
+    """_same_values may stand in for _diff only while every adapter compares exactly (the base
+    Adapter.changed); an adapter with its own comparison always goes through _diff."""
+    base = adapters.Adapter.changed
+    for a in adapters.ADAPTERS.values():
+        if getattr(a.changed, "__func__", None) is not base:
+            return False
+    return True
+
+
 def _diff(old: dict, new: dict) -> dict:
     """(adapter, path) -> (old, new) for every value that differs (MISSING on a side it lacks). An
     adapter that is switched off (after an error) is left out: its values aren't read any more,
     which isn't a removal."""
     out = {}
     failed = set()
+    exact = _fast_diff_ok()
+    dumps = marshal.dumps
     for k in set(old) | set(new):
         aid = k[0]
         if aid in failed or not adapter_ok(aid):
@@ -480,6 +609,12 @@ def _diff(old: dict, new: dict) -> dict:
             continue        # stored with creation and deletion steps, never read back from Blender
         if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or ""):
             continue        # a kind switched off isn't read; that isn't a removal
+        if exact and a is not MISSING and b is not MISSING:
+            try:
+                if dumps(a, 2) == dumps(b, 2):
+                    continue    # identical (see _same_values): the adapter would find no change
+            except Exception:
+                pass
         try:
             changed = a is MISSING or b is MISSING or adapters.ADAPTERS[aid].changed(k[1], a, b)
         except Exception as e:
@@ -510,18 +645,26 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
     """Record what changed on the dirty (or given) datablocks as one step per history. With mesh,
     a tracked mesh object in Object Mode whose mesh got an update is compared too, and what changed
     goes into the same step."""
+    with idmap.frame():
+        return _commit(label, uids, mesh)
+
+
+def _commit(label: str, uids, mesh: bool) -> list:
     rt = _rt()
     targets = list(uids) if uids is not None else list(_DIRTY)
     for u in targets:
         _DIRTY.pop(u, None)
     # the scene first: a collection or object it brings back gets the lower step number, so it
     # exists before an object's own step from the same operation is replayed (and is removed last)
-    targets.sort(key=lambda u: (not _is_scene_uid(u), u))
+    scenes = set(_scene_uids_in(targets))
+    targets.sort(key=lambda u: (u not in scenes, u))
     steps = []
     group = rt.OP_GROUP[0]   # set while one operator's changes are recorded (shared with Edit Mode steps)
     op_first = group[0] if group else None   # this operation's first step (global timeline: one position)
+    tracked = tracked_uids()  # read again after _track_new adds objects
+    fast = _fast_diff_ok()
     for uid in targets:
-        if uid not in tracked_uids():
+        if uid not in tracked:
             continue
         idb = idmap.find(uid)
         if idb is None or is_linked(idb):
@@ -551,7 +694,7 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
                 rt._apply_to_state(st, mesh_step)
             continue
         new = capture(idb)
-        changes = _diff(st.values, new)
+        changes = {} if fast and _same_values(st.values, new) else _diff(st.values, new)
         if changes:
             adapters.drop_changed_refs(uid, changes)
         if not changes and mesh_step is None:
@@ -569,9 +712,10 @@ def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
             refresh_bodies(idb, only=new_set - old_set)
             for ou in sorted(new_set - old_set):
                 _track_new(ou)
+            tracked = tracked_uids()
             snaps = {}
             for ou in sorted(old_set ^ new_set):
-                body = _BODIES.get(ou)
+                body = _body(ou)
                 if ou in new_set:
                     by_adapter["scene"][f"body:{ou}"] = (MISSING, body if body is not None else MISSING)
                 else:
@@ -663,7 +807,7 @@ def ref_label(ref) -> str:
     """How the sidebar names a deleted object or collection a reference waits for."""
     if ref in adapters.COLL_NAMES:
         return f"the collection {adapters.COLL_NAMES[ref]}"
-    name = (_BODIES.get(ref) or {}).get("name")
+    name = (_body(ref) or {}).get("name")
     if name:
         return str(name)
     return adapters.REF_NAMES.get(ref) or "an object"
@@ -828,8 +972,13 @@ def on_undo(direction: str = "undo") -> None:
     """After Blender's undo or redo: re-read tracked datablocks. If they now match the state before
     (undo) or after (redo) a Hindsight jump, the cursor follows; if they match a neighbouring step,
     the cursor moves one step; anything else becomes the new baseline (nothing is recorded)."""
-    rt = _rt()
     idmap.forget()
+    with idmap.frame():
+        return _on_undo(direction)
+
+
+def _on_undo(direction: str):
+    rt = _rt()
     refresh_mesh_users()
     seen = {}
     for uid in tracked_uids():
@@ -926,11 +1075,14 @@ def rebaseline() -> None:
 
 def prime() -> None:
     """Read baselines for every tracked datablock (after a file is loaded)."""
-    refresh_mesh_users()
-    for uid in tracked_uids():
-        idb = idmap.find(uid)
-        if idb is not None:
-            baseline(idb, uid, refresh=True)
+    with idmap.frame():
+        read = set()
+        _refresh_mesh_users(read)     # reads the mesh state of each mesh's owner
+        for uid in tracked_uids():
+            idb = idmap.find(uid)
+            if idb is not None:
+                # nothing changes in between: an owner's mesh state just read isn't read twice
+                baseline(idb, uid, refresh=True, _mesh_read=uid in read)
 
 
 def forget() -> None:

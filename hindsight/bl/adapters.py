@@ -100,6 +100,11 @@ def animated_paths(idb) -> set:
 
 def normalise(v):
     """A property value as a JSON value (exact)."""
+    t = type(v)
+    if t in _PLAIN:
+        return v
+    if t in _MATH_SEQ:
+        return list(v)                                        # their items are always floats
     if v is None or isinstance(v, (bool, int, float, str)):
         return v
     if isinstance(v, bpy.types.ID):
@@ -107,9 +112,24 @@ def normalise(v):
     if hasattr(v, "to_list") and hasattr(v, "col"):          # Matrix
         return [list(map(float, row)) for row in v]
     try:
-        return [normalise(x) for x in v]                      # Vector, Euler, Quaternion, Color, arrays
+        items = list(v)                                       # Vector, Euler, Quaternion, Color, arrays
     except TypeError:
         return str(v)
+    for x in items:
+        if type(x) not in _PLAIN:
+            try:
+                return [normalise(x) for x in items]
+            except TypeError:
+                return str(v)
+    return items                                              # numbers: normalise(x) is x
+
+
+_PLAIN = frozenset((float, int, bool, str))
+try:
+    import mathutils as _mu
+    _MATH_SEQ = frozenset((_mu.Vector, _mu.Euler, _mu.Quaternion, _mu.Color))
+except Exception:
+    _MATH_SEQ = frozenset()
 
 
 def to_rna(v):
@@ -383,7 +403,7 @@ class ObjectAdapter(Adapter):
     def capture(self, idb) -> dict:
         out = {}
         if kind_on("collections"):
-            out["collections"] = sorted(_coll_ref(c) for c in idb.users_collection)
+            out["collections"] = sorted(_coll_ref(c) for c in users_collection(idb))
         if kind_on("visibility"):
             out["hide"] = _hidden(idb)      # D56: per view layer, not only the one the window shows
         if kind_on("constraints"):
@@ -455,6 +475,33 @@ def drop_recreated_orphans() -> None:
             bpy.data.collections.remove(c)
 
 
+_UC_DIRECT = 4      # objects read with Object.users_collection in a frame before the table is built
+
+
+def users_collection(ob) -> tuple:
+    """ob.users_collection: the collections it is in, in the same order (bpy.data.collections, then
+    each scene's own collection). Blender's version reads every collection's objects for each object
+    it is asked about; in a frame (idmap.frame) that is done once for all of them."""
+    fc = idmap.frame_cache()
+    if fc is None:
+        return ob.users_collection
+    m = fc.get("users_collection")
+    if m is None:
+        n = fc["users_collection_n"] = fc.get("users_collection_n", 0) + 1
+        if n <= _UC_DIRECT:
+            return ob.users_collection      # a few objects: cheaper than reading everything
+        m = {}
+        for c in bpy.data.collections:
+            for o in c.objects:
+                m.setdefault(o.as_pointer(), []).append(c)
+        for sc in bpy.data.scenes:
+            c = sc.collection
+            for o in c.objects:
+                m.setdefault(o.as_pointer(), []).append(c)
+        fc["users_collection"] = m
+    return tuple(m.get(ob.as_pointer(), ()))
+
+
 def _coll_ref(c) -> str:
     """A collection as a value: its Hindsight id, or "scene:<id>" for a scene's own collection."""
     for sc in bpy.data.scenes:
@@ -472,16 +519,26 @@ def _coll_from_ref(ref: str):
 
 def _write_constraints(ob, want: list) -> None:
     have = [(c.type, c.name) for c in ob.constraints]
-    if have != [(w["type"], w["name"]) for w in want]:
+    if have == [(w["type"], w["name"]) for w in want]:
+        pairs = list(zip(ob.constraints, want))
+    else:
         for c in list(ob.constraints):
             ob.constraints.remove(c)
+        # each constraint made gets its own recorded values: one that can't be made is left out
+        # (zipping the stack with the recorded list gave every later one the wrong values)
+        pairs = []
         for w in want:
             try:
                 c = ob.constraints.new(w["type"])
-                c.name = w["name"]
             except Exception as e:
                 log.error_once(("constraint_new", str(e)), f"could not restore a constraint: {e}", e)
-    for c, w in zip(ob.constraints, want):
+                continue
+            try:
+                c.name = w["name"]
+            except Exception as e:
+                log.error_once(("constraint_name", str(e)), f"could not name a restored constraint: {e}", e)
+            pairs.append((c, w))
+    for c, w in pairs:
         set_struct_values(c, w.get("values") or {}, ob, f'constraints["{c.name}"].')
 
 
@@ -567,7 +624,7 @@ def object_body(ob) -> dict:
         "matrix": [list(map(float, r)) for r in ob.matrix_basis],
         "parent": idmap.ref_of(ob.parent) if ob.parent is not None else None,
         "parent_inverse": [list(map(float, r)) for r in ob.matrix_parent_inverse],
-        "collections": sorted(_coll_ref(c) for c in ob.users_collection),
+        "collections": sorted(_coll_ref(c) for c in users_collection(ob)),
         "materials": [idmap.claim(s.material) if s.material is not None else None for s in ob.material_slots],
         "hide": [bool(ob.hide_viewport), bool(ob.hide_render), bool(ob.hide_select)],
         "props": struct_values(ob, _BODY_SKIP),

@@ -31,6 +31,86 @@ def note(idb, u) -> None:
         _session[idb.session_uid] = u
     except Exception:
         pass
+    idx = _IDX[0]
+    if idx is not None:
+        # an object that got its id inside a frame (a fresh id: no other datablock has it)
+        try:
+            if u not in idx[1] and isinstance(idb, bpy.types.Object) and idb.library is None:
+                idx[1][u] = idb
+        except Exception:
+            pass
+
+
+# ----------------------------------------------------------------------------- frames
+# A frame is a stretch of Hindsight's own work (one commit, a file's baselines) in which no object
+# is added, removed or renamed. Inside one, find() reads bpy.data.objects once instead of searching
+# it by name for every lookup (a name lookup walks the whole list: about 10 us at 500 objects), and
+# other modules keep per-frame caches in frame_cache(). Results are exactly those of the plain
+# lookups: the index holds what that search would find, ids given out meanwhile are added to it.
+_DEPTH = [0]
+_IDX = [None]            # (name -> object or _AMBIG, uid -> first local object with it) while in a frame
+_FCACHE = [None]         # dict for other modules while in a frame
+_AMBIG = object()
+
+
+class frame:
+    """with idmap.frame(): ... (nests; the caches go when the outermost one ends)."""
+    __slots__ = ()
+
+    def __enter__(self):
+        if _DEPTH[0] == 0:
+            _FCACHE[0] = {}
+            _LOOKUPS[0] = 0
+        _DEPTH[0] += 1
+        return self
+
+    def __exit__(self, *_exc):
+        _DEPTH[0] -= 1
+        if _DEPTH[0] <= 0:
+            _DEPTH[0] = 0
+            _IDX[0] = None
+            _FCACHE[0] = None
+        return False
+
+
+def in_frame() -> bool:
+    return _DEPTH[0] > 0
+
+
+def frame_cache():
+    """A dict that lives as long as the current frame, or None outside one."""
+    return _FCACHE[0]
+
+
+_IDX_AFTER = 8           # lookups in a frame before the index is built (a few are cheaper without)
+_LOOKUPS = [0]
+
+
+def _frame_index():
+    """The frame's index once this frame has done a few lookups, else None (look up as usual)."""
+    if _IDX[0] is None:
+        _LOOKUPS[0] += 1
+        if _LOOKUPS[0] <= _IDX_AFTER:
+            return None
+    return _objects_index()
+
+
+def _objects_index():
+    idx = _IDX[0]
+    if idx is None:
+        names, first = {}, {}
+        for ob in bpy.data.objects:
+            try:
+                n = ob.name
+                names[n] = _AMBIG if n in names else ob
+                if ob.library is None:
+                    u = ob.get(UID_PROP)
+                    if u is not None and u not in first:
+                        first[u] = ob
+            except Exception:
+                continue
+        idx = _IDX[0] = (names, first)
+    return idx
 
 
 def unnote(idb) -> None:
@@ -177,16 +257,33 @@ def find(uid: str):
         return None
     if uid.startswith(LIB_PREFIX):
         return _find_linked(uid)
+    idx = _frame_index() if _DEPTH[0] else None
     hit = _cache.get(uid)
     if hit is not None:
         col = getattr(bpy.data, hit[0], None)
-        idb = col.get(hit[1]) if col is not None else None
+        if idx is not None and hit[0] == "objects":
+            idb = idx[0].get(hit[1])
+            if idb is _AMBIG:
+                idb = col.get(hit[1])
+        else:
+            idb = col.get(hit[1]) if col is not None else None
         if idb is not None and idb.library is None and idb.get(UID_PROP) == uid:
             return idb
     for c in COLLECTIONS:
         col = getattr(bpy.data, c, None)
         if col is None:
             continue
+        if idx is not None and c == "objects":
+            idb = idx[1].get(uid)
+            if idb is None:
+                continue                      # no local object carries it
+            try:
+                if idb.library is None and idb.get(UID_PROP) == uid:
+                    _cache[uid] = (c, idb.name)
+                    return idb
+            except Exception:
+                pass
+            # the index is out of date for this one: search as usual
         for idb in col:
             try:
                 if idb.library is None and idb.get(UID_PROP) == uid:
