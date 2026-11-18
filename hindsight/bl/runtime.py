@@ -1675,6 +1675,61 @@ OUTSIDE_MESH_TEXT = ("{name} was changed while Hindsight wasn't running, so its 
                      "mesh and was left out")
 
 
+def _override_key(idb):
+    """[library file, name of the linked datablock] of a library override, else None."""
+    ol = getattr(idb, "override_library", None)
+    ref = getattr(ol, "reference", None) if ol is not None else None
+    lib = getattr(ref, "library", None) if ref is not None else None
+    if lib is None:
+        return None
+    from . import idmap
+    return [type(idb).__name__, idmap.lib_path(lib), ref.name]
+
+
+OVERRIDES_KEY = "~overrides"   # D109: in Registry.saved, {id: [type, library file, name]} of overrides
+
+
+def override_ids() -> dict:
+    """Every library override (objects and collections) that has a Hindsight id, by its key."""
+    out = {}
+    for col in (bpy.data.objects, bpy.data.collections):
+        for idb in col:
+            if getattr(idb, "override_library", None) is None:
+                continue
+            u = idb.get(UID_PROP)
+            k = _override_key(idb) if u else None
+            if k is not None:
+                out[u] = k
+    return out
+
+
+def restamp_overrides(saved) -> int:
+    """D109: Blender builds library overrides again from their library when a file is opened, and the
+    id Hindsight gave one is gone. Each override saved with an id gets it back, found by its type,
+    library file and the name of the datablock it overrides. Returns how many."""
+    from . import idmap
+    m = (saved or {}).get(OVERRIDES_KEY)
+    if not isinstance(m, dict) or not m:
+        return 0
+    want = {}
+    for u, k in m.items():
+        if isinstance(k, list) and len(k) == 3 and idmap.find(u) is None:
+            want.setdefault(tuple(k), []).append(u)
+    n = 0
+    for col in (bpy.data.objects, bpy.data.collections):
+        for idb in col:
+            k = _override_key(idb)
+            if k is None or tuple(k) not in want or idb.get(UID_PROP) is not None:
+                continue
+            us = want[tuple(k)]
+            if len(us) != 1:
+                continue                  # two overrides of one datablock: can't tell them apart
+            idb[UID_PROP] = us[0]
+            idmap.note(idb, us[0])
+            n += 1
+    return n
+
+
 def saved_prints() -> dict:
     """D46: every recorded object as it is saved (a fingerprint of its mesh, its recorded values), so
     opening the file can tell whether it was changed in a session without Hindsight."""
@@ -1705,6 +1760,9 @@ def saved_prints() -> dict:
             log.error_once(("saved_prints", str(e)), f"could not note {getattr(ob, 'name', u)} for saving: {e}", e)
             continue
         out[u] = rec
+    ov = override_ids()
+    if ov:
+        out[OVERRIDES_KEY] = ov               # D109: their ids, which Blender drops on load
     return out
 
 

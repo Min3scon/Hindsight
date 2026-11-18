@@ -223,15 +223,33 @@ def ref_of(idb):
         coll = _collection_of(idb)
         if coll is None:
             return None
-        return LIB_PREFIX + _LIB_SEP.join((coll, lib.filepath, idb.name))
+        return LIB_PREFIX + _LIB_SEP.join((coll, lib_path(lib), idb.name))
     return claim(idb)
+
+
+def lib_path(lib) -> str:
+    """D109: a library's file as one absolute path. Blender stores it as written, absolute until the
+    file is saved and relative ("//lib.blend") after, which made the same reference look changed."""
+    try:
+        import os
+        return os.path.normcase(os.path.abspath(bpy.path.abspath(lib.filepath, library=lib.library)))
+    except Exception:
+        return lib.filepath
 
 
 def _find_linked(ref: str):
     try:
         coll, path, name = ref[len(LIB_PREFIX):].split(_LIB_SEP, 2)
         col = getattr(bpy.data, coll, None)
-        return col.get((name, path)) if col is not None else None
+        if col is None:
+            return None
+        hit = col.get((name, path))              # recorded as Blender wrote the path (before D109)
+        if hit is not None:
+            return hit
+        for lib in bpy.data.libraries:
+            if lib_path(lib) == path:
+                return col.get((name, lib.filepath))
+        return None
     except Exception:
         return None
 
