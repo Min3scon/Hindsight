@@ -12,10 +12,15 @@ PROP = "hindsight_step"
 _RANGE = [None]
 
 
+_RT = []    # the runtime module, imported once: _get runs on every sidebar redraw
+
+
 def _info():
     try:
-        from . import runtime
-        return runtime.scrub_info(bpy.context)
+        if not _RT:
+            from . import runtime
+            _RT.append(runtime)
+        return _RT[0].scrub_info(bpy.context)
     except Exception:
         return None
 

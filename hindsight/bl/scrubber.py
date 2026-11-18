@@ -46,15 +46,25 @@ DEFAULTS = _Defaults()
 # ---------------------------------------------------------------------------------------------
 # Lazy access to sibling modules (written concurrently; tests may replace these functions)
 
+_MODS = {}                 # sibling modules, imported once (an import statement in a draw path costs more
+                           # than the lookup it guards)
+
+
 def _runtime():
-    from . import runtime
-    return runtime
+    rt = _MODS.get("runtime")
+    if rt is None:
+        from . import runtime as rt
+        _MODS["runtime"] = rt
+    return rt
 
 
 def _prefs(context=None):
     try:
-        from .prefs import get_prefs
-        p = get_prefs(context)
+        gp = _MODS.get("get_prefs")
+        if gp is None:
+            from .prefs import get_prefs as gp
+            _MODS["get_prefs"] = gp
+        p = gp(context)
     except Exception:
         p = None
     return p if p is not None else DEFAULTS
@@ -190,6 +200,30 @@ def hit_test(x, y, lay):
 
 # ---------------------------------------------------------------------------------------------
 # Pure geometry (triangle lists)
+#
+# The slider's parts are kept as GPU batches by what each one depends on (see _plan): a redraw
+# that changes nothing builds nothing, and moving the handle rebuilds only the fill and the
+# handle. The cosines and sines of each arc are kept too; the points are the same floats as
+# before (same expressions, same order).
+
+_ARCS = {}
+
+
+def _arc(seg, a0, a1):
+    """[(cos t0, sin t0, cos t1, sin t1)] for the seg pieces of the arc a0..a1."""
+    key = (seg, a0, a1)
+    tab = _ARCS.get(key)
+    if tab is None:
+        tab = []
+        for i in range(seg):
+            t0 = a0 + (a1 - a0) * i / seg
+            t1 = a0 + (a1 - a0) * (i + 1) / seg
+            tab.append((math.cos(t0), math.sin(t0), math.cos(t1), math.sin(t1)))
+        if len(_ARCS) > 32:
+            _ARCS.clear()
+        _ARCS[key] = tab
+    return tab
+
 
 def _rect(x0, y0, x1, y1):
     return [(x0, y0), (x1, y0), (x1, y1), (x0, y0), (x1, y1), (x0, y1)]
@@ -197,12 +231,8 @@ def _rect(x0, y0, x1, y1):
 
 def _disc(cx, cy, r, seg=24, a0=0.0, a1=2.0 * math.pi):
     pts = []
-    for i in range(seg):
-        t0 = a0 + (a1 - a0) * i / seg
-        t1 = a0 + (a1 - a0) * (i + 1) / seg
-        pts += [(cx, cy),
-                (cx + r * math.cos(t0), cy + r * math.sin(t0)),
-                (cx + r * math.cos(t1), cy + r * math.sin(t1))]
+    for c0, s0, c1, s1 in _arc(seg, a0, a1):
+        pts += [(cx, cy), (cx + r * c0, cy + r * s0), (cx + r * c1, cy + r * s1)]
     return pts
 
 
@@ -219,10 +249,7 @@ def _capsule(x0, y0, x1, y1):
 def _annulus(cx, cy, r0, r1, seg=32, a0=0.0, a1=2.0 * math.pi):
     """Ring between radius r0 and r1 (also used as a soft edge, Blender's flat shader has no AA)."""
     pts = []
-    for i in range(seg):
-        t0 = a0 + (a1 - a0) * i / seg
-        t1 = a0 + (a1 - a0) * (i + 1) / seg
-        c0, s0, c1, s1 = math.cos(t0), math.sin(t0), math.cos(t1), math.sin(t1)
+    for c0, s0, c1, s1 in _arc(seg, a0, a1):
         p0, p1 = (cx + r0 * c0, cy + r0 * s0), (cx + r1 * c0, cy + r1 * s0)
         p2, p3 = (cx + r1 * c1, cy + r1 * s1), (cx + r0 * c1, cy + r0 * s1)
         pts += [p0, p1, p2, p0, p2, p3]
@@ -237,32 +264,68 @@ def _capsule_edge(x0, y0, x1, y1, w):
             + _annulus(max(x0, x1), cy, r, r + w, 10, -0.5 * math.pi, 0.5 * math.pi))
 
 
-def geometry(lay, pos, length, morph_target=None, hover=None):
-    """{name: [(x, y), ...]} triangle lists. Drawn in DRAW_ORDER; *_aa are one-pixel soft edges."""
+# The parts in groups, each with only what it depends on besides the layout.
+
+def _geo_track(lay):
     x0, y0, x1, y1 = lay["bar"]
     s = lay["scale"]
     aa = 0.9 * s
-    cy = (y0 + y1) / 2.0
-    xp = x_from_pos(pos, lay, length)
-    hr = lay["handle_r"] + (1.5 * s if hover == "bar" else 0.0)
     cx, dcy, r = lay["dot"]
     ring = max(1.5, 1.6 * s)
-    g = {
+    return {
         "bg": _capsule(x0, y0, x1, y1),
         "bg_aa": _capsule_edge(x0, y0, x1, y1, aa),
-        "fill": _capsule(x0, y0, xp, y1),
-        "fill_aa": _capsule_edge(x0, y0, xp, y1, aa),
-        "handle_shadow": _disc(xp, cy - 0.8 * s, hr + 1.6 * s),
-        "handle": _disc(xp, cy, hr),
-        "handle_aa": _annulus(xp, cy, hr, hr + aa),
         "dot_bg": _disc(cx, dcy, r),
         "dot": _annulus(cx, dcy, r - ring, r),
         "dot_aa": _annulus(cx, dcy, r, r + aa),
-        "dot_core": _disc(cx, dcy, r * (0.55 if hover == "dot" else 0.32)),
     }
-    if morph_target is not None and length > 0:
-        xm = x_from_pos(morph_target, lay, length)
-        g["tick"] = _rect(xm - 1.0 * s, y0 - 5.0 * s, xm + 1.0 * s, y1 + 5.0 * s)
+
+
+def _geo_core(lay, hover):
+    cx, dcy, r = lay["dot"]
+    return {"dot_core": _disc(cx, dcy, r * (0.55 if hover == "dot" else 0.32))}
+
+
+def _geo_fill(lay, xp):
+    x0, y0, _x1, y1 = lay["bar"]
+    aa = 0.9 * lay["scale"]
+    return {"fill": _capsule(x0, y0, xp, y1), "fill_aa": _capsule_edge(x0, y0, xp, y1, aa)}
+
+
+def _geo_handle(lay, xp, hover):
+    _x0, y0, _x1, y1 = lay["bar"]
+    s = lay["scale"]
+    aa = 0.9 * s
+    cy = (y0 + y1) / 2.0
+    hr = lay["handle_r"] + (1.5 * s if hover == "bar" else 0.0)
+    return {
+        "handle_shadow": _disc(xp, cy - 0.8 * s, hr + 1.6 * s),
+        "handle": _disc(xp, cy, hr),
+        "handle_aa": _annulus(xp, cy, hr, hr + aa),
+    }
+
+
+def _geo_tick(lay, xm):
+    _x0, y0, _x1, y1 = lay["bar"]
+    s = lay["scale"]
+    return {"tick": _rect(xm - 1.0 * s, y0 - 5.0 * s, xm + 1.0 * s, y1 + 5.0 * s)}
+
+
+def _morph_x(lay, morph_target, length):
+    """x of the morph target tick, or None when there is no tick."""
+    return x_from_pos(morph_target, lay, length) if morph_target is not None and length > 0 else None
+
+
+def geometry(lay, pos, length, morph_target=None, hover=None):
+    """{name: [(x, y), ...]} triangle lists. Drawn in DRAW_ORDER; *_aa are one-pixel soft edges."""
+    xp = x_from_pos(pos, lay, length)
+    g = _geo_track(lay)
+    g.update(_geo_fill(lay, xp))
+    g.update(_geo_handle(lay, xp, hover))
+    g.update(_geo_core(lay, hover))
+    xm = _morph_x(lay, morph_target, length)
+    if xm is not None:
+        g.update(_geo_tick(lay, xm))
     return g
 
 
@@ -363,14 +426,42 @@ def region_insets(area, region):
     return left, right, bottom
 
 
-_DIGITS = {}               # region pointer -> counter digits of the last draw (hit tests match it)
+# Region pointer -> counter digits of the region's last draw, so hit tests match what is on
+# screen. Regions come and go and their pointers are reused, so it is kept small (oldest dropped
+# first) and emptied when a file is loaded (S4-1).
+_DIGITS = {}
+DIGITS_MAX = 16
+
+
+def _note_digits(ptr, digits):
+    _DIGITS.pop(ptr, None)                  # (re)inserted last: the least recently drawn goes first
+    while len(_DIGITS) >= DIGITS_MAX:
+        del _DIGITS[next(iter(_DIGITS))]
+    _DIGITS[ptr] = digits
+
+
+_LAYOUTS = {}              # layout() results by everything they depend on
+_LAYOUT_PREFS = ("scrub_height", "scrub_margin", "scrub_width_pct", "scrub_show_counter")
+
+
+def _layout_cached(region_w, region_h, ui_scale, prefs_like, insets, digits):
+    """layout(), kept while the region size, UI scale, panels, preferences and digits stay the same.
+    The result is shared: callers only read it."""
+    key = (region_w, region_h, ui_scale, insets, digits) + tuple(_pref(prefs_like, n) for n in _LAYOUT_PREFS)
+    lay = _LAYOUTS.get(key)
+    if lay is None:
+        lay = layout(region_w, region_h, ui_scale, prefs_like, insets, digits)
+        if len(_LAYOUTS) >= 16:
+            _LAYOUTS.clear()
+        _LAYOUTS[key] = lay
+    return lay
 
 
 def _layout_for(context, region=None):
     region = region if region is not None else context.region
     area = getattr(context, "area", None)
-    return layout(region.width, region.height, _ui_scale(context), _prefs(context),
-                  region_insets(area, region), _DIGITS.get(region.as_pointer(), MIN_DIGITS))
+    return _layout_cached(region.width, region.height, _ui_scale(context), _prefs(context),
+                          region_insets(area, region), _DIGITS.get(region.as_pointer(), MIN_DIGITS))
 
 
 def slider_info(context):
@@ -403,13 +494,24 @@ def _open_menu(context):
 
 _draw_handle = None
 _shader = None
-_batch_cache = {}
 _hover = (0, None)   # (region pointer, "dot" | "bar" | None)
 
+# Draw order: (part, colour role). The colour roles are filled in by _colors.
+DRAW_ORDER = (("bg_aa", "bg_soft"), ("bg", "bg"), ("fill_aa", "color_soft"), ("fill", "color"),
+              ("tick", "morph"), ("handle_shadow", "shadow"), ("handle_aa", "handle_soft"),
+              ("handle", "handle"), ("dot_bg", "dot_bg"), ("dot_aa", "dot_soft"), ("dot", "dot"),
+              ("dot_core", "dot"))
+_GROUP_OF = {"bg": "track", "bg_aa": "track", "dot_bg": "track", "dot": "track", "dot_aa": "track",
+             "dot_core": "core", "fill": "fill", "fill_aa": "fill", "handle_shadow": "handle",
+             "handle": "handle", "handle_aa": "handle", "tick": "tick"}
+CACHE_MAX = 16       # entries per cache below; a full cache is emptied (a drag fills it quickly)
+_GROUPS = {"track": {}, "core": {}, "fill": {}, "handle": {}, "tick": {}}   # group -> key -> {part: batch}
+_PLANS = {}          # everything a draw depends on -> [(batch, colour)] in draw order
 
-def _hover_for(region):
+
+def _hover_for(region, ptr=None):
     try:
-        ptr = region.as_pointer()
+        ptr = region.as_pointer() if ptr is None else ptr
     except Exception:
         return None
     return _hover[1] if _hover[0] == ptr else None
@@ -423,26 +525,84 @@ def _set_hover(region, part):
         pass
 
 
-def _batches(lay, pos, length, morph_target, hover):
-    global _shader
-    key = (_layout_key(lay), pos, length, morph_target, hover)
-    b = _batch_cache.get(key)
-    if b is not None:
-        return _shader, b
-    import gpu
-    from gpu_extras.batch import batch_for_shader
-    if _shader is None:
-        _shader = gpu.shader.from_builtin('UNIFORM_COLOR')
-    if len(_batch_cache) > 16:
-        _batch_cache.clear()
-    b = {name: batch_for_shader(_shader, 'TRIS', {"pos": pts})
-         for name, pts in geometry(lay, pos, length, morph_target, hover).items() if pts}
-    _batch_cache[key] = b
-    return _shader, b
-
-
 def _lighten(c, k=0.5):
     return (c[0] + (1.0 - c[0]) * k, c[1] + (1.0 - c[1]) * k, c[2] + (1.0 - c[2]) * k, 1.0)
+
+
+def _soft(c, k=0.4):
+    return (c[0], c[1], c[2], c[3] * k)
+
+
+def _colors(color, bg, hover):
+    handle_col = _lighten(color, 0.6 if hover == "bar" else 0.35)
+    dot_col = _lighten(color, 0.4) if hover == "dot" else color
+    return {"bg_soft": _soft(bg), "bg": bg, "color_soft": _soft(color), "color": color,
+            "morph": MORPH_COLOR, "shadow": (0.0, 0.0, 0.0, 0.28), "handle_soft": _soft(handle_col),
+            "handle": handle_col, "dot_bg": (0.06, 0.06, 0.06, 0.72), "dot_soft": _soft(dot_col),
+            "dot": dot_col}
+
+
+def _group_batches(name, key, make):
+    cache = _GROUPS[name]
+    b = cache.get(key)
+    if b is None:
+        from gpu_extras.batch import batch_for_shader
+        b = {part: batch_for_shader(_shader, 'TRIS', {"pos": pts}) for part, pts in make().items() if pts}
+        if len(cache) >= CACHE_MAX:
+            cache.clear()
+        cache[key] = b
+    return b
+
+
+def _plan(lay, xp, xm, hover, color, bg):
+    """(shader, [(batch, colour)]) for one draw, built from the part groups and kept until
+    something it depends on changes (layout, handle and tick place, hover, colours)."""
+    global _shader
+    lk = _layout_key(lay)
+    key = (lk, xp, xm, hover, color, bg)
+    steps = _PLANS.get(key)
+    if steps is not None and _shader is not None:
+        return _shader, steps
+    if _shader is None:
+        import gpu
+        _shader = gpu.shader.from_builtin('UNIFORM_COLOR')
+        for cache in _GROUPS.values():
+            cache.clear()
+        _PLANS.clear()
+    groups = {
+        "track": _group_batches("track", lk, lambda: _geo_track(lay)),
+        "core": _group_batches("core", (lk, hover == "dot"), lambda: _geo_core(lay, hover)),
+        "fill": _group_batches("fill", (lk, xp), lambda: _geo_fill(lay, xp)),
+        "handle": _group_batches("handle", (lk, xp, hover == "bar"), lambda: _geo_handle(lay, xp, hover)),
+        "tick": _group_batches("tick", (lk, xm), lambda: _geo_tick(lay, xm)) if xm is not None else {},
+    }
+    cols = _colors(color, bg, hover)
+    steps = []
+    for part, role in DRAW_ORDER:
+        b = groups[_GROUP_OF[part]].get(part)
+        if b is not None:
+            steps.append((b, cols[role]))
+    steps = tuple(steps)
+    if len(_PLANS) >= CACHE_MAX:
+        _PLANS.clear()
+    _PLANS[key] = steps
+    return _shader, steps
+
+
+def _forget_cache():
+    """Drop every kept layout, batch and digit count (file load, unregister)."""
+    global _hover
+    _DIGITS.clear()
+    _LAYOUTS.clear()
+    _PLANS.clear()
+    for cache in _GROUPS.values():
+        cache.clear()
+    _hover = (0, None)
+
+
+HINT = "Make a stroke to start recording"
+TEXT_COL = (1.0, 1.0, 1.0, 0.9)
+TEXT_COL_LOCKED = (0.6, 0.6, 0.6, 0.8)
 
 
 def _draw(context):
@@ -455,35 +615,29 @@ def _draw(context):
         return
     prefs = _prefs(context)
     length = int(info.get("len") or 0)
-    digits = _DIGITS[region.as_pointer()] = counter_digits(length)
-    lay = layout(region.width, region.height, _ui_scale(context), prefs,
-                 region_insets(context.area, region), digits)
+    ptr = region.as_pointer()
+    digits = counter_digits(length)
+    _note_digits(ptr, digits)
+    lay = _layout_cached(region.width, region.height, _ui_scale(context), prefs,
+                         region_insets(context.area, region), digits)
     pos = int(info.get("pos") or 0)
-    morph = info.get("morph_target")
     locked = bool(info.get("locked"))
-    hover = None if locked else _hover_for(region)
+    hover = None if locked else _hover_for(region, ptr)
 
     color = tuple(_pref(prefs, "scrub_color"))[:4]
     bg = tuple(_pref(prefs, "scrub_bg_color"))[:4]
     if locked:
         color = LOCKED_COLOR
-    handle_col = _lighten(color, 0.6 if hover == "bar" else 0.35)
-    dot_col = _lighten(color, 0.4) if hover == "dot" else color
 
     import gpu
-    shader, batches = _batches(lay, pos, length, morph, hover)
+    shader, steps = _plan(lay, x_from_pos(pos, lay, length), _morph_x(lay, info.get("morph_target"), length),
+                          hover, color, bg)
     gpu.state.blend_set('ALPHA')
     shader.bind()
-    soft = lambda c, k=0.4: (c[0], c[1], c[2], c[3] * k)
-    for name, col in (("bg_aa", soft(bg)), ("bg", bg), ("fill_aa", soft(color)), ("fill", color),
-                      ("tick", MORPH_COLOR), ("handle_shadow", (0.0, 0.0, 0.0, 0.28)),
-                      ("handle_aa", soft(handle_col)), ("handle", handle_col),
-                      ("dot_bg", (0.06, 0.06, 0.06, 0.72)), ("dot_aa", soft(dot_col)), ("dot", dot_col),
-                      ("dot_core", dot_col)):
-        b = batches.get(name)
-        if b is not None:
-            shader.uniform_float("color", col)
-            b.draw(shader)
+    uniform = shader.uniform_float
+    for b, col in steps:
+        uniform("color", col)
+        b.draw(shader)
     gpu.state.blend_set('NONE')
 
     show_counter = bool(_pref(prefs, "scrub_show_counter"))
@@ -502,17 +656,15 @@ def _draw(context):
             blf.shadow_offset(font, 1, -1)
         except Exception:
             shadow = None
-    text_col = (0.6, 0.6, 0.6, 0.8) if locked else (1.0, 1.0, 1.0, 0.9)
     if empty:
-        hint = "Make a stroke to start recording"
-        tw, _ = blf.dimensions(font, hint)
+        tw, _ = blf.dimensions(font, HINT)
         hx, hy = lay["hint"]
         blf.color(font, 1.0, 1.0, 1.0, 0.6)
         blf.position(font, hx - tw / 2.0, hy, 0)
-        blf.draw(font, hint)
+        blf.draw(font, HINT)
     elif show_counter:
         x, y = lay["counter"]
-        blf.color(font, *text_col)
+        blf.color(font, *(TEXT_COL_LOCKED if locked else TEXT_COL))
         blf.position(font, x, y, 0)
         blf.draw(font, "%d / %d" % (pos, length))
     if is_global:
@@ -698,12 +850,20 @@ class HINDSIGHT_OT_scrub(bpy.types.Operator):
 classes = (HINDSIGHT_GT_scrubber, HINDSIGHT_GGT_scrubber, HINDSIGHT_OT_scrub)
 
 
+@bpy.app.handlers.persistent
+def _on_load_post(*_a):
+    """A loaded file has new regions (whose pointers may equal old ones): forget what was kept."""
+    _forget_cache()
+
+
 def register():
     global _draw_handle
     for cls in classes:
         if "bl_rna" not in cls.__dict__:
             bpy.utils.register_class(cls)
     ensure_draw_handler()
+    if _on_load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_on_load_post)
 
 
 def ensure_draw_handler():
@@ -726,5 +886,9 @@ def unregister():
                 bpy.utils.unregister_class(cls)
             except Exception:
                 pass
-    _batch_cache.clear()
+    try:
+        bpy.app.handlers.load_post.remove(_on_load_post)
+    except ValueError:
+        pass
+    _forget_cache()
     _shader = None
