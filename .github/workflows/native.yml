@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, macos-15-intel, ubuntu-latest]   # macos-latest is arm64, macos-15-intel x86_64
+        os: [windows-latest, macos-latest, macos-15-intel, ubuntu-latest, windows-11-arm, ubuntu-24.04-arm]   # macos-latest is arm64, macos-15-intel x86_64; the two arm runners prove the win_arm64 and manylinux2014_aarch64 wheels
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
     defaults:
