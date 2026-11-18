@@ -10,9 +10,11 @@ import time
 
 import bpy
 import numpy as np
+from bpy.app.handlers import persistent
 from mathutils import Matrix, Vector
 
 from ..core import framing
+from ..core.types import POSITION_KEY
 from . import guard, log, rigmark, runtime
 
 NAMES = {"camera": "Hindsight Camera", "key": "Hindsight Key", "fill": "Hindsight Fill", "rim": "Hindsight Rim"}
@@ -34,7 +36,8 @@ def rig(scene) -> dict:
     """role -> object for Hindsight's marked objects in this scene. A second object with the same
     role (a duplicate the user made) loses its mark and becomes the user's own object."""
     found = {}
-    for ob in scene.objects:
+    prop = rigmark.RIG_PROP
+    for ob in [o for o in scene.objects[:] if prop in o]:      # the C-level test first: called twice a second
         role = rigmark.role_of(ob)
         if role is not None:
             found.setdefault(role, []).append(ob)
@@ -51,11 +54,84 @@ def rig(scene) -> dict:
     return out
 
 
-def scene_has_own_light(scene) -> bool:
-    for ob in scene.objects:
-        if ob.type == "LIGHT" and not ob.hide_render and not rigmark.is_rig(ob):
+def _render_layers(scene) -> list:
+    """The view layers a render of the scene renders (all of them when none is switched on)."""
+    vls = list(scene.view_layers)
+    return [vl for vl in vls if vl.use] or vls
+
+
+def _rendering_collections(view_layer) -> list:
+    """The collections whose objects render in this view layer: reached from the scene's
+    collection through collections that are neither excluded from the view layer nor disabled in
+    renders."""
+    out = []
+    todo = [view_layer.layer_collection]
+    while todo:
+        lc = todo.pop()
+        coll = lc.collection
+        if lc.exclude or getattr(coll, "hide_render", False):
+            continue
+        out.append(coll)
+        todo.extend(lc.children)
+    return out
+
+
+_WORLD_LIGHT_NODES = ("ShaderNodeTexEnvironment", "ShaderNodeTexSky")
+
+
+def world_lights(scene) -> bool:
+    """True when the scene's world is an image or a sky (an Environment or Sky Texture node feeds
+    its active World Output): that lights a render. A plain colour (the default grey world) doesn't
+    count."""
+    w = getattr(scene, "world", None)
+    if w is None or w.node_tree is None:
+        return False
+    if bpy.app.version < (5, 0, 0) and not w.use_nodes:     # Blender 5 always uses the nodes
+        return False
+    nodes = w.node_tree.nodes
+    outs = [n for n in nodes if n.bl_idname == "ShaderNodeOutputWorld"]
+    outs = [n for n in outs if n.is_active_output] or outs
+    todo = [n for n in outs]
+    seen = set()
+    while todo:
+        n = todo.pop()
+        if n.as_pointer() in seen:
+            continue
+        seen.add(n.as_pointer())
+        if n.bl_idname in _WORLD_LIGHT_NODES and not n.mute and \
+                (n.bl_idname != "ShaderNodeTexEnvironment" or n.image is not None):
             return True
+        for sock in n.inputs:
+            for link in sock.links:
+                if link.is_valid and not getattr(link, "is_muted", False):
+                    todo.append(link.from_node)
     return False
+
+
+def _lamp_lights(ob) -> bool:
+    ld = ob.data
+    try:
+        return ld is not None and ld.energy > 0.0 and max(ld.color) > 0.0
+    except (AttributeError, TypeError):
+        return ld is not None
+
+
+def scene_has_own_light(scene) -> bool:
+    """True when something of the user's lights a render of this scene: a light object that renders
+    (not disabled in renders, energy above zero, in a collection that renders in a view layer the
+    render uses), or a world with an image or a sky (`world_lights`). Lights that only exist inside
+    an instanced collection, and meshes with an emission shader, don't count."""
+    lamps = [ob for ob in scene.objects[:]
+             if ob.type == "LIGHT" and not ob.hide_render and not rigmark.is_rig(ob) and _lamp_lights(ob)]
+    if lamps:
+        for vl in _render_layers(scene):
+            for coll in _rendering_collections(vl):
+                objs = coll.objects
+                for ob in lamps:
+                    hit = objs.get(ob.name)
+                    if hit == ob or (hit is not None and any(o == ob for o in objs)):
+                        return True
+    return world_lights(scene)
 
 
 def wanted(scene) -> set:
@@ -75,7 +151,9 @@ def needs_attention(scene) -> bool:
     have = rig(scene)
     if want != set(have):
         return True
-    return "camera" in want and scene.camera is not have.get("camera")
+    # the scene has no camera (ours was deleted and put back). A camera the user picked while Movie
+    # Mode is on is their choice: it stays.
+    return "camera" in want and scene.camera is None
 
 
 def model_objects(scene) -> list:
@@ -124,32 +202,95 @@ def _delete(ob) -> None:
         pass
 
 
-def _take_camera(scene, cam) -> None:
+# The user's camera is remembered as the object itself (scene.hindsight.movie_user_camera), so a
+# rename doesn't lose it. That pointer counts as a user of the object: it is cleared as soon as the
+# camera is given back, and as soon as the object is in no scene any more (deleted), so it never
+# keeps a deleted camera alive in a saved file. Files saved by earlier builds only have the name
+# (movie_prev_camera): it is read when the pointer is empty.
+
+def _deleted(ob) -> bool:
+    try:
+        return not ob.users_scene and not ob.use_fake_user
+    except ReferenceError:
+        return True
+
+
+def user_camera(scene):
+    """The user's camera that Hindsight's camera stands in for, or None."""
+    sh = _props(scene)
+    if sh is None:
+        return None
+    ob = getattr(sh, "movie_user_camera", None)
+    if ob is None and sh.movie_prev_camera:
+        ob = bpy.data.objects.get(sh.movie_prev_camera)     # a file from an earlier build: local by name
+    if ob is None or rigmark.is_rig(ob) or _deleted(ob):
+        return None
+    return ob
+
+
+def _remember(scene, ob) -> None:
     sh = scene.hindsight
+    if getattr(sh, "movie_user_camera", None) is not ob:
+        sh.movie_user_camera = ob
+    if sh.movie_prev_camera:
+        sh.movie_prev_camera = ""
+
+
+def _forget(scene) -> None:
+    sh = _props(scene)
+    if sh is None:
+        return
+    if getattr(sh, "movie_user_camera", None) is not None:
+        sh.movie_user_camera = None
+    if sh.movie_prev_camera:
+        sh.movie_prev_camera = ""
+
+
+def keep_user_camera(scene) -> None:
+    """Drop the memory of a camera that was deleted (so the pointer doesn't keep it in the file) and
+    turn a name from an earlier build into the object."""
+    sh = _props(scene)
+    if sh is None:
+        return
+    ob = getattr(sh, "movie_user_camera", None)
+    if ob is not None:
+        if _deleted(ob):
+            sh.movie_user_camera = None
+        return
+    if sh.movie_prev_camera:
+        found = user_camera(scene)
+        if found is not None:
+            _remember(scene, found)
+
+
+def _take_camera(scene, cam, from_user_cam: bool) -> None:
+    """Make our camera the scene camera. The camera the scene had is remembered when Movie Mode (or
+    its Camera switch) was just turned on (`from_user_cam`). Otherwise a camera of the user's that is
+    the scene camera was picked by them while Movie Mode was on, and it stays."""
     cur = scene.camera
     if cur is cam:
         return
     if cur is not None and not rigmark.is_rig(cur):
-        sh.movie_prev_camera = cur.name
-    elif cur is not None:
-        sh.movie_prev_camera = ""
-    # cur is None: our camera was deleted and is coming back, or there never was one; keep the name
+        if not from_user_cam:
+            return
+        _remember(scene, cur)
+    # cur is None: our camera was deleted and is coming back, or there never was one; keep the memory
     scene.camera = cam
 
 
-def _give_camera_back(scene) -> None:
-    sh = _props(scene)
-    if sh is None:
-        return
-    name = sh.movie_prev_camera
-    ob = bpy.data.objects.get(name) if name else None
-    if ob is not None and ob.type == "CAMERA" and scene.objects.get(ob.name) is ob:
-        scene.camera = ob
-    sh.movie_prev_camera = ""
+def _give_camera_back(scene, restore: bool) -> None:
+    """Forget the user's camera; first make it the scene camera again when `restore` (the scene
+    camera was ours, or empty) and it still exists."""
+    if restore:
+        ob = user_camera(scene)
+        if ob is not None:
+            scene.camera = ob
+    _forget(scene)
 
 
-def ensure(scene, reframe: bool = True) -> dict:
-    """Create the wanted pieces, remove the others, hand the scene camera over."""
+def ensure(scene, reframe: bool = True, take: bool = False) -> dict:
+    """Create the wanted pieces, remove the others, hand the scene camera over. `take`: a setting
+    was just changed by the user, so a camera created now takes over from the scene's camera."""
     res = {"created": [], "removed": [], "framed": False}
     if _props(scene) is None:
         return res
@@ -158,20 +299,22 @@ def ensure(scene, reframe: bool = True) -> dict:
     if not want:
         _PAST.clear()
     with runtime.suspended():
+        cam = have.get("camera")
+        ours = scene.camera is None or (cam is not None and scene.camera is cam)
         for role in rigmark.ROLES:
             if role in have and role not in want:
-                ob = have.pop(role)
-                was_scene_cam = role == "camera" and (scene.camera is ob or scene.camera is None)
-                _delete(ob)
+                _delete(have.pop(role))
                 res["removed"].append(role)
-                if was_scene_cam:
-                    _give_camera_back(scene)
+        if "camera" not in want:
+            sh = scene.hindsight
+            if getattr(sh, "movie_user_camera", None) is not None or sh.movie_prev_camera:
+                _give_camera_back(scene, ours)
         for role in rigmark.ROLES:
             if role in want and role not in have:
                 have[role] = _create(scene, role)
                 res["created"].append(role)
         if "camera" in have:
-            _take_camera(scene, have["camera"])
+            _take_camera(scene, have["camera"], take and "camera" in res["created"])
     if have and (reframe or res["created"]):
         res["framed"] = frame(scene)
     return res
@@ -183,12 +326,11 @@ def remove(scene) -> int:
     n = 0
     with runtime.suspended():
         cam = have.get("camera")
-        was_scene_cam = cam is not None and (scene.camera is cam or scene.camera is None)
+        ours = scene.camera is None or (cam is not None and scene.camera is cam)
         for ob in have.values():
             _delete(ob)
             n += 1
-        if was_scene_cam:
-            _give_camera_back(scene)
+        _give_camera_back(scene, ours)
     return n
 
 
@@ -200,38 +342,181 @@ def _np_matrix(m) -> np.ndarray:
 _PAST = {}             # (history uid, object uid) -> (signature, extents of the mesh's other history positions)
 
 
-def _history_extents(ob, uid, local_basis, tx, ty):
-    """Extents of every earlier and later shape of this mesh (framing.history_extents), in the
-    mesh's own space. One walk over the history, kept until the history, the object's transform or
-    the view changes."""
+def _history_extents(ob, uid, bases, tans):
+    """(k, 6) extents of every shape of this mesh's history, the one at the cursor included
+    (framing.history_extents_multi), for k bases, in the mesh's own space. One walk over the
+    history, kept until the history, the object's transform or the view changes. It holds every
+    position, so moving the cursor (scrubbing) doesn't make it stale."""
     h = runtime.history_of(ob) if uid is not None else None
     if h is None or not h.entries or ob.mode == "EDIT":
         return None
-    sig = (len(h.entries), h.entries[0].seq, h.entries[-1].seq, local_basis.tobytes(), tx, ty)
+    sig = (len(h.entries), h.entries[0].seq, h.entries[-1].seq,
+           np.asarray(bases, np.float64).tobytes(), np.asarray(tans, np.float64).tobytes())
     hit = _PAST.get((h.uid, uid))
     if hit is None or hit[0] != sig:
         st = runtime._STATES.get(uid) or runtime.ensure_state(ob)
-        ext = framing.history_extents(h, st, uid, local_basis, tx, ty) if st is not None and st.counts else None
+        ext = None
+        if st is not None and st.counts:
+            ext = framing.history_extents_multi(h, st, uid, bases, tans)
+            pos = st.arrays.get(POSITION_KEY)
+            here = framing.extents_multi(pos, bases, tans) if pos is not None else None
+            if ext is None or here is None:
+                ext = here if ext is None else ext
+            else:
+                lo = np.minimum(ext[:, 4], here[:, 4])
+                ext = np.maximum(ext, here)
+                ext[:, 4] = lo
         hit = _PAST[(h.uid, uid)] = (sig, ext)
     return hit[1]
 
 
-def _measure(ob, basis, tx, ty):
-    """(extents in camera axes, world bounds) of one model object: its shape now and, for a mesh
-    with a history, every earlier and later shape. The mesh is measured in its own space, so no
-    world-space copy of it is made."""
+def _positions(me) -> np.ndarray:
+    """(n*3,) float32 vertex positions of a mesh (its own space)."""
+    attr = me.attributes.get("position") if me is not None else None
+    pts = np.empty((len(attr.data) if attr is not None else 0) * 3, np.float32)
+    if pts.size:
+        attr.data.foreach_get("vector", pts)
+    return pts
+
+
+def _live(m) -> bool:
+    return bool(m.show_viewport or m.show_render)
+
+
+def has_stack(ob) -> bool:
+    """True when what renders isn't just the base mesh: a modifier that is on (in the viewport or
+    for renders) or shape keys."""
+    if ob.type != "MESH" or ob.data is None:
+        return False
+    return getattr(ob.data, "shape_keys", None) is not None or any(_live(m) for m in ob.modifiers)
+
+
+def stack_of(ob) -> list:
+    """The modifier stack as framing.envelope reads it: Mirror and fixed-count Array exactly, every
+    other modifier as ("OTHER", type) (left to the measured reach)."""
+    out = []
+    inv = None
+    for m in ob.modifiers:
+        if not _live(m):
+            continue
+        if m.type == "MIRROR":
+            fr = np.eye(4)
+            mo = m.mirror_object
+            if mo is not None:
+                if inv is None:
+                    inv = np.linalg.pinv(_np_matrix(ob.matrix_world))
+                fr = inv @ _np_matrix(mo.matrix_world)
+            out.append(("MIRROR", tuple(bool(a) for a in m.use_axis), fr))
+        elif m.type == "ARRAY" and m.fit_type == "FIXED_COUNT" and not m.use_object_offset \
+                and m.start_cap is None and m.end_cap is None:
+            const = np.array(m.constant_offset_displace[:], np.float64) if m.use_constant_offset else np.zeros(3)
+            rel = np.array(m.relative_offset_displace[:], np.float64) if m.use_relative_offset else np.zeros(3)
+            out.append(("ARRAY", int(m.count), const, rel))
+        else:
+            out.append(("OTHER", m.type))
+    return out
+
+
+def _depsgraph(scene):
+    """The evaluated depsgraph of the scene's view layer, or None."""
+    try:
+        if getattr(bpy.context, "scene", None) == scene:
+            return bpy.context.evaluated_depsgraph_get()
+        vl = scene.view_layers[0] if len(scene.view_layers) else None
+        return vl.depsgraph if vl is not None else None
+    except Exception:
+        return None
+
+
+def _evaluated_points(ob, dg) -> np.ndarray:
+    """(n, 3) float32: what renders of this object now, in its own space: the evaluated mesh, and
+    the corners of the boxes of the instances its Geometry Nodes make. Without a depsgraph, the
+    corners of the object's box (Blender keeps the evaluated one on it)."""
+    if dg is None:
+        return np.array([c[:] for c in ob.bound_box], np.float32)
+    ev = ob.evaluated_get(dg)
+    pts = _positions(ev.data if ev.type == "MESH" else None).reshape(-1, 3)
+    if any(m.type == "NODES" and _live(m) for m in ob.modifiers):
+        inv = np.linalg.pinv(_np_matrix(ob.matrix_world))
+        extra = []
+        for inst in dg.object_instances:
+            if not inst.is_instance or inst.parent is None or inst.parent.original != ob:
+                continue
+            box = np.array([c[:] for c in inst.object.bound_box], np.float64)
+            m = inv @ _np_matrix(inst.matrix_world)
+            extra.append(box @ m[:3, :3].T + m[:3, 3])
+        if extra:
+            pts = np.vstack([pts.astype(np.float64)] + extra).astype(np.float32)
+    return pts
+
+
+def _measure_stack(ob, base, local_basis, tx, ty, dg):
+    """Extents (mesh space, camera axes) of a mesh with modifiers or shape keys, and its points now.
+
+    Now: exact, from the evaluated object. Every other position of its history (only the base mesh
+    is recorded): the envelope of the stack (framing.envelope: Mirror and Array exactly) around the
+    base mesh there, grown by the reach the evaluated shape has past that envelope now, scaled up
+    when the history's base mesh is bigger than now's."""
+    ev = _evaluated_points(ob, dg)
+    if not len(ev):
+        ev = base.reshape(-1, 3)
+    ext = framing.extents(ev, local_basis, tx, ty)
+    bs = base.reshape(-1, 3)
+    box_now = framing.bounds(bs)
+    if box_now is None:
+        return ext, ev
+    stack = stack_of(ob)
+    groups = framing.envelope(stack, box_now[0], box_now[1], exact=True)
+    if groups is None:                      # too many mirrored copies to follow: measured reach only
+        stack = [s for s in stack if s[0] not in ("MIRROR", "ARRAY")]
+        groups = framing.envelope(stack, box_now[0], box_now[1], exact=True)
+    view = np.array([[1, 0, tx], [-1, 0, tx], [0, 1, ty], [0, -1, ty], [0, 0, 1], [0, 0, -1]], np.float64)
+    r = framing.reach(ev, bs, groups, framing.directions(view @ local_basis.T))
+    if len(ev) == len(bs) and len(groups) == 1 and len(groups[0][1]) == 1 and not groups[0][1].any():
+        with np.errstate(invalid="ignore", over="ignore"):
+            d = np.linalg.norm(ev.astype(np.float64) - bs, axis=1)   # same vertices, moved: shape keys, deform
+        d = d[np.isfinite(d)]
+        if len(d):
+            r = max(r, float(d.max()))
+    eye = np.eye(3)
+    bases = [eye] + [np.asarray(L, np.float64).T @ local_basis for L, _Z in groups]
+    tans = [(0.0, 0.0)] + [(tx, ty)] * len(groups)
+    past = _history_extents(ob, runtime.obj_uid(ob), np.stack(bases), np.asarray(tans))
+    if past is None:
+        return ext, ev
+    lo_h, hi_h = framing.box_from_extents(past[0])
+    lo = np.minimum(lo_h, box_now[0])
+    hi = np.maximum(hi_h, box_now[1])
+    wide = framing.envelope(stack, lo, hi, exact=False)
+    size_now = float(np.linalg.norm(box_now[1] - box_now[0]))
+    size_all = float(np.linalg.norm(hi - lo))
+    grow = 1.0 if size_all <= size_now else (size_all / size_now if size_now > 1e-12 else 1e6)
+    ball = framing.ball_extents(r * grow, local_basis, tx, ty)
+    for k, (_L, Z) in enumerate(wide):
+        e = framing.plus(framing.plus(past[k + 1], framing.extents(Z, local_basis, tx, ty)), ball)
+        ext = framing.merge(ext, e)
+    return ext, ev
+
+
+def _measure(ob, basis, tx, ty, depsgraph=None):
+    """(extents in camera axes, world bounds) of one model object: what renders of it now and, for
+    a mesh with a history, every earlier and later shape. The mesh is measured in its own space, so
+    no world-space copy of it is made. `depsgraph`: a callable that gives the evaluated depsgraph
+    (only asked for when the mesh has modifiers or shape keys)."""
     mw = _np_matrix(ob.matrix_world)
     local_basis = mw[:3, :3].T @ basis                 # local points @ local_basis == world @ basis
     if ob.type == "MESH" and ob.mode != "EDIT" and ob.data is not None:
-        attr = ob.data.attributes.get("position")
-        pts = np.empty((len(attr.data) if attr is not None else 0) * 3, np.float32)
-        if pts.size:
-            attr.data.foreach_get("vector", pts)
-    else:
+        pts = _positions(ob.data)
+        if has_stack(ob):
+            dg = depsgraph() if depsgraph is not None else _depsgraph(ob.users_scene[0] if ob.users_scene else None)
+            ext, pts = _measure_stack(ob, pts, local_basis, tx, ty, dg)
+        else:
+            ext = framing.extents(pts, local_basis, tx, ty)
+            past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
+            ext = framing.merge(ext, None if past is None else past[0])
+    else:                                              # Edit Mode, other types: the evaluated box
         pts = np.array([c[:] for c in ob.bound_box], np.float32)
-    ext = framing.extents(pts, local_basis, tx, ty)
-    if ob.type == "MESH":
-        ext = framing.merge(ext, _history_extents(ob, runtime.obj_uid(ob), local_basis, tx, ty))
+        ext = framing.extents(pts, local_basis, tx, ty)
     bnd = None
     box = framing.bounds(pts)
     if box is not None:                                # the 8 corners of its box, in world space
@@ -292,8 +577,15 @@ def frame(scene) -> bool:
     tx, ty = _tangents(scene, cam)
     ext = None
     bnd = None
+    dg = []
+
+    def depsgraph():
+        if not dg:
+            dg.append(_depsgraph(scene))
+        return dg[0]
+
     for ob in model_objects(scene):
-        e, b = _measure(ob, basis, tx, ty)
+        e, b = _measure(ob, basis, tx, ty, depsgraph)
         ext = framing.merge(ext, e)
         bnd = framing.merge_bounds(bnd, b)
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
@@ -335,7 +627,7 @@ def on_settings_changed(context) -> None:
     scene = getattr(context, "scene", None)
     if scene is None or _props(scene) is None or _HOLD[0]:
         return
-    ensure(scene, reframe=True)
+    ensure(scene, reframe=True, take=True)
     runtime.tag_redraw_all()
 
 
@@ -368,6 +660,7 @@ def tick() -> None:
     from . import datarec
     if runtime.IN_HANDLER[0] or _render_running() or _playing() or datarec._operation_running():
         return                              # never in the middle of a render, playback, a stroke or a drag
+    keep_user_camera(scene)
     if needs_attention(scene):
         res = ensure(scene, reframe=False)
         if res["created"] or res["removed"]:
@@ -434,13 +727,36 @@ class HINDSIGHT_OT_movie_view_from_viewport(bpy.types.Operator):
 classes = (HINDSIGHT_OT_movie_frame, HINDSIGHT_OT_movie_view_from_viewport)
 
 
+def _has_settings(scene) -> bool:
+    """True when the scene stores Hindsight's settings. Reading scene.hindsight would add them."""
+    get = getattr(scene, "bl_system_properties_get", None)       # Blender 5; Blender 4: custom properties
+    sp = get() if get is not None else scene
+    return sp is not None and "hindsight" in sp.keys()
+
+
+@persistent
+def _on_save_pre(*_args) -> None:
+    """Before a save: a user camera deleted since the last tick isn't kept in the file by the
+    memory of it."""
+    try:
+        for sc in bpy.data.scenes:
+            if sc.library is None and _has_settings(sc):
+                keep_user_camera(sc)
+    except Exception as e:      # never stop a save
+        log.error_once(("camrig_save_pre", type(e).__name__), f"Movie Mode camera before save: {e}", e)
+
+
 def register():
     _LAST[0] = 0.0
     for c in classes:
         bpy.utils.register_class(c)
+    if _on_save_pre not in bpy.app.handlers.save_pre:
+        bpy.app.handlers.save_pre.append(_on_save_pre)
 
 
 def unregister():
+    while _on_save_pre in bpy.app.handlers.save_pre:
+        bpy.app.handlers.save_pre.remove(_on_save_pre)
     for c in reversed(classes):
         try:
             bpy.utils.unregister_class(c)

@@ -199,6 +199,15 @@ def fit(ext, basis, tan_x, tan_y, min_distance: float = 1e-3):
 
 def bounds(points):
     """(world min xyz, world max xyz) of the finite points, or None."""
+    try:
+        q = np.asarray(points)
+        if q.dtype.kind == "f" and q.size and q.size % 3 == 0:
+            q = q.reshape(-1, 3)
+            lo, hi = q.min(axis=0), q.max(axis=0)          # no float64 copy unless something isn't finite
+            if np.isfinite(lo).all() and np.isfinite(hi).all():
+                return lo.astype(np.float64), hi.astype(np.float64)
+    except (TypeError, ValueError):
+        pass
     p = _points(points)
     if p is None:
         return None
@@ -241,6 +250,214 @@ def light_rig(basis, center, radius: float) -> list:
     return out
 
 
+def extents_multi(points, bases, tans, chunk: int = 65536):
+    """(k, 6) float64: `extents(points, bases[i], *tans[i])` for each of k bases, one chunk of the
+    points at a time (each chunk converted once). None when there are no finite points. One 3x3
+    product per basis: a wider product goes through the threaded BLAS, which was 20 to 50 times
+    slower here on a busy 4-core machine."""
+    try:
+        p = np.asarray(points)
+        if p.dtype.kind != "f":
+            p = p.astype(np.float64)
+    except (TypeError, ValueError):
+        return None
+    if p.size == 0 or p.size % 3:
+        return None
+    p = p.reshape(-1, 3)
+    b = np.asarray(bases, np.float64).reshape(-1, 3, 3)
+    t = np.asarray(tans, np.float64).reshape(len(b), 2)
+    out = None
+    for a in range(0, len(p), chunk):
+        c = p[a:a + chunk].astype(np.float64, copy=False)
+        e = [extents(c, b[i], t[i, 0], t[i, 1], chunk=len(c) + 1) for i in range(len(b))]
+        if e[0] is None:
+            continue
+        e = np.stack(e)
+        if out is None:
+            out = e
+        else:
+            lo = np.minimum(out[:, 4], e[:, 4])
+            out = np.maximum(out, e)
+            out[:, 4] = lo
+    return out
+
+
+def plus(a, b):
+    """Extents of the sum set {p + q} (Minkowski sum) from the extents of each set (None-safe:
+    None if either is None). Every one of the six numbers is a maximum or a minimum of a linear
+    function, so they add."""
+    if a is None or b is None:
+        return None
+    return np.asarray(a, np.float64) + np.asarray(b, np.float64)
+
+
+def ball_extents(radius: float, basis, tan_x, tan_y):
+    """Extents of a ball of `radius` around the origin, in the space `basis` maps from (any 3x3
+    matrix: a ball in a mesh's own space becomes an ellipsoid in camera axes)."""
+    r = max(float(radius), 0.0)
+    b = np.asarray(basis, np.float64)
+    tx, ty = float(tan_x), float(tan_y)
+    a = np.array([[1, 0, tx], [-1, 0, tx], [0, 1, ty], [0, -1, ty], [0, 0, 1]], np.float64)
+    n = np.linalg.norm(a @ b.T, axis=1) * r          # |b @ a_i|: the largest value of p @ b @ a_i over the ball
+    return np.array([n[0], n[1], n[2], n[3], -n[4], n[4]], np.float64)
+
+
+def box_from_extents(ext):
+    """(lo, hi) xyz from extents taken with the identity basis and zero tangents."""
+    e = np.asarray(ext, np.float64)
+    return np.array([-e[1], -e[3], e[4]]), np.array([e[0], e[2], e[5]])
+
+
+# ------------------------------------------------------------------ modifiers
+# A modifier stack is described with plain values (camrig reads them from Blender):
+#   ("MIRROR", (x, y, z), frame)  frame: 4x4 matrix of the mirror plane's space in the mesh's space
+#                                 (identity: the object's own origin and axes; else the mirror object's)
+#   ("ARRAY", count, constant xyz, relative xyz)  fixed count, no object offset, no caps
+#   anything else is left to the measured reach (see `reach`).
+# `envelope` turns it into groups (L, Z): the stack's output lies in the union over the groups of
+# {L @ p + z : p a vertex of the base mesh, z in the convex hull of Z}. This is exact for Mirror
+# (the reflected copies) and for Array (the shifted copies); every other modifier is covered by the
+# reach measured on the shape as it is now.
+MAX_GROUPS = 64
+MAX_OFFSETS = 64
+
+
+def _corners(lo, hi) -> np.ndarray:
+    return np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])],
+                    np.float64)
+
+
+def _group_box(L, Z, lo, hi):
+    """Axis-aligned box around {L @ p + z} for p in the box lo..hi and z in Z."""
+    c = _corners(lo, hi) @ np.asarray(L, np.float64).T
+    return c.min(0) + Z.min(0), c.max(0) + Z.max(0)
+
+
+def _thin(Z) -> np.ndarray:
+    """Fewer offsets with the same or a larger hull: the corners of their box past MAX_OFFSETS."""
+    Z = np.unique(np.round(Z, 12), axis=0)
+    if len(Z) > MAX_OFFSETS:
+        Z = _corners(Z.min(0), Z.max(0))
+    return Z
+
+
+def envelope(stack, base_lo, base_hi, exact: bool = True):
+    """[(L 3x3, Z (m,3)), ...] for a modifier stack (see above) on a base mesh whose vertices lie
+    in the box base_lo..base_hi (mesh space). With exact=True the box is the mesh's own (the shape
+    now) and an Array's relative offset uses its size; with exact=False the box holds every shape
+    of a history and the offset may be any size from zero up to the box's, so the result holds every
+    one of them. The L of the groups (and their order) don't depend on the box or on `exact`.
+    None when there are more than MAX_GROUPS different L."""
+    groups = [(np.eye(3), np.zeros((1, 3)))]
+    lo0, hi0 = np.asarray(base_lo, np.float64), np.asarray(base_hi, np.float64)
+    for mod in stack:
+        kind = mod[0]
+        if kind == "MIRROR":
+            axes, fr = mod[1], np.asarray(mod[2], np.float64)
+            try:
+                inv = np.linalg.inv(fr)
+            except np.linalg.LinAlgError:
+                continue                                   # a flat mirror object: Blender mirrors nothing useful
+            for ax in range(3):
+                if not axes[ax]:
+                    continue
+                s = np.eye(4)
+                s[ax, ax] = -1.0
+                m = fr @ s @ inv
+                R, c = m[:3, :3], m[:3, 3]
+                groups = groups + [(R @ L, Z @ R.T + c) for L, Z in groups]
+        elif kind == "ARRAY":
+            count, const, rel = int(mod[1]), np.asarray(mod[2], np.float64), np.asarray(mod[3], np.float64)
+            if count < 2:
+                continue
+            lo = np.full(3, np.inf)
+            hi = np.full(3, -np.inf)
+            for L, Z in groups:
+                a, b = _group_box(L, Z, lo0, hi0)
+                lo, hi = np.minimum(lo, a), np.maximum(hi, b)
+            size = np.maximum(hi - lo, 0.0)
+            # copy j is shifted by j * (const + rel * size); its hull over j = 0 .. count-1 is spanned
+            # by j = 0 and j = count - 1. Without the exact size, any size from 0 up to `size`.
+            last = (count - 1) * (const + rel * size)
+            shifts = last[None, :] if exact else (count - 1) * (const + _corners(np.zeros(3), rel * size))
+            groups = [(L, np.vstack([Z] + [Z + s for s in shifts])) for L, Z in groups]
+        # anything else: left to the reach
+        merged = {}
+        for L, Z in groups:
+            key = np.round(L, 9).tobytes()
+            if key in merged:
+                merged[key] = (merged[key][0], np.vstack([merged[key][1], Z]))
+            else:
+                merged[key] = (L, Z)
+        if len(merged) > MAX_GROUPS:
+            return None
+        groups = [(L, _thin(Z)) for L, Z in merged.values()]
+    return groups
+
+
+def directions(extra=None) -> np.ndarray:
+    """(3, m) unit directions: the 6 of a cube's faces and the 8 of its corners, plus `extra` (rows)."""
+    d = np.array([(i, j, k) for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)
+                  if abs(i) + abs(j) + abs(k) in (1, 3)], np.float64)
+    if extra is not None:
+        d = np.vstack([d, np.asarray(extra, np.float64).reshape(-1, 3)])
+    n = np.linalg.norm(d, axis=1)
+    d = d[n > 1e-12] / n[n > 1e-12, None]
+    return d.T
+
+
+def _finite32(points) -> np.ndarray:
+    """(n, 3) float32 of the finite rows (no copy when the points are float32 and all finite)."""
+    p = np.asarray(points).reshape(-1, 3)
+    if p.dtype != np.float32:
+        with np.errstate(over="ignore"):
+            p = p.astype(np.float32)
+    ok = np.isfinite(p).all(axis=1)
+    return p if ok.all() else p[ok]
+
+
+def _support(points, dirs, chunk: int = 262144):
+    """(m,) max of points @ dirs over the finite points; -inf where there are none. float32 (a
+    measure, not the framing itself), and plain element-wise products: see extents_multi."""
+    p = _finite32(points)
+    d = np.asarray(dirs, np.float64)
+    out = np.full(d.shape[1], -np.inf)
+    for a in range(0, len(p), chunk):
+        c = p[a:a + chunk]
+        x, y, z = (np.ascontiguousarray(c[:, i]) for i in range(3))
+        with np.errstate(invalid="ignore", over="ignore"):
+            for j in range(d.shape[1]):
+                dx, dy, dz = (np.float32(v) for v in d[:, j])
+                v = x * dx
+                v += y * dy
+                v += z * dz
+                out[j] = max(out[j], float(v.max()))
+    return out
+
+
+def reach(evaluated, base, groups, dirs=None) -> float:
+    """How far the evaluated shape (what renders now) reaches past what `envelope` says about the
+    base mesh now: the largest amount, over the directions `dirs`, by which the evaluated shape goes
+    further than the envelope. 0 when the envelope already holds it. Rounded up by a millionth of
+    the shape's size, for the float32 products."""
+    ev = np.asarray(evaluated).reshape(-1, 3)
+    bs = np.asarray(base).reshape(-1, 3)
+    if not len(ev) or not len(bs) or not groups:
+        return 0.0
+    U = directions() if dirs is None else np.asarray(dirs, np.float64)
+    m = U.shape[1]
+    s_ev = _support(ev, U)
+    wide = np.concatenate([np.asarray(L, np.float64).T @ U for L, _Z in groups], axis=1)
+    s_b = _support(bs, wide).reshape(len(groups), m)                 # one pass over the base mesh
+    s_z = np.stack([(np.asarray(Z, np.float64) @ U).max(0) for _L, Z in groups])
+    s_env = (s_b + s_z).max(0)
+    ok = np.isfinite(s_ev) & np.isfinite(s_env)
+    if not ok.any():
+        return 0.0
+    size = float(np.max(np.abs(s_ev[ok])))
+    return float(max(0.0, np.max(s_ev[ok] - s_env[ok]) + 1e-6 * size))
+
+
 # ------------------------------------------------------------------ the history
 def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
     """Extents (as `extents` gives them) of the mesh of `target_uid` over every position of History
@@ -252,6 +469,14 @@ def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
     size. Works on private copies: the history, its entries and `state` are left unchanged; a
     direction stops at a JOIN or at a step that can't be applied.
     """
+    out = history_extents_multi(h, state, target_uid, np.asarray(basis, np.float64)[None],
+                                [(tan_x, tan_y)])
+    return None if out is None else out[0]
+
+
+def history_extents_multi(h, state, target_uid: str, bases, tans, batch: int = 65536):
+    """`history_extents` for k bases at once ((k,3,3) bases, k (tan_x, tan_y) pairs): (k, 6) or None.
+    The moved vertices of many steps are measured together (up to `batch` of them at a time)."""
     try:
         pos0 = state.arrays.get(POSITION_KEY) if state is not None else None
         n = len(h.entries)
@@ -260,7 +485,23 @@ def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
             return None
     except Exception:
         return None
-    out = None
+    out = [None]
+    buf = []
+    held = [0]
+
+    def take(pts):
+        e = extents_multi(pts, bases, tans)
+        if e is not None:
+            out[0] = e if out[0] is None else np.concatenate(
+                [np.maximum(out[0][:, :4], e[:, :4]), np.minimum(out[0][:, 4:5], e[:, 4:5]),
+                 np.maximum(out[0][:, 5:], e[:, 5:])], axis=1)
+
+    def flush():
+        if buf:
+            take(buf[0] if len(buf) == 1 else np.concatenate(buf))
+            buf.clear()
+            held[0] = 0
+
     for forward, order in ((False, range(cur - 1, -1, -1)), (True, range(cur, n))):
         ms = MeshState(dict(state.counts), {POSITION_KEY: np.array(pos0, dtype=np.float32, copy=True).reshape(-1)})
         for i in order:
@@ -275,10 +516,17 @@ def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
                     break
                 arr = ms.arrays[POSITION_KEY].reshape(-1, 3)
                 for idx in changed:
-                    out = merge(out, extents(arr if idx is None else arr[idx], basis, tan_x, tan_y))
+                    if idx is None:
+                        take(arr)
+                    else:
+                        buf.append(arr[idx])                 # a copy: later steps don't change it
+                        held[0] += len(idx)
+                        if held[0] >= batch:
+                            flush()
             except Exception:
                 break
-    return out
+        flush()
+    return out[0]
 
 
 def _cross(ms: MeshState, step, forward: bool, changed=None) -> bool:

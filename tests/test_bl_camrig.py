@@ -210,7 +210,7 @@ def test_own_camera_and_light_untouched():
     sh.movie_mode = True
     r = camrig.rig(sc)
     assert set(r) == {"camera"}, "no lighting is added next to the scene's own light"
-    assert sc.camera is r["camera"] and sh.movie_prev_camera == "MyCam"
+    assert sc.camera is r["camera"] and sh.movie_user_camera == ucam and sh.movie_prev_camera == ""
     # a light that doesn't render doesn't count as the scene's own
     ulamp.hide_render = True
     camrig.ensure(sc)
@@ -227,11 +227,11 @@ def test_own_camera_and_light_untouched():
     bpy.data.objects.remove(camrig.rig(sc)["camera"])
     camrig._LAST[0] = -1e9
     camrig.tick()
-    assert sc.camera is camrig.rig(sc)["camera"] and sh.movie_prev_camera == "MyCam"
+    assert sc.camera is camrig.rig(sc)["camera"] and sh.movie_user_camera == ucam
     bpy.ops.hindsight.movie_frame()
     sh.movie_mode = False
     assert camrig.rig(sc) == {}
-    assert sc.camera is ucam and sh.movie_prev_camera == ""
+    assert sc.camera is ucam and sh.movie_user_camera is None and sh.movie_prev_camera == ""
     assert bpy.data.objects.get("MyCam") is ucam and bpy.data.objects.get("MyLamp") is ulamp
     assert same_mat(mat(ucam), mc) and same_mat(mat(ulamp), ml)
     assert not ucam.hide_render and not ucam.hide_get() and not ulamp.hide_render
