@@ -205,6 +205,11 @@ class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
         finally:
             _BUSY[0] = False
         _apply(context, sh.movie_step)
+        try:                                    # the camera and lighting, placed for this movie
+            from . import camrig
+            camrig.on_settings_changed(context)
+        except ImportError:
+            pass
         runtime.tag_redraw_all()
         self.report({'INFO'}, f"Keyed steps 0-{n} on frames {f0}-{f1}")
         return {'FINISHED'}

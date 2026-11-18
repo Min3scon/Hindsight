@@ -182,7 +182,70 @@ def test_crash_journal_knows_what_the_memory_limit_dropped():
     assert replayed == live, (live[:5], replayed[:5], len(live), len(replayed))
 
 
-for fn in (test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
+def test_global_timeline_is_built_once_until_it_changes():
+    """With global history on, every redraw walked and sorted every step several times (18 ms per
+    call at 10,000 steps). It is kept now, and what the slider shows always equals a fresh build."""
+    from hindsight.core import globaltl
+    H.fresh()
+    a = H.make_mesh(300, name="A", location=(-2, 0, 0))
+    b = H.make_mesh(300, name="B", location=(2, 0, 0))
+    for i, ob in enumerate((a, b, a, b, a)):
+        H.enter(ob, "SCULPT")
+        H.fake_stroke(ob, i)
+        assert H.commit(ob) is not None
+    runtime.set_global(C, True)
+    built = []
+    real = globaltl.global_groups
+
+    def fresh():                                     # the truth, built from scratch
+        vis = runtime._visible_uids()
+        g = real(runtime.reg(), vis)
+        return globaltl.global_position(runtime.reg(), vis, g), len(g)
+
+    def shown():
+        info = runtime.scrub_info(C)
+        return info["pos"], info["len"]
+
+    globaltl.global_groups = lambda reg, visible=None: built.append(1) or real(reg, visible)
+    try:
+        assert shown() == fresh() == (5, 5)
+        n = len(built)
+        for _ in range(5):
+            assert shown() == (5, 5)
+            runtime.step_list(C)
+        assert len(built) == n, f"built {len(built) - n} more times for the same history"
+        runtime.goto(C, 2)                           # a jump moves the position, not the timeline
+        assert shown() == fresh() and shown()[0] == 2
+        runtime.goto(C, 5)
+        assert shown() == fresh() == (5, 5)
+        H.fake_stroke(a, 50)                         # a new step
+        assert H.commit(a) is not None
+        assert shown() == fresh() == (6, 6)
+        runtime.goto(C, 3)                           # going back and sculpting: a new branch
+        H.enter(b, "SCULPT")
+        H.fake_stroke(b, 60)
+        assert H.commit(b) is not None
+        assert shown() == fresh()
+        runtime.delete_past(C, a)                    # steps dropped from the start
+        assert shown() == fresh()
+        H.enter(b, "OBJECT")                         # an object excluded by Collection Filtering
+        sh = C.scene.hindsight
+        coll = bpy.data.collections.new("Skip")
+        C.scene.collection.children.link(coll)
+        coll.objects.link(b)
+        sh.filter_collections.add().collection = coll
+        sh.filter_mode = 'BLACKLIST'
+        assert shown() == fresh() and shown()[1] == len(runtime.history_of(a).entries)
+        sh.filter_mode = 'NONE'
+        assert shown() == fresh()
+        runtime.reset_history(C, a)
+        assert shown() == fresh()
+    finally:
+        globaltl.global_groups = real
+        runtime.set_global(C, False)
+
+
+for fn in (test_global_timeline_is_built_once_until_it_changes, test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
            test_error_once_stays_once_after_many_errors, test_jumps_kept_only_as_far_as_blender_can_undo,
            test_exclusion_check_is_free_without_collection_filtering, test_topology_undo_match_is_bit_exact,
            test_clamped_weights_note_goes_away):

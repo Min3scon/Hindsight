@@ -398,10 +398,11 @@ def test_new_step_after_playback_plays():
     for f in range(1, 6):
         sc.frame_set(f)
     check(a, b, states, 4)
-    assert runtime._MOVIE_GROUPS, "the global timeline is kept while Movie Mode plays"
+    kept = runtime._GROUPS.get("groups")
+    assert kept is not None, "the global timeline is kept while Movie Mode plays"
     sc.hindsight.movie_mode = False
     runtime.scrub_info(C)
-    assert not runtime._MOVIE_GROUPS, "and dropped when Movie Mode is off"
+    assert runtime._GROUPS.get("groups") is kept, "and between redraws when Movie Mode is off"
     H.enter(a, "SCULPT")
     H.fake_stroke(a, 99)
     assert H.commit(a) is not None

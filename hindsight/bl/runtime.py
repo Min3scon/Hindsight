@@ -1200,23 +1200,29 @@ def mesh_fingerprint(ob) -> str:
             bpy.data.meshes.remove(tmp)
 
 
-_MOVIE_GROUPS = {}   # Movie Mode playback: the global timeline's operations, kept between frames
+_GROUPS = {}   # the global timeline's operations and the position on it, kept until they change
 
 
 def _groups(vis) -> list:
-    """globaltl.global_groups. While Movie Mode is on, the history is only played back, so the list
-    is kept between frames. It is built again when a history gains, loses or replaces steps or
-    objects, or what is visible changes, and dropped when Movie Mode is off."""
-    if not _movie_locked():
-        _MOVIE_GROUPS.clear()
-        return globaltl.global_groups(_REG, vis)
-    key = (id(_REG), frozenset(vis), tuple(
+    """globaltl.global_groups, kept between calls: the slider, the header, the sidebar and Movie
+    Mode ask for it on every redraw and every frame, and building it walks and sorts every step.
+    Built again when a step is recorded (every new step takes a new number), a history gains,
+    loses or replaces steps or objects, or what is visible changes."""
+    key = (id(_REG), _REG.next_seq, frozenset(vis), tuple(
         (h.uid, tuple(h.members), len(h.entries), h.entries[0].seq if h.entries else 0,
          h.entries[-1].seq if h.entries else 0) for h in _REG.histories.values()))
-    if _MOVIE_GROUPS.get("key") != key:
-        _MOVIE_GROUPS.clear()
-        _MOVIE_GROUPS.update(key=key, groups=globaltl.global_groups(_REG, vis))
-    return _MOVIE_GROUPS["groups"]
+    if _GROUPS.get("key") != key:
+        _GROUPS.clear()
+        _GROUPS.update(key=key, groups=globaltl.global_groups(_REG, vis))
+    return _GROUPS["groups"]
+
+
+def _position(vis, groups) -> int:
+    """globaltl.global_position, kept until a cursor moves."""
+    key = (id(groups), tuple(h.cursor for h in _REG.histories.values()))
+    if _GROUPS.get("pos_key") != key:
+        _GROUPS.update(pos_key=key, pos=globaltl.global_position(_REG, vis, groups))
+    return _GROUPS["pos"]
 
 
 def global_goto(context, g: int, final: bool = True) -> None:
@@ -1285,7 +1291,7 @@ def scrub_info(context):
             n = globaltl.global_length(_REG, vis, groups)
             if not n:
                 return None
-            return {"pos": globaltl.global_position(_REG, vis, groups), "len": n,
+            return {"pos": _position(vis, groups), "len": n,
                     "cap": SETTINGS.max_steps, "global": True, "locked": locked, "morph_target": None}
         obj = _ctx_active(context)
         h = history_of(obj)
@@ -1304,8 +1310,8 @@ def step_list(context, around: int = 12) -> list:
     try:
         if use_global(context):
             vis = _visible_uids()
-            groups = globaltl.global_groups(_REG, vis)
-            cur = globaltl.global_position(_REG, vis)
+            groups = _groups(vis)
+            cur = _position(vis, groups)
             labels = []
             for grp in groups:                       # one position per operation
                 _seq, hid, i = grp[0]
