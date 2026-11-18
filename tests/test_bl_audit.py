@@ -24,6 +24,35 @@ def test_error_once_stays_once_after_many_errors():
     log.forget()
 
 
+def test_error_once_is_bounded_when_the_text_varies():
+    """S4-2: keys carry the error text, so an error whose text changes on every timer tick logged a
+    traceback every time and the set of keys grew without end."""
+    H.fresh()
+    log.forget()
+    traces = []
+    real = log._emit
+    log._emit = lambda level, text: traces.append(level) if level == "TRACE" else None
+    try:
+        for i in range(200):           # the same place failing the same way, with a new text each tick
+            e = ValueError(f"object Obj.{i:03d} is gone")
+            log.error_once(("tick", str(e)), f"timer error: {e}", e)
+        assert traces.count("TRACE") == log.SAME_KIND_MAX, traces.count("TRACE")
+        e = KeyError("other")          # another problem at the same place is still reported, once
+        assert log.error_once(("tick", str(e)), f"timer error: {e}", e)
+        assert not log.error_once(("tick", str(e)), f"timer error: {e}", e)
+        e = ValueError("elsewhere")    # and the same exception type at another place too
+        assert log.error_once(("camrig_tick", str(e)), f"camera error: {e}", e)
+        for i in range(log.SEEN_MAX * 3):
+            log.error_once(("many", i), f"error {i}")
+        assert len(log._SEEN) <= log.SEEN_MAX, len(log._SEEN)
+        assert not log.error_once(("brand new",), "after the cap")
+    finally:
+        log._emit = real
+        log.forget()
+    assert log.error_once(("tick", "x"), "x", ValueError("x")), "forget() starts over"
+    log.forget()
+
+
 def test_jumps_kept_only_as_far_as_blender_can_undo():
     """Every jump on Blender's undo stack kept a copy of all recorded values: 512 of them, though
     Blender keeps 32 undo steps by default."""
@@ -269,7 +298,7 @@ def test_diagnostics_say_which_engine_runs():
 
 
 for fn in (test_diagnostics_say_which_engine_runs, test_global_timeline_is_built_once_until_it_changes, test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
-           test_error_once_stays_once_after_many_errors, test_jumps_kept_only_as_far_as_blender_can_undo,
+           test_error_once_stays_once_after_many_errors, test_error_once_is_bounded_when_the_text_varies, test_jumps_kept_only_as_far_as_blender_can_undo,
            test_exclusion_check_is_free_without_collection_filtering, test_topology_undo_match_is_bit_exact,
            test_clamped_weights_note_goes_away):
     H.run(fn)

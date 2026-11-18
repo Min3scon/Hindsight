@@ -13,7 +13,8 @@ from ..core.registry import Registry, new_uid
 from ..core.types import (
     SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
-from . import guard, log, meshio
+from . import filtering, guard, log, meshio, rigmark
+from . import warnings as _warn
 from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
@@ -71,6 +72,9 @@ def set_registry(r: Registry) -> None:
     global _REG
     _REG = r
     MEMORY.update(estimate=0, evicted=0, warned=False)
+    _GEN[0] += 1
+    if _CAPS_MEMO is not None:
+        _CAPS_MEMO.clear()
     _STATES.clear()
     _DIRTY.clear()
     _STROKE_SEEN.clear()
@@ -168,28 +172,24 @@ def find_object(uid: str):
 
 def is_excluded(obj) -> bool:
     """Not recorded: excluded by Collection Filtering, or one of Hindsight's own Movie Mode objects."""
-    try:
-        from . import rigmark
+    try:                  # modules imported once: this runs for every object on every redraw
         if rigmark.is_rig(obj):
             return True
-        from .filtering import is_excluded as _ex
-        return bool(_ex(obj, bpy.context.scene))
+        return bool(filtering.is_excluded(obj, bpy.context.scene))
     except Exception:
         return False
 
 
 def blocking_reason(obj):
     try:
-        from .warnings import blocking_reason as _br
-        return _br(bpy.context, obj)
+        return _warn.blocking_reason(bpy.context, obj)
     except Exception:
         return None
 
 
 def _blocking(obj) -> bool:
     try:
-        from .warnings import blocking
-        return bool(blocking(bpy.context, obj))
+        return bool(_warn.blocking(bpy.context, obj))
     except Exception:
         return False
 
@@ -318,11 +318,30 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
     return st
 
 
+def _exclusion_test():
+    """is_excluded for many objects in a row: the same answers, with what doesn't depend on the
+    object looked up once (the slider asks for every object on every redraw in global mode)."""
+    try:
+        sh = filtering._scene_props(bpy.context.scene)
+        if sh is None or sh.filter_mode not in ("BLACKLIST", "WHITELIST"):
+            # Collection Filtering off: only Hindsight's own Movie Mode objects are left out
+            def test(ob):
+                try:
+                    return rigmark.is_rig(ob)
+                except Exception:
+                    return False
+            return test
+    except Exception:
+        pass
+    return is_excluded
+
+
 def _visible_uids() -> set:
     out = set()
+    excluded = _exclusion_test()
     for ob in bpy.data.objects:
         u = any_uid(ob)
-        if u is not None and not is_excluded(ob):
+        if u is not None and not excluded(ob):
             out.add(u)
     try:
         from . import datarec
@@ -431,6 +450,7 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
             d = D.diff(key, old, new, (True, True))
         if d is not None:
             deltas.append(d)
+    meshio.keep_buffers(keys)
     if not deltas:
         return None
     return Step(seq=0, label=label, mode=mode, target=uid, time=time.time(), kind=DELTA, deltas=deltas)
@@ -729,6 +749,7 @@ def confirm_truncate(obj) -> int:
 
 
 _ENFORCE_COUNT = [0]
+_CAPS_MEMO = None             # store.CapsMemo, made on first use (core.store is imported lazily here)
 # Memory accounting: "estimate" is an upper bound of the history size (new steps are added at their
 # unpacked size), so the exact (slower) check only runs when the limit might be crossed.
 MEMORY = {"estimate": 0, "evicted": 0, "warned": False}
@@ -756,11 +777,22 @@ def _journal_drop(h, n) -> None:
         _journal("DROP", {"hist": h.uid, "n": int(n)})
 
 
+def _after_caps(drops, stats) -> None:
+    """The caps of a full pass have dropped steps (before any packing starts)."""
+    for x, n in drops:
+        _journal_drop(x, n)
+    if stats.get("memory_dropped"):
+        _note_eviction(int(stats["memory_dropped"]))
+
+
 def _enforce(h=None) -> None:
     """Keep caps and tiers. Incremental per commit (O(1)); full rescans every 64 commits or when
     the memory estimate crosses the limit, so recording cost does not grow with history length."""
     try:
         from ..core import store
+        global _CAPS_MEMO
+        if _CAPS_MEMO is None:
+            _CAPS_MEMO = store.CapsMemo()
         _ENFORCE_COUNT[0] += 1
         if h is not None and h.entries:
             MEMORY["estimate"] += h.entries[-1].nbytes()
@@ -776,16 +808,11 @@ def _enforce(h=None) -> None:
                 else:
                     h.entries[k].pack(SETTINGS.compression)
             return
-        hs = _REG.all()
         stats = {}
-        before = [len(x.entries) for x in hs]
-        store.enforce_caps(hs, SETTINGS, stats)
-        for x, n in zip(hs, before):
-            _journal_drop(x, n - len(x.entries))
-        if stats.get("memory_dropped"):
-            _note_eviction(int(stats["memory_dropped"]))
-        store.enforce_tiers(hs, SETTINGS, packer)
-        MEMORY["estimate"] = store.total_bytes(hs)
+        # S4-3: over the limit with nothing that may be dropped, a pass after one history changed
+        # only looks at that history (store.CapsMemo); otherwise every history is checked
+        store.enforce(_REG.all(), SETTINGS, packer, stats, _CAPS_MEMO, h, on_caps=_after_caps)
+        MEMORY["estimate"] = stats["total"]
     except Exception as e:
         log.error_once(("store", str(e)), f"history store error: {e}", e)
 
@@ -851,9 +878,17 @@ def check_mode_transition() -> None:
         _TRACK["uid"] = obj_uid(obj)
 
 
+_GEN = [0]       # counts depsgraph updates, undo and file loads (scrub_info's cache for drawing)
+
+
 @persistent
-@guard.guarded("recorder")
 def on_depsgraph(scene, depsgraph=None) -> None:
+    _GEN[0] += 1           # also while suspended or switched off: what is visible may have changed
+    _on_depsgraph(scene, depsgraph)
+
+
+@guard.guarded("recorder", where="on_depsgraph")
+def _on_depsgraph(scene, depsgraph=None) -> None:
     if _SUSPEND[0] or depsgraph is None:
         return
     guard.mark_ok("recorder")
@@ -944,6 +979,7 @@ def on_redo(*_a) -> None:
 
 def _after_native_undo() -> None:
     """Compare the mesh with our state (commit() detects the match)."""
+    _GEN[0] += 1
     try:
         from . import idmap
         idmap.restore_after_undo()        # D42: ids set after Blender's undo push come back first
@@ -993,6 +1029,7 @@ def handlers_installed() -> dict:
 
 @persistent
 def on_load_post(*_a) -> None:
+    _GEN[0] += 1
     added = ensure_handlers()
     if added:
         log.warn("recorder handlers were missing after loading a file and were re-installed: "
@@ -1287,7 +1324,48 @@ def _switch_to(context, ob, mode: str) -> None:
         ensure_state(ob)
 
 
-def scrub_info(context):
+_SCRUB = {}       # scrub_info's last global answer for drawing: {"key": ..., "info": ...}
+
+
+def _scrub_key(context):
+    """Everything the global answer of scrub_info depends on, cheap to build: the histories (steps,
+    cursors, members), the scene and its Hindsight settings (global, Movie Mode, Collection
+    Filtering), the step cap, the recorded data's ids, the number of objects, and _GEN, which
+    counts depsgraph updates (objects added, deleted, renamed, moved between collections, marked),
+    undo and file loads."""
+    sc = context.scene
+    p = getattr(sc, "hindsight", None)
+    filt = None
+    if p is not None:
+        filt = (p.filter_mode, tuple(it.collection.as_pointer() if it.collection is not None else 0
+                                     for it in p.filter_collections), bool(p.movie_mode), bool(p.use_global))
+    try:
+        from . import datarec
+        tracked = frozenset(datarec.tracked_uids())
+    except Exception:
+        tracked = None
+    # rigmark.GEN: counts Movie Mode marks set or taken off, where rigmark has it (setting a custom
+    # property sends no depsgraph update)
+    return (id(_REG), _REG.next_seq, _REG.use_global, _GEN[0], len(bpy.data.objects), sc.as_pointer(),
+            filt, int(SETTINGS.max_steps), tracked, tuple(getattr(rigmark, "GEN", ())),
+            tuple((h.uid, h.cursor, len(h.entries), tuple(h.members)) for h in _REG.histories.values()))
+
+
+def scrub_info(context, cached: bool = False):
+    """Where the slider is: {"pos", "len", "cap", "global", "locked", "morph_target"} or None.
+    cached (for drawing only, which asks several times per redraw): in global mode the answer is
+    kept until _scrub_key changes. Operators that act on the answer leave it off."""
+    if cached:
+        try:
+            if use_global(context):
+                key = _scrub_key(context)
+                if _SCRUB.get("key") != key:
+                    _SCRUB.clear()
+                    _SCRUB.update(key=key, info=scrub_info(context))
+                info = _SCRUB["info"]
+                return dict(info) if info is not None else None
+        except Exception:
+            _SCRUB.clear()
     try:
         locked = _movie_locked(context)
         if use_global(context):
@@ -1317,21 +1395,25 @@ def step_list(context, around: int = 12) -> list:
             vis = _visible_uids()
             groups = _groups(vis)
             cur = _position(vis, groups)
-            labels = []
-            for grp in groups:                       # one position per operation
-                _seq, hid, i = grp[0]
+            n = len(groups)
+
+            def label(k):                            # one position per operation
+                _seq, hid, i = groups[k][0]
                 h = _REG.histories.get(hid)
-                labels.append(h.entries[i].meta.get("label", "Step") if h else "Step")
+                return h.entries[i].meta.get("label", "Step") if h else "Step"
         else:
             h = history_of(_ctx_active(context))
             if h is None:
                 return []
             cur = h.cursor
-            labels = [e.meta.get("label", "Step") for e in h.entries]
-        n = len(labels)
+            entries = h.entries
+            n = len(entries)
+
+            def label(k):
+                return entries[k].meta.get("label", "Step")
         lo, hi = max(0, cur - around), min(n, cur + around)
-        for i in range(hi, lo, -1):
-            out.append((i, labels[i - 1], i == cur))
+        for i in range(hi, lo, -1):                  # only the rows shown (was: every step's label)
+            out.append((i, label(i - 1), i == cur))
         if lo == 0:
             out.append((0, "Start", cur == 0))
     except Exception:
@@ -1555,7 +1637,27 @@ def reset_and_turn_off(context, obj) -> None:
     tag_redraw_all()
 
 
+_HIST_BYTES: dict = {}    # history uid -> (signature, sizes key, bytes): memory_stats per history
+
+
+def _history_bytes(h, gkey) -> int:
+    """sum(e.nbytes() for e in h.entries), kept while the history's steps and cursor are the same
+    (store._sig) and no step changed size: gkey holds the packer's counters (it packs and
+    recompresses in the background) and _ENFORCE_COUNT (packing on the main thread only happens in
+    _enforce)."""
+    from ..core import store
+    sig = store._sig(h)
+    c = _HIST_BYTES.get(h.uid)
+    if c is not None and c[0] == sig and c[1] == gkey:
+        return c[2]
+    b = sum(e.nbytes() for e in h.entries)
+    _HIST_BYTES[h.uid] = (sig, gkey, b)
+    return b
+
+
 def memory_stats() -> dict:
+    """The Memory panel's numbers (drawn on every redraw while it is open)."""
+    from ..core import store
     total = 0
     steps = 0
     active_b = 0
@@ -1565,8 +1667,12 @@ def memory_stats() -> dict:
         ah = history_of(_ctx_active(bpy.context))
     except Exception:
         pass
-    for h in _REG.all():
-        b = sum(e.nbytes() for e in h.entries)
+    gkey = (store._packer_key(packer), _ENFORCE_COUNT[0], id(_REG))   # read before any size
+    hs = _REG.all()
+    if len(_HIST_BYTES) > 2 * len(hs) + 16:
+        _HIST_BYTES.clear()                          # histories gone: don't keep their sizes
+    for h in hs:
+        b = _history_bytes(h, gkey)
         total += b
         steps += len(h.entries)
         if h is ah:

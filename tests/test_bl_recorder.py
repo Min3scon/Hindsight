@@ -388,6 +388,27 @@ def test_excluded_objects():
     assert len(runtime.history_of(ob).entries) == 1, "history returns, not deleted"
 
 
+def test_read_buffers_follow_the_last_mesh():
+    """meshio kept a read buffer for every attribute name ever read, each the size of its mesh,
+    for the whole session (a cache that never shrank)."""
+    from hindsight.bl import meshio
+    H.fresh()
+    a = H.make_mesh(3000, name="A")
+    a.data.color_attributes.new("PaintA", "FLOAT_COLOR", "POINT")
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 1)
+    assert runtime.commit(a) is not None
+    key = "PaintA|POINT|FLOAT_COLOR"
+    assert key in meshio._bufs
+    H.enter(a, "OBJECT")
+    b = H.make_mesh(500, name="B", location=(4, 0, 0))
+    H.enter(b, "SCULPT")
+    H.fake_stroke(b, 2)
+    assert runtime.commit(b) is not None
+    assert key not in meshio._bufs, sorted(meshio._bufs)
+    assert set(meshio._bufs) <= set(meshio.channel_keys(b.data, sculpt_only=True))
+
+
 def test_cap_and_memory_eviction():
     H.fresh()
     SETTINGS.max_steps = 5
@@ -433,6 +454,6 @@ for f in [test_stroke_end_debounce, test_materials_warning, test_first_stroke_st
           test_edit_mode_grouping, test_topology_snapshot, test_topology_step_owns_its_before,
           test_fingerprint_streamed_same_digest, test_turn_off_on_and_reset,
           test_delete_past_keeps_later, test_per_object_and_global, test_excluded_objects,
-          test_cap_and_memory_eviction]:
+          test_cap_and_memory_eviction, test_read_buffers_follow_the_last_mesh]:
     H.run(f)
 H.finish()

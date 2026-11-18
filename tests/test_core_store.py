@@ -497,6 +497,212 @@ def test_caps_never_drop_at_or_past_the_cursor():
     print("PASS test_caps_never_drop_at_or_past_the_cursor")
 
 
+def _caps_world(seed, a_n=(5_000, 40_000)):
+    """Histories for the CapsMemo tests: A, big and scrubbed back to the start (nothing in it may
+    be dropped), B and C recording."""
+    from hindsight.core.history import History
+    rng = np.random.default_rng(seed)
+    hs = []
+    seq = [0]
+
+    def step(target, n):
+        seq[0] += 1
+        idx = np.arange(n, dtype=np.uint32)
+        return Step(seq[0], "Stroke", "SCULPT", target, 0.0, DELTA,
+                    [ChannelDelta(MASK_KEY, idx, rng.integers(0, 2**32, (n, 1), dtype=np.uint32))])
+    for uid, k in (("A", 30), ("B", 3), ("C", 2)):
+        h = History(uid, [uid])
+        for _ in range(k):
+            h.push(step(uid, int(rng.integers(*a_n))))
+        hs.append(h)
+    hs[0].cursor = 0
+    return hs, step, rng
+
+
+def _caps_state(hs):
+    return [(h.uid, h.cursor, [(e.seq, e.is_packed(), e.nbytes()) for e in h.entries]) for h in hs]
+
+
+class _InlinePacker:
+    """Packs at once and counts like store.Packer (CapsMemo watches the counts)."""
+    def __init__(self):
+        self.packed = self.recompressed = self.errors = 0
+
+    def submit(self, entry, codec):
+        if entry.step is not None:
+            entry.pack(codec)
+            self.packed += 1
+
+
+def test_caps_memo_stuck_between_target_and_limit():
+    """S4-3, the narrow case: what can't go is over 95% of the limit (the target) but under the
+    limit. Two new steps whose newest alone still fits: the whole pass drops both (it drops down to
+    the target), and so must the short pass."""
+    import copy
+    from hindsight.core.history import History
+    settings = Settings(memory_limit_mb=1, raw_steps=64, compression="zlib")
+    limit = 1 << 20
+    target = int(limit * store.EVICT_TO)
+
+    def step(seq, target_uid, n):
+        idx = np.arange(n, dtype=np.uint32)
+        return Step(seq, "Stroke", "SCULPT", target_uid, 0.0, DELTA,
+                    [ChannelDelta(MASK_KEY, idx, np.full((n, 1), seq, np.uint32))])
+    a = History("A", ["A"])
+    for i in range(10):
+        a.push(step(i + 1, "A", 1000))
+    want = (target + limit) // 2                    # A's total: between the target and the limit
+    extra = want - store.total_bytes([a])
+    a.push(step(11, "A", 1000 + extra // 8))        # 8 bytes per element (index and value)
+    a.cursor = 0
+    b = History("B", ["B"])
+    hs = [a, b]
+    others = store.total_bytes(hs)
+    assert target < others <= limit, (target, others, limit)
+    small = (limit - others) // 16                  # elements: fits the limit on its own
+    for memo in (store.CapsMemo(), None):
+        h1 = copy.deepcopy(hs)
+        h1[1].push(step(19, "B", 20_000))         # over the limit: B's step goes, A's can't
+        st = {}
+        store.enforce(h1, settings, None, st, memo, h1[1])
+        assert st["total"] == others and not h1[1].entries
+        assert memo is None or memo.state is not None, "this is the stuck case"
+        h1[1].push(step(20, "B", small))
+        h1[1].push(step(21, "B", small))
+        assert store.total_bytes(h1) > limit and others + h1[1].entries[1].nbytes() <= limit
+        st = {}
+        store.enforce(h1, settings, None, st, memo, h1[1])
+        assert len(h1[1].entries) == 0 and st["memory_dropped"] == 2, (memo, len(h1[1].entries), st)
+    print("PASS test_caps_memo_stuck_between_target_and_limit")
+
+
+def test_enforce_reports_drops_before_packing():
+    """The crash journal must hear of every drop (runtime._journal_drop) even when packing then
+    fails, as when the drops were reported between enforce_caps and enforce_tiers."""
+    hs, step, rng = _caps_world(5)
+    hs[0].cursor = len(hs[0].entries)
+
+    class Broken:
+        packed = recompressed = errors = 0
+
+        def submit(self, entry, codec):
+            raise RuntimeError("packing failed")
+    heard = []
+    try:
+        store.enforce(hs, Settings(memory_limit_mb=1, raw_steps=0), Broken(), {}, store.CapsMemo(), hs[1],
+                      on_caps=lambda drops, st: heard.extend((h.uid, n) for h, n in drops))
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("packing should have failed")
+    assert heard and heard[0][0] == "A", heard
+    print("PASS test_enforce_reports_drops_before_packing")
+
+
+def test_caps_memo_same_as_whole_pass():
+    """S4-3: over the memory limit with nothing left that may go, a pass looks only at the history
+    that changed (store.CapsMemo). It must drop exactly what the whole pass drops, in every case:
+    strokes, a cursor moved forward or back, a new history, steps undone, other settings, the
+    packer changing a step's size. As in runtime._enforce, only a new step is followed by a pass,
+    told which history got it; everything else happens between passes, unannounced."""
+    import copy
+    from hindsight.core.history import History
+    used = [0]
+    real = store._enforce_one
+
+    def counted(*a, **k):
+        used[0] += 1
+        return real(*a, **k)
+    store._enforce_one = counted
+    try:
+        for seed in range(16):
+            # A's size: from well over the limit to just about it, so a stuck total lands both
+            # above the limit and between the target (95%) and the limit
+            hs, step, rng = _caps_world(seed, ((5_000, 40_000) if seed % 2 else (3_000, 6_000)))
+            ref = copy.deepcopy(hs)                  # the same histories, always the whole pass
+            pk1, pk2 = (_InlinePacker(), _InlinePacker()) if seed % 4 >= 2 else (None, None)
+            settings = Settings(memory_limit_mb=1, max_steps=40, raw_steps=4, compression="zlib")
+            memo = store.CapsMemo()
+            for i in range(300):
+                op = rng.random()
+                k = None
+                if op < 0.75:                                 # strokes, rarely on the scrubbed-back A
+                    k = int(rng.integers(1, len(hs))) if rng.random() < 0.95 else 0
+                    for _ in range(int(rng.integers(1, 4))):
+                        st = step(hs[k].uid, int(rng.integers(200, 30_000)))
+                        hs[k].push(st)
+                        ref[k].push(copy.deepcopy(st))
+                elif op < 0.79:                               # a jump, back or forward
+                    j = int(rng.integers(0, len(hs))) if rng.random() < 0.5 else 0
+                    c = int(rng.integers(0, len(hs[j].entries) + 1))
+                    hs[j].cursor = ref[j].cursor = c
+                elif op < 0.9:
+                    uid = f"N{i}"
+                    h1, h2 = History(uid, [uid]), History(uid, [uid])
+                    st = step(uid, 20_000)
+                    h1.push(st)
+                    h2.push(copy.deepcopy(st))
+                    hs.append(h1)
+                    ref.append(h2)
+                    k = len(hs) - 1
+                elif op < 0.93:
+                    j = int(rng.integers(0, len(hs)))
+                    hs[j].truncate_future()
+                    ref[j].truncate_future()
+                elif op < 0.96 and pk1 is not None:           # the packer packs a step somewhere
+                    j = int(rng.integers(0, len(hs)))
+                    if hs[j].entries:
+                        x = int(rng.integers(0, len(hs[j].entries)))
+                        pk1.submit(hs[j].entries[x], "zlib")
+                        pk2.submit(ref[j].entries[x], "zlib")
+                else:
+                    settings.memory_limit_mb = int(rng.integers(1, 3))
+                    settings.raw_steps = int(rng.integers(0, 5))
+                if k is None:
+                    continue
+                s1, s2 = {}, {}
+                d1 = store.enforce(hs, settings, pk1, s1, memo, hs[k])
+                d2 = store.enforce(ref, settings, pk2, s2)
+                assert _caps_state(hs) == _caps_state(ref), (seed, i)
+                assert [(h.uid, n) for h, n in d1] == [(h.uid, n) for h, n in d2], (seed, i)
+                assert s1["memory_dropped"] == s2["memory_dropped"] and s1["total"] == s2["total"], (seed, i, s1, s2)
+                if pk1 is None:
+                    assert s1["total"] == store.total_bytes(hs)
+        print("  short passes:", used[0])
+        assert used[0] > 60, f"the short pass was hardly used ({used[0]}): the test doesn't test it"
+    finally:
+        store._enforce_one = real
+    print("PASS test_caps_memo_same_as_whole_pass")
+
+
+def test_caps_memo_reads_only_the_changed_history():
+    """S4-3: the pass after a stroke, while stuck over the limit, read the size of every step."""
+    hs, step, rng = _caps_world(99)
+    settings = Settings(memory_limit_mb=1, raw_steps=4, compression="zlib")
+    memo = store.CapsMemo()
+    store.enforce(hs, settings, None, {}, memo, None)
+    a = hs[0]
+    assert a.cursor == 0 and len(a.entries) == 30 and store.total_bytes(hs) > (1 << 20)
+    for i in range(5):
+        hs[1].push(step("B", 20_000))
+        calls = []
+        real = Entry.nbytes
+        Entry.nbytes = lambda self: calls.append(id(self)) or real(self)
+        try:
+            store.enforce(hs, settings, None, {}, memo, hs[1])
+        finally:
+            Entry.nbytes = real
+        mine = {id(e) for e in a.entries}
+        assert not mine & set(calls), "the scrubbed-back history's steps were read again"
+        assert len(hs[1].entries) == 0, "the new step still goes (the limit is not weakened)"
+    a.cursor = 10                                    # scrubbed forward: its first 10 steps may go now
+    hs[1].push(step("B", 20_000))
+    st = {}
+    store.enforce(hs, settings, None, st, memo, hs[1])
+    assert st["memory_dropped"] > 0 and a.entries[0].seq > 1, "A's past must go first (oldest first)"
+    print("PASS test_caps_memo_reads_only_the_changed_history")
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0
