@@ -12,8 +12,8 @@ import traceback
 
 import numpy as np
 
-from hindsight.core import codec, journal as J, persist, step as stepmod, store
-from hindsight.core.types import DELTA, POSITION_KEY, ChannelDelta, Entry, Step
+from hindsight.core import delta, journal as J, persist, step as stepmod, store
+from hindsight.core.types import DELTA, POSITION_KEY, Entry, Step
 
 
 # ---------------------------------------------------------------------------- embedded text
@@ -46,7 +46,7 @@ def test_b64_text_of_a_registry_reads_back():
     assert text == base64.b64encode(persist.registry_to_bytes(reg)).decode("ascii")
     back = persist.registry_from_bytes(base64.b64decode(text))
     got = back.histories["H"].entries
-    assert len(got) == 30 and all(stepmod.same_step(a.load(), stepmod.step_from_bytes(b.to_bytes()))
+    assert len(got) == 30 and all(stepmod.same_step(a.load(), b.load())
                                    for a, b in zip(got, h.entries))
 
 
@@ -199,10 +199,13 @@ def test_journal_failed_flush_is_reported_and_cut_back():
 
 # ---------------------------------------------------------------------------- packer
 def _step(seq, n=3000):
+    """A stroke on a 20,000-vertex mesh moving n vertices a little (a real diff, as recorded)."""
     rng = np.random.default_rng(seq)
-    idx = np.sort(rng.choice(20000, n, replace=False)).astype(np.uint32)
-    vals = (np.cumsum(rng.normal(0, 1e-3, (n, 3)), 0)).astype(np.float32)
-    return Step(seq, "Draw", "SCULPT", "obj", float(seq), DELTA, [ChannelDelta(POSITION_KEY, idx, vals)])
+    old = rng.normal(0, 1, 60000).astype(np.float32)
+    new = old.copy()
+    s = int(rng.integers(0, 20000 - n))
+    new.reshape(-1, 3)[s:s + n] += np.cumsum(rng.normal(0, 1e-4, (n, 3)), 0).astype(np.float32)
+    return Step(seq, "Draw", "SCULPT", "obj", float(seq), DELTA, [delta.diff(POSITION_KEY, old, new)])
 
 
 def test_can_gain_matches_recompress():
@@ -264,7 +267,7 @@ def test_packer_waits_while_the_user_works():
             time.sleep(0.1)
         assert p.recompressed == 0 and e.blob is before, "recompressed while strokes were coming in"
         assert _wait(lambda: p.recompressed == 1, 5.0), "never recompressed once the user stopped"
-        assert stepmod.same_step(stepmod.step_from_bytes(e.blob), stepmod.step_from_bytes(before))
+        assert stepmod.same_step(stepmod.step_from_bytes(e.blob), s)
         assert len(e.blob) < len(before)
     finally:
         p.stop()
