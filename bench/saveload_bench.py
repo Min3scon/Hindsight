@@ -17,7 +17,7 @@ import os, sys
 ROOT = os.path.abspath(sys.argv[1])
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-sys.path.insert(1, HERE)
+sys.path.insert(1, os.path.join(HERE, "bench", "scenarios"))
 import gc
 import json
 import shutil
@@ -30,7 +30,9 @@ import tracemalloc
 import bpy
 import numpy as np
 import tests.harness as H
-from bench.bench_bl import Stroker, make_mesh
+import _common as K   # bench/scenarios/_common.py: the helpers always come from THIS checkout, not from ROOT
+_bl = K.load_bench_module("bench_bl")
+Stroker, make_mesh = _bl.Stroker, _bl.make_mesh
 from hindsight.bl import runtime
 from hindsight.core import delta, step as stepmod
 from hindsight.core.types import DELTA, POSITION_KEY, SETTINGS, Entry, Step
