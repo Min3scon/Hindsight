@@ -46,7 +46,7 @@ EDITS = st.sampled_from(["grab", "rotate", "scale", "extrude", "bevel", "inset",
 RNA = st.one_of(
     st.tuples(st.just("move"), OBJ, F, F, F),
     st.tuples(st.just("rotate"), OBJ, F, st.sampled_from("XYZ")),
-    st.tuples(st.just("scale"), OBJ, st.floats(0.25, 2.5, width=32)),
+    st.tuples(st.just("scale"), OBJ, st.floats(0.25, 2.5, width=32, allow_subnormal=False)),
     st.tuples(st.just("move2"), OBJ, OBJ, F),
     st.tuples(st.just("deltas"), OBJ),
     st.tuples(st.just("apply"), MESH, st.sampled_from(["location", "rotation", "scale"])),

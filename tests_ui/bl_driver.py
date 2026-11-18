@@ -143,6 +143,12 @@ class Driver:
         self.redraw()
         try:
             win = self.window
+            if os.environ.get("HS_UI_XSHOT"):
+                # Xvfb plus llvmpipe: Blender's own screenshot reads the front buffer and gets all black.
+                # The X server's root window has the real picture; the CI screen is as big as the window.
+                self._xshot(fn, win, area)
+                self.log("shot", fn)
+                return fn
             if area is None:
                 with bpy.context.temp_override(window=win, screen=win.screen):
                     bpy.ops.screen.screenshot(filepath=fn, check_existing=False)
@@ -155,6 +161,22 @@ class Driver:
             return None
         self.log("shot", fn)
         return fn
+
+    def _xshot(self, fn, win, area):
+        import subprocess
+        # Blender's y runs up from the bottom, the X server's down from the top; with no window manager
+        # the window sits at the bottom left of the root window.
+        cmd = ["import", "-window", "root", fn]
+        subprocess.run(cmd, check=True, timeout=60)
+        geo = subprocess.run(["identify", "-format", "%w %h", fn], check=True, capture_output=True,
+                             text=True, timeout=60).stdout.split()
+        root_h = int(geo[1])
+        ww, wh = win.width, win.height
+        if area is None:
+            box = "%dx%d+0+%d" % (ww, wh, root_h - wh)
+        else:
+            box = "%dx%d+%d+%d" % (area.width, area.height, area.x, root_h - area.y - area.height)
+        subprocess.run(["convert", fn, "-crop", box, "+repage", fn], check=True, timeout=60)
 
     # ------------------------------------------------------------------ simulated input
     def ev(self, type, value="NOTHING", x=None, y=None, **kw):
