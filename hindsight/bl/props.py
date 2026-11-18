@@ -75,9 +75,13 @@ class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
         name="Height", subtype='ANGLE', default=0.2617993877991494, min=-1.5533430342749532,
         max=1.5533430342749532, update=_upd_movie_rig, options={'HIDDEN'},
         description="How far above or below the model the camera stands. Use this view sets it")
-    movie_prev_camera: bpy.props.StringProperty(
-        name="Camera before Movie Mode", default="", options={'HIDDEN'},
+    movie_user_camera: bpy.props.PointerProperty(
+        type=bpy.types.Object, name="Camera before Movie Mode", options={'HIDDEN'},
         description="The scene camera Hindsight's camera stood in for. It is put back when Movie Mode is switched off")
+    movie_prev_camera: bpy.props.StringProperty(
+        name="Camera before Movie Mode (name)", default="", options={'HIDDEN'},
+        description="Name of the camera to put back, in files saved by earlier builds. "
+                    "Read only when the camera above is empty")
     filter_mode: bpy.props.EnumProperty(
         name="Collection Filtering",
         items=[("NONE", "Off", "Record every object"),
