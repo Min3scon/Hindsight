@@ -166,14 +166,17 @@ def _brush_settings(context):
     brush = getattr(getattr(ts, "sculpt", None), "brush", None)
 
     def pick(unified_flag, name, default):
-        if brush is None or getattr(ups, unified_flag, True):
+        flags = brush if hasattr(brush, unified_flag) else ups    # on the brush since Blender 5.3
+        if brush is None or getattr(flags, unified_flag, True):
             return getattr(ups, name, default)
         return getattr(brush, name, default)
 
-    size = float(pick("use_unified_size", "size", 50))
+    # Blender 5.0 made the brush sizes diameters (unprojected_radius became unprojected_size)
+    half = 0.5 if hasattr(ups, "unprojected_size") else 1.0
+    size = float(pick("use_unified_size", "size", 50)) * half
     strength = float(pick("use_unified_strength", "strength", 0.5))
     locked = pick("use_unified_size", "use_locked_size", "VIEW")
-    unproj = float(pick("use_unified_size", "unprojected_radius", 0.0))
+    unproj = float(pick("use_unified_size", "unprojected_size" if half < 1 else "unprojected_radius", 0.0)) * half
     try:
         size *= context.preferences.system.ui_scale
     except Exception:
@@ -320,7 +323,7 @@ class HINDSIGHT_TOOL_morph_history(bpy.types.WorkSpaceTool):
         ups = unified_settings(context.tool_settings)
         if ups is None:
             return
-        layout.prop(ups, "size", text="Radius")
+        layout.prop(ups, "size", text="Size" if hasattr(ups, "unprojected_size") else "Radius")  # a diameter since 5.0
         layout.prop(ups, "strength", text="Strength")
 
 

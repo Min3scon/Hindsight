@@ -164,9 +164,25 @@ def test_separate_operator_exec():
     assert runtime.obj_uid(ob) == uid and len(runtime.history_of(ob).entries) == 2
 
 
+def test_mask_extract_operator():
+    """D72: Mask Extract ran Blender's mesh.paint_mask_extract, which Blender 5.0 moved to sculpt."""
+    setup()
+    ob = sculpted(1)
+    uid = runtime.obj_uid(ob)
+    a = ob.data.attributes.get(".sculpt_mask") or ob.data.attributes.new(".sculpt_mask", "FLOAT", "POINT")
+    a.data.foreach_set("value", [1.0 if i < len(a.data) // 3 else 0.0 for i in range(len(a.data))])
+    H.enter(ob, "SCULPT")
+    n = len(bpy.data.objects)
+    assert bpy.ops.hindsight.mask_extract("EXEC_DEFAULT") == {"FINISHED"}
+    assert len(bpy.data.objects) == n + 1, "nothing extracted"
+    uids = [runtime.obj_uid(o) for o in bpy.data.objects]
+    assert uids.count(uid) == 1, "the extracted object must not share the history"
+    H.enter(ob, "OBJECT")
+
+
 for f in [test_operators_and_keymaps_registered, test_shift_d_independent_history,
           test_original_kept_when_renamed_copy_is_shorter, test_handler_fixes_on_object_count_change,
           test_linked_duplicate_warning, test_separate_new_object_new_history,
-          test_separate_operator_exec]:
+          test_separate_operator_exec, test_mask_extract_operator]:
     H.run(f)
 H.finish()

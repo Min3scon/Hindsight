@@ -28,10 +28,12 @@ def _id_collections():
 
 
 def _ids_with_uid() -> list:
-    out = []
+    """Each datablock once: Blender 5.2+ also lists every datablock in bpy.data.all_ids."""
+    out, seen = [], set()
     for col in _id_collections():
         for idb in col:
-            if idb.library is None and idmap.UID_PROP in idb.keys():
+            if idb.library is None and idmap.UID_PROP in idb.keys() and idb.as_pointer() not in seen:
+                seen.add(idb.as_pointer())
                 out.append(idb)
     return out
 

@@ -162,7 +162,8 @@ class HINDSIGHT_OT_mask_extract(bpy.types.Operator):
         return self.execute(context)
 
     def execute(self, context):
-        r = bpy.ops.mesh.paint_mask_extract("INVOKE_DEFAULT")
+        ops = bpy.ops.sculpt if "paint_mask_extract" in dir(bpy.ops.sculpt) else bpy.ops.mesh  # moved in 5.0
+        r = ops.paint_mask_extract("INVOKE_DEFAULT")
         fix_uids()
         return _result(r)
 

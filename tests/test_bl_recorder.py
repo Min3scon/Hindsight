@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import time
 import bpy
 import numpy as np
 import tests.harness as H
@@ -59,6 +60,54 @@ def test_vertex_paint_starts_history():
     assert H.commit(ob) is not None
     runtime.step(C, -1)
     H.assert_same(H.snapshot(ob), s0)
+
+
+def test_vertex_paint_layer_added_late():
+    """D71: Blender 5.3 adds the colour layer of a mesh without one after Vertex Paint's first
+    update. Entering and leaving must record nothing, and the first stroke's step back keeps the layer."""
+    H.fresh()
+    ob = H.make_mesh(1500)
+    H.enter(ob, "OBJECT")
+    with runtime.suspended():
+        bpy.ops.object.mode_set(mode="VERTEX_PAINT")
+        layer = ob.data.color_attributes[0]
+        name, dtype, domain = layer.name, layer.data_type, layer.domain
+        ob.data.color_attributes.remove(layer)              # as 5.3 has it at the first update
+    runtime.check_mode_transition()
+    ob.data.color_attributes.new(name, dtype, domain)       # Blender adds it
+    ob.data.color_attributes.active_color_name = name
+    C.view_layer.update()
+    runtime.check_mode_transition()
+    for uid in list(runtime._DIRTY):
+        runtime._DIRTY[uid] = time.time() - 1.0
+    runtime.tick()
+    assert runtime.history_of(ob) is None or not runtime.history_of(ob).entries, "entering recorded a step"
+    s0 = H.snapshot(ob)
+    H.fake_stroke(ob, 3, channel="bytecolor")
+    assert H.commit(ob) is not None
+    runtime.step(C, -1)
+    H.assert_same(H.snapshot(ob), s0)
+    H.enter(ob, "OBJECT")
+
+
+def test_restored_colour_layer_is_active():
+    """D74: a colour layer taken away and put back by scrubbing is the active and default colour
+    again (Blender 5.0 forgot them, so entering Vertex Paint then added a layer of its own)."""
+    H.fresh()
+    ob = H.make_mesh(1500)
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 4, channel="color")
+    assert H.commit(ob) is not None
+    ca = ob.data.color_attributes
+    assert ca.active_color_name == "Col" and ca.default_color_name == "Col"
+    runtime.step(C, -1)
+    assert "Col" not in ca
+    runtime.step(C, 1)
+    assert ca.active_color_name == "Col" and ca.default_color_name == "Col", (ca.active_color_name,
+                                                                            ca.default_color_name)
+    H.enter(ob, "VERTEX_PAINT")
+    assert [a.name for a in ca] == ["Col"], "Blender added a colour layer"
+    H.enter(ob, "OBJECT")
 
 
 def test_step_back_forward_ops():
@@ -314,6 +363,7 @@ def test_materials_warning():
 
 
 for f in [test_stroke_end_debounce, test_materials_warning, test_first_stroke_starts_history, test_all_channels_scrub_exact, test_vertex_paint_starts_history,
+          test_vertex_paint_layer_added_late, test_restored_colour_layer_is_active,
           test_step_back_forward_ops, test_branch_silent_and_confirm, test_native_undo_sync_and_f9_replace,
           test_edit_mode_grouping, test_topology_snapshot, test_turn_off_on_and_reset,
           test_delete_past_keeps_later, test_per_object_and_global, test_excluded_objects,

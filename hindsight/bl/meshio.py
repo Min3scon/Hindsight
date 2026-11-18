@@ -83,6 +83,14 @@ def write_channel(me, key: str, arr: np.ndarray | None) -> None:
         attr = None
     if attr is None:
         attr = me.attributes.new(name, dtype_name, domain)
+        if dtype_name in ("FLOAT_COLOR", "BYTE_COLOR") and domain in ("POINT", "CORNER"):
+            ca = me.color_attributes
+            # Blender 5.0 forgets the active and default colour when their layer is removed (later
+            # versions keep the name): a layer put back is them again, as when it was first added
+            if not ca.active_color_name:
+                ca.active_color_name = name
+            if not ca.default_color_name:
+                ca.default_color_name = name
     prop = CHANNEL_TYPES[dtype_name][2]
     attr.data.foreach_set(prop, arr)
 
