@@ -1,0 +1,237 @@
+# Runs the Hindsight test suite in real Blender binaries (Linux), with the bpy module (Windows, macOS)
+# and, as a probe that may fail, in a real Blender window under Xvfb. Nothing here deploys anything.
+#
+# Manual run (Actions tab, "Blender tests", Run workflow) inputs:
+#   versions    JSON list of Blender versions for the binary job. "5.2" means the newest 5.2.x on
+#               download.blender.org, "5.1.2" exactly that one. Default: all six.
+#   filter      substring of test file names (tests/run_tests.py): "core_codec", "t1_gate", ...; empty = all.
+#   bpy_version the bpy wheel the Windows and macOS jobs install (default 5.3.0).
+#   run_module / run_ui   switch the module job and the window probe off.
+#
+# Known failures that come from the machine, not from the code (the files still run, their logs are kept,
+# and the job summary lists them):
+#   test_bl_t1_migrate.py  needs .tmp/old/b1.zip, the beta 1 release zip, which is not in the repository.
+#   test_bl_metadata.py    (module job only) one test starts a Blender binary; the bpy module has none.
+name: Blender tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: 'Blender versions for the binary job (JSON list)'
+        default: '["4.2","5.0.1","5.1.1","5.1.2","5.2","5.3"]'
+      filter:
+        description: 'Only test files whose name contains this (empty = the whole suite)'
+        default: ''
+      bpy_version:
+        description: 'bpy wheel for the Windows and macOS jobs'
+        default: '5.3.0'
+      run_module:
+        description: 'Run the bpy module job (Windows, macOS)'
+        type: boolean
+        default: true
+      run_ui:
+        description: 'Run the window probe (Xvfb, software OpenGL)'
+        type: boolean
+        default: true
+  push:
+    paths:
+      - "hindsight/**"
+      - "tests/**"
+      - "native/**"
+      - ".github/workflows/blender.yml"
+
+permissions:
+  contents: read
+
+env:
+  HINDSIGHT_NATIVE: require        # a missing or broken native module is an error, never a silent fallback
+  HINDSIGHT_VERIFY: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  binary:
+    name: Blender ${{ matrix.version }} (Linux binary)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(github.event.inputs.versions || '["4.2","5.0.1","5.1.1","5.1.2","5.2","5.3"]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0            # test_bl_t1_migrate builds an old commit from history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System libraries Blender needs
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 libice6 \
+            libgl1 libegl1 libgl1-mesa-dri
+      - name: Find the newest release of this series
+        id: resolve
+        run: python tools/ci/resolve_blender.py "${{ matrix.version }}" --github-output
+      - name: Cache the tarball
+        uses: actions/cache@v4
+        with:
+          path: ~/blender-dl
+          key: blender-tarball-${{ steps.resolve.outputs.filename }}
+      - name: Download, verify and unpack Blender ${{ steps.resolve.outputs.version }}
+        id: blender
+        run: python tools/ci/install_blender.py "${{ matrix.version }}" --dest ~/blender --cache ~/blender-dl --github-output
+      - name: Blender starts
+        run: |
+          "${{ steps.blender.outputs.exe }}" -b --factory-startup --python-expr \
+            "import bpy,sys;print('Blender',bpy.app.version_string,'Python',sys.version.split()[0]);import numpy;print('numpy',numpy.__version__);import zstandard;print('zstandard',zstandard.__version__)"
+      - name: Install test dependencies and the native wheel into Blender's Python
+        run: python tools/ci/install_deps.py --blender-exe "${{ steps.blender.outputs.exe }}"
+      - name: The add-on loads the native engine inside Blender
+        run: |
+          "${{ steps.blender.outputs.exe }}" -b --factory-startup --python-exit-code 1 --python-expr \
+            "import sys; sys.path.insert(0, '.'); from hindsight.core import native; print('native module', native.lib.__file__)"
+      - name: Whole suite in the Blender binary
+        env:
+          FILTER: ${{ github.event.inputs.filter }}
+        run: |
+          python tools/ci/run_suite.py --blender "${{ steps.blender.outputs.exe }}" \
+            --known-fail test_bl_t1_migrate.py --log ci-out/suite.log "$FILTER"
+      - name: Collect per-file results
+        if: always()
+        run: |
+          mkdir -p ci-out
+          cp -r .tmp/results ci-out/results || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: binary-${{ matrix.version }}-log
+          path: ci-out
+          if-no-files-found: warn
+
+  module:
+    name: bpy module on ${{ matrix.os }}
+    if: github.event_name == 'push' || github.event.inputs.run_module != 'false'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]      # macos-latest is arm64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install bpy, the test dependencies and the committed native wheel
+        env:
+          BPY: ${{ github.event.inputs.bpy_version || '5.3.0' }}
+        run: |
+          python -m pip install "bpy==$BPY"
+          python tools/ci/install_deps.py --python python
+      - name: bpy loads
+        run: python -c "import bpy, platform; print(platform.platform(), bpy.app.version_string)"
+      - name: Whole suite with the bpy module
+        env:
+          FILTER: ${{ github.event.inputs.filter }}
+        run: |
+          python tools/ci/run_suite.py --python python \
+            --known-fail test_bl_t1_migrate.py --known-fail test_bl_metadata.py \
+            --log ci-out/suite.log "$FILTER"
+      - name: Collect per-file results
+        if: always()
+        run: |
+          mkdir -p ci-out
+          cp -r .tmp/results ci-out/results || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: module-${{ matrix.os }}-log
+          path: ci-out
+          if-no-files-found: warn
+
+  # Feasibility probe: a real Blender window on a virtual display with Mesa's software OpenGL.
+  # Allowed to fail; the job log and the screenshots say what worked.
+  ui:
+    name: Window probe, Blender ${{ matrix.version }}
+    if: github.event_name == 'push' || github.event.inputs.run_ui != 'false'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ["5.1.2", "5.3"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System libraries, Xvfb and Mesa software rendering
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb xauth libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 \
+            libice6 libgl1 libegl1 libgl1-mesa-dri libglx-mesa0 mesa-utils
+      - name: Resolve, cache, install Blender
+        id: resolve
+        run: python tools/ci/resolve_blender.py "${{ matrix.version }}" --github-output
+      - uses: actions/cache@v4
+        with:
+          path: ~/blender-dl
+          key: blender-tarball-${{ steps.resolve.outputs.filename }}
+      - name: Unpack Blender
+        id: blender
+        run: python tools/ci/install_blender.py "${{ matrix.version }}" --dest ~/blender --cache ~/blender-dl --github-output
+      - name: Dependencies and native wheel
+        run: python tools/ci/install_deps.py --blender-exe "${{ steps.blender.outputs.exe }}"
+      - name: Put a blender command on PATH that asks for the OpenGL backend
+        run: |
+          mkdir -p ~/shim
+          cat > ~/shim/blender <<EOF
+          #!/bin/sh
+          # tests_ui/hs_ui.py finds Blender with "which blender"; --command (extension build/install) must stay first
+          if [ "\${1:-}" = "--command" ]; then exec "${{ steps.blender.outputs.exe }}" "\$@"; fi
+          exec "${{ steps.blender.outputs.exe }}" --gpu-backend opengl "\$@"
+          EOF
+          chmod +x ~/shim/blender
+          echo "$HOME/shim" >> "$GITHUB_PATH"
+      - name: What OpenGL does Xvfb plus llvmpipe give?
+        continue-on-error: true
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
+        run: |
+          xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX" glxinfo -B || true
+          timeout 120 xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX" \
+            blender --factory-startup --python-expr \
+            "import sys, gpu; print('GPU', gpu.platform.backend_type_get(), gpu.platform.renderer_get(), gpu.platform.version_get()); sys.exit(0)" || true
+      - name: Build the add-on zip
+        run: python tests_ui/hs_ui.py build
+      - name: Slider scenario in a real window, screenshot included
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+        run: |
+          xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX" \
+            python tests_ui/hs_ui.py run regress_slider_visible --blender "${{ matrix.version }}" \
+            --fresh --geometry 0,0,1600,900 --timeout 900
+      - name: Collect screenshots and logs
+        if: always()
+        run: |
+          mkdir -p ci-out
+          cp -r .tmp/ui ci-out/ui || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-${{ matrix.version }}
+          path: ci-out
+          if-no-files-found: warn
