@@ -93,6 +93,10 @@ class Run:
         for uid in runtime.reg().everything:
             ob = idmap.find(uid)
             if isinstance(ob, bpy.types.Object):
+                old = self.names.get(uid)
+                if old is not None and old != ob.name:      # renamed (F2): references read by name follow
+                    self.renames.pop(ob.name, None)
+                    self.renames[old] = ob.name
                 self.names[uid] = ob.name
                 now[uid] = ob.name
                 if datarec.mesh_owned_elsewhere(ob):

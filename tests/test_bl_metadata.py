@@ -55,10 +55,12 @@ def found_in_blend() -> set:
     for idb in _ids():
         if idb.library is not None:
             continue
-        for k in idb.keys():
-            if "hindsight" in k.lower() and not isinstance(idb, bpy.types.Text):
-                out.add(k)
         get = getattr(idb, "bl_system_properties_get", None)        # registered properties (Blender 5)
+        for k in idb.keys():
+            if isinstance(idb, bpy.types.Scene) and k == "hindsight" and get is None:
+                out.add("Scene.hindsight")      # Blender 4 keeps the registered group with the custom properties
+            elif "hindsight" in k.lower() and not isinstance(idb, bpy.types.Text):
+                out.add(k)
         sp = get() if get is not None else None
         for k in (sp.keys() if sp is not None else ()):
             if "hindsight" in k.lower():
@@ -235,6 +237,8 @@ def test_remove_hindsight_data():
         geometry = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
         r = cleanup.report()
         assert r["ids"] and r["text"] and r["keyframes"] and r["folder"], r
+        own = {i.as_pointer() for i in _ids() if i.library is None and "_hindsight_uid" in i.keys()}
+        assert r["ids"] == len(own), (r, len(own))       # each datablock once (bpy.data.all_ids, 5.2+)
         done = cleanup.remove(delete_folder=delete_folder)
         assert not found_in_blend(), found_in_blend()
         now = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}

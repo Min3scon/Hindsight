@@ -131,7 +131,10 @@ def decompress(blob, expected: int | None = None) -> bytes:
         elif cid == LZ4:
             if _lz4f is None:
                 raise RuntimeError("blob is lz4-compressed but lz4 is not installed")
-            out = _lz4f.decompress(bytes(payload))
+            try:
+                out = _lz4f.decompress(bytes(payload))
+            except RuntimeError as e:        # lz4.frame reports a damaged frame as RuntimeError
+                raise CorruptBlob(f"compressed data damaged: {e}") from e
         else:
             raise CorruptBlob(f"unknown codec id {cid}")
     except (CorruptBlob, RuntimeError):

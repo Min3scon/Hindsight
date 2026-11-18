@@ -205,13 +205,41 @@ def test_brush_settings_readable():
         ups.use_unified_size = ups.use_unified_strength = True
         ups.size, ups.strength = 77, 0.25
         size, strength, _unproj = BM._brush_settings(C)
-        assert abs(size - 77 * C.preferences.system.ui_scale) < 1e-6, size
+        half = 0.5 if "unprojected_size" in ups.bl_rna.properties else 1.0     # D76: a diameter since 5.0
+        assert abs(size - 77 * half * C.preferences.system.ui_scale) < 1e-6, size
         assert abs(strength - 0.25) < 1e-6, strength
     finally:
         ups.size, ups.strength, ups.use_unified_size, ups.use_unified_strength = old
 
 
-for fn in (test_core_falloff_blend, test_morph_full_strength, test_morph_half_strength_and_passes,
+def test_brush_size_follows_the_unified_switch():
+    """D75: Blender 5.3 moved 'use unified size/strength' from the unified paint settings to each
+    brush (the old switch is deprecated and no longer used). Switched on where Blender keeps it, the
+    brush reads the unified strength and radius; switched off, the brush's own. (Headless, the
+    interface scale is 0, so the radius is checked through the scene-locked size, D76.)"""
+    H.fresh()
+    ob = H.make_mesh(500)
+    H.enter(ob, "SCULPT")
+    ts = C.tool_settings
+    brush, ups = ts.sculpt.brush, BM.unified_settings(ts)
+    assert brush is not None
+    flags = brush if hasattr(brush, "use_unified_size") else ups     # where Blender's switch is
+    # D76: the scene size is a diameter since Blender 5.0 (unprojected_size), a radius before
+    diameter = "unprojected_size" in ups.bl_rna.properties
+    want_r = 0.25 if diameter else 0.5
+    ups.strength, ups.use_locked_size = 0.25, "SCENE"
+    setattr(ups, "unprojected_size" if diameter else "unprojected_radius", 0.5)
+    brush.strength, brush.use_locked_size = 0.75, "VIEW"
+    flags.use_unified_size = flags.use_unified_strength = True
+    _size, strength, unproj = BM._brush_settings(C)
+    assert abs(strength - 0.25) < 1e-6 and unproj is not None and abs(unproj - want_r) < 1e-6, (strength, unproj)
+    flags.use_unified_size = flags.use_unified_strength = False
+    _size, strength, unproj = BM._brush_settings(C)
+    assert abs(strength - 0.75) < 1e-6 and unproj is None, (strength, unproj)
+    H.enter(ob, "OBJECT")
+
+
+for fn in (test_brush_size_follows_the_unified_switch, test_core_falloff_blend, test_morph_full_strength, test_morph_half_strength_and_passes,
            test_target_in_past_after_scrub_and_mask, test_refusals, test_topology_change_invalidates_target,
            test_target_positions_pure, test_tool_registered_or_skipped, test_brush_settings_readable):
     H.run(fn)

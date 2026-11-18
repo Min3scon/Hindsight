@@ -842,6 +842,11 @@ def check_mode_transition() -> None:
     elif prev is not None and pmode in RECORD_MODES and obj_uid(prev) in _DIRTY:
         commit(prev, mode=pmode)
     if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and not is_excluded(obj):
+        if mode == "VERTEX_PAINT" and not len(obj.data.color_attributes):
+            # Blender adds a colour layer on entering Vertex Paint; 5.3 does it after the mode's first
+            # update. The mesh is read once it is there, so that layer is never taken for a change.
+            _TRACK["mode"] = None
+            return
         _enter(obj)
         _TRACK["uid"] = obj_uid(obj)
 
