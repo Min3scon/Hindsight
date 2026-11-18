@@ -12,10 +12,26 @@ Needs only the standard library. A bare "4.2" means the newest patch release, "4
 import argparse
 import os
 import re
+import random
 import sys
+import time
 import urllib.request
 
-MIRROR = os.environ.get("BLENDER_MIRROR", "https://download.blender.org/release").rstrip("/")
+# Official sources, tried in this order. All serve the same tree (Blender<series>/blender-<v>-<platform>,
+# blender-<v>.sha256). BLENDER_MIRROR (one URL, or several separated by spaces or commas) goes first.
+# download.blender.org answered 403 to one CI job while it answered another a minute earlier, so every
+# read retries with backoff and then falls back to the next mirror.
+OFFICIAL = [
+    "https://download.blender.org/release",
+    "https://ftp.nluug.nl/pub/graphics/blender/release",
+    "https://mirror.clarkson.edu/blender/release",
+    "https://mirror.freedif.org/blender/release",
+]
+MIRRORS = [m.rstrip("/") for m in re.split(r"[\s,]+", os.environ.get("BLENDER_MIRROR", "")) if m] + OFFICIAL
+MIRROR = MIRRORS[0]
+USER_AGENT = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/124.0 Safari/537.36 hindsight-ci")
+RETRIES = int(os.environ.get("BLENDER_RETRIES", "4"))
 # Official file name suffix per platform.
 SUFFIX = {
     "linux-x64": "linux-x64.tar.xz",
@@ -25,16 +41,35 @@ SUFFIX = {
 }
 
 
+def backoff(attempt: int) -> None:
+    time.sleep(min(2 ** attempt, 30) * (0.75 + random.random() / 2))
+
+
 def fetch(url: str, timeout: int = 60) -> str:
+    """Read one URL with retries and exponential backoff (a 403 or 5xx from a CDN is often brief)."""
     last = None
-    for _ in range(3):
+    for attempt in range(RETRIES):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "hindsight-ci"})
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read().decode("utf-8", "replace")
         except Exception as e:  # network hiccups on shared runners
             last = e
+            print(f"fetch {url} attempt {attempt + 1}/{RETRIES}: {e}", file=sys.stderr)
+            if attempt + 1 < RETRIES:
+                backoff(attempt)
     raise SystemExit(f"cannot read {url}: {last}")
+
+
+def fetch_any(path: str, timeout: int = 60):
+    """Read <mirror>/<path> from the first mirror that answers. Returns (text, base)."""
+    errors = []
+    for base in MIRRORS:
+        try:
+            return fetch(f"{base}/{path}", timeout), base
+        except SystemExit as e:
+            errors.append(str(e))
+    raise SystemExit("no mirror answered:\n  " + "\n  ".join(errors))
 
 
 def series_of(spec: str) -> str:
@@ -67,13 +102,15 @@ def resolve(spec: str, platform: str = "linux-x64", listing=None) -> dict:
     series = series_of(spec)
     base = f"{MIRROR}/Blender{series}"
     if listing is None:
-        listing = fetch(base + "/")
+        listing, root = fetch_any(f"Blender{series}/")
+        base = f"{root}/Blender{series}"
     got = pick(listing, spec, platform)
     if got is None:
         raise SystemExit(f"no {platform} release matching {spec} in {base}/")
     version, filename = got
     return {"version": version, "series": series, "filename": filename, "platform": platform,
-            "url": f"{base}/{filename}", "sha256_url": f"{base}/blender-{version}.sha256"}
+            "url": f"{base}/{filename}", "sha256_url": f"{base}/blender-{version}.sha256",
+            "path": f"Blender{series}/{filename}", "sha256_path": f"Blender{series}/blender-{version}.sha256"}
 
 
 def main(argv=None):

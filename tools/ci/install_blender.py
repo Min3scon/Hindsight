@@ -29,23 +29,34 @@ def sha256_of(path):
     return h.hexdigest()
 
 
-def download(url, dest):
-    last = None
-    for _ in range(3):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "hindsight-ci"})
-            with urllib.request.urlopen(req, timeout=120) as r, open(dest + ".part", "wb") as fh:
-                shutil.copyfileobj(r, fh, 1 << 20)
-            os.replace(dest + ".part", dest)
-            return
-        except Exception as e:
-            last = e
-    raise SystemExit(f"download of {url} failed: {last}")
+def download(info, dest):
+    """Download info["path"] from the mirror of the resolve step first, then the others; retry with backoff."""
+    bases = [info["url"][:-len(info["path"]) - 1]] + [m for m in R.MIRRORS]
+    seen, last = set(), None
+    for base in bases:
+        if base in seen:
+            continue
+        seen.add(base)
+        url = f"{base}/{info['path']}"
+        for attempt in range(R.RETRIES):
+            try:
+                print("downloading", url, file=sys.stderr)
+                req = urllib.request.Request(url, headers={"User-Agent": R.USER_AGENT, "Accept": "*/*"})
+                with urllib.request.urlopen(req, timeout=120) as r, open(dest + ".part", "wb") as fh:
+                    shutil.copyfileobj(r, fh, 1 << 20)
+                os.replace(dest + ".part", dest)
+                return
+            except Exception as e:
+                last = e
+                print(f"  attempt {attempt + 1}/{R.RETRIES} failed: {e}", file=sys.stderr)
+                if attempt + 1 < R.RETRIES:
+                    R.backoff(attempt)
+    raise SystemExit(f"download of {info['path']} failed on every mirror: {last}")
 
 
 def expected_sha256(info):
     try:
-        text = R.fetch(info["sha256_url"])
+        text, _ = R.fetch_any(info["sha256_path"])
     except SystemExit:
         return None
     for line in text.splitlines():
@@ -72,8 +83,7 @@ def main(argv=None):
         print("cached tarball does not match its checksum, downloading again", file=sys.stderr)
         os.remove(tarball)
     if not os.path.isfile(tarball):
-        print("downloading", info["url"], file=sys.stderr)
-        download(info["url"], tarball)
+        download(info, tarball)
     if want:
         got = sha256_of(tarball)
         if got != want:
