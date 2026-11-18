@@ -547,6 +547,76 @@ def run_session(seed, n_actions=24):
         obs = {nm: bpy.data.objects[nm] for nm in names}
 
 
+# ------------------------------------------------------------------------------------- damaged files
+def _damage(data: bytes, kind: str) -> bytes:
+    n = len(data)
+    if kind == "flip":                       # one bit in the middle of the step data
+        k = n * 2 // 3
+        return data[:k] + bytes([data[k] ^ 0x10]) + data[k + 1:]
+    if kind == "cut":                        # the end of the file lost
+        return data[: n // 2]
+    if kind == "zeros":                      # a tail of zeros, as after a power cut on some disks
+        k = n * 3 // 4
+        return data[:k] + bytes(n - k)
+    raise ValueError(kind)
+
+
+def _resave_without_hindsight(path, change):
+    """Change the stored history inside the .blend and save it, with Hindsight off (its save handler
+    would write the history again)."""
+    import hindsight
+    hindsight.unregister()
+    H._registered[0] = False
+    try:
+        bpy.ops.wm.open_mainfile(filepath=path)
+        change()
+        bpy.ops.wm.save_mainfile()
+    finally:
+        hindsight.register()
+        H._registered[0] = True
+
+
+def test_damaged_saved_history():
+    """The saved history damaged on disk (a bit flipped, the end cut off, a tail of zeros), in the
+    history folder and inside the .blend. Opening the file never fails and never plays damaged steps:
+    what comes back matches the file at every position, and anything that didn't come back is told."""
+    import binascii
+    for mode in ("SIDECAR", "EMBED"):
+        for kind in ("flip", "cut", "zeros"):
+            setup(mode, "LAST_SAVED")
+            obs = make(("A",))
+            book = Book()
+            for s in range(4):
+                book.stroke(obs["A"], 20 + s)
+            path = os.path.join(TMP, f"damaged_{mode.lower()}_{kind}.blend")
+            file_state = save(path)
+            if mode == "SIDECAR":
+                f = persist.sidecar_file(path)
+                with open(f, "rb") as fh:
+                    data = fh.read()
+                with open(f, "wb") as fh:
+                    fh.write(_damage(data, kind))
+            else:
+                def change():
+                    t = bpy.data.texts[persistence.TEXT_NAME]
+                    raw = binascii.a2b_base64(t[persistence.DATA_PROP])
+                    t[persistence.DATA_PROP] = binascii.b2a_base64(_damage(raw, kind), newline=False).decode("ascii")
+                _resave_without_hindsight(path, change)
+            setup(mode, "LAST_SAVED")
+            interrupt(path)
+            where = f"{mode} {kind}"
+            h = runtime.history_of(bpy.data.objects["A"])
+            got = 0 if h is None else len(h.entries)
+            check(book, file_state, where)
+            if got < 4:
+                assert notes(), f"{where}: {got} of 4 steps came back and nothing says so"
+            # saving again keeps the file usable and never writes the damaged steps back as good ones
+            file_state = save(path)
+            setup(mode, "LAST_SAVED")
+            interrupt(path)
+            check(book, file_state, where + " after saving again")
+
+
 REGRESSION_SEEDS = []
 
 
