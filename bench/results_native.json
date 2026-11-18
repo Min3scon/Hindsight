@@ -1,0 +1,302 @@
+{
+ "runs": {
+  "3.11": {
+   "date": "2026-11-18",
+   "machine": "Linux-6.18.44-fc-v595-x86_64-with-glibc2.39",
+   "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "cpus": 4,
+   "python": "3.11.18",
+   "numpy": "1.26.4",
+   "codecs": [
+    "zstd",
+    "lz4",
+    "zlib",
+    "none"
+   ],
+   "native": "/home/user/venvs/bpy50/lib/python3.11/site-packages/hindsight_native/__init__.py",
+   "load": [
+    2.31005859375,
+    2.568359375,
+    3.53271484375
+   ],
+   "cases": [
+    {
+     "vertices": 99856,
+     "changed": 1996,
+     "diff": {
+      "python_ms": 0.379,
+      "native_ms": 0.086,
+      "python_peak_py_bytes": 1699084,
+      "native_peak_py_bytes": 33458,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "apply_step": {
+      "python_ms": 0.029,
+      "native_ms": 0.01,
+      "python_peak_py_bytes": 42684,
+      "native_peak_py_bytes": 368,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "pack_record": {
+      "python_ms": 0.145,
+      "native_ms": 0.047,
+      "python_peak_py_bytes": 368336,
+      "native_peak_py_bytes": 56503,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_record": {
+      "python_ms": 0.047,
+      "native_ms": 0.016,
+      "python_peak_py_bytes": 57946,
+      "native_peak_py_bytes": 33270,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "step_bytes": 6286,
+     "pack_step_zstd": {
+      "python_ms": 0.175,
+      "native_ms": 0.077,
+      "python_peak_py_bytes": 368640,
+      "native_peak_py_bytes": 62792,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_step_zstd": {
+      "python_ms": 0.076,
+      "native_ms": 0.04,
+      "python_peak_py_bytes": 87277,
+      "native_peak_py_bytes": 62991,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "jump_300_steps": {
+      "python_ms": 40.478,
+      "native_ms": 18.905,
+      "python_peak_py_bytes": 124527,
+      "native_peak_py_bytes": 99633,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 4096
+     }
+    },
+    {
+     "vertices": 1000000,
+     "changed": 20009,
+     "diff": {
+      "python_ms": 4.201,
+      "native_ms": 1.105,
+      "python_peak_py_bytes": 17001532,
+      "native_peak_py_bytes": 321666,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "apply_step": {
+      "python_ms": 0.259,
+      "native_ms": 0.088,
+      "python_peak_py_bytes": 402944,
+      "native_peak_py_bytes": 368,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "pack_record": {
+      "python_ms": 1.461,
+      "native_ms": 0.498,
+      "python_peak_py_bytes": 3322538,
+      "native_peak_py_bytes": 560867,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_record": {
+      "python_ms": 0.35,
+      "native_ms": 0.135,
+      "python_peak_py_bytes": 562858,
+      "native_peak_py_bytes": 321478,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "step_bytes": 43346,
+     "pack_step_zstd": {
+      "python_ms": 1.861,
+      "native_ms": 0.868,
+      "python_peak_py_bytes": 3322842,
+      "native_peak_py_bytes": 605151,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_step_zstd": {
+      "python_ms": 0.51,
+      "native_ms": 0.231,
+      "python_peak_py_bytes": 844371,
+      "native_peak_py_bytes": 603381,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "jump_300_steps": {
+      "python_ms": 277.322,
+      "native_ms": 152.428,
+      "python_peak_py_bytes": 1168663,
+      "native_peak_py_bytes": 927791,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     }
+    }
+   ],
+   "load_after": [
+    2.36572265625,
+    2.57568359375,
+    3.52978515625
+   ]
+  },
+  "3.13": {
+   "date": "2026-11-18",
+   "machine": "Linux-6.18.44-fc-v595-x86_64-with-glibc2.39",
+   "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+   "cpus": 4,
+   "python": "3.13.18",
+   "numpy": "2.5.5",
+   "codecs": [
+    "zstd",
+    "lz4",
+    "zlib",
+    "none"
+   ],
+   "native": "/home/user/venvs/bpy53/lib/python3.13/site-packages/hindsight_native/__init__.py",
+   "load": [
+    2.36572265625,
+    2.57568359375,
+    3.52978515625
+   ],
+   "cases": [
+    {
+     "vertices": 99856,
+     "changed": 1996,
+     "diff": {
+      "python_ms": 0.39,
+      "native_ms": 0.083,
+      "python_peak_py_bytes": 1698132,
+      "native_peak_py_bytes": 33410,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "apply_step": {
+      "python_ms": 0.025,
+      "native_ms": 0.009,
+      "python_peak_py_bytes": 43548,
+      "native_peak_py_bytes": 368,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "pack_record": {
+      "python_ms": 0.066,
+      "native_ms": 0.044,
+      "python_peak_py_bytes": 332380,
+      "native_peak_py_bytes": 56503,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_record": {
+      "python_ms": 0.03,
+      "native_ms": 0.014,
+      "python_peak_py_bytes": 58058,
+      "native_peak_py_bytes": 33262,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "step_bytes": 6286,
+     "pack_step_zstd": {
+      "python_ms": 0.095,
+      "native_ms": 0.067,
+      "python_peak_py_bytes": 332492,
+      "native_peak_py_bytes": 62784,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_step_zstd": {
+      "python_ms": 0.052,
+      "native_ms": 0.034,
+      "python_peak_py_bytes": 87317,
+      "native_peak_py_bytes": 62927,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "jump_300_steps": {
+      "python_ms": 49.805,
+      "native_ms": 27.935,
+      "python_peak_py_bytes": 123901,
+      "native_peak_py_bytes": 99481,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 4096
+     }
+    },
+    {
+     "vertices": 1000000,
+     "changed": 20009,
+     "diff": {
+      "python_ms": 5.041,
+      "native_ms": 1.201,
+      "python_peak_py_bytes": 17000580,
+      "native_peak_py_bytes": 321618,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "apply_step": {
+      "python_ms": 0.468,
+      "native_ms": 0.172,
+      "python_peak_py_bytes": 403808,
+      "native_peak_py_bytes": 368,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "pack_record": {
+      "python_ms": 1.061,
+      "native_ms": 0.945,
+      "python_peak_py_bytes": 3322538,
+      "native_peak_py_bytes": 560867,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_record": {
+      "python_ms": 0.412,
+      "native_ms": 0.241,
+      "python_peak_py_bytes": 562326,
+      "native_peak_py_bytes": 321470,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "step_bytes": 43346,
+     "pack_step_zstd": {
+      "python_ms": 1.612,
+      "native_ms": 1.438,
+      "python_peak_py_bytes": 3322650,
+      "native_peak_py_bytes": 605143,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "unpack_step_zstd": {
+      "python_ms": 0.57,
+      "native_ms": 0.368,
+      "python_peak_py_bytes": 843767,
+      "native_peak_py_bytes": 603317,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     },
+     "jump_300_steps": {
+      "python_ms": 275.011,
+      "native_ms": 179.044,
+      "python_peak_py_bytes": 1168197,
+      "native_peak_py_bytes": 927639,
+      "python_peak_rss_bytes": 0,
+      "native_peak_rss_bytes": 0
+     }
+    }
+   ],
+   "load_after": [
+    2.4169921875,
+    2.5830078125,
+    3.52685546875
+   ]
+  }
+ }
+}

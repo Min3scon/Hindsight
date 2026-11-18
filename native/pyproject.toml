@@ -1,0 +1,12 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "hindsight_native"
+requires-python = ">=3.11"
+dynamic = ["version"]
+description = "Hindsight's delta engine in Rust (optional; the add-on falls back to Python)"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
