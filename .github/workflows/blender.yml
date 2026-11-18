@@ -178,7 +178,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q xvfb xauth libxi6 libxxf86vm1 libxfixes3 libxrender1 libxkbcommon0 libsm6 \
-            libice6 libgl1 libegl1 libgl1-mesa-dri libglx-mesa0 mesa-utils
+            libice6 libgl1 libegl1 libgl1-mesa-dri libglx-mesa0 mesa-utils imagemagick
       - name: Resolve, cache, install Blender
         id: resolve
         run: python tools/ci/resolve_blender.py "${{ matrix.version }}" --github-output
@@ -220,8 +220,11 @@ jobs:
           GALLIUM_DRIVER: llvmpipe
           MESA_GL_VERSION_OVERRIDE: "4.5"
           MESA_GLSL_VERSION_OVERRIDE: "450"
+          # Blender's own screenshot reads the front buffer: all black under Xvfb. The driver grabs the X root
+          # window instead (ImageMagick), so the screen must be exactly as big as the Blender window.
+          HS_UI_XSHOT: "1"
         run: |
-          xvfb-run -a -s "-screen 0 1920x1080x24 +extension GLX" \
+          xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" \
             python tests_ui/hs_ui.py run regress_slider_visible --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
       - name: Collect screenshots and logs
