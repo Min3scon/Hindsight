@@ -576,6 +576,29 @@ def test_caps_memo_stuck_between_target_and_limit():
     print("PASS test_caps_memo_stuck_between_target_and_limit")
 
 
+def test_enforce_reports_drops_before_packing():
+    """The crash journal must hear of every drop (runtime._journal_drop) even when packing then
+    fails, as when the drops were reported between enforce_caps and enforce_tiers."""
+    hs, step, rng = _caps_world(5)
+    hs[0].cursor = len(hs[0].entries)
+
+    class Broken:
+        packed = recompressed = errors = 0
+
+        def submit(self, entry, codec):
+            raise RuntimeError("packing failed")
+    heard = []
+    try:
+        store.enforce(hs, Settings(memory_limit_mb=1, raw_steps=0), Broken(), {}, store.CapsMemo(), hs[1],
+                      on_caps=lambda drops, st: heard.extend((h.uid, n) for h, n in drops))
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("packing should have failed")
+    assert heard and heard[0][0] == "A", heard
+    print("PASS test_enforce_reports_drops_before_packing")
+
+
 def test_caps_memo_same_as_whole_pass():
     """S4-3: over the memory limit with nothing left that may go, a pass looks only at the history
     that changed (store.CapsMemo). It must drop exactly what the whole pass drops, in every case:

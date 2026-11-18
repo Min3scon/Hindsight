@@ -289,30 +289,34 @@ class CapsMemo:
 
 
 def enforce(histories: list, settings, packer: Packer | None = None, stats: dict | None = None,
-            memo: CapsMemo | None = None, changed=None) -> list:
+            memo: CapsMemo | None = None, changed=None, on_caps=None) -> list:
     """enforce_caps, then enforce_tiers. Returns [(history, steps dropped)] for the histories that
-    lost steps, in the order of `histories`. `stats` receives "memory_dropped" and "total" (bytes
-    after the pass). With `memo` (kept by the caller between passes) and `changed` (the one
-    history that may have changed since the last pass), a pass that can only drop steps of
-    `changed` looks at nothing else (CapsMemo)."""
+    lost steps, in the order of `histories`; on_caps(that list, stats) is called with it before
+    the packing starts (so the caller hears of every drop even if packing fails). `stats` receives
+    "memory_dropped" and "total" (bytes after the pass). With `memo` (kept by the caller between
+    passes) and `changed` (the one history that may have changed since the last pass), a pass
+    that can only drop steps of `changed` looks at nothing else (CapsMemo)."""
     stats = {} if stats is None else stats
     pkey, skey = _packer_key(packer), _settings_key(settings)
     if memo is not None and memo.usable(histories, changed, pkey, skey):
-        return _enforce_one(histories, changed, settings, packer, stats, memo, pkey, skey)
+        return _enforce_one(histories, changed, settings, packer, stats, memo, pkey, skey, on_caps)
+    if memo is not None:
+        memo.clear()
     before = [len(h.entries) for h in histories]
     enforce_caps(histories, settings, stats)
+    drops = [(h, n - len(h.entries)) for h, n in zip(histories, before) if n != len(h.entries)]
+    if on_caps is not None:
+        on_caps(drops, stats)
     saved = enforce_tiers(histories, settings, packer)
     stats["total"] = stats["total"] - saved
     if memo is not None:
         if stats["stuck"]:
             memo.remember(histories, stats["total"], pkey, skey)
             stats["total"] = memo.state["total"]
-        else:
-            memo.clear()
-    return [(h, n - len(h.entries)) for h, n in zip(histories, before) if n != len(h.entries)]
+    return drops
 
 
-def _enforce_one(histories, h, settings, packer, stats, memo, pkey, skey) -> list:
+def _enforce_one(histories, h, settings, packer, stats, memo, pkey, skey, on_caps=None) -> list:
     """enforce for the case CapsMemo describes: the other histories have nothing that may go."""
     st = memo.state
     others = st["total"] - st["bytes"][h.uid]
@@ -337,6 +341,10 @@ def _enforce_one(histories, h, settings, packer, stats, memo, pkey, skey) -> lis
         _drop(h, j)
         stats["memory_dropped"] = j
         stuck = total > target
+    n = n0 - len(h.entries)
+    drops = [(h, n)] if n else []
+    if on_caps is not None:
+        on_caps(drops, stats)
     total -= enforce_tiers([h], settings, packer)
     stats["total"] = total
     if stuck:
@@ -345,5 +353,4 @@ def _enforce_one(histories, h, settings, packer, stats, memo, pkey, skey) -> lis
         st["total"] = total
     else:
         memo.clear()
-    n = n0 - len(h.entries)
-    return [(h, n)] if n else []
+    return drops

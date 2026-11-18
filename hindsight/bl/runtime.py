@@ -780,6 +780,14 @@ def _journal_drop(h, n) -> None:
         _journal("DROP", {"hist": h.uid, "n": int(n)})
 
 
+def _after_caps(drops, stats) -> None:
+    """The caps of a full pass have dropped steps (before any packing starts)."""
+    for x, n in drops:
+        _journal_drop(x, n)
+    if stats.get("memory_dropped"):
+        _note_eviction(int(stats["memory_dropped"]))
+
+
 def _enforce(h=None) -> None:
     """Keep caps and tiers. Incremental per commit (O(1)); full rescans every 64 commits or when
     the memory estimate crosses the limit, so recording cost does not grow with history length."""
@@ -806,10 +814,7 @@ def _enforce(h=None) -> None:
         stats = {}
         # S4-3: over the limit with nothing that may be dropped, a pass after one history changed
         # only looks at that history (store.CapsMemo); otherwise every history is checked
-        for x, n in store.enforce(_REG.all(), SETTINGS, packer, stats, _CAPS_MEMO, h):
-            _journal_drop(x, n)
-        if stats.get("memory_dropped"):
-            _note_eviction(int(stats["memory_dropped"]))
+        store.enforce(_REG.all(), SETTINGS, packer, stats, _CAPS_MEMO, h, on_caps=_after_caps)
         MEMORY["estimate"] = stats["total"]
     except Exception as e:
         log.error_once(("store", str(e)), f"history store error: {e}", e)
