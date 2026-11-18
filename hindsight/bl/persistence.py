@@ -13,7 +13,6 @@ Crash Recovery (``SETTINGS.crash_recovery``):
 """
 from __future__ import annotations
 
-import base64
 import binascii
 import hashlib
 import os
@@ -115,6 +114,13 @@ def _current_blend() -> str:
 
 
 def _on_journal(rtype, header, payload_fn=None) -> None:
+    # Every journal record is something the user just did (a stroke, a jump, a change to a history):
+    # the packer's idle recompression keeps off the CPU while they work.
+    p = runtime.packer
+    if p is not None:
+        note = getattr(p, "note_activity", None)
+        if note is not None:
+            note()
     j = _J["journal"]
     if j is None or j.closed:
         j = _open_journal(_current_blend())
@@ -227,9 +233,17 @@ def on_save_pre(*args) -> None:
         if _PROTECT["embed"]:
             pass   # history from a newer Hindsight: keep it exactly as it was
         elif mode in ("EMBED", "BOTH"):
-            # one expression: each full-size copy is let go as soon as the next one is made
-            text[DATA_PROP] = base64.b64encode(
-                persist.registry_to_bytes(runtime.reg(), _codec())).decode("ascii")
+            # The parts are the step blobs themselves (no copy); anything that can go wrong in
+            # putting them together happens here, before the stored copy is touched.
+            parts = persist.registry_parts(runtime.reg(), _codec())
+            if DATA_PROP in text:
+                # Blender's copy of the last saved history goes before the new one is built:
+                # otherwise the old copy, the new text and Blender's new copy are all held at once.
+                del text[DATA_PROP]
+            data = persist.parts_to_b64(parts)    # the same text as b64encode(b"".join(parts))
+            del parts
+            text[DATA_PROP] = data
+            del data
         elif DATA_PROP in text:
             del text[DATA_PROP]
     except Exception as e:
