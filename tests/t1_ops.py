@@ -171,18 +171,33 @@ def copy_constraint(name, index=0):
     return Op(f"duplicate constraint {index} of {name}", _sel_then([name], fn), [name])
 
 
+def _coll_arg(coll):
+    """How the collection operators name their target: by session uid since Blender 4.3, before that
+    by its index in the scene's collection tree (the scene collection is 0, then depth first)."""
+    target = C.scene.collection if coll is None else bpy.data.collections[coll]
+    if "collection_uid" in bpy.ops.object.move_to_collection.get_rna_type().properties:
+        return {"collection_uid": target.session_uid}
+    order = []
+
+    def walk(c):
+        order.append(c)
+        for child in c.children:
+            walk(child)
+    walk(C.scene.collection)
+    return {"collection_index": order.index(target)}
+
+
 def move_to_collection(name, coll, new=False):
     def fn():
         if new:
-            return bpy.ops.object.move_to_collection(collection_uid=C.scene.collection.session_uid, is_new=True,
-                                                     new_collection_name=coll)
-        return bpy.ops.object.move_to_collection(collection_uid=bpy.data.collections[coll].session_uid)
+            return bpy.ops.object.move_to_collection(is_new=True, new_collection_name=coll, **_coll_arg(None))
+        return bpy.ops.object.move_to_collection(**_coll_arg(coll))
     return Op(f"move {name} to {coll}", _sel_then([name], fn), [name, "scene"] if new else [name])
 
 
 def link_to_collection(name, coll):
     return Op(f"link {name} to {coll}", _sel_then([name], lambda: bpy.ops.object.link_to_collection(
-        collection_uid=bpy.data.collections[coll].session_uid)), [name])
+        **_coll_arg(coll))), [name])
 
 
 def remove_from_collection(name, coll):
