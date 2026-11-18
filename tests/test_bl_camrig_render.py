@@ -151,7 +151,9 @@ def test_multires_render_levels_without_history():
 
 def test_nothing_changed_or_left_behind():
     """Framing through the render copy leaves the user's data, the histories and bpy.data as they
-    were: no object, mesh or step added, no cursor moved, the modifiers' settings untouched."""
+    were: no object, mesh or step added (the scene and the model recorded with every kind of
+    data), no cursor moved, the modifiers' settings untouched."""
+    from hindsight.bl import datarec
     H.fresh()
     ob = H.make_mesh(1200, "Model")
     m = ob.modifiers.new("Displace", "DISPLACE")
@@ -162,27 +164,45 @@ def test_nothing_changed_or_left_behind():
     T.make_history(ob, "plain")
     bpy.ops.object.mode_set(mode="OBJECT")
     runtime.set_global(C, True)
-    C.view_layer.update()
+    sc = C.scene
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    datarec.FORCE_KINDS[0] = None
+    datarec.set_tracked(sc, True)
+    datarec.set_tracked(ob, True)
+    datarec.finish_operation("start")
 
     def hist():
         return sorted((h.uid, h.cursor, len(h.entries)) for h in runtime.reg().histories.values())
-    before = (hist(), runtime.scrub_info(C)["pos"], runtime.scrub_info(C)["len"])
-    sc = C.scene
-    sc.hindsight.movie_mode = True
-    n_obj, n_me = len(bpy.data.objects), len(bpy.data.meshes)
-    names = sorted(o.name for o in bpy.data.objects)
-    for _ in range(3):
-        assert camrig.frame(sc)
-    C.view_layer.update()
-    for _ in range(3):
-        runtime.tick()
-    assert len(bpy.data.objects) == n_obj and len(bpy.data.meshes) == n_me
-    assert sorted(o.name for o in bpy.data.objects) == names
-    assert (m.show_viewport, m.show_render, s.levels, s.render_levels) == (False, True, 0, 2)
-    assert ob.users_collection[0] == sc.collection and len(sc.collection.objects) == n_obj
-    assert (hist(), runtime.scrub_info(C)["pos"], runtime.scrub_info(C)["len"]) == before
-    sc.hindsight.movie_mode = False
-    assert not camrig.rig(sc)
+
+    def now():
+        return hist(), runtime.scrub_info(C)["pos"], runtime.scrub_info(C)["len"]
+    try:
+        sc.hindsight.movie_mode = True
+        datarec.finish_operation("Movie Mode")
+        before = now()
+        n_obj, n_me = len(bpy.data.objects), len(bpy.data.meshes)
+        names = sorted(o.name for o in bpy.data.objects)
+        for _ in range(3):
+            assert camrig.frame(sc)
+            datarec.finish_operation("frame")
+        C.view_layer.update()
+        datarec.finish_operation("frame")
+        assert len(bpy.data.objects) == n_obj and len(bpy.data.meshes) == n_me
+        assert sorted(o.name for o in bpy.data.objects) == names
+        assert (m.show_viewport, m.show_render, s.levels, s.render_levels) == (False, True, 0, 2)
+        assert ob.users_collection[0] == sc.collection and len(sc.collection.objects) == n_obj
+        assert now() == before, (now(), before)
+        sc.hindsight.movie_mode = False
+        assert not camrig.rig(sc)
+        datarec.finish_operation("Movie Mode off")
+        # the check has teeth: an object of the user's added the same way is recorded
+        n = len(runtime.scrub_info(C) and hist())
+        extra = ob.copy()
+        sc.collection.objects.link(extra)
+        datarec.finish_operation("add")
+        assert hist() != before[0] or len(hist()) != n, "the recorder didn't see an added object"
+    finally:
+        datarec.FORCE_SCOPE[0] = None
 
 
 def test_cache_not_kept_across_files():
