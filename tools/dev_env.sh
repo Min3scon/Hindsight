@@ -6,6 +6,7 @@
 #   bash tools/dev_env.sh --only 53,42    # just these venvs (42 50 51 52 53)
 #   bash tools/dev_env.sh --venvs DIR     # target folder (default /home/user/venvs)
 #   bash tools/dev_env.sh --no-rust       # skip rustup, maturin, zig (venvs only)
+#   bash tools/dev_env.sh --blender 4.2,5.3   # also real Blender binaries in /home/user/blender (--blender-dir DIR)
 #
 # Made to run as a cloud environment setup script: root, non-interactive, idempotent (a second run only
 # checks), and it never fails the session. A part that fails prints one "dev_env: WARN ..." line and the
@@ -26,15 +27,19 @@ VENVS=/home/user/venvs
 SELECT="42,53"
 RUST=1
 STRICT=0
+BLENDERS=""
+BLENDER_DIR=/home/user/blender
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --all) SELECT="42,50,51,52,53" ;;
     --only) shift; SELECT="${1:-}" ;;
     --venvs) shift; VENVS="${1:-}" ;;
+    --blender) shift; BLENDERS="${1:-}" ;;
+    --blender-dir) shift; BLENDER_DIR="${1:-}" ;;
     --no-rust) RUST=0 ;;
     --strict) STRICT=1 ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "dev_env: unknown option $1"; exit 2 ;;
   esac
   shift
@@ -136,11 +141,26 @@ setup_rust() {
   info "rust: $(rustc --version 2>/dev/null) with $(rustup target list --installed 2>/dev/null | wc -l) targets"
 }
 
+setup_blender() {   # setup_blender 5.3 -> real binary unpacked in BLENDER_DIR/5.3, deps and wheel in its Python
+  local ver="$1" out exe
+  python3 "$ROOT/tools/ci/install_blender.py" "$ver" --dest "$BLENDER_DIR/$ver" --cache "$BLENDER_DIR/dl" \
+    > "$BLENDER_DIR/.install_$ver.txt" 2>&1 || { warn "blender $ver: download or unpack failed (see $BLENDER_DIR/.install_$ver.txt)"; return; }
+  exe="$(sed -n 's/^exe=//p' "$BLENDER_DIR/.install_$ver.txt" | tail -1)"
+  [ -x "$exe" ] || { warn "blender $ver: no executable found"; return; }
+  python3 "$ROOT/tools/ci/install_deps.py" --blender-exe "$exe" >/dev/null 2>&1 \
+    && info "blender $ver: $exe ready (dependencies and wheel installed)" || warn "blender $ver: install_deps.py failed"
+}
+
 info "repository $ROOT, venvs $VENVS, venvs wanted: $SELECT"
 mkdir -p "$VENVS" || warn "cannot create $VENVS"
 IFS=',' read -r -a NUMS <<< "$SELECT"
 for n in "${NUMS[@]}"; do [ -n "$n" ] && setup_bpy_venv "$n"; done
 if [ "$RUST" = 1 ]; then setup_tools_venv; setup_rust; fi
+if [ -n "$BLENDERS" ]; then
+  mkdir -p "$BLENDER_DIR"
+  IFS=',' read -r -a BVS <<< "$BLENDERS"
+  for v in "${BVS[@]}"; do [ -n "$v" ] && setup_blender "$v"; done
+fi
 
 if [ "$WARNINGS" -eq 0 ]; then info "done, no warnings"; else info "done with $WARNINGS warning(s) above"; fi
 [ "$STRICT" = 1 ] && [ "$WARNINGS" -gt 0 ] && exit 1
