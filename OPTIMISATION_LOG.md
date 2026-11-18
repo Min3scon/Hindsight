@@ -65,6 +65,7 @@ stated conditions. It ends kept or reverted. Both count.
 | R030 | 2026-11-18 | Sidebar and popover lists (RUNTIME, from DRAW's measurement) | `step_list` built a label for every step to show 25 rows; modules imported inside per-redraw helpers | Build only the shown rows; import modules once. Measured together on a scratch tree by DRAW, then applied by RUNTIME | Steps sub-panel 1,774 us (global, 10,000 steps, 50 objects), 14.9 us per object; popover 2,460 us global; viewport redraw 1,868 us global filtered; timer 56 ms per minute | 147 us, 8.4 us; 519 us; 1,167 us; 44 ms per minute | Scratch tree = DRAW worktree plus both patches, 3 alternating rounds, 5.3.0 module (not re-measured on the merged commit) | tests/test_bl_runtime_ui.py (test_step_list_same_rows) | kept | a207a88 (merged 04af744); dev/reports/DRAW.md (patches section) |
 | R031 | 2026-11-18 | Movie Mode handler, visible objects (MOVIE) | `_apply` listed every object in the file up to 3 times on a frame that moves the history | List once and reuse for the same-step check, the timeline position and the record | 13.7 ms per frame (handler, 100k vertices, 500 other objects in the file) | 9.6 ms | Commit message only: no report from agent MOVIE, method not recorded | tests/test_bl_movie.py (65 lines added) | kept (merged on the main line 2026-11-18) | b6da845, 58aa22a (`bench/bench_movie.py --grid`) |
 | R032 | 2026-11-18 | global timeline | runtime._groups rebuilt every group (walk + sort of every step) after each recorded step with global history on; 25-90 ms per stroke at 50,000 steps | the kept groups are extended by the one step appended to one history; anything else builds them again; a test compares with a full build over 120 random operations | 25.1 / 86.4 ms (min / median) | 0.30 / 0.32 ms | 5 histories x 10,000 steps, 300-vertex meshes, Blender 5.3 module, old (66fcdf8) and new alternating, 2 rounds each, 15 strokes per round | test_bl_runtime_groups, test_bl_audit, test_bl_panels, test_bl_scrubber, test_bl_movie on 5.3 and 4.2 | kept | 68c7aa3 |
+| R033 | 2026-11-18 | vertex group weights read (D106 adds one read when entering Sculpt Mode) | meshio.read_extras loops over every vertex's groups through RNA in Python: about 80 ms at 100k vertices with 3 groups | read through a bmesh deform layer instead | RNA 77 / 124 ms (5.3), 42 / 42 ms (4.2) | bmesh 59 / 64 ms (5.3), 70 / 63 ms (4.2) | 99,602 vertices, 3 groups, two runs each in one process, Blender 5.3 and 4.2 modules; results equal | equality checked in the probe | reverted: faster on 5.3, slower on 4.2; Blender has no bulk read for weights (they aren't attributes in 4.2 or 5.3) | (probe only) |
 
 ## Tried or done without a number (not rounds)
 
@@ -129,6 +130,7 @@ machine and profile the embed path at 6,000 steps.
 31 rounds are logged.
 
 - Kept: 28 (R001 to R005, R007 to R019, R021, R023, R024, R026 to R032).
+- Reverted (later): R033.
 - Reverted: 4 (R006, R020, R022, R025).
 - Not merged, not counted: 0.
 - Kept rounds that stand on weaker evidence: R001 (after is a prototype), R014 (no absolute numbers), R018
