@@ -566,6 +566,9 @@ def _id_props(owner) -> dict:
         if k == idmap.UID_PROP:
             continue
         v = owner[k]
+        if isinstance(v, bpy.types.ID):              # a pointer (an object, a material, ...): by its id
+            out[k] = {REF_KEY: idmap.ref_of(v)}
+            continue
         if hasattr(v, "to_dict"):
             v = v.to_dict()
         elif hasattr(v, "to_list"):
@@ -575,8 +578,76 @@ def _id_props(owner) -> dict:
     return out
 
 
+def _gn_inputs(m):
+    """A Geometry Nodes modifier's input values on Blender 5.2 and later, where they are RNA
+    (modifier.properties.inputs.<identifier>: value, type, attribute_name) instead of custom properties.
+    None where the modifier keeps them as custom properties (read by _id_props)."""
+    props = getattr(m, "properties", None)
+    inputs = getattr(props, "inputs", None) if props is not None else None
+    ng = getattr(m, "node_group", None)
+    if inputs is None or ng is None:
+        return None
+    out = {}
+    for it in ng.interface.items_tree:
+        if getattr(it, "item_type", "SOCKET") != "SOCKET" or getattr(it, "in_out", "") != "INPUT":
+            continue
+        x = getattr(inputs, it.identifier, None)
+        if x is None:
+            continue
+        rec = {}
+        for a in ("type", "attribute_name", "value"):
+            if not hasattr(x, a):
+                continue
+            try:
+                v = getattr(x, a)
+            except Exception:
+                continue
+            if isinstance(v, bpy.types.ID):
+                rec[a] = {"ref": idmap.ref_of(v)}
+                continue
+            if v is None:
+                rec[a] = None
+                continue
+            try:
+                v = normalise(v)
+            except Exception:
+                continue
+            if isinstance(v, (int, float, str, list, bool)):
+                rec[a] = v
+        out[it.identifier] = rec
+    return out
+
+
+def _set_gn_inputs(m, recs) -> None:
+    props = getattr(m, "properties", None)
+    inputs = getattr(props, "inputs", None) if props is not None else None
+    if inputs is None or not isinstance(recs, dict):
+        return
+    for ident, rec in recs.items():
+        x = getattr(inputs, ident, None)
+        if x is None or not isinstance(rec, dict):
+            continue
+        for a in ("type", "attribute_name", "value"):      # the type first: it decides what is used
+            if a not in rec:
+                continue
+            v = rec[a]
+            if isinstance(v, dict) and "ref" in v:
+                v = idmap.find(v["ref"]) if v["ref"] else None
+            try:
+                setattr(x, a, to_rna(v) if not isinstance(v, bpy.types.ID) else v)
+            except Exception as e:
+                log.error_once(("gn_input", ident, a, str(e)), f"could not restore input {ident}.{a}: {e}", e)
+
+
+REF_KEY = "__hindsight_ref__"   # a custom property that points to a datablock, recorded by its id
+
+
 def _set_id_props(owner, props: dict) -> None:
     for k, v in (props or {}).items():
+        if isinstance(v, dict) and set(v) == {REF_KEY}:
+            v = idmap.find(v[REF_KEY]) if v[REF_KEY] else None
+            if v is None:
+                continue                              # deleted now: left unset, like other references
         try:
             owner[k] = v
         except Exception:
@@ -634,7 +705,8 @@ def object_body(ob) -> dict:
         "hide": [bool(ob.hide_viewport), bool(ob.hide_render), bool(ob.hide_select)],
         "props": struct_values(ob, _BODY_SKIP),
         "constraints": [{"type": c.type, "name": c.name, "values": struct_values(c)} for c in ob.constraints],
-        "modifiers": [{"type": m.type, "name": m.name, "values": struct_values(m), "custom": _id_props(m)}
+        "modifiers": [{"type": m.type, "name": m.name, "values": struct_values(m), "custom": _id_props(m),
+                       "gn": _gn_inputs(m)}
                       for m in ob.modifiers],
         "slots": [[s.link, idmap.ref_of(s.material) if s.material is not None else None] for s in ob.material_slots],
         "hidden": _hidden(ob),
@@ -794,6 +866,7 @@ def _recreate_object(scene, uid, body, snap):
             m.name = w["name"]
             set_struct_values(m, w.get("values") or {}, ob, f'modifiers["{m.name}"].')
             _set_id_props(m, w.get("custom"))
+            _set_gn_inputs(m, w.get("gn"))
         except Exception as e:
             log.error_once(("modifier_new", str(e)), f"could not bring back a modifier: {e}", e)
     for i, (link, ref) in enumerate(body.get("slots") or ()):

@@ -49,6 +49,7 @@ Fixed:
 - Blender 5.0: scrubbing back over a colour layer could lose which layer is active.
 - A damaged history block stored with LZ4 is refused cleanly now.
 - After a long session a repeating error could fill the system console.
+- An object the global history deleted and brings back keeps its Geometry Nodes inputs on Blender 5.2 and 5.3, and on every version its object inputs and other custom properties that point to something.
 - Putting constraints back when one of them can't be made again no longer gives the others the wrong settings.
 
 ## 1.0.0-beta.2
