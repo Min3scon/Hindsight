@@ -687,6 +687,91 @@ def _set_hidden(ob, hidden) -> None:
                 pass
 
 
+# Settings a physics modifier keeps in structs of its own (struct_values leaves nested structs out).
+_MOD_STRUCTS = {"CLOTH": ("settings", "collision_settings"), "SOFT_BODY": ("settings",),
+                "FLUID": ("domain_settings", "flow_settings", "effector_settings")}
+
+
+def _nested_values(m) -> dict:
+    out = {}
+    for name in _MOD_STRUCTS.get(m.type, ()):
+        st = getattr(m, name, None)
+        if st is not None:
+            try:
+                out[name] = struct_values(st)
+            except Exception:
+                continue
+    return out
+
+
+def _particles(m):
+    """A particle system modifier: its settings datablock (by id, and its values in case it is gone
+    when the object comes back) and its seed. Baked particles are not part of it."""
+    ps = getattr(m, "particle_system", None) if m.type == "PARTICLE_SYSTEM" else None
+    if ps is None or ps.settings is None:
+        return None
+    return {"seed": int(ps.seed), "settings": idmap.claim(ps.settings),
+            "values": struct_values(ps.settings)}
+
+
+def _physics(ob) -> dict:
+    """Physics settings that live on the object: collision, force field, rigid body."""
+    out = {}
+    for name, used in (("collision", any(m.type == "COLLISION" for m in ob.modifiers)),
+                       ("field", getattr(getattr(ob, "field", None), "type", "NONE") != "NONE"),
+                       ("rigid_body", getattr(ob, "rigid_body", None) is not None)):
+        st = getattr(ob, name, None)
+        if used and st is not None:
+            try:
+                out[name] = struct_values(st)
+            except Exception:
+                continue
+    return out
+
+
+def _set_physics_modifier(ob, m, w) -> None:
+    for name, vals in (w.get("nested") or {}).items():
+        st = getattr(m, name, None)
+        if st is not None:
+            set_struct_values(st, vals, ob, f'modifiers["{m.name}"].{name}.')
+    pr = w.get("particles")
+    ps = getattr(m, "particle_system", None)
+    if isinstance(pr, dict) and ps is not None:
+        made = ps.settings
+        want = idmap.find(pr["settings"]) if pr.get("settings") else None
+        if want is not None and want != made:
+            ps.settings = want
+            if made is not None and made.users == 0:
+                bpy.data.particles.remove(made)
+        elif want is None and ps.settings is not None:
+            set_struct_values(ps.settings, pr.get("values") or {})
+        ps.seed = int(pr.get("seed", ps.seed))
+
+
+def _set_physics(ob, phys) -> None:
+    if not isinstance(phys, dict):
+        return
+    if phys.get("collision") and getattr(ob, "collision", None) is not None:
+        set_struct_values(ob.collision, phys["collision"])
+    f = phys.get("field")
+    if f and getattr(ob, "field", None) is not None:
+        if "type" in f:                           # the type first: it decides which settings exist
+            set_struct_values(ob.field, {"type": f["type"]})
+        set_struct_values(ob.field, f)
+    rb = phys.get("rigid_body")
+    if rb:
+        try:
+            if ob.rigid_body is None:
+                with bpy.context.temp_override(object=ob, active_object=ob, selected_objects=[ob]):
+                    bpy.ops.rigidbody.object_add()
+            if ob.rigid_body is not None:
+                if "type" in rb:
+                    set_struct_values(ob.rigid_body, {"type": rb["type"]})
+                set_struct_values(ob.rigid_body, rb)
+        except Exception as e:
+            log.error_once(("rigid_body", str(e)), f"could not bring back a rigid body: {e}", e)
+
+
 def object_body(ob) -> dict:
     """What it takes to bring a deleted object back exactly: its settings as values (transforms with
     their rotation mode, deltas, visibility, display, ...), its constraints and modifiers with their
@@ -706,8 +791,9 @@ def object_body(ob) -> dict:
         "props": struct_values(ob, _BODY_SKIP),
         "constraints": [{"type": c.type, "name": c.name, "values": struct_values(c)} for c in ob.constraints],
         "modifiers": [{"type": m.type, "name": m.name, "values": struct_values(m), "custom": _id_props(m),
-                       "gn": _gn_inputs(m)}
+                       "gn": _gn_inputs(m), "nested": _nested_values(m), "particles": _particles(m)}
                       for m in ob.modifiers],
+        "physics": _physics(ob),
         "slots": [[s.link, idmap.ref_of(s.material) if s.material is not None else None] for s in ob.material_slots],
         "hidden": _hidden(ob),
         "custom": _id_props(ob),
@@ -867,6 +953,7 @@ def _recreate_object(scene, uid, body, snap):
             set_struct_values(m, w.get("values") or {}, ob, f'modifiers["{m.name}"].')
             _set_id_props(m, w.get("custom"))
             _set_gn_inputs(m, w.get("gn"))
+            _set_physics_modifier(ob, m, w)
         except Exception as e:
             log.error_once(("modifier_new", str(e)), f"could not bring back a modifier: {e}", e)
     for i, (link, ref) in enumerate(body.get("slots") or ()):
@@ -880,6 +967,7 @@ def _recreate_object(scene, uid, body, snap):
                 slot.material = idmap.find(ref) if ref else None
         except Exception:
             pass
+    _set_physics(ob, body.get("physics"))
     _set_hidden(ob, body.get("hidden"))
     _set_id_props(ob, body.get("custom"))
     return ob

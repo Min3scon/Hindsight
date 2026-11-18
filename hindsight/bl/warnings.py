@@ -167,7 +167,7 @@ TXT_EV_SHARED_MESH = ("Shares its mesh with {owner} (a linked duplicate): change
 TXT_EV_WEIGHTS = ("Some vertex weights outside 0 to 1 (Blender's bevel and inset can leave tiny negative "
                   "ones) came back as 0 to 1: Blender only takes weights from 0 to 1")
 TXT_EV_PHYSICS = ("If this object is deleted and brought back by the global history, its physics and particle "
-                  "systems won't come back")
+                  "settings come back, except Dynamic Paint surfaces and baked caches")
 TXT_EV_NAME_TAKEN = "At this step it is called {want}, but another object has that name, so it's {got}"
 TXT_EV_MISSING_REF = ("This step refers to {names}, which is deleted now. This object's own history can't "
                       "bring it back; the global history can")
