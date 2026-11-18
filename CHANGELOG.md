@@ -27,7 +27,9 @@ Faster and lighter:
 Fixed:
 
 - The on-screen slider hung to the right of the viewport. The whole slider is centred now.
-- After the step cap or the memory limit had dropped old steps, recovery after a crash (On open: Interrupted session) could bring the history back with later steps in the wrong place.
+- Recovery after a crash (On open: Interrupted session) could bring back a history that didn't match the mesh in the file, so scrubbing showed shapes that never existed. It happened after the step cap or the memory limit dropped old steps, after going back past the last save and sculpting there, and after a join.
+- Steps that can't be reached from the saved file are left out of the recovered history now. The Undo History tab says how many, and for which object.
+- After opening a file that was changed without Hindsight, an interrupted session lost what was recorded next. Those steps come back now.
 - The memory limit could drop steps that an object you had scrubbed back hadn't reached yet. Going forward again then gave shapes that never existed.
 - Blender 5.2 and 5.3: Remove Hindsight data from this file failed.
 - Blender 5.3: switching an object to a paint mode and saving wrote a history for it, though nothing had been painted.

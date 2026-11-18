@@ -40,6 +40,8 @@ UNREADABLE_EMBED_TEXT = ("The history stored in this .blend could not be read, s
 DAMAGED_TEXT = "{lost} damaged step{s} of '{obj}' could not be loaded. The {kept} steps before them are fine"
 DAMAGED_ALL_TEXT = ("The history of '{obj}' is damaged before the step it was saved at, so none of it could be "
                     "kept ({lost} step{s}). '{obj}' itself is as you saved it")
+LEFT_OUT_TEXT = ("{n} step{s} of '{obj}' from the interrupted session could not be brought back. "
+                 "They were made after going back past the last save. '{obj}' is as you saved it")
 UNREADABLE_PROP = "hindsight_data_unreadable"
 
 # Set while loading a file whose history this version must not overwrite (newer format).
@@ -349,6 +351,19 @@ def _report_load(reg) -> None:
                          f"it is saved as format {persist.FORMAT_VERSION} from now on")
 
 
+def _report_replay(reg) -> None:
+    """Sidebar notes for steps crash recovery had to leave out (persist.replay says which)."""
+    for uid, n in (getattr(reg, "replay_report", None) or {}).get("stopped", {}).items():
+        h = reg.histories.get(uid)
+        obj = None
+        for m in (h.members if h is not None else []):
+            ob = runtime.find_object(m)
+            if ob is not None:
+                obj = ob.name
+                break
+        _note("WARNING", LEFT_OUT_TEXT.format(n=n, s="" if n == 1 else "s", obj=obj or "an object"))
+
+
 @bpy.app.handlers.persistent
 @guard.guarded("loading")
 def on_load_post(*args) -> None:
@@ -378,7 +393,13 @@ def on_load_post(*args) -> None:
     if reg is not None:
         if recover and j is not None:
             try:
-                persist.replay(reg, j.read())
+                recs = j.read()
+                persist.replay(reg, recs)
+                if recs and recs[-1][0] != "SAVE" and not (recs[-1][0] == "META" and recs[-1][1].get("resync")):
+                    # the session goes on from the recovered state: a second recovery starts there
+                    j.append("META", {"resync": True})
+                    j.flush(fsync=False)
+                _report_replay(reg)
             except Exception as e:
                 guard.fail("loading", e, "crash recovery failed")
         try:

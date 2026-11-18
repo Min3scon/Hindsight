@@ -132,25 +132,30 @@ def test_clamped_weights_note_goes_away():
     assert not runtime.WEIGHTS_CLAMPED
 
 
-def _journal_and_live(strokes, verts=2000, n=50):
-    """Record strokes with the crash journal captured; return (live step numbers, replayed ones)."""
+def _journal_and_live(strokes, verts=2000, n=50, saved_after=0):
+    """Record strokes with the crash journal captured, the file "saved" after `saved_after` of them.
+    Returns (live step numbers, replayed ones, the replayed cursor, the records since the save)."""
     from hindsight.core import persist
-    from hindsight.core.registry import Registry
     recs = []
     hook = runtime.journal_hook
     runtime.journal_hook = lambda rtype, header, fn=None: recs.append((rtype, dict(header), fn() if fn else b""))
     try:
         ob = H.make_mesh(verts)
         H.enter(ob, "SCULPT")
+        blob = persist.registry_to_bytes(runtime.reg())
         for i in range(strokes):
+            if i == saved_after:
+                blob = persist.registry_to_bytes(runtime.reg())
+                del recs[:]
             H.fake_stroke(ob, i, n=n)
             assert runtime.commit(ob) is not None
         live = [e.seq for e in runtime.history_of(ob).entries]
     finally:
         runtime.journal_hook = hook
-    r = Registry()
+    r = persist.registry_from_bytes(blob)
     persist.replay(r, recs)
-    return live, [e.seq for e in list(r.histories.values())[0].entries], recs
+    h = list(r.histories.values())[0]
+    return live, [e.seq for e in h.entries], h.cursor, recs
 
 
 def test_crash_journal_knows_what_the_step_cap_dropped():
@@ -161,11 +166,18 @@ def test_crash_journal_knows_what_the_step_cap_dropped():
     cap = SETTINGS.max_steps
     SETTINGS.max_steps = 5
     try:
-        live, replayed, recs = _journal_and_live(8)
+        live, replayed, cursor, recs = _journal_and_live(8, saved_after=5)
+        assert len(live) == 5 and replayed == live and cursor == 2, (live, replayed, cursor)
+        assert sum(1 for r in recs if r[0] == "DROP") == 3
+        # D77: nothing saved yet: the file's mesh is the one before the first step, so every step
+        # stays, the dropped ones too (the history is trimmed again once the cursor has moved on)
+        H.fresh()
+        SETTINGS.max_steps = 5
+        live, replayed, cursor, recs = _journal_and_live(8)
+        assert len(live) == 5 and replayed == list(range(live[0] - 3, live[0])) + live and cursor == 0, \
+            (live, replayed, cursor)
     finally:
         SETTINGS.max_steps = cap
-    assert len(live) == 5 and replayed == live, (live, replayed)
-    assert sum(1 for r in recs if r[0] == "DROP") == 3
 
 
 def test_crash_journal_knows_what_the_memory_limit_dropped():
@@ -175,11 +187,13 @@ def test_crash_journal_knows_what_the_memory_limit_dropped():
     SETTINGS.memory_limit_mb = 1
     SETTINGS.raw_steps = 1000              # steps stay unpacked, so 1 MB is passed after a few dozen
     try:
-        live, replayed, recs = _journal_and_live(90, verts=20000, n=2000)
+        live, replayed, cursor, recs = _journal_and_live(90, verts=20000, n=2000, saved_after=70)
     finally:
         SETTINGS.memory_limit_mb, SETTINGS.raw_steps = limit, raw
     assert len(live) < 90, "the memory limit dropped nothing: the test needs bigger strokes"
+    assert any(r[0] == "DROP" for r in recs), "nothing was dropped after the save"
     assert replayed == live, (live[:5], replayed[:5], len(live), len(replayed))
+    assert 0 < cursor < len(live) and live[cursor - 1] == 70, (cursor, live[:3])
 
 
 def test_global_timeline_is_built_once_until_it_changes():

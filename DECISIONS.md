@@ -18,6 +18,24 @@ use the Ponytail and CodeOptiX repositories to optimise; rewrite in Rust.
 - The venvs also have the optional `lz4` package, which the owner's Blender doesn't: it showed a real bug
   (a damaged lz4 frame raised instead of being refused).
 
+### Crash recovery keeps the saved state (D77 to D83, core/persist.py replay)
+- The file on disk holds every mesh as it was at the last save and recovery never changes a mesh. So the
+  rule for every recovered history is: the saved state is at its cursor, and what the session recorded
+  since is ahead of it. Everything in replay follows from that.
+- Steps the session dropped (step cap, memory limit, Delete earlier steps) that lie at or after the saved
+  state are kept. The recovered history can be longer than the cap; it is trimmed once its cursor moves on.
+- A session that went back past the saved state and recorded there removed the steps that lead to the
+  file's mesh. Those new steps are left out, with a note. They could be kept only by adding steps that
+  undo the removed ones first, and those would need step numbers between existing ones: the global
+  timeline orders every history by step number, so there is no room. Moving the mesh at load instead was
+  rejected: recovery must never change what the user saved.
+- A join after the save is recovered when the steps that are part of the file form one run at the start
+  of the merged history (the usual case). Otherwise the merged history has no position for the file's
+  state and is left out.
+- New fields in journal records ("at" and "mesh" in RESET, "file_at" in META, META without a history for
+  "resync" and "saved") are ignored by 1.0.0-beta.2, which reads such a journal as before. The record
+  types and the journal format are unchanged.
+
 ### Movie Mode camera and lighting (contract: INTERFACES.md section 9)
 - Hindsight adds its own objects ("Hindsight Camera", three sun lamps) instead of moving the user's:
   moving someone's camera is not undoable in spirit even when Ctrl+Z works. The user's camera becomes the

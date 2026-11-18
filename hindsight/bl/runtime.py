@@ -1390,8 +1390,9 @@ def reset_history(context, obj) -> None:
     h = history_of(obj)
     if h is None:
         return
+    at = h.cursor
     h.reset()
-    _journal("RESET", {"hist": h.uid})
+    _journal("RESET", {"hist": h.uid, "at": at})
     if obj.mode == "EDIT":
         return
     ensure_state(obj, refresh=True)
@@ -1446,7 +1447,8 @@ def check_outside_changes(saved: dict) -> None:
     """D46: after opening a file, compare every recorded object with how Hindsight saved it. Values
     changed in a session without Hindsight become one step; a changed mesh can't be rebuilt from
     the history, so that object's history is left out with a message (never played back onto it)."""
-    from . import adapters, datarec, idmap
+    from . import datarec, idmap
+    outside = set()
     for u, rec in (saved or {}).items():
         ob = idmap.find(u) or find_object(u)
         if ob is None or not isinstance(rec, dict):
@@ -1456,7 +1458,14 @@ def check_outside_changes(saved: dict) -> None:
         if fp and isinstance(ob, bpy.types.Object) and ob.type == "MESH" and h is not None and h.entries:
             if mesh_fingerprint(ob) != fp:
                 h.reset()
-                _journal("RESET", {"hist": h.uid})
+                # with the meshes as they are now: steps recorded from here on belong to them, and
+                # crash recovery must not take this history for a stale one again (D82)
+                prints = {}
+                for m in h.members:
+                    o = ob if m == u else (idmap.find(m) or find_object(m))
+                    if isinstance(o, bpy.types.Object) and o.type == "MESH":
+                        prints[m] = mesh_fingerprint(o)
+                _journal("RESET", {"hist": h.uid, "mesh": prints})
                 for m in list(h.members):
                     _REG.remove_object(m)
                 load_notes.append(("ERROR", OUTSIDE_MESH_TEXT.format(name=ob.name)))
@@ -1467,7 +1476,17 @@ def check_outside_changes(saved: dict) -> None:
             st = datarec._state(u)
             st.values = {(a, p): v for a, p, v in vals}
             _restore_missing_refs(u, rec.get("missing"))
-            datarec.commit(label=OUTSIDE_LABEL, uids={u}, mesh=False)
+            if datarec.commit(label=OUTSIDE_LABEL, uids={u}, mesh=False):
+                outside.add(u)
+    if outside:
+        # D83: the file already holds these changes, so for crash recovery its state is the position
+        # after the step just made, and the values to compare with next time are today's
+        prints = saved_prints()
+        for u in sorted(outside):
+            h = _REG.history_for(u)
+            if h is not None:
+                _journal("META", {"hist": h.uid, "file_at": h.cursor})
+        _journal("META", {"saved": {u: prints[u] for u in sorted(outside) if u in prints}})
 
 
 def _restore_missing_refs(u, miss) -> None:
@@ -1526,8 +1545,9 @@ def reset_and_turn_off(context, obj) -> None:
     uid = obj_uid(obj, create=True)
     h = _REG.history_for(uid)
     if h is not None:
+        at = h.cursor
         h.reset()
-        _journal("RESET", {"hist": h.uid})
+        _journal("RESET", {"hist": h.uid, "at": at})
         _REG.remove_object(uid)
     _REG.disabled.add(uid)
     _STATES.pop(uid, None)

@@ -329,10 +329,31 @@ def sidecar_missing(blend_path: str, expected: bool) -> bool:
 # journal replay
 # ---------------------------------------------------------------------------
 def replay(reg, records: list) -> int:
-    """Apply journal records after the last SAVE onto reg. Never touches meshes; each
-    history's cursor keeps its saved value (only clamped to len(entries)). The last
-    journaled cursor is kept in ``h.recovered_cursor``. Returns records applied."""
+    """Apply journal records after the last SAVE onto reg. Returns records applied.
+
+    Never touches meshes. The file on disk holds every mesh as it was at the last save, so each
+    history has to come out with that state at its cursor and the steps recorded since then as steps
+    ahead of it. The records describe what the session did to its own history, which can leave the
+    saved state behind. Three cases get special care:
+    - The session dropped more of the oldest steps than lie before the saved state (step cap, memory
+      limit, Delete earlier steps). Those before it are dropped; the rest stay, and later positions in
+      the records are shifted by their count (``skew``).
+    - The session went back past the saved state and recorded a new step, which removed the steps
+      leading to the saved state, or cleared the history while it stood somewhere else. Nothing
+      recorded from there on can be reached from the saved mesh: that history stops being replayed
+      (``stopped``) and keeps what it had (or stays empty after a clear).
+    - A join rewrites the target's history as RESET plus every step again. Steps known from before
+      are recognised by their number, and the cursor goes after the ones that are part of the file.
+    A META record with "resync" and no history (written when a recovered file is opened) says that the
+    session went on from the recovered state, so all of this bookkeeping starts again there. Opening a
+    file that was changed without Hindsight writes what recovery needs to know about it: "mesh" in the
+    RESET of a history left out (the fingerprints its later steps start from), "file_at" for a history
+    that got a step for changed values (the file's state is after that step), "saved" for the values.
+
+    ``reg.replay_report`` is {"stopped": {history uid: steps left out}}. The last journaled cursor of a
+    history is kept in ``h.recovered_cursor``."""
     from .history import History
+    from .step import step_from_bytes
 
     start = 0
     for i, rec in enumerate(records):
@@ -356,6 +377,34 @@ def replay(reg, records: list) -> int:
             reg.by_object.setdefault(m, uid)
         return h
 
+    skew = {}        # uid -> steps kept at the head that the session had dropped
+    stopped = {}     # uid -> steps left out since replaying this history stopped
+    live = {}        # uid -> the session's own cursor, as a position in the recovered history
+    resets = {}      # uid -> [was the session at the saved state?, steps put back] of an open RESET
+    home = {}        # step number -> (part of the file's state?, from a history replayed in full?)
+
+    def settle(h):
+        """Decide what the last RESET of h was, once the records after it show it."""
+        st = resets.pop(h.uid, None)
+        if st is None:
+            return
+        synced, n = st
+        if n == 0:
+            if not synced:
+                stopped.setdefault(h.uid, 0)          # cleared somewhere else: later steps don't fit
+            return
+        flags = [home.get(e.seq) for e in h.entries[:n]]
+        p = 0
+        while p < n and flags[p] is not None and flags[p][0]:
+            p += 1
+        if all(f is not None and f[1] for f in flags) and not any(f[0] for f in flags[p:]):
+            h.cursor = p
+        else:           # the steps of the file's state aren't one run at the start: no place for it
+            stopped[h.uid] = stopped.get(h.uid, 0) + len(h.entries)
+            h.entries = []
+            h.cursor = 0
+        _clamp_hist(h)
+
     max_seq = None
     applied = 0
     for rtype, header, payload in records[start:]:
@@ -364,56 +413,108 @@ def replay(reg, records: list) -> int:
         if rtype == "STEP":
             if not uid:
                 continue
-            from .step import step_from_bytes
             step = step_from_bytes(payload)
             h = get_hist(uid, step.target)
-            at = int(header.get("at", len(h.entries)))
+            max_seq = step.seq if max_seq is None else max(max_seq, step.seq)
+            st = resets.get(uid)
+            if st is not None:
+                if step.seq in home and uid not in stopped:
+                    st[1] += 1                       # a step the history had before: put back
+                else:
+                    settle(h)
+            k = skew.get(uid, 0)
+            at = int(header.get("at", len(h.entries) - k)) + k
+            if uid not in stopped and at < h.cursor:
+                stopped[uid] = 0                     # replaces steps that lead to the saved state
+            if uid in stopped:
+                stopped[uid] += 1
+                continue
             if 0 <= at < len(h.entries):
                 h.entries = h.entries[:at]
             h.entries.append(Entry(step=step))
+            live[uid] = len(h.entries)
             _clamp_hist(h)
-            max_seq = step.seq if max_seq is None else max(max_seq, step.seq)
         elif rtype == "CURSOR":
             if not uid:
                 continue
             h = get_hist(uid)
             h.recovered_cursor = int(header.get("cursor", 0))
+            live[uid] = h.recovered_cursor + skew.get(uid, 0)
         elif rtype == "TRUNC":
             if not uid:
                 continue
             h = get_hist(uid)
-            keep = max(0, int(header.get("keep", len(h.entries))))
+            settle(h)
+            keep = max(0, int(header.get("keep", len(h.entries)))) + skew.get(uid, 0)
+            if uid not in stopped and keep < h.cursor:
+                stopped[uid] = 0                     # removes steps that lead to the saved state
+            if uid in stopped:
+                continue
             h.entries = h.entries[:keep]
             _clamp_hist(h)
         elif rtype == "DROP":
             if not uid:
                 continue
             h = get_hist(uid)
-            n = max(0, min(int(header.get("n", 0)), len(h.entries)))
-            if n:
-                if callable(getattr(h, "drop_oldest", None)):
-                    h.drop_oldest(n)
-                else:
-                    h.entries = h.entries[n:]
-                    h.cursor = max(0, h.cursor - n)
-                    mt = h.morph_target
-                    h.morph_target = None if mt is None or mt - n < 0 else mt - n
+            settle(h)
+            if uid in stopped:
+                continue
+            k = skew.get(uid, 0)
+            n = max(0, min(int(header.get("n", 0)), len(h.entries) - k))
+            d = min(n, h.cursor)                     # only steps before the saved state may go
+            mt = h.morph_target
+            if d:
+                h.drop_oldest(d)
+            if mt is not None and mt - k < n:
+                h.morph_target = None                # the session dropped its morph target
+            if n > d:
+                skew[uid] = k + n - d
+            if uid in live:
+                live[uid] = max(0, live[uid] - d)
             _clamp_hist(h)
         elif rtype == "RESET":
             if not uid:
                 continue
             h = get_hist(uid)
+            settle(h)
+            clean = uid not in stopped and not skew.get(uid)
+            at = header.get("at")
+            where = live.get(uid, h.cursor) if at is None else int(at) + skew.get(uid, 0)
+            for i, e in enumerate(h.entries):
+                home[e.seq] = (i < h.cursor, clean)
+            resets[uid] = [clean and where == h.cursor, 0]
+            prints = header.get("mesh")          # cleared at load because a mesh was changed outside
+            if isinstance(prints, dict) and isinstance(getattr(reg, "saved", None), dict):
+                for m, fp in prints.items():     # later steps were recorded on that mesh
+                    rec = reg.saved.get(m)
+                    reg.saved[m] = dict(rec, mesh=fp) if isinstance(rec, dict) else {"mesh": fp}
             h.entries = []
             h.cursor = 0
             h.morph_target = None
+            skew.pop(uid, None)
+            live[uid] = 0
         elif rtype == "META_EVERYTHING":
             t = header.get("uid")
             if t and hasattr(reg, "everything"):
                 (reg.everything.add if header.get("on") else reg.everything.discard)(t)
         elif rtype == "META":
             if not uid:
+                if header.get("resync"):
+                    for u in list(resets):
+                        settle(reg.histories[u])
+                    skew.clear(); stopped.clear(); live.clear()
+                    applied += 1
+                elif isinstance(header.get("saved"), dict):      # objects as the file holds them now
+                    if isinstance(getattr(reg, "saved", None), dict):
+                        reg.saved.update(header["saved"])
+                    applied += 1
                 continue
             h = get_hist(uid)
+            if "file_at" in header and uid not in stopped:
+                # a step made when the file was opened, for changes the file already holds
+                settle(h)
+                h.cursor = int(header["file_at"]) + skew.get(uid, 0)
+                live[uid] = h.cursor
             if header.get("members") is not None:
                 h.members = list(header["members"])
                 known_members[uid] = list(h.members)
@@ -421,15 +522,18 @@ def replay(reg, records: list) -> int:
                     reg.by_object[m] = uid
             if "enabled" in header:
                 h.enabled = bool(header["enabled"])
-            if "morph_target" in header:
+            if "morph_target" in header and uid not in stopped:
                 mt = header["morph_target"]
-                h.morph_target = None if mt is None else int(mt)
+                h.morph_target = None if mt is None else int(mt) + skew.get(uid, 0)
             if header.get("objects") is not None:
                 h.recovered_objects = header["objects"]
             _clamp_hist(h)
         else:
             continue
         applied += 1
+    for u in list(resets):
+        settle(reg.histories[u])
+    reg.replay_report = {"stopped": {u: n for u, n in stopped.items() if n}}
     if max_seq is not None and reg.next_seq <= max_seq:
         reg.next_seq = int(max_seq) + 1
     return applied

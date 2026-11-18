@@ -691,6 +691,182 @@ def test_replay_semantics():
     assert reg.everything == {"objA"}, reg.everything
 
 
+def _saved_history(n, cursor, uid="H1", obj="objA", first=1):
+    """A registry as loaded from a file: one history of n steps saved at `cursor`."""
+    from hindsight.core.history import History
+    from hindsight.core.registry import Registry
+    rng = np.random.default_rng(11)
+    reg = Registry()
+    h = History(uid, [obj])
+    h.entries = [Entry(_delta_step(first + i, obj, rng)) for i in range(n)]
+    h.cursor = cursor
+    reg.histories[uid] = h
+    reg.by_object[obj] = uid
+    reg.next_seq = first + n
+    return reg, h
+
+
+def _step_rec(seq, at, uid="H1", obj="objA"):
+    from hindsight.core.step import step_to_bytes
+    return ("STEP", {"hist": uid, "at": at}, step_to_bytes(_delta_step(seq, obj, np.random.default_rng(seq))))
+
+
+def _seqs(h):
+    return [e.meta["seq"] for e in h.entries]
+
+
+def test_replay_keeps_the_saved_state_through_drops():
+    """D77: the session dropped more of the oldest steps than lie before the saved state. The file's
+    mesh is the state at the saved cursor, so the steps after it must stay."""
+    from hindsight.core.persist import replay
+    # saved [1..5] at 5; six strokes with a cap of 5 steps: the session ends with [7..11]
+    reg, h = _saved_history(5, 5)
+    recs = []
+    for seq in range(6, 12):
+        recs += [_step_rec(seq, 5), ("DROP", {"hist": "H1", "n": 1}, b"")]
+    replay(reg, recs)
+    assert _seqs(h) == [6, 7, 8, 9, 10, 11] and h.cursor == 0, (_seqs(h), h.cursor)
+    assert reg.replay_report == {"stopped": {}}
+    # saved [1..5] at 2 (scrubbed back); the session goes to 5, records 6, drops 3
+    reg, h = _saved_history(5, 2)
+    replay(reg, [("CURSOR", {"hist": "H1", "cursor": 5}, b""), _step_rec(6, 5),
+                 ("DROP", {"hist": "H1", "n": 3}, b""),
+                 _step_rec(7, 3),                           # at the session's position 3: after 6
+                 ("TRUNC", {"hist": "H1", "keep": 3}, b""),  # the session's [4, 5, 6]: step 7 goes
+                 _step_rec(8, 3)])
+    assert _seqs(h) == [3, 4, 5, 6, 8] and h.cursor == 0, (_seqs(h), h.cursor)
+    # a morph target follows: the session's index plus the steps kept; gone when the session dropped it
+    reg, h = _saved_history(5, 2)
+    h.morph_target = 4
+    replay(reg, [("DROP", {"hist": "H1", "n": 3}, b"")])
+    assert _seqs(h) == [3, 4, 5] and h.cursor == 0 and h.morph_target == 2, (_seqs(h), h.morph_target)
+    reg, h = _saved_history(5, 2)
+    h.morph_target = 2
+    replay(reg, [("DROP", {"hist": "H1", "n": 4}, b"")])
+    assert _seqs(h) == [3, 4, 5] and h.morph_target is None, (_seqs(h), h.morph_target)
+    reg, h = _saved_history(5, 2)
+    h.morph_target = 2
+    replay(reg, [("DROP", {"hist": "H1", "n": 4}, b""),
+                 ("META", {"hist": "H1", "members": ["objA"], "enabled": True, "morph_target": 1}, b"")])
+    assert _seqs(h) == [3, 4, 5] and h.morph_target == 3, (_seqs(h), h.morph_target)
+
+
+def test_replay_stops_where_the_saved_state_is_left_behind():
+    """D78, D79: a step recorded below the saved cursor, or after the history was cleared somewhere
+    else, starts from a mesh the file doesn't hold. The history keeps what it had; the rest is counted."""
+    from hindsight.core.persist import replay
+    reg, h = _saved_history(5, 5)
+    n = replay(reg, [("CURSOR", {"hist": "H1", "cursor": 2}, b""), ("TRUNC", {"hist": "H1", "keep": 2}, b""),
+                     _step_rec(6, 2), _step_rec(7, 3), ("DROP", {"hist": "H1", "n": 1}, b""),
+                     ("CURSOR", {"hist": "H1", "cursor": 3}, b"")])
+    assert _seqs(h) == [1, 2, 3, 4, 5] and h.cursor == 5, (_seqs(h), h.cursor)
+    assert reg.replay_report == {"stopped": {"H1": 2}} and n == 2, (reg.replay_report, n)
+    assert reg.next_seq == 8, "numbers of steps left out are never given again"
+    # the same without a TRUNC record (a STEP below the cursor replaces what follows)
+    reg, h = _saved_history(5, 4)
+    replay(reg, [_step_rec(6, 3)])
+    assert _seqs(h) == [1, 2, 3, 4, 5] and h.cursor == 4 and reg.replay_report == {"stopped": {"H1": 1}}
+    # at the saved cursor itself: only steps ahead of the saved state go
+    reg, h = _saved_history(5, 4)
+    replay(reg, [_step_rec(6, 4)])
+    assert _seqs(h) == [1, 2, 3, 4, 6] and h.cursor == 4 and reg.replay_report == {"stopped": {}}
+    # cleared at the saved state: later steps start from the file's mesh
+    reg, h = _saved_history(3, 3)
+    replay(reg, [("RESET", {"hist": "H1", "at": 3}, b""), _step_rec(4, 0), _step_rec(5, 1)])
+    assert _seqs(h) == [4, 5] and h.cursor == 0 and reg.replay_report == {"stopped": {}}
+    # cleared somewhere else (with the cursor in the record, or known from a CURSOR record)
+    for recs in ([("RESET", {"hist": "H1", "at": 1}, b"")],
+                 [("CURSOR", {"hist": "H1", "cursor": 1}, b""), ("RESET", {"hist": "H1"}, b"")]):
+        reg, h = _saved_history(3, 3)
+        replay(reg, recs + [_step_rec(4, 0), _step_rec(5, 1)])
+        assert _seqs(h) == [] and h.cursor == 0 and reg.replay_report == {"stopped": {"H1": 2}}, _seqs(h)
+
+
+def test_replay_join_rewrite_and_resync():
+    """D80, D81: a join writes RESET and then every step of the merged history again; the cursor goes
+    after the steps that are part of the file. A "resync" record starts the bookkeeping again."""
+    from hindsight.core.history import History
+    from hindsight.core.persist import replay
+    from hindsight.core.step import step_to_bytes
+
+    def two(a_seqs=(1, 2)):
+        reg, ha = _saved_history(0, 0, "HA", "objA")
+        rng = np.random.default_rng(5)
+        ha.entries = [Entry(_delta_step(q, "objA", rng)) for q in a_seqs]
+        ha.cursor = len(a_seqs)
+        hb = History("HB", ["objB"])
+        hb.entries = [Entry(_delta_step(3, "objB", rng))]             # step 3
+        hb.cursor = 1
+        reg.histories["HB"] = hb
+        reg.by_object["objB"] = "HB"
+        reg.next_seq = max(a_seqs + (3,)) + 1
+        return reg, ha, hb
+
+    def join(order, last):
+        out = [("RESET", {"hist": "HB"}, b""), ("META", {"hist": "HB", "members": []}, b""),
+               ("META", {"hist": "HA", "members": ["objA", "objB"], "enabled": True, "morph_target": None}, b""),
+               ("RESET", {"hist": "HA"}, b"")]
+        out += [_step_rec(seq, i, "HA", "objB" if seq in (3, 5) else "objA") for i, seq in enumerate(order)]
+        return out + [_step_rec(last, len(order), "HA")]
+
+    # a stroke on B that wasn't saved (5), then the join (6): steps 1, 2, 3 are the file's
+    reg, ha, hb = two()
+    replay(reg, [_step_rec(5, 1, "HB", "objB")] + join([1, 2, 3, 5], 6))
+    assert _seqs(ha) == [1, 2, 3, 5, 6] and ha.cursor == 3, (_seqs(ha), ha.cursor)
+    assert hb.entries == [] and reg.by_object["objB"] == "HA" and reg.replay_report == {"stopped": {}}
+    # B was saved scrubbed back before its step 3 and the session went forward before the join. That
+    # step sorts after the file's steps: the cursor goes before it
+    reg, ha, hb = two()
+    hb.cursor = 0
+    replay(reg, [("CURSOR", {"hist": "HB", "cursor": 1}, b"")] + join([1, 2, 3], 6))
+    assert _seqs(ha) == [1, 2, 3, 6] and ha.cursor == 2, (_seqs(ha), ha.cursor)
+    # with a saved step of A after it (4), the file's steps aren't one run at the start of the merged
+    # history: there is no position for the file's state, so the merged history is left out
+    reg, ha, hb = two((1, 4))
+    hb.cursor = 0
+    replay(reg, [("CURSOR", {"hist": "HB", "cursor": 1}, b"")] + join([1, 3, 4], 6))
+    assert _seqs(ha) == [] and ha.cursor == 0 and reg.replay_report == {"stopped": {"HA": 4}}, _seqs(ha)
+    # steps ahead of A's saved state that the join removed first don't matter
+    reg, ha, hb = two()
+    ha.cursor = 1
+    replay(reg, [("TRUNC", {"hist": "HA", "keep": 1}, b"")] + join([1, 3], 6))
+    assert _seqs(ha) == [1, 3, 6] and ha.cursor == 2, (_seqs(ha), ha.cursor)
+
+    # resync: the session after a recovery works on the recovered history, kept steps included
+    reg, h = _saved_history(5, 5)
+    first = []
+    for seq in range(6, 12):
+        first += [_step_rec(seq, 5), ("DROP", {"hist": "H1", "n": 1}, b"")]
+    second = [("META", {"resync": True}, b""), ("CURSOR", {"hist": "H1", "cursor": 3}, b""),
+              ("TRUNC", {"hist": "H1", "keep": 3}, b""), _step_rec(12, 3)]
+    replay(reg, first + second)
+    assert _seqs(h) == [6, 7, 8, 12] and h.cursor == 0, (_seqs(h), h.cursor)
+    # and a history that had stopped is replayed again from there
+    reg, h = _saved_history(5, 5)
+    replay(reg, [("TRUNC", {"hist": "H1", "keep": 2}, b""), _step_rec(6, 2),
+                 ("META", {"resync": True}, b""), _step_rec(7, 5)])
+    assert _seqs(h) == [1, 2, 3, 4, 5, 7] and h.cursor == 5 and reg.replay_report == {"stopped": {}}
+
+
+def test_replay_file_changed_without_hindsight():
+    """D82, D83: what opening a file changed without Hindsight writes for recovery."""
+    from hindsight.core.persist import replay
+    # values: one step for them at load; the file's state is after it
+    reg, h = _saved_history(2, 2)
+    reg.saved = {"objA": {"mesh": "m0", "values": [["a", "p", 1]]}}
+    replay(reg, [_step_rec(3, 2), ("META", {"hist": "H1", "file_at": 3}, b""),
+                 ("META", {"saved": {"objA": {"mesh": "m0", "values": [["a", "p", 2]]}}}, b""),
+                 _step_rec(4, 3)])
+    assert _seqs(h) == [1, 2, 3, 4] and h.cursor == 3, (_seqs(h), h.cursor)
+    assert reg.saved["objA"]["values"] == [["a", "p", 2]]
+    # mesh: the history is cleared at load, with the fingerprint of the mesh as it is now
+    reg, h = _saved_history(2, 2)
+    reg.saved = {"objA": {"mesh": "m0", "values": [["a", "p", 1]]}}
+    replay(reg, [("RESET", {"hist": "H1", "mesh": {"objA": "m1"}}, b""), _step_rec(3, 0)])
+    assert _seqs(h) == [3] and h.cursor == 0
+    assert reg.saved["objA"] == {"mesh": "m1", "values": [["a", "p", 1]]}, reg.saved
+
+
 def test_embed_base64():
     from hindsight.core.persist import registry_to_bytes, registry_from_bytes
     reg, originals = _build_registry()
@@ -709,6 +885,10 @@ TESTS = [
     test_rename_blend_without_folder,
     test_replay_after_save,
     test_replay_semantics,
+    test_replay_keeps_the_saved_state_through_drops,
+    test_replay_stops_where_the_saved_state_is_left_behind,
+    test_replay_join_rewrite_and_resync,
+    test_replay_file_changed_without_hindsight,
     test_embed_base64,
     test_sidecar_streamed_both_ways,
 ]

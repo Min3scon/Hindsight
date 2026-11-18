@@ -192,8 +192,13 @@ RTYPES = {"STEP": 1, "CURSOR": 2, "TRUNC": 3, "DROP": 4, "RESET": 5, "META": 6, 
 # CURSOR header {"hist": uid, "cursor": int}
 # TRUNC  header {"hist": uid, "keep": int}          (entries[keep:] removed)
 # DROP   header {"hist": uid, "n": int}             (n oldest removed)
-# RESET  header {"hist": uid}
-# META   header {"hist": uid, "members": [...], "enabled": bool, "morph_target": int|None, "objects": {...}}
+# RESET  header {"hist": uid, "at": cursor when it was cleared (optional),
+#                "mesh": {object uid: fingerprint} (optional: cleared at load, mesh changed without Hindsight)}
+# META   header {"hist": uid, "members": [...], "enabled": bool, "morph_target": int|None, "objects": {...},
+#                "file_at": int (optional: the file's state is this position, after a step made at load)}
+# META   header {"resync": true}                    (no hist: a recovered file was opened; replay starts
+#                                                    its bookkeeping again here)
+# META   header {"saved": {object uid: {...}}}      (no hist: recorded objects as the file holds them now)
 # SAVE   header {"blend": path}                     (marks a successful save point)
 def atomic_write(path: str, data: bytes) -> None   # tmp file in same dir + flush + fsync + os.replace
 def atomic_write_json(path: str, obj) -> None
@@ -209,7 +214,11 @@ def sidecar_missing(blend_path: str, expected: bool) -> bool   # True if expecte
 def replay(reg, records: list[tuple[str, dict, bytes]]) -> int
     # applies journal records after the last SAVE onto reg (STEP: truncate hist to header["at"] then append;
     # CURSOR/TRUNC/DROP/RESET/META as above); creates histories that don't exist. Returns records applied.
-    # NOTE: replay never touches meshes; the caller keeps each history's cursor at its saved value
+    # NOTE: replay never touches meshes. The file holds the saved state, so every history comes out with
+    # that state at its cursor: oldest steps the session dropped at or after it are kept (later positions
+    # are shifted), a history whose session left the saved state behind (a step or TRUNC below it, a clear
+    # somewhere else) stops being replayed, and a join's RESET + rewrite puts the cursor after the steps
+    # that are in the file. reg.replay_report = {"stopped": {hist uid: steps left out}}  (D77 to D83)
     # (the mesh in the .blend matches the saved cursor) so the user can scrub forward to recovered steps.
 ```
 
