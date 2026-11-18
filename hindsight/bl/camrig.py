@@ -534,6 +534,10 @@ DEFORMERS = frozenset((
     "VERTEX_WEIGHT_MIX", "VERTEX_WEIGHT_PROXIMITY"))
 
 
+_NO_MOVE = frozenset(("NORMAL_EDIT", "WEIGHTED_NORMAL", "UV_PROJECT", "UV_WARP", "VERTEX_WEIGHT_EDIT",
+                      "VERTEX_WEIGHT_MIX", "VERTEX_WEIGHT_PROXIMITY"))
+
+
 def deforms_only(ob) -> bool:
     """True when every modifier that renders only moves vertices (shape keys too)."""
     return all(m.type in DEFORMERS for m in ob.modifiers if m.show_render)
@@ -577,8 +581,7 @@ def _stretch(ob, ev, bs) -> float:
         b = _bone_scale(m)
         if b is not None:
             s *= b
-        elif m.type not in ("NORMAL_EDIT", "WEIGHTED_NORMAL", "UV_PROJECT", "UV_WARP", "VERTEX_WEIGHT_EDIT",
-                            "VERTEX_WEIGHT_MIX", "VERTEX_WEIGHT_PROXIMITY"):
+        elif m.type not in _NO_MOVE:
             other = True
     if not other:
         return s
@@ -629,7 +632,50 @@ def _measure_deformed(ob, ev, bs, local_basis, tx, ty):
         off = np.linalg.norm(np.asarray(pos0, np.float64).reshape(-1, 3) - bs, axis=1)
     off[~np.isfinite(off)] = 0.0
     r = (rho.astype(np.float64) + off) * _stretch(ob, ev, bs) * (1.0 + 1e-6)
-    return framing.extents_radii(ev, r, local_basis, tx, ty)
+    balls = framing.extents_radii(ev, r, local_basis, tx, ty)
+    hull = _bone_hull(ob, uid, local_basis, tx, ty)
+    if balls is None or hull is None:
+        return balls
+    out = np.minimum(balls, hull)            # both hold every rendered position: so does the tighter
+    out[4] = max(balls[4], hull[4])
+    return out
+
+
+MAX_BONES = 16
+
+
+def _bone_hull(ob, uid, local_basis, tx, ty):
+    """Extents of every rendered position of the history for a mesh whose only modifier that moves
+    vertices is one Armature on vertex groups (no shape keys, no Preserve Volume): each vertex then
+    renders as a blend, with weights that add up to one, of its place moved by each of its bones
+    (or stays put), so it lies in the hull of the history moved by each bone. None when that
+    doesn't apply or there are more than MAX_BONES such bones."""
+    if getattr(ob.data, "shape_keys", None) is not None:
+        return None
+    arms = [m for m in ob.modifiers if m.show_render and m.type in DEFORMERS and m.type not in _NO_MOVE]
+    if len(arms) != 1 or arms[0].type != "ARMATURE":
+        return None
+    m = arms[0]
+    arm = m.object
+    if _bone_scale(m) is None or m.use_deform_preserve_volume or m.use_multi_modifier:
+        return None
+    names = set(ob.vertex_groups.keys())
+    bones = [pb for pb in arm.pose.bones if pb.bone.use_deform and pb.name in names]
+    if len(bones) > MAX_BONES:
+        return None
+    pre = np.linalg.pinv(_np_matrix(arm.matrix_world)) @ _np_matrix(ob.matrix_world)
+    post = np.linalg.pinv(pre)
+    mats = [np.eye(4)] + [post @ _np_matrix(pb.matrix) @ np.linalg.pinv(_np_matrix(pb.bone.matrix_local)) @ pre
+                          for pb in bones]
+    bases = np.stack([np.eye(3)] + [M[:3, :3].T @ local_basis for M in mats])
+    tans = np.asarray([(0.0, 0.0)] + [(tx, ty)] * len(mats))
+    past = _history_extents(ob, uid, bases, tans)
+    if past is None:
+        return None
+    out = None
+    for k, M in enumerate(mats):
+        out = framing.merge(out, framing.plus(past[k + 1], framing.extents(M[:3, 3][None], local_basis, tx, ty)))
+    return out
 
 
 def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):

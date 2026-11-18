@@ -499,11 +499,61 @@ def test_reach():
     assert F.envelope(many, p.min(0), p.max(0)) is None, "more than MAX_GROUPS reflections"
 
 
+def test_extents_radii():
+    """Union of balls: each of the six numbers is the support of the balls, p @ b @ f + r |b @ f|,
+    for any 3x3 basis (a ball in a mesh's own space is an ellipsoid in camera axes)."""
+    rng = np.random.default_rng(11)
+    u = rng.standard_normal((4000, 3))
+    u /= np.linalg.norm(u, axis=1)[:, None]
+    for _ in range(20):
+        p = rng.standard_normal((30, 3)) * rng.uniform(0.1, 5)
+        r = rng.uniform(0, 2, 30)
+        r[rng.integers(0, 30, 5)] = 0.0
+        b = F.view_basis(rng.uniform(-3, 3), rng.uniform(-1.2, 1.2)) @ np.diag(rng.uniform(0.3, 3, 3))
+        tx, ty = rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8)
+        got = F.extents_radii(p, r, b, tx, ty)
+        dense = (p[:, None, :] + r[:, None, None] * u[None]).reshape(-1, 3)
+        lower = F.extents(dense, b, tx, ty)
+        assert (got[[0, 1, 2, 3, 5]] >= lower[[0, 1, 2, 3, 5]] - 1e-9).all() and got[4] <= lower[4] + 1e-9
+        scale = 1 + np.abs(lower).max()
+        assert np.abs(got - lower).max() < 0.02 * scale, (got, lower)
+        assert close(F.extents_radii(p, np.zeros(30), b, tx, ty), F.extents(p, b, tx, ty), 1e-9 * scale)
+        # chunked like extents
+        assert close(F.extents_radii(p, r, b, tx, ty, chunk=7), got, 1e-12 * scale)
+    assert F.extents_radii(np.zeros((0, 3)), np.zeros(0), np.eye(3), 0.5, 0.5) is None
+    bad = np.array([[np.nan, 0, 0], [1, 2, 3]])
+    assert close(F.extents_radii(bad, [1.0, 0.0], np.eye(3), 0.5, 0.5), F.extents(bad[1:], np.eye(3), 0.5, 0.5))
+
+
+def test_history_vertex_reach():
+    """For each vertex, the farthest it is at any position of the history from where it is at the
+    cursor: equal to the truth from real gotos, for any cursor; the history and the state are left
+    as they were; None when a reachable step changes the vertex count."""
+    for seed in (1, 2):
+        h, end = make_case(seed, topo_at=10 ** 6)
+        n = len(h.entries)
+        truth = truth_at(h, end, range(n + 1))
+        for cursor in (n, 0, n // 2):
+            hc = copy.deepcopy(h)
+            st = copy.deepcopy(end)
+            hc.goto(cursor, {A: st})
+            before = fingerprint(hc, st)
+            got = F.history_vertex_reach(hc, st, A)
+            here = truth[cursor].reshape(-1, 3).astype(np.float64)
+            want = np.max([np.linalg.norm(t.reshape(-1, 3) - here, axis=1) for t in truth.values()], axis=0)
+            assert got is not None and got.shape == want.shape
+            assert (got >= want * (1 - 1e-7)).all() and np.allclose(got, want, rtol=1e-5, atol=1e-6), cursor
+            assert fingerprint(hc, st) == before, "history_vertex_reach changed the history or the state"
+    h, end = make_case(3)                             # a topology step that changes the vertex count
+    assert F.history_vertex_reach(h, end, A) is None
+    assert F.history_vertex_reach(h, None, A) is None
+
+
 TESTS = [test_view_basis, test_lens_tangents, test_fit_invariant, test_merge, test_margin,
          test_degenerate, test_light_rig, test_shifted_equals_world_extents,
          test_history_extents_covers_every_step, test_history_extents_stops,
          test_extents_multi_and_batched_history, test_plus_and_ball, test_envelope_mirror_and_array_exact,
-         test_reach]
+         test_reach, test_extents_radii, test_history_vertex_reach]
 
 
 if __name__ == "__main__":
