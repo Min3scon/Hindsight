@@ -453,6 +453,7 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
             d = D.diff(key, old, new, (True, True))
         if d is not None:
             deltas.append(d)
+    meshio.keep_buffers(keys)
     if not deltas:
         return None
     return Step(seq=0, label=label, mode=mode, target=uid, time=time.time(), kind=DELTA, deltas=deltas)

@@ -27,6 +27,13 @@ def _buf(key: str, size: int, dtype) -> np.ndarray:
     return b
 
 
+def keep_buffers(keys) -> None:
+    """Let go of the read buffers of channels not in keys (the last commit's channels): without it
+    every attribute name ever read kept a buffer the size of its mesh for the whole session."""
+    for k in [k for k in _bufs if k not in keys]:
+        del _bufs[k]
+
+
 def counts(me) -> dict:
     return {"POINT": len(me.vertices), "EDGE": len(me.edges),
             "FACE": len(me.polygons), "CORNER": len(me.loops)}
