@@ -133,6 +133,25 @@ changelog page change with the version.
   Python engine is in use.
 - Still open from the audit (report: DECISIONS.md, "The two linked repositories"): duplicate helpers
   (finding 8) and about 60 lines of dead code (finding 7).
+- Crash recovery (D77 to D83, DECISIONS "Crash recovery keeps the saved state"): done, tested on 4.2 and
+  5.3 (tests/test_bl_recovery.py, tests/test_core_journal.py). 1.0.0-beta.3 is NOT released yet: the
+  manifest still says beta.2 and docs/download/hindsight.zip is the beta.2 zip.
+- IN PROGRESS when this was written (2026-11-18, afternoon): nine agents, each in its own git worktree
+  under .claude/worktrees/, none merged yet. Their briefs and reports are in the session scratchpad
+  (agents/COMMON.md, agents/<NAME>/report.md), which does not survive the session: anything not merged
+  into this branch is lost with it. Areas: NATIVE (jump pipeline in Rust, core/history.py, delta.py,
+  step.py), RUNTIME (bl/runtime.py, meshio.py, core/store.py, log.py), SAVELOAD (core/persist.py except
+  replay, bl/persistence.py, journal.py, codec.py), MOVIE (bl/movie.py), DRAW (scrubber.py, ui_panel.py
+  and the other UI files), DATAREC (bl/datarec.py, adapters.py, idmap.py), CAMERA (camrig.py, framing.py,
+  props.py: review findings S2-1, S3-1, S3-2), LIMITS-A and LIMITS-B (audits only, no code).
+- Owner's later requests in this job, still open: "use as many sub agents as you want to optimise it"
+  (the agents above), and "check all this and see if these are still true and if true fix" about the two
+  lists on the site's limitations page (Known limits; Not recorded in this version). LIMITS-A and
+  LIMITS-B check each line against the code and design the fixes; the fixing has not started. COVERAGE.md
+  still says tiers 2 to 6 are not covered, and the gate that lets the site claim a data type needs a
+  real Blender window, which this sandbox doesn't have.
+- Known and not ours to fix here: on Blender 4.2 tests/test_bl_t1_gate.py::test_gate_parenting fails
+  (parent_type at one position; it fails on beta.2 code too; handed to DATAREC to find the cause).
 - tools/mutation_bl.py compiles again; mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
 - Blender 4.2 (below the gate): the module run has failures that were there before this job
   (test_bl_t0_gate and test_bl_t0_reload crash, test_bl_t1_reload, test_bl_t1_corrupt and others).
