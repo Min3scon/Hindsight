@@ -21,6 +21,8 @@ C = bpy.context
 
 def render_world(ob):
     """World positions of what a render shows of `ob` (oracle)."""
+    if ob.mode == "EDIT":
+        ob.update_from_editmode()
     with runtime.suspended():
         tmp = ob.copy()
         tmp.data = ob.data.copy()
@@ -223,9 +225,46 @@ def test_cache_not_kept_across_files():
     shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_framed_in_edit_mode():
+    """Movie Mode switched on (or the camera framed) while the model is in Edit Mode: the history
+    still counts, with the modifiers, and so does the mesh being edited."""
+    for mods in ("none", "mirror", "armature"):
+        H.fresh()
+        ob = H.make_mesh(1200, "Model")
+        if mods == "mirror":
+            T.half(ob)
+            ob.modifiers.new("Mirror", "MIRROR")
+        elif mods == "armature":
+            import test_bl_camrig_deform as D
+            D.rig_armature(ob, 60.0)
+        n = T.make_history(ob, "big")
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.transform.translate(value=(0.0, 0.0, 1.5))     # moved up in Edit Mode, not recorded yet
+        sc = C.scene
+        sc.hindsight.movie_mode = True
+        cam = camrig.rig(sc)["camera"]
+        in_frame(ob, f"edit mode now, modifiers {mods}")
+        m0 = cam.matrix_world.copy()
+        bpy.ops.object.mode_set(mode="OBJECT")
+        sc.hindsight.movie_mode = False
+        sc.hindsight.movie_mode = True
+        sc.hindsight.movie_mode = False
+        bpy.ops.object.mode_set(mode="EDIT")
+        sc.hindsight.movie_mode = True                         # framed in Edit Mode again
+        assert (cam := camrig.rig(sc)["camera"]) is not None
+        bpy.ops.object.mode_set(mode="OBJECT")
+        for pos in range(n + 1):
+            T.goto_movie(pos)
+            in_frame(ob, f"edit mode, step {pos}, modifiers {mods}")
+        sc.hindsight.movie_mode = False
+        del m0
+
+
 if __name__ == "__main__":
     for f in [test_render_only_displace, test_hidden_in_viewports, test_collection_hidden_in_viewports,
               test_viewport_only_subdivision_without_history, test_multires_render_levels_without_history,
-              test_nothing_changed_or_left_behind, test_cache_not_kept_across_files]:
+              test_nothing_changed_or_left_behind, test_cache_not_kept_across_files,
+              test_framed_in_edit_mode]:
         H.run(f)
     H.finish()

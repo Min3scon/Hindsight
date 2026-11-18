@@ -353,7 +353,7 @@ def _history_extents(ob, uid, bases, tans):
     history, kept until the history, the object's transform or the view changes. It holds every
     position, so moving the cursor (scrubbing) doesn't make it stale."""
     h = runtime.history_of(ob) if uid is not None else None
-    if h is None or not h.entries or ob.mode == "EDIT":
+    if h is None or not h.entries:
         return None
     sig = (len(h.entries), h.entries[0].seq, h.entries[-1].seq,
            np.asarray(bases, np.float64).tobytes(), np.asarray(tans, np.float64).tobytes())
@@ -500,7 +500,7 @@ def _rendered_points(ob, scene, dg_getter):
     dg = dg_getter() if dg_getter is not None else None
     if dg is not None:
         ev = ob.evaluated_get(dg)
-        if not ev.is_evaluated or renders_differently(ob):
+        if ob.mode != "EDIT" and (not ev.is_evaluated or renders_differently(ob)):
             pts = _render_copy_points(ob, scene, dg_getter)
             if pts is not None:
                 return pts
@@ -514,7 +514,13 @@ def _evaluated_points(ob, dg, matrix_world=None) -> np.ndarray:
     if dg is None:
         return np.array([c[:] for c in ob.bound_box], np.float32)
     ev = ob.evaluated_get(dg)
-    pts = _positions(ev.data if ev.type == "MESH" else None).reshape(-1, 3)
+    if ob.mode == "EDIT" and ev.type == "MESH":
+        try:                                # the evaluated mesh wraps the edited copy: read a real one
+            pts = _positions(ev.to_mesh()).reshape(-1, 3)
+        finally:
+            ev.to_mesh_clear()
+    else:
+        pts = _positions(ev.data if ev.type == "MESH" else None).reshape(-1, 3)
     if any(m.type == "NODES" and _live(m) for m in ob.modifiers):
         inv = np.linalg.pinv(_np_matrix(ob.matrix_world if matrix_world is None else matrix_world))
         extra = []
@@ -694,7 +700,7 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
         ev = base.reshape(-1, 3)
     ext = framing.extents(ev, local_basis, tx, ty)
     bs = base.reshape(-1, 3)
-    if len(ev) == len(bs) and deforms_only(ob):
+    if len(ev) == len(bs) and ob.mode != "EDIT" and deforms_only(ob):
         moved = _measure_deformed(ob, ev, bs, local_basis, tx, ty)
         if moved is not None:
             return framing.merge(ext, moved), ev
@@ -734,6 +740,15 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
     return ext, ev
 
 
+def _entry_positions(ob) -> np.ndarray:
+    """In Edit Mode the mesh's own arrays are empty (Blender edits a copy): the positions it had
+    on entering Edit Mode, which are the history's at its cursor."""
+    uid = runtime.obj_uid(ob)
+    st = runtime._STATES.get(uid) if uid is not None else None
+    pos = st.arrays.get(POSITION_KEY) if st is not None else None
+    return np.asarray(pos, np.float32).reshape(-1) if pos is not None else np.empty(0, np.float32)
+
+
 def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
     """(extents in camera axes, world bounds) of one model object: what renders of it now and, for
     a mesh with a history, every earlier and later shape. The mesh is measured in its own space, so
@@ -741,8 +756,10 @@ def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
     evaluated depsgraph (only asked for when the mesh has modifiers or shape keys)."""
     mw = _np_matrix(ob.matrix_world)
     local_basis = mw[:3, :3].T @ basis                 # local points @ local_basis == world @ basis
-    if ob.type == "MESH" and ob.mode != "EDIT" and ob.data is not None:
-        pts = _positions(ob.data)
+    pts = None
+    if ob.type == "MESH" and ob.data is not None:
+        pts = _positions(ob.data) if ob.mode != "EDIT" else _entry_positions(ob)
+    if pts is not None and len(pts):
         if has_stack(ob):
             if scene is None:
                 scene = ob.users_scene[0] if ob.users_scene else None
@@ -754,7 +771,11 @@ def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
             ext = framing.extents(pts, local_basis, tx, ty)
             past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
             ext = framing.merge(ext, None if past is None else past[0])
-    else:                                              # Edit Mode, other types: the evaluated box
+        if ob.mode == "EDIT":                          # and the mesh being edited: its evaluated box
+            box = np.array([c[:] for c in ob.bound_box], np.float32)
+            ext = framing.merge(ext, framing.extents(box, local_basis, tx, ty))
+            pts = np.vstack([np.asarray(pts, np.float32).reshape(-1, 3), box])
+    else:                                              # other types: the evaluated box
         pts = np.array([c[:] for c in ob.bound_box], np.float32)
         ext = framing.extents(pts, local_basis, tx, ty)
     bnd = None
