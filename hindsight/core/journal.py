@@ -12,6 +12,7 @@ last valid record.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import struct
@@ -27,6 +28,9 @@ _HEAD = struct.Struct("<4sBIQ")
 _CRC = struct.Struct("<I")
 _MAX_HEADER = 64 * 2 ** 20          # sanity bound for header JSON length
 _CHUNK = 4 * 2 ** 20
+# fsync errors that mean "this file system has nothing to sync" (some network and FUSE file
+# systems), not "the data didn't reach the disk"
+_NO_SYNC = {errno.EINVAL, getattr(errno, "ENOTSUP", errno.EINVAL), getattr(errno, "EOPNOTSUPP", errno.EINVAL)}
 
 
 def _scan(fh, limit: int, want_payload: bool):
@@ -87,9 +91,26 @@ class Journal:
                     self._size = end
             if file_size > self._size:
                 os.truncate(self.path, self._size)
+        self._good = self._size          # size up to which every record was written out whole
         self._fh = open(self.path, "ab")
 
-    # -- writing ---------------------------------------------------------
+    def _cut_back(self, size: int) -> None:
+        """After a failed write (disk full, I/O error): drop whatever part of a record reached the
+        file, so the records after it are not hidden behind a broken one. `size` is where the
+        failed record started; if the records buffered before it can't be written out either, the
+        file goes back to the last good flush."""
+        try:
+            self._fh.close()             # writes out what is still buffered, or fails again
+        except OSError:
+            size = self._good
+        try:
+            os.truncate(self.path, size)
+        except OSError:
+            pass
+        self._size = size
+        self._good = min(self._good, size)
+        self._fh = open(self.path, "ab")
+
     def append(self, rtype: str, header: dict, payload: bytes = b"") -> int:
         if self._fh is None:
             raise ValueError("journal is closed")
@@ -101,22 +122,35 @@ class Journal:
         prefix = _HEAD.pack(MAGIC, code, len(hbytes), len(payload)) + hbytes
         crc = zlib.crc32(payload, zlib.crc32(prefix)) & 0xFFFFFFFF
         start = self._size
-        self._fh.write(prefix)
-        if len(payload):
-            self._fh.write(payload)
-        self._fh.write(_CRC.pack(crc))
+        try:
+            self._fh.write(prefix)
+            if len(payload):
+                self._fh.write(payload)
+            self._fh.write(_CRC.pack(crc))
+        except OSError:
+            self._cut_back(start)
+            raise
         self._size = start + len(prefix) + len(payload) + _CRC.size
         return start
 
     def flush(self, fsync: bool = True) -> None:
+        """Write the appended records out. Raises OSError if they could not be written (the records
+        since the last good flush are dropped from the file again) or, with fsync, if the disk
+        did not confirm them: a save point is only durable when this returns."""
         if self._fh is None:
             return
-        self._fh.flush()
+        try:
+            self._fh.flush()
+        except OSError:
+            self._cut_back(self._good)
+            raise
+        self._good = self._size
         if fsync:
             try:
                 os.fsync(self._fh.fileno())
-            except OSError:
-                pass
+            except OSError as e:
+                if e.errno not in _NO_SYNC:
+                    raise
 
     def size(self) -> int:
         return self._size
@@ -146,6 +180,7 @@ class Journal:
             self._fh.close()
         os.truncate(self.path, size)
         self._size = size
+        self._good = size
         self._fh = open(self.path, "ab")
 
     def close(self) -> None:

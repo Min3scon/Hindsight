@@ -14,16 +14,38 @@ import threading
 import time
 import weakref
 
-from .step import recompress, step_to_bytes
+from .codec import is_strong
+from .step import QUICK_FLAG, STEP_MAGIC, recompress, step_to_bytes
 
 _STOP = object()
+_NUDGE = object()      # wakes the worker to look at its idle work again
 
 
 QUIET_S = 0.3         # pack only once no new step has arrived for this long (the main thread is
                       # busy right after a commit; packing then would compete with it for Python)
 IDLE_S = 1.0          # recompress only after the packer has been idle this long
+USER_IDLE_S = 5.0     # and nothing was recorded or jumped to for this long (note_activity): the
+                      # strong setting costs 3 to 50 ms of one core per step, which belongs to the
+                      # user while they sculpt or scrub (Blender's own sculpting uses every core)
 DUTY = 0.25           # and then use at most this share of one core (sleep in between)
 STRONG_MAX_BYTES = 8 << 20   # larger steps are left at the normal setting (too slow to redo)
+
+
+def _can_gain(blob) -> bool:
+    """False for a blob step.recompress() would leave as it is without trying (a format 3 step stored
+    with the strong setting or uncompressed, not written quickly), told from its first bytes alone.
+    Those are skipped without spending an idle turn on them (a file saved after recompression is
+    otherwise read and checked again step by step, one per idle second, after every load)."""
+    mv = memoryview(blob)
+    if len(mv) < 13:
+        return True             # recompress decides (and reports the damage)
+    if mv[:4] != STEP_MAGIC:
+        return True             # formats 1 and 2 are re-packed in full; anything else is refused there
+    hl = mv[8] | (mv[9] << 8)
+    if len(mv) <= 10 + hl:
+        return True
+    quick = bool(mv[12] & QUICK_FLAG)
+    return quick or not is_strong(mv[10 + hl:])
 
 
 class Packer:
@@ -49,6 +71,7 @@ class Packer:
         self._recompress = recompress_idle
         self._wake = threading.Event()        # set on stop, ends a pause early
         self._last_submit = 0.0
+        self._last_activity = float("-inf")   # note_activity: the user recorded or jumped
         self._hurry = 0                       # drains waiting: pack right away
         self._thread = threading.Thread(target=self._run, name="HindsightPacker", daemon=True)
         self._thread.start()
@@ -57,9 +80,17 @@ class Packer:
         """Offer packed entries (for example after loading a file) for idle-time recompression."""
         if not self._recompress:
             return
+        had = bool(self._strong)
         for e in entries:
-            if e.blob is not None:
+            if e.blob is not None and _can_gain(e.blob):
                 self._strong.append(weakref.ref(e))
+        if self._strong and not had and not self._stopped:
+            self._q.put(_NUDGE)      # the worker may be waiting for new work only
+
+    def note_activity(self) -> None:
+        """The user is working (a step was recorded, a jump made): recompression waits until
+        USER_IDLE_S has passed without another call. Packing new steps is not held back."""
+        self._last_activity = time.monotonic()
 
     # main thread -----------------------------------------------------------
     def submit(self, entry, codec: str) -> None:
@@ -100,12 +131,15 @@ class Packer:
     def _run(self) -> None:
         while True:
             try:
-                item = self._q.get(timeout=IDLE_S if self._strong else None)
+                item = self._q.get(timeout=self._idle_wait())
             except queue.Empty:
-                self._recompress_one()
+                if self._user_idle_for() >= USER_IDLE_S:
+                    self._recompress_one()
                 continue
             if item is _STOP:
                 return
+            if item is _NUDGE:
+                continue
             entry, codec = item
             while not self._stopped and not self._hurry and time.monotonic() - self._last_submit < QUIET_S:
                 time.sleep(0.05)
@@ -129,12 +163,21 @@ class Packer:
                     if self._pending == 0:
                         self._cond.notify_all()
 
+    def _user_idle_for(self) -> float:
+        return time.monotonic() - self._last_activity
+
+    def _idle_wait(self):
+        """How long to wait for new work before recompressing (None: only new work wakes it)."""
+        if not self._strong:
+            return None
+        return max(IDLE_S, USER_IDLE_S - self._user_idle_for())
+
     def _recompress_one(self) -> None:
         """Idle work: recompress one packed step (oldest first), then rest in proportion."""
         while self._strong and not self._stopped:
             entry = self._strong.popleft()()
             blob = getattr(entry, "blob", None)
-            if blob is None or len(blob) > STRONG_MAX_BYTES:
+            if blob is None or len(blob) > STRONG_MAX_BYTES or not _can_gain(blob):
                 continue
             t = time.perf_counter()
             try:

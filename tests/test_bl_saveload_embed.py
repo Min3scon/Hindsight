@@ -1,0 +1,68 @@
+import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+"""Embedded history (Save Mode Embed and Both): the stored text is exactly what earlier builds
+wrote (base64 of the history file), saving again replaces it, the packer is told when the user
+works, and an embedded history and a history folder written by the same save hold the same bytes."""
+import base64
+import shutil
+import tempfile
+
+import bpy
+import tests.harness as H
+from hindsight.bl import persistence, runtime
+from hindsight.core import persist
+from hindsight.core.types import SETTINGS
+
+TMP = tempfile.mkdtemp(prefix="hindsight_saveload_")
+NAME = "Sculpty"
+
+
+def _record(ob, seeds):
+    for s in seeds:
+        H.fake_stroke(ob, s, n=80)
+        assert H.commit(ob) is not None
+
+
+def test_embed_text_is_the_same_as_before():
+    H.fresh()
+    SETTINGS.save_mode = "BOTH"
+    ob = H.make_mesh(1500, name=NAME)
+    H.enter(ob, "SCULPT")
+    _record(ob, range(20, 26))
+    H.enter(ob, "OBJECT")
+    path = os.path.join(TMP, "both.blend")
+    for round_ in range(2):                       # the second save replaces the stored text
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        text = bpy.data.texts[persistence.TEXT_NAME]
+        stored = text[persistence.DATA_PROP]
+        assert isinstance(stored, str)
+        # what 1.0.0-beta.2 wrote: base64.b64encode(registry_to_bytes(...)).decode("ascii")
+        want = base64.b64encode(persist.registry_to_bytes(runtime.reg(), SETTINGS.compression)).decode("ascii")
+        assert stored == want, round_
+        with open(persist.sidecar_file(path), "rb") as fh:
+            assert fh.read() == base64.b64decode(stored), "history folder and embedded copy differ"
+        H.enter(ob, "SCULPT")
+        _record(ob, [40 + round_])
+        H.enter(ob, "OBJECT")
+    SETTINGS.save_mode = "EMBED"
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    shutil.rmtree(persist.sidecar_dir(path), ignore_errors=True)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    h = runtime.history_of(bpy.data.objects[NAME])
+    assert h is not None and len(h.entries) == 8, None if h is None else len(h.entries)
+
+
+def test_strokes_tell_the_packer():
+    H.fresh()
+    p = runtime.packer
+    assert p is not None
+    before = p._last_activity
+    ob = H.make_mesh(800, name=NAME)
+    H.enter(ob, "SCULPT")
+    _record(ob, [3])
+    assert p._last_activity > before, "a recorded step didn't hold back idle recompression"
+
+
+for f in [test_embed_text_is_the_same_as_before, test_strokes_tell_the_packer]:
+    H.run(f)
+shutil.rmtree(TMP, ignore_errors=True)
+H.finish()
