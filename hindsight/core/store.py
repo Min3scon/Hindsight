@@ -153,10 +153,12 @@ class Packer:
             return
 
 
-def enforce_tiers(histories: list, settings, packer: Packer | None = None) -> None:
-    """Pack every entry older than the newest `settings.raw_steps` of each history."""
+def enforce_tiers(histories: list, settings, packer: Packer | None = None) -> int:
+    """Pack every entry older than the newest `settings.raw_steps` of each history. Returns by how
+    many bytes (Entry.nbytes) the entries packed here got smaller (with a packer: 0, it packs later)."""
     raw = max(0, int(settings.raw_steps))
     codec = settings.compression
+    saved = 0
     for h in histories:
         entries = h.entries
         n = len(entries) - raw
@@ -167,7 +169,10 @@ def enforce_tiers(histories: list, settings, packer: Packer | None = None) -> No
             if packer is not None:
                 packer.submit(e, codec)
             else:
+                b = e.nbytes()
                 e.pack(codec)
+                saved += b - e.nbytes()
+    return saved
 
 
 def total_bytes(histories: list) -> int:
@@ -191,7 +196,8 @@ def enforce_caps(histories: list, settings, stats: dict | None = None) -> int:
     A step at or past a history's cursor is never dropped: the mesh shows the state at the cursor,
     so only steps before it can go without the mesh and the history coming apart.
     Returns the number of entries dropped. If `stats` is given it receives "memory_dropped"
-    (steps dropped because of the memory limit) and "total" (bytes after dropping).
+    (steps dropped because of the memory limit), "total" (bytes after dropping) and "stuck" (still
+    over the limit with nothing left that may be dropped: every history's cursor is 0).
     """
     dropped = 0
     max_steps = max(1, int(settings.max_steps))
@@ -205,6 +211,7 @@ def enforce_caps(histories: list, settings, stats: dict | None = None) -> int:
     if stats is not None:
         stats["memory_dropped"] = 0
         stats["total"] = total
+        stats["stuck"] = False
     if total <= limit:
         return dropped
     # plan: merge histories by seq of their oldest remaining entry; count drops per history
@@ -225,4 +232,118 @@ def enforce_caps(histories: list, settings, stats: dict | None = None) -> int:
     if stats is not None:
         stats["memory_dropped"] = sum(plan)
         stats["total"] = total
+        stats["stuck"] = total > target         # the loop ran out of steps that may go
     return dropped
+
+
+# ----------------------------------------------------------------------------- the whole pass
+def _sig(h) -> tuple:
+    """Changes when a history's steps or cursor change (not when its steps are packed)."""
+    e = h.entries
+    return (id(h), id(e), len(e), int(h.cursor), id(e[0]) if e else 0, id(e[-1]) if e else 0)
+
+
+def _packer_key(packer):
+    """Changes whenever the packer has changed the size of a step."""
+    return None if packer is None else (packer.packed, packer.recompressed, packer.errors)
+
+
+def _settings_key(settings) -> tuple:
+    return (int(settings.max_steps), int(settings.memory_limit_mb), int(settings.raw_steps),
+            settings.compression)
+
+
+class CapsMemo:
+    """What a pass of `enforce` that couldn't get under the memory limit found (S4-3).
+
+    When everything that may be dropped is gone (every cursor at 0, D64) and the history is still
+    over the limit, every new step brings the next pass, and that pass used to read the size of
+    every step of every history. While nothing but one history has changed since (same steps,
+    same cursors, the packer hasn't changed any step's size, same settings), the others' size is
+    known: the next pass only needs to look at that one history, and does exactly what the whole
+    pass would do. Anything else changed: the whole pass runs again."""
+    __slots__ = ("state",)
+
+    def __init__(self):
+        self.state = None
+
+    def clear(self) -> None:
+        self.state = None
+
+    def remember(self, histories, total: int, pkey, skey) -> None:
+        self.state = {"sigs": {h.uid: _sig(h) for h in histories},
+                      "bytes": {h.uid: sum(e.nbytes() for e in h.entries) for h in histories},
+                      "total": int(total), "packer": pkey, "settings": skey}
+
+    def usable(self, histories, changed, pkey, skey) -> bool:
+        st = self.state
+        if st is None or changed is None or st["packer"] != pkey or st["settings"] != skey:
+            return False
+        sigs = st["sigs"]
+        if len(sigs) != len(histories) or changed.uid not in sigs:
+            return False
+        for h in histories:
+            if h is not changed and sigs.get(h.uid) != _sig(h):
+                return False
+        return True
+
+
+def enforce(histories: list, settings, packer: Packer | None = None, stats: dict | None = None,
+            memo: CapsMemo | None = None, changed=None) -> list:
+    """enforce_caps, then enforce_tiers. Returns [(history, steps dropped)] for the histories that
+    lost steps, in the order of `histories`. `stats` receives "memory_dropped" and "total" (bytes
+    after the pass). With `memo` (kept by the caller between passes) and `changed` (the one
+    history that may have changed since the last pass), a pass that can only drop steps of
+    `changed` looks at nothing else (CapsMemo)."""
+    stats = {} if stats is None else stats
+    pkey, skey = _packer_key(packer), _settings_key(settings)
+    if memo is not None and memo.usable(histories, changed, pkey, skey):
+        return _enforce_one(histories, changed, settings, packer, stats, memo, pkey, skey)
+    before = [len(h.entries) for h in histories]
+    enforce_caps(histories, settings, stats)
+    saved = enforce_tiers(histories, settings, packer)
+    stats["total"] = stats["total"] - saved
+    if memo is not None:
+        if stats["stuck"]:
+            memo.remember(histories, stats["total"], pkey, skey)
+            stats["total"] = memo.state["total"]
+        else:
+            memo.clear()
+    return [(h, n - len(h.entries)) for h, n in zip(histories, before) if n != len(h.entries)]
+
+
+def _enforce_one(histories, h, settings, packer, stats, memo, pkey, skey) -> list:
+    """enforce for the case CapsMemo describes: the other histories have nothing that may go."""
+    st = memo.state
+    others = st["total"] - st["bytes"][h.uid]
+    n0 = len(h.entries)
+    max_steps = max(1, int(settings.max_steps))
+    over = min(len(h.entries) - max_steps, int(h.cursor))
+    if over > 0:
+        _drop(h, over)
+    hb = sum(e.nbytes() for e in h.entries)
+    total = others + hb
+    limit = int(settings.memory_limit_mb) * (1 << 20)
+    stats["memory_dropped"] = 0
+    stuck = False
+    if total > limit:
+        target = int(limit * EVICT_TO)
+        entries = h.entries
+        cap = min(len(entries), int(h.cursor))
+        j = 0
+        while total > target and j < cap:
+            total -= entries[j].nbytes()
+            j += 1
+        _drop(h, j)
+        stats["memory_dropped"] = j
+        stuck = total > target
+    total -= enforce_tiers([h], settings, packer)
+    stats["total"] = total
+    if stuck:
+        st["sigs"][h.uid] = _sig(h)
+        st["bytes"][h.uid] = total - others
+        st["total"] = total
+    else:
+        memo.clear()
+    n = n0 - len(h.entries)
+    return [(h, n)] if n else []

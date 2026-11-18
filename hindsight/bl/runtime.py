@@ -71,6 +71,8 @@ def set_registry(r: Registry) -> None:
     global _REG
     _REG = r
     MEMORY.update(estimate=0, evicted=0, warned=False)
+    if _CAPS_MEMO is not None:
+        _CAPS_MEMO.clear()
     _STATES.clear()
     _DIRTY.clear()
     _STROKE_SEEN.clear()
@@ -729,6 +731,7 @@ def confirm_truncate(obj) -> int:
 
 
 _ENFORCE_COUNT = [0]
+_CAPS_MEMO = None             # store.CapsMemo, made on first use (core.store is imported lazily here)
 # Memory accounting: "estimate" is an upper bound of the history size (new steps are added at their
 # unpacked size), so the exact (slower) check only runs when the limit might be crossed.
 MEMORY = {"estimate": 0, "evicted": 0, "warned": False}
@@ -761,6 +764,9 @@ def _enforce(h=None) -> None:
     the memory estimate crosses the limit, so recording cost does not grow with history length."""
     try:
         from ..core import store
+        global _CAPS_MEMO
+        if _CAPS_MEMO is None:
+            _CAPS_MEMO = store.CapsMemo()
         _ENFORCE_COUNT[0] += 1
         if h is not None and h.entries:
             MEMORY["estimate"] += h.entries[-1].nbytes()
@@ -776,16 +782,14 @@ def _enforce(h=None) -> None:
                 else:
                     h.entries[k].pack(SETTINGS.compression)
             return
-        hs = _REG.all()
         stats = {}
-        before = [len(x.entries) for x in hs]
-        store.enforce_caps(hs, SETTINGS, stats)
-        for x, n in zip(hs, before):
-            _journal_drop(x, n - len(x.entries))
+        # S4-3: over the limit with nothing that may be dropped, a pass after one history changed
+        # only looks at that history (store.CapsMemo); otherwise every history is checked
+        for x, n in store.enforce(_REG.all(), SETTINGS, packer, stats, _CAPS_MEMO, h):
+            _journal_drop(x, n)
         if stats.get("memory_dropped"):
             _note_eviction(int(stats["memory_dropped"]))
-        store.enforce_tiers(hs, SETTINGS, packer)
-        MEMORY["estimate"] = store.total_bytes(hs)
+        MEMORY["estimate"] = stats["total"]
     except Exception as e:
         log.error_once(("store", str(e)), f"history store error: {e}", e)
 
