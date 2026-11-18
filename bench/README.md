@@ -106,3 +106,32 @@ the median shows what a user on a busy machine sees.
 - Weak computers (2 to 4 slow cores, 4 to 8 GB RAM) are not available: use the ratios, not the
   absolute milliseconds.
 - `idle` simulates the timers in virtual time; Blender's own scheduling cost is not included.
+
+## Noise (what the recorded run showed)
+
+Recorded run: `results/ab_66fcdf8_vs_dd9f35b.{json,md}`: old = commit 66fcdf8 (state before the
+2026-11-18 optimisation work), new = dd9f35b (main line plus the bench files), 5 rounds,
+`/home/user/venvs/bpy53/bin/python`, shared 4-core machine, load average 1 to 3 during the run
+(about 22 minutes). Run-to-run spread (highest minus lowest round median, over the lowest):
+
+- Steady (spread under about 20%): jumps at 100k and 1M, save and open, dr_finish_*, dr_prime,
+  idle_60s_1obj, depsgraph_handler_1obj.
+- Medium (20 to 60%): edit_step, movie, addon_* (fresh interpreter per sample, sub-ms to 15 ms),
+  redraw_* (tens of microseconds, so one scheduler hiccup is a large percentage).
+- Noisy (over 60%): commit_100k, commit_1m (sub-ms to 3 ms, packer thread), goto_bl_1_100k,
+  dr_on_update_500 (new side), dr_tick_idle_500.
+- The `min` is the steadiest statistic. Trust a ratio only when clearly outside both spreads
+  (roughly 25% or more here). Ratios between 0.8 and 1.25 on commit, goto_bl_1, dr_tick_idle,
+  movie, addon and idle are noise.
+
+Not reliable: `commit_*` (no change within noise), `dr_tick_idle_500` (about 2.5 microseconds, below
+the harness's resolution), `addon_*` (disk cache, import state), `idle_*` and `depsgraph_handler_*`
+(virtual time, same code on both sides), `movie_*` (Blender's frame_set dominates),
+`save_embed_100k_6000` (about equal; the memory columns show the difference).
+Drawing is Python cost only: no GPU and no window.
+
+Headline ratios (new/old, min): jumps 0.25 to 0.48 (3000 steps at 1M: 924 ms to 228 ms), drag
+across 5,000 steps 0.37 to 0.43, open 0.26 to 0.58, save 0.45 to 0.68 (embed at 6000 steps 1.09,
+slower), datarec finish 0.32 to 0.35, `dr_on_update_500` 0.014, redraw with 50 objects and global
+history 0.10, with Collection Filtering 0.017 to 0.022. Every scenario ran on both roots; none was
+"not available on A" in this run.
