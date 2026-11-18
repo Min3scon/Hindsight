@@ -505,3 +505,34 @@ in zstd and the rest in Python around them (step header parsing, `unpack_at`'s h
 `Step` objects); moving the body loop to Rust would remove part of that last share for one record per
 stroke step, while every exception path of the step format (JSON extras, snapshots, data records)
 would need its own bit-exact twin. Not clearly worth it on these numbers.
+
+## Redraw cost (2026-11-18)
+
+What Hindsight's own Python costs on every viewport and sidebar redraw, which a weak computer pays
+during every stroke. There is no GPU here: gpu, gpu_extras and blf were replaced by recorders, so
+these are the Python side only, and nothing was looked at on a screen. The new tests compare every
+recorded gpu and blf call (each vertex, colour, text and position) with a verbatim copy of the old
+drawing code, over 5 layouts and 46 states.
+
+Method: a fake 3D View (1574x954 region, toolbar, sidebar), real recorded steps, the old build
+(66fcdf8) and the new one in alternating runs, 5 rounds each, minimum of 7 batches per run, on
+Blender 5.3. Microseconds per call, minimum over the rounds.
+
+| scene | viewport redraw | panel redraw | hover |
+|---|---|---|---|
+| 10 steps, 1 object, per object | 50.9 to 36.5 | 55.5 to 51.6 | 6.7 to 4.3 |
+| 10,000 steps, 1 object, per object | 76.8 to 37.7 | 62.6 to 54.0 | 7.0 to 4.3 |
+| 10,000 steps, 1 object, global | 85.3 to 66.9 | 118.0 to 81.9 | 6.4 to 4.4 |
+| 10,000 steps, 50 objects, global | 565 to 606 (noise) | 569 to 626 (noise) | 6.8 to 4.6 |
+| 50 objects, per object, Collection Filtering | 139.5 to 56.6 | 162.5 to 105.2 | 6.8 to 4.4 |
+| 50 objects, global, Collection Filtering | 3,943 to 1,247 | 4,240 to 1,312 | 6.8 to 4.4 |
+
+- The slider's batches are kept by part (track, dot, fill, handle, tick). A stroke at the end of the
+  history builds none (11 before); a drag move builds 5 (11 before). The share of a drag move that is
+  the interface went from 217 to 95 microseconds at 5,000 steps.
+- The viewport warning overlay ran every check on every redraw and kept only the errors. It runs
+  the three error checks now.
+- Collection Filtering asked Blender for every collection an object is in, which scans every
+  collection in the file, for every object, three times per redraw in global mode.
+- Not changed by this: global history with 50 objects and no filter. Nearly all of that redraw is
+  `runtime.scrub_info`, which the runtime work below takes on.
