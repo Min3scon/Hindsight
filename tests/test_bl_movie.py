@@ -432,9 +432,72 @@ def test_new_step_after_playback_plays():
     H.assert_same(H.snapshot(a), s6, "the step added in Movie Mode plays")
 
 
+def test_frame_lists_objects_once():
+    """Listing the visible objects walks every object in the file. A frame that shows the step
+    already shown lists them once; a frame that moves the history lists them once in Movie Mode
+    (and once more inside the jump while runtime.goto can't take the list)."""
+    from hindsight.bl import movie
+    a, b, states = build()
+    for i in range(40):                         # other objects, never recorded
+        e = bpy.data.objects.new(f"E{i}", bpy.data.meshes.new(f"E{i}"))
+        C.scene.collection.objects.link(e)
+    sc = C.scene
+    key(2, 1)                                   # frames 2 and 3 show step 1, 4 and 5 step 2
+    sc.frame_set(2)
+    check(a, b, states, 1)
+    calls, restore = _counting("_visible_uids")
+    try:
+        sc.frame_set(3)                         # still step 1
+        assert len(calls) == 1, calls
+        del calls[:]
+        sc.frame_set(4)                         # step 2
+        assert len(calls) == (1 if movie._GOTO_TAKES_VIS else 2), calls
+        check(a, b, states, 2)
+        del calls[:]
+        sc.frame_set(9)
+        assert len(calls) == (1 if movie._GOTO_TAKES_VIS else 2), calls
+        check(a, b, states, 4)
+    finally:
+        restore()
+
+
+def test_visibility_change_on_the_same_frame():
+    """What the jump was planned from includes which objects are visible: excluding an object
+    (Collection Filtering) between two calls for the same frame plans again, as the scrubber does."""
+    a, b, states = build()
+    sa = [states[0][0], states[1][0], states[3][0]]
+    sb = [states[0][1], states[2][1], states[4][1]]
+    sc = C.scene
+    sh = sc.hindsight
+    hide = bpy.data.collections.new("Hide")
+    sc.collection.children.link(hide)
+    hide.objects.link(b)
+    for c in list(b.users_collection):
+        if c != hide:
+            c.objects.unlink(b)
+    key(1, 1)                                   # frames 1 to 5 show steps 0 to 4
+    sc.frame_set(5)
+    check(a, b, states, 4)
+    sh.filter_mode = 'BLACKLIST'
+    sh.filter_collections.add().collection = hide
+    sc.frame_set(5)                             # B's steps leave the timeline: A's 2 steps, at the end
+    assert runtime.scrub_info(C)["len"] == 2
+    H.assert_same(H.snapshot(a), sa[2])
+    H.assert_same(H.snapshot(b), sb[2])
+    sc.frame_set(2)                             # Step 1: A's first step; B is not on the timeline
+    H.assert_same(H.snapshot(a), sa[1])
+    H.assert_same(H.snapshot(b), sb[2])
+    sh.filter_mode = 'NONE'
+    sc.frame_set(2)                             # the same frame, B back on the timeline: Step 1 is A1
+    check(a, b, states, 1)
+    sc.frame_set(4)
+    check(a, b, states, 3)
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
-          test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays]:
+          test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
+          test_frame_lists_objects_once, test_visibility_change_on_the_same_frame]:
     H.run(f)
 H.finish()
