@@ -22,6 +22,7 @@ Faster and lighter:
 - Saving and loading history works step by step. Peak memory while saving a 6,000-step history of a 100k mesh went from 89 MB to 43 MB, and loading from 141 MB to 83 MB. Recording a remesh at 1M vertices needs 426 MB instead of 609 MB.
 - What Hindsight remembers about its own jumps for Blender's undo is kept only as far back as Blender can undo. It used to keep up to 512 copies of every recorded value.
 - Once the memory limit is reached, a stroke no longer rescans every step.
+- The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 
 Fixed:
 

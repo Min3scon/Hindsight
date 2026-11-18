@@ -245,7 +245,16 @@ def test_global_timeline_is_built_once_until_it_changes():
         runtime.set_global(C, False)
 
 
-for fn in (test_global_timeline_is_built_once_until_it_changes, test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
+def test_diagnostics_say_which_engine_runs():
+    """Copy diagnostics names the engine in use, so a bug report shows whether the Rust engine loaded."""
+    from hindsight.bl import selfcheck
+    from hindsight.core import native
+    H.fresh()
+    line = next(x for x in selfcheck.diagnostics_text().splitlines() if x.startswith("Engine: "))
+    assert line == "Engine: Rust" if native.AVAILABLE else line.startswith("Engine: Python ("), line
+
+
+for fn in (test_diagnostics_say_which_engine_runs, test_global_timeline_is_built_once_until_it_changes, test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
            test_error_once_stays_once_after_many_errors, test_jumps_kept_only_as_far_as_blender_can_undo,
            test_exclusion_check_is_free_without_collection_filtering, test_topology_undo_match_is_bit_exact,
            test_clamped_weights_note_goes_away):

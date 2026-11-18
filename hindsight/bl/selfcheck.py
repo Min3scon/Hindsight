@@ -70,11 +70,23 @@ def _history_lines():
         return [f"  unreadable: {exc}"]
 
 
+def _engine_line() -> str:
+    """Which engine finds changes and applies steps: the Rust one, or the Python one it falls back to."""
+    try:
+        from ..core import native
+        if native.AVAILABLE:
+            return "Engine: Rust"
+        return "Engine: Python (" + (native.ERROR or "the Rust engine isn't installed for this system") + ")"
+    except Exception as e:
+        return f"Engine: Python ({e})"
+
+
 def diagnostics_text() -> str:
     lines = [f"Hindsight {addon_version()}",
              f"Blender {bpy.app.version_string} ({getattr(bpy.app, 'build_hash', b'?').decode(errors='replace')})",
              f"OS: {platform.platform()}"]
     lines += _gpu_lines()
+    lines.append(_engine_line())
     try:
         ui = bpy.context.preferences.system
         lines.append(f"UI scale: {ui.ui_scale:.2f}, region overlap: {bpy.context.preferences.system.use_region_overlap}")

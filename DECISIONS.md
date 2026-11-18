@@ -59,6 +59,26 @@ names) moves the centre. Not seen in a real window: verify.
   API: 2,357 flags, nearly all line length and false positives from Blender's property syntax; four
   unused imports; nothing about speed, memory or correctness.
 
+### Rust (owner: "rewrite in rust")
+- Blender only loads Python add-ons, so hindsight/bl stays Python. What moved to Rust is the engine's
+  number work in hindsight/core/delta.py: finding the changed elements (diff), applying a delta, and the
+  transforms inside packing and unpacking a step (index coding, prediction, zigzag, byte planes). Crate
+  in native/, PyO3 with abi3 (one binary per platform serves Python 3.11 and 3.13), loaded through
+  hindsight/core/native.py; `HINDSIGHT_NATIVE=0` forces the Python path, `=require` makes a missing
+  module an error (tests). The Python code stays as the fallback and the reference: tests compare the
+  two bit for bit.
+- Measured (PERF_LOG "Rust engine"): diff 0.39 to 0.08 ms at 100k and 5.0 to 1.2 ms at 1M; apply one
+  step 0.47 to 0.17 ms at 1M; a 300-step jump about half the time; diff's temporary memory 17 MB to
+  0.3 MB at 1M. Memory held by the history itself does not change: 95% of it is step data and arrays.
+- Not moved: step headers, error types, compression (zstd, lz4, zlib are C libraries already) and the
+  rest of the core (history, persist, journal). Profiling showed too little gain for the risk.
+- Wheels for Windows x64, macOS arm64, macOS x64 and Linux x64 are committed in hindsight/wheels and
+  listed in the manifest; Blender installs the one that fits. They were cross-compiled here and proven
+  by the "Native engine" workflow (run 44305350583): all eight jobs (four systems, Python 3.11 and
+  3.13) loaded the module and passed every core test with it required. They have NOT run inside a real
+  Blender on Windows or macOS: check the sidebar's diagnostics there (Copy diagnostics) after installing.
+- On any other platform (Linux arm64, Windows arm64) there is no wheel and the Python path is used.
+
 ### tools/mutation_bl.py
 Had not compiled since an earlier session (string literals with raw line breaks). Repaired. 7 of its 78
 mutants no longer match the code they patch (already so before this job): numbers 6, 7, 8, 17, 35, 56, 60.

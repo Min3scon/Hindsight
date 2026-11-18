@@ -126,6 +126,11 @@ changelog page change with the version.
   Mode panel's new rows; "Use this view"; the camera and lamps being put back after deleting them, and
   not during a stroke, a drag, playback or a render; a real render of a timelapse (EEVEE and Workbench
   could not run here: only Cycles on the CPU); Blender 5.3 as a whole in a window.
+- Rust engine (owner: "rewrite in rust"): native/ (crate), hindsight/core/native.py (loader),
+  hindsight/wheels/ (four committed wheels, listed in the manifest), .github/workflows/native.yml (proves
+  them on Windows, macOS and Linux runners; run it by hand after any change under native/). To rebuild
+  the wheels: PERF_LOG "Rust engine" has the commands. Copy diagnostics shows "Engine: Rust" or why the
+  Python engine is in use.
 - Still open from the audit (report: DECISIONS.md, "The two linked repositories"): duplicate helpers
   (finding 8) and about 60 lines of dead code (finding 7).
 - tools/mutation_bl.py compiles again; mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
