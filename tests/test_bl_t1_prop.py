@@ -35,7 +35,10 @@ ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections",
 
 OBJ = st.sampled_from(["A", "B", "C", "Pivot", "E"])
 MESH = st.sampled_from(["A", "B", "C", "E"])
-F = st.floats(-3, 3, allow_nan=False, allow_infinity=False, width=32)
+# The Blender program runs with denormals flushed to zero (its CPU mode); hypothesis then refuses
+# subnormal floats. Blender would store them as zero anyway.
+SUB = float.fromhex('0x1p-1060') * float.fromhex('0x1p-10') > 0.0   # False when flushed to zero
+F = st.floats(-3, 3, allow_nan=False, allow_infinity=False, width=32, allow_subnormal=SUB)
 CONS = st.sampled_from(["COPY_LOCATION", "COPY_ROTATION", "LIMIT_LOCATION", "TRACK_TO", "CHILD_OF", "DAMPED_TRACK"])
 EDITS = st.sampled_from(["grab", "rotate", "scale", "extrude", "bevel", "inset", "subdivide", "merge",
                          "dissolve", "delete", "select only"])
@@ -58,7 +61,7 @@ OBJECT = st.one_of(
     st.tuples(st.just("con_del"), OBJ, st.integers(0, 2)),
     st.tuples(st.just("con_move"), OBJ, st.integers(0, 2), st.integers(0, 2)),
     st.tuples(st.just("con_copy"), OBJ, st.integers(0, 2)),
-    st.tuples(st.just("con_influence"), OBJ, st.integers(0, 2), st.floats(0, 1, width=32)),
+    st.tuples(st.just("con_influence"), OBJ, st.integers(0, 2), st.floats(0, 1, width=32, allow_subnormal=SUB)),
     st.tuples(st.just("coll_move"), OBJ, st.sampled_from(["Props", "Extra"])),
     st.tuples(st.just("coll_link"), OBJ, st.sampled_from(["Props", "Extra"])),
     st.tuples(st.just("coll_remove"), OBJ, st.sampled_from(["Props", "Extra"])),
