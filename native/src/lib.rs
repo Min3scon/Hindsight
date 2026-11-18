@@ -1138,8 +1138,9 @@ fn dict_arrays(arrays: &Bound<'_, PyDict>) -> (Vec<Buf>, Vec<Arr>, Vec<Py<PyAny>
 /// one after the other on the channel arrays of one state (`arrays`, MeshState.arrays), in place,
 /// exactly as History.goto does step by step. Stops before the first step it doesn't take (see
 /// above), which it leaves untouched. The GIL is released while it works. Decompressing and
-/// decoding run ahead on up to `threads` helper threads (None: up to 3, fewer on machines with
-/// fewer cores, none for a short run); the steps are applied in order on the calling thread.
+/// decoding run ahead on up to `threads` helper threads (None: none for short runs or small
+/// steps, else up to 3, one less than the cores); the steps are applied in order on the calling
+/// thread.
 #[pyfunction]
 #[pyo3(signature = (blobs, arrays, forward, threads=None))]
 fn apply_steps(
@@ -1164,16 +1165,20 @@ fn apply_steps(
 }
 
 const MAX_THREADS: usize = 3;
-/// Compressed bytes worth a helper thread (starting one costs about as much as decoding this).
-const BYTES_PER_THREAD: usize = 32 << 10;
+/// Helper threads only pay off when each step is a lot of work and there are many of them:
+/// measured on a busy 4-core machine, a drag over 50-step jumps and any jump at 100k vertices
+/// (about 4 KB a step) got slower with them, a 3,000-step jump at 1M vertices (about 20 KB a
+/// step) faster. Below these, the calling thread does everything.
+const MIN_STEP_BYTES: usize = 16 << 10;
+const MIN_RUN_BYTES: usize = 4 << 20;
 
 fn auto_threads(blobs: &[&[u8]]) -> usize {
-    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
     let total: usize = blobs.iter().map(|b| b.len()).sum();
-    if blobs.len() < 3 {
+    if blobs.len() < 64 || total < MIN_RUN_BYTES || total / blobs.len() < MIN_STEP_BYTES {
         return 0;
     }
-    (cores.saturating_sub(1)).min(MAX_THREADS).min(total / BYTES_PER_THREAD).min(blobs.len() - 1)
+    let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    cores.saturating_sub(1).min(MAX_THREADS)
 }
 
 /// Applies one decoded step (checked: nothing here can fail).
