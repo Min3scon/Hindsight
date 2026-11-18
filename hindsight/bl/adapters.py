@@ -268,6 +268,11 @@ class RNAAdapter(Adapter):
                 out[path] = normalise(idb.path_resolve(path))
             except Exception:
                 continue
+        if out.get("parent_type") == "" and getattr(idb, "parent", 1) is None:
+            # Blender 4.2: Clear Parent keeps a vertex parent type with no parent; RNA reads it as ''
+            # and accepts only OBJECT without a parent. OBJECT is what it can be put back as, and what
+            # Blender 5 reads after the same operation.
+            out["parent_type"] = "OBJECT"
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:

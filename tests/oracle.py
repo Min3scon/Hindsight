@@ -221,6 +221,8 @@ def object_state(ob, mesh: bool = True, derived: bool = True) -> dict:
     if derived:
         bpy.context.view_layer.update()       # derived matrices are evaluated values: evaluate first
     rna = rna_dump(ob, depth=1, skip=OBJECT_SKIP if derived else OBJECT_SKIP | DERIVED | {"matrix_local"})
+    if ob.parent is None and rna.get("parent_type") == "":
+        rna["parent_type"] = "OBJECT"     # Blender 4.2 Clear Parent quirk: see adapters.RNAAdapter.capture
     out = {"rna": rna, "custom": id_props(ob),
            "collections": tuple(sorted(c.name for c in ob.users_collection)),
            "constraints": {f"{i}:{c.name}": dict(rna_dump(c, 1), type=c.type) for i, c in enumerate(ob.constraints)},
