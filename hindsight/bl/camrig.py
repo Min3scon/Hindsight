@@ -298,6 +298,7 @@ def ensure(scene, reframe: bool = True, take: bool = False) -> dict:
     have = rig(scene)
     if not want:
         _PAST.clear()
+        _REACH.clear()
     with runtime.suspended():
         cam = have.get("camera")
         ours = scene.camera is None or (cam is not None and scene.camera is cam)
@@ -524,6 +525,113 @@ def _evaluated_points(ob, dg, matrix_world=None) -> np.ndarray:
     return pts
 
 
+# Modifiers that only move vertices (same vertices, same order): the rendered shape of a past
+# position is then measured vertex by vertex (_measure_deformed).
+DEFORMERS = frozenset((
+    "ARMATURE", "CAST", "CORRECTIVE_SMOOTH", "CURVE", "HOOK", "LAPLACIANDEFORM", "LAPLACIANSMOOTH",
+    "LATTICE", "MESH_DEFORM", "SIMPLE_DEFORM", "SMOOTH", "SURFACE_DEFORM", "WARP", "WAVE",
+    "NORMAL_EDIT", "WEIGHTED_NORMAL", "UV_PROJECT", "UV_WARP", "VERTEX_WEIGHT_EDIT",
+    "VERTEX_WEIGHT_MIX", "VERTEX_WEIGHT_PROXIMITY"))
+
+
+def deforms_only(ob) -> bool:
+    """True when every modifier that renders only moves vertices (shape keys too)."""
+    return all(m.type in DEFORMERS for m in ob.modifiers if m.show_render)
+
+
+def _bone_scale(m) -> float:
+    """For an Armature modifier that moves each vertex by a fixed blend of its bones' transforms
+    (vertex groups, not bone envelopes, whose weights change with the position): the largest scale
+    any deforming bone applies (1 for bones that only turn and move). None for any other modifier."""
+    arm = getattr(m, "object", None) if m.type == "ARMATURE" else None
+    if arm is None or arm.type != "ARMATURE" or arm.pose is None or not m.use_vertex_groups \
+            or m.use_bone_envelopes:
+        return None
+    s = 1.0
+    for pb in arm.pose.bones:
+        if pb.bone.use_deform:
+            d = _np_matrix(pb.matrix) @ np.linalg.pinv(_np_matrix(pb.bone.matrix_local))
+            s = max(s, float(np.linalg.norm(d[:3, :3], 2)))
+    return s * _similarity_error(arm, m.id_data)
+
+
+def _similarity_error(arm, ob) -> float:
+    """1 when the armature's and the mesh's transforms keep shapes (uniform scale); else how much
+    the change between their spaces can stretch one direction against another."""
+    m = np.linalg.pinv(_np_matrix(arm.matrix_world)) @ _np_matrix(ob.matrix_world)
+    sv = np.linalg.svd(m[:3, :3], compute_uv=False)
+    return float(sv[0] / sv[-1]) if sv[-1] > 1e-12 else 1e6
+
+
+def _stretch(ob, ev, bs) -> float:
+    """How far a vertex can render from where it renders now, per unit it moves in the base mesh:
+    1 for shape keys, the bones' largest scale for an Armature on vertex groups (both exact), and
+    for any other modifier that only moves vertices, an estimate: the largest ratio of an edge's
+    rendered length to its length in the base mesh (edges shorter than a thousandth of the mesh's
+    size left out)."""
+    s = 1.0
+    other = False
+    for m in ob.modifiers:
+        if not m.show_render or m.type not in DEFORMERS:
+            continue
+        b = _bone_scale(m)
+        if b is not None:
+            s *= b
+        elif m.type not in ("NORMAL_EDIT", "WEIGHTED_NORMAL", "UV_PROJECT", "UV_WARP", "VERTEX_WEIGHT_EDIT",
+                            "VERTEX_WEIGHT_MIX", "VERTEX_WEIGHT_PROXIMITY"):
+            other = True
+    if not other:
+        return s
+    me = ob.data
+    ne = len(me.edges)
+    if ne:
+        ed = np.empty(ne * 2, np.int32)
+        me.edges.foreach_get("vertices", ed)
+        ed = ed.reshape(-1, 2)
+        with np.errstate(invalid="ignore", over="ignore", divide="ignore"):
+            lb = np.linalg.norm(bs[ed[:, 0]].astype(np.float64) - bs[ed[:, 1]], axis=1)
+            le = np.linalg.norm(ev[ed[:, 0]].astype(np.float64) - ev[ed[:, 1]], axis=1)
+            box = framing.bounds(bs)
+            size = float(np.linalg.norm(box[1] - box[0])) if box is not None else 0.0
+            ok = np.isfinite(lb) & np.isfinite(le) & (lb > size * 1e-3)
+            if ok.any():
+                s = max(s, float(np.max(le[ok] / lb[ok])))
+    return s
+
+
+_REACH = {}            # (history uid, object uid) -> (signature, history_vertex_reach)
+
+
+def _measure_deformed(ob, ev, bs, local_basis, tx, ty):
+    """Extents (mesh space, camera axes) of every past and later rendered shape of a mesh whose
+    modifiers only move its vertices, or None (no history, or one that changes the vertex count).
+
+    A vertex that is `d` away from where it is now, somewhere in the history, renders at most
+    `stretch * d` away from where it renders now (exact for an Armature: each vertex is moved by a
+    fixed blend of its bones' transforms; for the others, the stretch measured now stands for
+    theirs): the union of those balls holds every rendered position of the history."""
+    uid = runtime.obj_uid(ob)
+    h = runtime.history_of(ob) if uid is not None else None
+    if h is None or not h.entries:
+        return None
+    st = runtime._STATES.get(uid) or runtime.ensure_state(ob)
+    if st is None or not st.counts:
+        return None
+    sig = (len(h.entries), h.entries[0].seq, h.entries[-1].seq, h.cursor)
+    hit = _REACH.get((h.uid, uid))
+    if hit is None or hit[0] != sig:
+        hit = _REACH[(h.uid, uid)] = (sig, framing.history_vertex_reach(h, st, uid))
+    rho = hit[1]
+    pos0 = st.arrays.get(POSITION_KEY)
+    if rho is None or pos0 is None or len(rho) != len(bs) or pos0.size != bs.size:
+        return None
+    with np.errstate(invalid="ignore", over="ignore"):
+        off = np.linalg.norm(np.asarray(pos0, np.float64).reshape(-1, 3) - bs, axis=1)
+    off[~np.isfinite(off)] = 0.0
+    r = (rho.astype(np.float64) + off) * _stretch(ob, ev, bs) * (1.0 + 1e-6)
+    return framing.extents_radii(ev, r, local_basis, tx, ty)
+
+
 def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
     """Extents (mesh space, camera axes) of a mesh with modifiers or shape keys, and its points now.
 
@@ -536,6 +644,10 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
         ev = base.reshape(-1, 3)
     ext = framing.extents(ev, local_basis, tx, ty)
     bs = base.reshape(-1, 3)
+    if len(ev) == len(bs) and deforms_only(ob):
+        moved = _measure_deformed(ob, ev, bs, local_basis, tx, ty)
+        if moved is not None:
+            return framing.merge(ext, moved), ev
     box_now = framing.bounds(bs)
     if box_now is None:
         return ext, ev

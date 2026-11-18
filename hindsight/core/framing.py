@@ -470,7 +470,82 @@ def reach(evaluated, base, groups, dirs=None) -> float:
     return float(max(0.0, np.max(s_ev[ok] - s_env[ok]) + 1e-6 * size))
 
 
+def extents_radii(points, radii, basis, tan_x, tan_y, chunk: int = 65536):
+    """Extents (as `extents`) of the union of balls: one around each point, of its own radius, in
+    the space `basis` maps from (any 3x3 matrix). None when there are no finite points."""
+    try:
+        p = np.asarray(points).reshape(-1, 3)
+        r = np.asarray(radii).reshape(-1)
+    except (TypeError, ValueError):
+        return None
+    if not len(p) or len(r) != len(p):
+        return None
+    b = np.asarray(basis, np.float64)
+    tx, ty = float(tan_x), float(tan_y)
+    f = np.array([[1, 0, tx], [-1, 0, tx], [0, 1, ty], [0, -1, ty], [0, 0, 1]], np.float64)
+    g = np.linalg.norm(f @ b.T, axis=1)               # |b @ f_i|: what a unit ball adds along f_i
+    out = None
+    for a in range(0, len(p), chunk):
+        with np.errstate(invalid="ignore", over="ignore"):
+            c = p[a:a + chunk].astype(np.float64) @ b
+            rr = np.maximum(r[a:a + chunk].astype(np.float64), 0.0)
+        ok = np.isfinite(c).all(axis=1) & np.isfinite(rr)
+        if not ok.all():
+            c, rr = c[ok], rr[ok]
+        if not len(c):
+            continue
+        x, y, z = c[:, 0], c[:, 1], c[:, 2]
+        e = np.array([np.max(x + z * tx + rr * g[0]), np.max(z * tx - x + rr * g[1]),
+                      np.max(y + z * ty + rr * g[2]), np.max(z * ty - y + rr * g[3]),
+                      np.min(z - rr * g[4]), np.max(z + rr * g[4])], np.float64)
+        out = e if out is None else merge(out, e)
+    return out
+
+
 # ------------------------------------------------------------------ the history
+def history_vertex_reach(h, state, target_uid: str):
+    """(n,) float32: for each vertex of the mesh at the cursor (`state`), the farthest it is from
+    its place there at any position of History `h`, or None when that can't be told (no state, or a
+    reachable step changes the number of vertices, so they don't correspond any more). One walk
+    over the history like `history_extents_multi`, on private copies; a direction stops where
+    that one stops."""
+    try:
+        pos0 = state.arrays.get(POSITION_KEY) if state is not None else None
+        n = len(h.entries)
+        cur = int(h.cursor)
+        if pos0 is None or cur < 0 or cur > n:
+            return None
+        ref = np.asarray(pos0, np.float32).reshape(-1, 3)
+        nv = len(ref)
+    except Exception:
+        return None
+    out = np.zeros(nv, np.float32)
+    for forward, order in ((False, range(cur - 1, -1, -1)), (True, range(cur, n))):
+        ms = MeshState(dict(state.counts), {POSITION_KEY: np.array(ref, dtype=np.float32, copy=True).reshape(-1)})
+        for i in order:
+            try:
+                e = h.entries[i]
+                if e.kind == JOIN:
+                    break
+                if e.target != target_uid:
+                    continue
+                changed = []
+                if not _cross(ms, e.load(), forward, changed):
+                    break
+                arr = ms.arrays[POSITION_KEY].reshape(-1, 3)
+                if len(arr) != nv:
+                    return None
+                for idx in changed:
+                    sel = slice(None) if idx is None else idx
+                    with np.errstate(invalid="ignore", over="ignore"):
+                        d = np.sqrt(((arr[sel] - ref[sel]).astype(np.float64) ** 2).sum(axis=1))
+                    d[~np.isfinite(d)] = 0.0
+                    out[sel] = np.maximum(out[sel], (d * (1.0 + 1e-6)).astype(np.float32))
+            except Exception:
+                break
+    return out
+
+
 def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
     """Extents (as `extents` gives them) of the mesh of `target_uid` over every position of History
     `h` other than the cursor's, or None when it has none.
