@@ -187,7 +187,253 @@ def test_unregister_removes_handler():
     hindsight.register()
 
 
+def build_n(n):
+    """Global history of n steps on one object. Returns (obj, states), states[g] = the mesh at g."""
+    H.fresh()
+    a = H.make_mesh(1200, "A")
+    H.enter(a, "SCULPT")
+    states = [H.snapshot(a)]
+    for k in range(n):
+        H.fake_stroke(a, 10 + k)
+        assert H.commit(a) is not None
+        states.append(H.snapshot(a))
+    runtime.set_global(C, True)
+    assert runtime.scrub_info(C)["len"] == n
+    return a, states
+
+
+def key(fps=1, spf=1, start=1):
+    sc = C.scene
+    sh = sc.hindsight
+    sh.movie_mode = True
+    sc.frame_start = start
+    sh.frames_per_step = fps
+    sh.movie_steps_per_frame = spf
+    sc.frame_set(start)
+    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    return [tuple(k.co) for k in step_fcurve(sc).keyframe_points]
+
+
+def implied(keys, f):
+    """The step the two LINEAR keys give at whole frame f (Blender rounds Int values half up)."""
+    import math
+    (f0, v0), (f1, v1) = keys
+    return int(math.floor(v0 + (v1 - v0) * (f - f0) / (f1 - f0) + 0.5))
+
+
+def test_steps_per_frame_one_keeps_keys():
+    build()
+    for fps, end in ((2, 9.0), (3, 13.0), (1, 5.0)):
+        assert key(fps, 1) == [(1.0, 0.0), (end, 4.0)], (fps, key(fps, 1))
+
+
+def test_steps_per_frame_four():
+    import math
+    n = 10
+    a, states = build_n(n)
+    sc = C.scene
+    sc.frame_end = 2
+    assert key(1, 1) == [(1.0, 0.0), (11.0, 10.0)]
+    assert sc.frame_end == 11
+    keys = key(1, 4)
+    assert keys == [(1.0, 0.0), (1.0 + math.ceil(n / 4), 10.0)], keys
+    assert sc.frame_end == 1 + math.ceil(n / 4), "the range ended at the old last key, so it gets shorter"
+    seen = []
+    for f in list(range(1, sc.frame_end + 1)) + [2, 1, 4]:
+        sc.frame_set(f)
+        g = implied(keys, f)
+        assert sc.hindsight.movie_step == g, (f, sc.hindsight.movie_step, g)
+        assert runtime.scrub_info(C)["pos"] == g
+        H.assert_same(H.snapshot(a), states[g], f"frame {f}")
+        seen.append(g)
+    assert seen[:4] == [0, 3, 7, 10], seen
+    # the last frame always shows the last step, also when Steps per frame doesn't divide the steps
+    for fps, spf in ((1, 3), (2, 3), (1, 7), (3, 4), (1, 10), (1, 25)):
+        keys = key(fps, spf)
+        sc.frame_set(int(keys[1][0]))
+        H.assert_same(H.snapshot(a), states[n], f"last frame, {fps} frames per step, {spf} steps per frame")
+        assert runtime.scrub_info(C)["pos"] == n
+    # a range the user made longer than the movie is kept
+    sc.frame_end = 50
+    key(1, 4)
+    assert sc.frame_end == 50
+
+
+def _counting(name):
+    orig = getattr(runtime, name)
+    calls = []
+
+    def counted(*a, **k):
+        calls.append(a[1:2])
+        return orig(*a, **k)
+    counted.__dict__.update(orig.__dict__)
+    setattr(runtime, name, counted)
+
+    def restore():
+        orig.__dict__.update(counted.__dict__)
+        setattr(runtime, name, orig)
+    return calls, restore
+
+
+def test_same_step_does_no_history_work():
+    a, b, states = build()
+    sc = C.scene
+    key(3, 1)                                   # frames 1, 4, 7, 10, 13 start a step
+    sc.frame_set(4)
+    check(a, b, states, 1)
+    gotos, r1 = _counting("goto")
+    infos, r2 = _counting("scrub_info")
+    try:
+        for f in (4, 5, 4, 5):                  # frames 4 and 5 show step 1
+            sc.frame_set(f)
+        assert gotos == [] and infos == [], (gotos, infos)
+        sc.frame_set(7)
+        assert len(gotos) == 1, gotos
+        del gotos[:], infos[:]
+        sc.frame_set(8)
+        assert gotos == [] and infos == [], (gotos, infos)
+    finally:
+        r1()
+        r2()
+    check(a, b, states, 2)
+    # a history moved outside Movie Mode is noticed: the same frame moves it back
+    sc.hindsight.movie_mode = False
+    runtime.goto(C, 0)
+    check(a, b, states, 0)
+    sc.hindsight.movie_mode = True
+    sc.frame_set(8)
+    check(a, b, states, 2)
+
+
+def test_subframes_keep_the_frames_step():
+    a, b, states = build()
+    sc = C.scene
+    keys = key(3, 1)
+    for f in range(1, 14):
+        g = implied(keys, f)
+        sc.frame_set(f)
+        check(a, b, states, g, f"frame {f}")
+        gotos, restore = _counting("goto")
+        try:
+            # what a render with motion blur does: the frame, then samples on either side of it
+            for ff, sub in ((f, 0.5), (f - 1, 0.75), (f, 0.25), (f, 0.0)):
+                sc.frame_set(ff, subframe=sub)
+                check(a, b, states, g, f"frame {f} at {ff} + {sub}")
+            assert gotos == [], (f, gotos)
+        finally:
+            restore()
+    # a sub-frame call on its own shows the step of its whole frame
+    for f, far in ((2, 13), (5, 1), (12, 1), (3, 13)):
+        sc.frame_set(far)
+        sc.frame_set(f, subframe=0.5)
+        check(a, b, states, implied(keys, f), f"frame {f} + 0.5 after frame {far}")
+    # the history moved while Movie Mode was off: a sub-frame of the same frame puts it back
+    sc.frame_set(7)
+    sc.hindsight.movie_mode = False
+    runtime.goto(C, 0)
+    sc.hindsight.movie_mode = True
+    sc.frame_set(7, subframe=0.25)
+    check(a, b, states, implied(keys, 7), "sub-frame after the history moved")
+
+
+def test_playback_keeps_history_and_position():
+    from hindsight.bl import persistence
+    a, b, states = build()
+    sc = C.scene
+    keys = key(2, 1)
+    before = lengths()
+    j = persistence.current_journal()
+    n0 = len(j.read()) if j is not None else 0
+    for f in list(range(1, 10)) + [6]:
+        sc.frame_set(f)
+    g = implied(keys, 6)
+    check(a, b, states, g)
+    assert lengths() == before, "playback never adds steps"
+    sc.hindsight.movie_mode = False
+    assert runtime.scrub_info(C)["pos"] == g
+    from hindsight.core import globaltl
+    plan = globaltl.plan_global_goto(runtime.reg(), g)
+    assert {h.uid: h.cursor for h in runtime.reg().all()} == plan
+    j = persistence.current_journal()
+    recs = j.read()[n0:]
+    assert not [r for r in recs if r[0] != "CURSOR"], [r[0] for r in recs]
+    last = {}
+    for _rt, header, _p in recs:
+        last[header["hist"]] = header["cursor"]
+    for h in runtime.reg().all():
+        assert last.get(h.uid, h.cursor) == h.cursor, (h.uid, last, h.cursor)
+    # the stored cursors replay to the mesh that is shown
+    for uid, cur in plan.items():
+        assert runtime.reg().histories[uid].cursor == cur
+
+
+def test_movie_length():
+    import math
+    from hindsight.bl import movie
+    a, b, states = build()
+    sc = C.scene
+    sh = sc.hindsight
+    sc.render.fps, sc.render.fps_base = 24, 1.0
+    sh.frames_per_step, sh.movie_steps_per_frame = 2, 1
+    assert movie.movie_length(sc) == {"steps": 4, "frames": 9, "seconds": 9 / 24}
+    sh.frames_per_step, sh.movie_steps_per_frame = 1, 3
+    assert movie.movie_length(sc) == {"steps": 4, "frames": 3, "seconds": 3 / 24}
+    sc.render.fps, sc.render.fps_base = 30, 1.001
+    r = movie.movie_length(sc)
+    assert r["frames"] == 3 and math.isclose(r["seconds"], 3 / (30 / 1.001), rel_tol=1e-6), r  # fps_base is a float32
+    # it matches what Quick auto key keys
+    keys = key(1, 3)
+    assert keys[1][0] - keys[0][0] + 1 == movie.movie_length(sc)["frames"]
+    runtime.set_global(C, False)
+    assert movie.movie_length(sc) is None
+    H.fresh()
+    runtime.set_global(C, True)
+    assert movie.movie_length(C.scene) is None, "no global history yet"
+
+
+def test_new_step_after_playback_plays():
+    a, b, states = build()
+    sc = C.scene
+    keys = key(1, 1)
+    for f in range(1, 6):
+        sc.frame_set(f)
+    check(a, b, states, 4)
+    assert runtime._MOVIE_GROUPS, "the global timeline is kept while Movie Mode plays"
+    sc.hindsight.movie_mode = False
+    runtime.scrub_info(C)
+    assert not runtime._MOVIE_GROUPS, "and dropped when Movie Mode is off"
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 99)
+    assert H.commit(a) is not None
+    s5 = H.snapshot(a)
+    assert runtime.scrub_info(C)["len"] == 5
+    keys = key(1, 1)
+    assert keys == [(1.0, 0.0), (6.0, 5.0)], keys
+    sc.frame_set(1)
+    check(a, b, states, 0)
+    sc.frame_set(6)
+    H.assert_same(H.snapshot(a), s5, "the new step plays")
+    H.assert_same(H.snapshot(b), states[4][1])
+    sc.frame_set(5)
+    check(a, b, states, 4)
+    assert runtime.scrub_info(C) == dict(runtime.scrub_info(C), pos=4, len=5)
+    # a step added while Movie Mode stays on (a script) is seen too
+    sc.frame_set(6)
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 98)
+    assert H.commit(a) is not None
+    s6 = H.snapshot(a)
+    assert runtime.scrub_info(C)["len"] == 6
+    assert key(1, 1) == [(1.0, 0.0), (7.0, 6.0)]
+    sc.frame_set(1)
+    check(a, b, states, 0)
+    sc.frame_set(7)
+    H.assert_same(H.snapshot(a), s6, "the step added in Movie Mode plays")
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
-          test_manual_step_value, test_unregister_removes_handler]:
+          test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
+          test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
+          test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays]:
     H.run(f)
 H.finish()

@@ -1,0 +1,360 @@
+{
+ "blender": "5.3.0",
+ "scenes": [
+  {
+   "scene": "100k, 1,000 steps, 2 objects",
+   "vertices": 200000,
+   "objects": 2,
+   "steps": 1000,
+   "build_s": 8.8,
+   "frames": 2001,
+   "frames_step_changed": 1001,
+   "goto_calls": 1001,
+   "total_s": 10.959,
+   "median_ms": 0.826,
+   "worst_ms": 90.19,
+   "addon_total_s": 1.604,
+   "addon_median_ms": 0.558,
+   "addon_worst_ms": 72.11,
+   "addon_median_step_changed_ms": 1.326,
+   "addon_median_same_step_ms": 0.116,
+   "blender_median_ms": 0.205,
+   "profile_share": {
+    "handler bookkeeping": 0.5465,
+    "applying steps": 0.2017,
+    "writing the mesh": 0.1301,
+    "journal and disk": 0.0164,
+    "undo bookkeeping": 0.0,
+    "redraw tagging": 0.0081,
+    "other add-on": 0.0151,
+    "other": 0.082
+   },
+   "profile_ms_per_frame": {
+    "handler bookkeeping": 0.829,
+    "applying steps": 0.306,
+    "writing the mesh": 0.197,
+    "journal and disk": 0.025,
+    "undo bookkeeping": 0.0,
+    "redraw tagging": 0.012,
+    "other add-on": 0.023,
+    "other": 0.124
+   },
+   "spf4_frames": 251,
+   "spf4_total_s": 3.638,
+   "spf4_median_ms": 17.999
+  },
+  {
+   "scene": "100k, 5,000 steps",
+   "vertices": 100000,
+   "objects": 1,
+   "steps": 5000,
+   "build_s": 27.8,
+   "frames": 10001,
+   "frames_step_changed": 5001,
+   "goto_calls": 5001,
+   "total_s": 92.908,
+   "median_ms": 11.754,
+   "worst_ms": 1769.46,
+   "addon_total_s": 15.912,
+   "addon_median_ms": 0.922,
+   "addon_worst_ms": 1754.02,
+   "addon_median_step_changed_ms": 2.688,
+   "addon_median_same_step_ms": 0.1266,
+   "blender_median_ms": 9.931,
+   "profile_share": {
+    "handler bookkeeping": 0.7853,
+    "applying steps": 0.0952,
+    "writing the mesh": 0.0587,
+    "journal and disk": 0.0073,
+    "undo bookkeeping": 0.0,
+    "redraw tagging": 0.0036,
+    "other add-on": 0.0082,
+    "other": 0.0417
+   },
+   "profile_ms_per_frame": {
+    "handler bookkeeping": 2.959,
+    "applying steps": 0.359,
+    "writing the mesh": 0.221,
+    "journal and disk": 0.028,
+    "undo bookkeeping": 0.0,
+    "redraw tagging": 0.014,
+    "other add-on": 0.031,
+    "other": 0.157
+   },
+   "spf4_frames": 1251,
+   "spf4_total_s": 21.481,
+   "spf4_median_ms": 16.276
+  },
+  {
+   "scene": "500k, 300 steps",
+   "vertices": 500000,
+   "objects": 1,
+   "steps": 300,
+   "build_s": 6.9,
+   "frames": 601,
+   "frames_step_changed": 301,
+   "goto_calls": 301,
+   "total_s": 24.853,
+   "median_ms": 58.002,
+   "worst_ms": 175.48,
+   "addon_total_s": 0.99,
+   "addon_median_ms": 1.946,
+   "addon_worst_ms": 90.13,
+   "addon_median_step_changed_ms": 2.615,
+   "addon_median_same_step_ms": 0.1507,
+   "blender_median_ms": 55.795,
+   "profile_share": {
+    "handler bookkeeping": 0.1072,
+    "applying steps": 0.3722,
+    "writing the mesh": 0.1756,
+    "journal and disk": 0.0073,
+    "undo bookkeeping": 0.0,
+    "redraw tagging": 0.0031,
+    "other add-on": 0.0065,
+    "other": 0.328
+   },
+   "profile_ms_per_frame": {
+    "handler bookkeeping": 0.504,
+    "applying steps": 1.747,
+    "writing the mesh": 0.824,
+    "journal and disk": 0.034,
+    "undo bookkeeping": 0.0,
+    "redraw tagging": 0.015,
+    "other add-on": 0.031,
+    "other": 1.54
+   },
+   "spf4_frames": 76,
+   "spf4_total_s": 6.835,
+   "spf4_median_ms": 87.397
+  }
+ ],
+ "renders": [
+  {
+   "engine": "CYCLES",
+   "motion_blur": false,
+   "frames": 10,
+   "handler_calls": 11,
+   "subframe_calls": 0,
+   "goto_calls": 7,
+   "seconds": 0.5,
+   "calls": [
+    [
+     1,
+     0.0
+    ],
+    [
+     2,
+     0.0
+    ],
+    [
+     3,
+     0.0
+    ],
+    [
+     4,
+     0.0
+    ],
+    [
+     5,
+     0.0
+    ],
+    [
+     6,
+     0.0
+    ],
+    [
+     7,
+     0.0
+    ],
+    [
+     8,
+     0.0
+    ],
+    [
+     9,
+     0.0
+    ],
+    [
+     10,
+     0.0
+    ],
+    [
+     41,
+     0.0
+    ]
+   ]
+  },
+  {
+   "engine": "CYCLES",
+   "motion_blur": true,
+   "frames": 10,
+   "handler_calls": 41,
+   "subframe_calls": 20,
+   "goto_calls": 7,
+   "seconds": 0.4,
+   "calls": [
+    [
+     1,
+     0.0
+    ],
+    [
+     0,
+     0.75
+    ],
+    [
+     1,
+     0.25
+    ],
+    [
+     1,
+     0.0
+    ],
+    [
+     2,
+     0.0
+    ],
+    [
+     1,
+     0.75
+    ],
+    [
+     2,
+     0.25
+    ],
+    [
+     2,
+     0.0
+    ],
+    [
+     3,
+     0.0
+    ],
+    [
+     2,
+     0.75
+    ],
+    [
+     3,
+     0.25
+    ],
+    [
+     3,
+     0.0
+    ],
+    [
+     4,
+     0.0
+    ],
+    [
+     3,
+     0.75
+    ],
+    [
+     4,
+     0.25
+    ],
+    [
+     4,
+     0.0
+    ],
+    [
+     5,
+     0.0
+    ],
+    [
+     4,
+     0.75
+    ],
+    [
+     5,
+     0.25
+    ],
+    [
+     5,
+     0.0
+    ],
+    [
+     6,
+     0.0
+    ],
+    [
+     5,
+     0.75
+    ],
+    [
+     6,
+     0.25
+    ],
+    [
+     6,
+     0.0
+    ],
+    [
+     7,
+     0.0
+    ],
+    [
+     6,
+     0.75
+    ],
+    [
+     7,
+     0.25
+    ],
+    [
+     7,
+     0.0
+    ],
+    [
+     8,
+     0.0
+    ],
+    [
+     7,
+     0.75
+    ],
+    [
+     8,
+     0.25
+    ],
+    [
+     8,
+     0.0
+    ],
+    [
+     9,
+     0.0
+    ],
+    [
+     8,
+     0.75
+    ],
+    [
+     9,
+     0.25
+    ],
+    [
+     9,
+     0.0
+    ],
+    [
+     10,
+     0.0
+    ],
+    [
+     9,
+     0.75
+    ],
+    [
+     10,
+     0.25
+    ],
+    [
+     10,
+     0.0
+    ]
+   ]
+  }
+ ],
+ "not_measured": "EEVEE and Workbench: Blender aborts without a GPU (libEGL.so.1 missing)"
+}
