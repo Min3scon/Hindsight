@@ -220,7 +220,9 @@ def test_same_values_never_hides_a_difference():
         if rng.random() < 0.1:
             b.pop(next(iter(b)))
         fast = datarec._same_values(a, b)
-        d = datarec._diff(a, b)
+        with plain_paths():
+            d = datarec._diff(a, b)                 # value by value with Adapter.changed
+        assert set(datarec._diff(a, b)) == set(d), (a, b)   # the per-value shortcut agrees
         if fast:
             seen_same += 1
             assert d == {}, (a, b, d)

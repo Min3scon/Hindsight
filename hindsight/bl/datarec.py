@@ -27,7 +27,7 @@ _PASSIVE_PREFIXES = ("VIEW3D_OT_rotate", "VIEW3D_OT_move", "VIEW3D_OT_zoom", "VI
                      "GRAPH_OT_view", "ACTION_OT_view", "ANIM_OT_change_frame")
 
 _DIRTY: dict = {}            # uid -> time of the last update seen
-_BODIES: dict = {}           # object uid -> its latest body (to bring it back if it gets deleted)
+_BODIES: dict = {}           # object uid -> its latest body, packed (see _body): to bring it back if deleted
 _BODY_DIRTY: set = set()     # object uids whose body must be read again
 _OPS = {"marker": None}      # (count, pointer of the newest) of window_manager.operators
 _JUMPS: list = []            # Hindsight jumps pushed onto Blender's undo stack (see on_undo)
@@ -244,9 +244,20 @@ def capture(idb) -> dict:
         except Exception as e:
             _adapter_failed(a.id, e, "capture")
             continue
+        keys = _KEYS.get(a.id)
+        if keys is None:
+            keys = _KEYS[a.id] = {}
         for path, v in vals.items():
-            out[(a.id, path)] = v
+            k = keys.get(path)
+            if k is None:
+                k = keys[path] = (a.id, path)
+            out[k] = v
     return out
+
+
+# adapter -> path -> the (adapter, path) key: every object's recorded values share the same key
+# tuples instead of each holding its own (about a quarter of what an object's values take)
+_KEYS: dict = {}
 
 
 def refresh_mesh_users() -> None:
@@ -419,9 +430,26 @@ def refresh_bodies(scene, only=None) -> None:
         u = idmap.claim(ob)
         if u and (only is None or u in only):
             try:
-                _BODIES[u] = adapters.object_body(ob)
+                _BODIES[u] = _pack_body(adapters.object_body(ob))
             except Exception as e:
                 log.error_once(("body", str(e)), f"could not read an object's details: {e}", e)
+
+
+def _pack_body(body):
+    """A body is kept as marshal bytes (less than half the memory of the dict; it's read back only
+    when its object is deleted or added). Values that marshal can't take keep the dict."""
+    try:
+        return marshal.dumps(body, 2)
+    except Exception:
+        return body
+
+
+def _body(uid):
+    """The body kept for uid (a new dict, equal to the one read from Blender), or None."""
+    b = _BODIES.get(uid)
+    if isinstance(b, bytes):
+        return marshal.loads(b)
+    return b
 
 
 def _mesh_snapshot(body):
@@ -568,6 +596,8 @@ def _diff(old: dict, new: dict) -> dict:
     which isn't a removal."""
     out = {}
     failed = set()
+    exact = _fast_diff_ok()
+    dumps = marshal.dumps
     for k in set(old) | set(new):
         aid = k[0]
         if aid in failed or not adapter_ok(aid):
@@ -579,6 +609,12 @@ def _diff(old: dict, new: dict) -> dict:
             continue        # stored with creation and deletion steps, never read back from Blender
         if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or ""):
             continue        # a kind switched off isn't read; that isn't a removal
+        if exact and a is not MISSING and b is not MISSING:
+            try:
+                if dumps(a, 2) == dumps(b, 2):
+                    continue    # identical (see _same_values): the adapter would find no change
+            except Exception:
+                pass
         try:
             changed = a is MISSING or b is MISSING or adapters.ADAPTERS[aid].changed(k[1], a, b)
         except Exception as e:
@@ -679,7 +715,7 @@ def _commit(label: str, uids, mesh: bool) -> list:
             tracked = tracked_uids()
             snaps = {}
             for ou in sorted(old_set ^ new_set):
-                body = _BODIES.get(ou)
+                body = _body(ou)
                 if ou in new_set:
                     by_adapter["scene"][f"body:{ou}"] = (MISSING, body if body is not None else MISSING)
                 else:
@@ -771,7 +807,7 @@ def ref_label(ref) -> str:
     """How the sidebar names a deleted object or collection a reference waits for."""
     if ref in adapters.COLL_NAMES:
         return f"the collection {adapters.COLL_NAMES[ref]}"
-    name = (_BODIES.get(ref) or {}).get("name")
+    name = (_body(ref) or {}).get("name")
     if name:
         return str(name)
     return adapters.REF_NAMES.get(ref) or "an object"

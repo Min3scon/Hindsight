@@ -60,6 +60,7 @@ class frame:
     def __enter__(self):
         if _DEPTH[0] == 0:
             _FCACHE[0] = {}
+            _LOOKUPS[0] = 0
         _DEPTH[0] += 1
         return self
 
@@ -79,6 +80,19 @@ def in_frame() -> bool:
 def frame_cache():
     """A dict that lives as long as the current frame, or None outside one."""
     return _FCACHE[0]
+
+
+_IDX_AFTER = 8           # lookups in a frame before the index is built (a few are cheaper without)
+_LOOKUPS = [0]
+
+
+def _frame_index():
+    """The frame's index once this frame has done a few lookups, else None (look up as usual)."""
+    if _IDX[0] is None:
+        _LOOKUPS[0] += 1
+        if _LOOKUPS[0] <= _IDX_AFTER:
+            return None
+    return _objects_index()
 
 
 def _objects_index():
@@ -243,7 +257,7 @@ def find(uid: str):
         return None
     if uid.startswith(LIB_PREFIX):
         return _find_linked(uid)
-    idx = _objects_index() if _DEPTH[0] else None
+    idx = _frame_index() if _DEPTH[0] else None
     hit = _cache.get(uid)
     if hit is not None:
         col = getattr(bpy.data, hit[0], None)
