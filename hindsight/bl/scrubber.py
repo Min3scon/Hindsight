@@ -89,33 +89,57 @@ def _report(where, exc):
 # ---------------------------------------------------------------------------------------------
 # Pure layout
 
-def layout(region_w, region_h, ui_scale, prefs_like, insets=(0.0, 0.0, 0.0)):
+WIDE_PANEL = 96.0          # px (x ui_scale): a side panel wider than this moves the slider's centre
+MIN_DIGITS = 3             # counter room is kept for at least "999 / 999", so the bar rarely shifts
+
+
+def counter_digits(length) -> int:
+    """Digits to keep room for in the counter ("pos / length" at its widest)."""
+    return max(MIN_DIGITS, len(str(max(0, int(length or 0)))))
+
+
+def layout(region_w, region_h, ui_scale, prefs_like, insets=(0.0, 0.0, 0.0), digits=MIN_DIGITS):
     """Pixel layout of the scrubber in region space (origin bottom-left).
 
     insets = (left, right, bottom) pixels covered by overlapping regions (toolbar, sidebar,
-    asset shelf); the slider is centred in what is left and sits above the bottom inset.
+    asset shelf). The whole slider (dot, bar and counter) is centred on the viewport and sits above
+    the bottom inset. A wide panel on a side (the sidebar, a toolbar that shows names) moves the
+    centre to the middle of the space it leaves; the narrow icon toolbar doesn't, so the slider
+    doesn't hang to one side. It never goes under a panel.
     """
     s = float(ui_scale) if ui_scale and ui_scale > 0 else 1.0
     left, right, bottom = (max(0.0, float(v)) for v in insets)
+    region_w = float(region_w)
     h = max(1.0, float(_pref(prefs_like, "scrub_height"))) * s
     m = max(0.0, float(_pref(prefs_like, "scrub_margin"))) * s + bottom
     pct = min(100.0, max(1.0, float(_pref(prefs_like, "scrub_width_pct"))))
-    avail = max(40.0 * s, float(region_w) - left - right)
-    w = avail * pct / 100.0
-    x0 = left + (avail - w) / 2.0
+    cap = h / 2.0                       # rounded caps extend past x0 / x1
+    r = max(5.0, float(_pref(prefs_like, "scrub_height")) / 2.0 + 3.0) * s
+    gap = 8.0 * s
+    font = FONT_SIZE * s
+    left_extra = cap + gap + 2.0 * r    # the dot
+    right_extra = cap                   # the counter: "pos / length", digits about 0.6 em wide
+    if _pref(prefs_like, "scrub_show_counter"):
+        right_extra += gap + font * (1.2 * max(1, int(digits)) + 1.0)
+    avail = max(40.0 * s, region_w - left - right)
+    w = min(avail * pct / 100.0, max(20.0 * s, avail - left_extra - right_extra))
+    wide = WIDE_PANEL * s
+    lo = left if left > wide else 0.0
+    hi = region_w - right if right > wide else region_w
+    group = left_extra + w + right_extra
+    gx0 = (lo + hi) / 2.0 - group / 2.0
+    gx0 = max(left, min(gx0, region_w - right - group))
+    x0 = gx0 + left_extra
     x1 = x0 + w
     y0 = float(round(m))
     y1 = y0 + float(round(h))
     cy = (y0 + y1) / 2.0
-    cap = h / 2.0                       # rounded caps extend past x0 / x1
-    r = max(5.0, float(_pref(prefs_like, "scrub_height")) / 2.0 + 3.0) * s
-    gap = 8.0 * s
     dot_cx = x0 - cap - gap - r
-    font = FONT_SIZE * s
     return {
         "bar": (x0, y0, x1, y1),
         "dot": (dot_cx, cy, r),
         "counter": (x1 + cap + gap, cy - font * 0.35),
+        "extent": (gx0, gx0 + group),
         "hint": ((x0 + x1) / 2.0, y1 + 7.0 * s),
         "global": (dot_cx - r * 0.45, cy + r + 4.0 * s),
         "font_size": font,
@@ -339,11 +363,14 @@ def region_insets(area, region):
     return left, right, bottom
 
 
+_DIGITS = {}               # region pointer -> counter digits of the last draw (hit tests match it)
+
+
 def _layout_for(context, region=None):
     region = region if region is not None else context.region
     area = getattr(context, "area", None)
     return layout(region.width, region.height, _ui_scale(context), _prefs(context),
-                  region_insets(area, region))
+                  region_insets(area, region), _DIGITS.get(region.as_pointer(), MIN_DIGITS))
 
 
 def slider_info(context):
@@ -427,9 +454,10 @@ def _draw(context):
     if not info:
         return
     prefs = _prefs(context)
-    lay = layout(region.width, region.height, _ui_scale(context), prefs,
-                 region_insets(context.area, region))
     length = int(info.get("len") or 0)
+    digits = _DIGITS[region.as_pointer()] = counter_digits(length)
+    lay = layout(region.width, region.height, _ui_scale(context), prefs,
+                 region_insets(context.area, region), digits)
     pos = int(info.get("pos") or 0)
     morph = info.get("morph_target")
     locked = bool(info.get("locked"))

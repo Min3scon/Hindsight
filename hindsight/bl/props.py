@@ -64,24 +64,17 @@ class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
         name="Camera", default=True, update=_upd_movie_rig,
         description="While Movie Mode is on, keep a camera that has the whole model in frame. "
                     "Your own camera isn't moved")
-    movie_lighting: bpy.props.EnumProperty(
-        name="Lighting",
-        items=[("AUTO", "When the scene has none", "Add lighting only while the scene has no light of its own"),
-               ("ALWAYS", "Always", "Add lighting as well as the scene's own"),
-               ("OFF", "Off", "Leave the lighting as it is")],
-        default="AUTO", update=_upd_movie_rig,
-        description="Lighting Hindsight adds while Movie Mode is on")
+    movie_lighting: bpy.props.BoolProperty(
+        name="Lighting", default=True, update=_upd_movie_rig,
+        description="While Movie Mode is on, add lighting when the scene has no light of its own")
     movie_view_angle: bpy.props.FloatProperty(
         name="Angle", subtype='ANGLE', default=0.5235987755982988, min=-3.141592653589793,
-        max=3.141592653589793, update=_upd_movie_rig,
-        description="Where the camera stands, turned around the model from its front")
+        max=3.141592653589793, update=_upd_movie_rig, options={'HIDDEN'},
+        description="Where the camera stands, turned around the model from its front. Use this view sets it")
     movie_view_height: bpy.props.FloatProperty(
         name="Height", subtype='ANGLE', default=0.2617993877991494, min=-1.5533430342749532,
-        max=1.5533430342749532, update=_upd_movie_rig,
-        description="How far above or below the model the camera stands")
-    movie_margin: bpy.props.FloatProperty(
-        name="Margin", subtype='PERCENTAGE', default=10.0, min=0.0, max=50.0, update=_upd_movie_rig,
-        description="Space left around the model in the frame")
+        max=1.5533430342749532, update=_upd_movie_rig, options={'HIDDEN'},
+        description="How far above or below the model the camera stands. Use this view sets it")
     movie_prev_camera: bpy.props.StringProperty(
         name="Camera before Movie Mode", default="", options={'HIDDEN'},
         description="The scene camera Hindsight's camera stood in for. It is put back when Movie Mode is switched off")

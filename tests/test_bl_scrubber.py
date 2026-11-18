@@ -29,7 +29,11 @@ class P:  # prefs-like
 def test_layout_basic():
     lay = S.layout(1000, 600, 1.0, P())
     x0, y0, x1, y1 = lay["bar"]
-    assert abs(x0 - 200) < 1e-6 and abs(x1 - 800) < 1e-6, lay["bar"]
+    # the bar is 60% wide; the whole slider (dot, bar, counter) is centred, not the bar alone
+    assert abs((x1 - x0) - 600) < 1e-6, lay["bar"]
+    g0, g1 = lay["extent"]
+    assert abs((g0 + g1) / 2.0 - 500) < 1e-6, lay["extent"]
+    assert abs(g0 - (lay["dot"][0] - lay["dot"][2])) < 1e-6 and g1 > lay["counter"][0], lay
     assert abs(y0 - 18) < 1e-6 and abs(y1 - 24) < 1e-6, lay["bar"]
     cx, cy, r = lay["dot"]
     assert cx < x0 and abs(cy - 21) < 1e-6 and r > 0
@@ -39,6 +43,48 @@ def test_layout_basic():
     assert S.layout(1000, 600, 1.0, None)["bar"] == lay["bar"]
     # background ui_scale 0.0 behaves like 1.0
     assert S.layout(1000, 600, 0.0, P())["bar"] == lay["bar"]
+
+
+def _mid(lay):
+    g0, g1 = lay["extent"]
+    return (g0 + g1) / 2.0
+
+
+def test_centred_on_the_viewport():
+    """The slider hung to the right: the bar was centred between the toolbar and the right edge and
+    the counter stuck out on its right. The whole slider is centred on the viewport now."""
+    W = 1574
+    # the icon toolbar alone (56 px) doesn't move the centre
+    lay = S.layout(W, 954, 1.0, P(), (56.0, 0.0, 0.0))
+    assert abs(_mid(lay) - W / 2.0) < 1e-6, lay["extent"]
+    assert lay["extent"][0] > 56, "never under the toolbar"
+    # the dot on the left and the counter on the right are both inside the centred extent
+    assert lay["dot"][0] - lay["dot"][2] >= lay["extent"][0] - 1e-6
+    assert lay["counter"][0] < lay["extent"][1]
+    # no counter: only the dot and the bar are centred
+    class NoCounter(P):
+        scrub_show_counter = False
+    lay = S.layout(W, 954, 1.0, NoCounter(), (56.0, 0.0, 0.0))
+    assert abs(_mid(lay) - W / 2.0) < 1e-6 and abs(lay["extent"][1] - (lay["bar"][2] + 3.0)) < 1e-6
+    # the sidebar open: centred in the space it leaves, clear of it
+    lay = S.layout(W, 954, 1.0, P(), (56.0, 320.0, 0.0))
+    assert abs(_mid(lay) - (W - 320) / 2.0) < 1e-6, lay["extent"]
+    assert lay["extent"][1] <= W - 320 and lay["extent"][0] >= 56
+    # a toolbar that shows names (wide) counts as a panel too
+    lay = S.layout(W, 954, 1.0, P(), (180.0, 0.0, 0.0))
+    assert abs(_mid(lay) - (180 + W) / 2.0) < 1e-6, lay["extent"]
+    # a tiny viewport: stays between the panels
+    lay = S.layout(420, 300, 1.0, P(), (56.0, 250.0, 0.0))
+    assert lay["extent"][0] >= 56 - 1e-6 and lay["bar"][2] > lay["bar"][0]
+    # UI scale 2: same rule with doubled sizes
+    lay = S.layout(2 * W, 1908, 2.0, P(), (112.0, 0.0, 0.0))
+    assert abs(_mid(lay) - W) < 1e-6
+    # the bar keeps its place while the counter gains digits up to 999 steps, then moves once
+    a = S.layout(W, 954, 1.0, P(), (56.0, 0.0, 0.0), S.counter_digits(7))
+    b = S.layout(W, 954, 1.0, P(), (56.0, 0.0, 0.0), S.counter_digits(999))
+    c = S.layout(W, 954, 1.0, P(), (56.0, 0.0, 0.0), S.counter_digits(1000))
+    assert a["bar"] == b["bar"] and c["bar"][0] < b["bar"][0]
+    assert abs(_mid(c) - W / 2.0) < 1e-6
 
 
 def test_ends():
@@ -93,7 +139,10 @@ def test_ui_scale_2():
     assert abs(b["dot"][2] - 2 * a["dot"][2]) < 1e-6          # dot radius doubles
     assert abs(b["font_size"] - 2 * a["font_size"]) < 1e-6
     assert abs(b["hit_pad"] - 2 * a["hit_pad"]) < 1e-6
-    assert b["bar"][0] == a["bar"][0] and b["bar"][2] == a["bar"][2]  # width is a % of region
+    # width is a % of region; the dot and the counter grow with the scale, so the bar moves a
+    # little to keep the whole slider centred
+    assert abs((b["bar"][2] - b["bar"][0]) - (a["bar"][2] - a["bar"][0])) < 1e-6
+    assert abs(_mid(a) - 500) < 1e-6 and abs(_mid(b) - 500) < 1e-6
 
 
 def test_geometry():
@@ -172,7 +221,7 @@ def test_register():
     S.unregister()
 
 
-for f in (test_layout_basic, test_ends, test_round_trip, test_hit, test_ui_scale_2,
+for f in (test_layout_basic, test_centred_on_the_viewport, test_ends, test_round_trip, test_hit, test_ui_scale_2,
           test_geometry, test_drag_throttle_and_final, test_register):
     run(f)
 

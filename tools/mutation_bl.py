@@ -22,7 +22,7 @@ RESULTS = os.path.join(ROOT, ".tmp", "results", "tools", "mutation_bl")
 T1 = ["obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps"]
 TESTS = ("test_bl_t1_gate.py", "test_bl_t1_faults.py", "test_bl_t1_jumps.py", "test_bl_t1_added.py",
          "test_bl_t1_real_undo.py", "test_bl_t1_meshdata.py", "test_bl_t1_outside.py", "test_bl_tier1.py",
-         "test_bl_adapters.py")
+         "test_bl_adapters.py", "test_bl_rig_ignored.py")
 
 # (file under hindsight/, exact text, replacement, what it breaks, rows, reason if equivalent)
 MUTANTS = [
@@ -248,6 +248,12 @@ def read_mesh_snapshot",
      "waiting references not saved with the file (D57)", ["obj.parenting"], None),
     ("bl/runtime.py", "            adapters.REF_NAMES[ref] = item[5]", "            pass",
      "the deleted object's name not saved for the sidebar (D57)", ["obj.parenting"], None),
+    ("bl/adapters.py", "                                                if o.library is None and not rigmark.is_rig(o)) if u)",
+     "                                                if o.library is None) if u)",
+     "Hindsight's own Movie Mode objects recorded as added and removed (INTERFACES 9)", ["obj.addremove"], None),
+    ("bl/adapters.py", "        have = {idmap.uid_of(o): o for o in idb.objects if not rigmark.is_rig(o)}",
+     "        have = {idmap.uid_of(o): o for o in idb.objects}",
+     "the global history removes Hindsight's own Movie Mode objects (INTERFACES 9)", ["obj.addremove"], None),
 ]
 
 

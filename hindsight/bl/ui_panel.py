@@ -158,6 +158,11 @@ def draw_main(layout, context, units=None):
     if obj is None:
         wrap(layout, context, "Select a mesh object to see its history.", 'INFO', units)
         return
+    from . import rigmark
+    if rigmark.is_rig(obj):                 # checked before Collection Filtering and the object type
+        from .datarec import RIG_TEXT
+        wrap(layout, context, RIG_TEXT, 'INFO', units)
+        return
     if getattr(obj, "type", None) != 'MESH' and not everything:
         wrap(layout, context, "Hindsight records mesh objects. Select a mesh.", 'INFO', units)
         return
@@ -400,6 +405,39 @@ class VIEW3D_PT_hindsight_history(_SubPanel, bpy.types.Panel):
         draw_history_options(self.layout, context)
 
 
+def _movie_length(context):
+    """"1,200 steps, 600 frames, 25.0 s": what Quick auto key would make with these settings."""
+    try:
+        from . import movie
+        n = movie.movie_length(context.scene)
+    except Exception:
+        return None
+    if not n or not n.get("steps"):
+        return None
+    return f"{n['steps']:,} steps, {n['frames']:,} frames, {n['seconds']:.1f} s"
+
+
+def draw_movie_camera(layout, context, sh):
+    """Movie Mode's own camera and lighting: two switches and the two things you can do with them."""
+    col = layout.column(align=True)
+    col.active = bool(sh.movie_mode)
+    col.label(text="Camera and lighting")
+    row = col.row(align=True)
+    row.prop(sh, "movie_camera", text="Camera", toggle=True)
+    row.prop(sh, "movie_lighting", text="Lighting", toggle=True)
+    row = col.row(align=True)
+    _operator(row, "hindsight.movie_frame", "Frame the model", 'CAMERA_DATA')
+    _operator(row, "hindsight.movie_view_from_viewport", "Use this view", 'VIEW3D')
+    if sh.movie_mode and sh.movie_lighting:
+        try:
+            from . import camrig
+            own = camrig.scene_has_own_light(context.scene)
+        except Exception:
+            own = False
+        if own:
+            wrap(layout, context, "This scene has a light of its own, so Hindsight adds none.", 'INFO')
+
+
 class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
     bl_label = "Movie Mode"
     bl_options = {'DEFAULT_CLOSED'}
@@ -427,7 +465,12 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
         col.use_property_decorate = True
         col.prop(sh, "movie_step", text="Step")
         col.prop(sh, "frames_per_step", text="Frames per step")
+        col.prop(sh, "movie_steps_per_frame", text="Steps per frame")
+        length = _movie_length(context)
+        if length:
+            wrap(layout, context, length, 'TIME')
         _operator(layout, "hindsight.quick_auto_key", "Quick auto key", 'KEY_HLT')
+        draw_movie_camera(layout, context, sh)
 
 
 class VIEW3D_PT_hindsight_filter(_SubPanel, bpy.types.Panel):

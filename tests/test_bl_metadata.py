@@ -29,7 +29,7 @@ from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from tests.gate import covers
-from hindsight.bl import cleanup, datarec, persistence, runtime
+from hindsight.bl import camrig, cleanup, datarec, persistence, rigmark, runtime
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -63,6 +63,8 @@ def found_in_blend() -> set:
         for k in (sp.keys() if sp is not None else ()):
             if "hindsight" in k.lower():
                 out.add(f"{type(idb).__name__ if not isinstance(idb, bpy.types.Scene) else 'Scene'}.{k}")
+        if isinstance(idb, bpy.types.Object) and rigmark.is_rig(idb):
+            out.add(idb.name)                                       # Movie Mode's own camera and lighting
         if isinstance(idb, bpy.types.Text) and "hindsight" in idb.name.lower():
             out.add(idb.name)
             out |= {f"{idb.name}[{k}]" for k in idb.keys()}
@@ -248,7 +250,39 @@ def test_remove_hindsight_data():
         assert done["ids"] == r["ids"]
 
 
+@covers(ROWS, "WARN")
+def test_movie_mode_objects_are_listed_and_removed():
+    """The camera and lighting Movie Mode keeps in the scene: in the file only while Movie Mode is
+    on, every piece listed in METADATA.md, and Remove Hindsight data takes them out again."""
+    path = os.path.join(TMP, "movie_objects", "scene.blend")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    full_session(path)                                   # saved with Movie Mode off
+    movie_names = {"_hindsight_rig"} | set(camrig.NAMES.values())
+    assert not (found_in_blend() & movie_names), found_in_blend() & movie_names
+    sc = C.scene
+    own = {o.name: O.object_state(o, derived=False) for o in sc.objects}
+    sc.hindsight.movie_mode = True
+    bpy.ops.wm.save_mainfile()
+    blend = found_in_blend()
+    assert {"_hindsight_rig", "Hindsight Camera"} <= blend, blend
+    lit = {"Hindsight Key", "Hindsight Fill", "Hindsight Rim"}
+    assert (lit <= blend) == (not camrig.scene_has_own_light(sc)), blend
+    unlisted = sorted(n for n in blend | files_next_to(path) if not matches(n, listed()))
+    assert not unlisted, f"written but not in METADATA.md: {unlisted}"
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert "Hindsight Camera" in found_in_blend(), "saved with the file while Movie Mode is on"
+    r = cleanup.report()
+    assert r["movie_objects"] >= 1 and any("camera" in line for line in cleanup.describe(r)), r
+    cleanup.remove()
+    assert not found_in_blend(), found_in_blend()
+    assert not [o.name for o in bpy.data.objects if o.name.startswith("Hindsight ")]
+    now = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
+    strip = lambda st: {n: {k: v for k, v in s.items() if k not in ("custom",)} for n, s in st.items()}
+    assert strip(now) == strip(own), "something other than Hindsight's data changed"
+
+
 for fn in (test_session_writes_only_what_is_listed, test_saving_an_unrecorded_file_adds_nothing,
-           test_opening_a_file_changes_nothing, test_opens_without_hindsight, test_remove_hindsight_data):
+           test_opening_a_file_changes_nothing, test_opens_without_hindsight, test_remove_hindsight_data,
+           test_movie_mode_objects_are_listed_and_removed):
     H.run(fn)
 H.finish()

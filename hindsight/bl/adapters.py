@@ -17,7 +17,7 @@ import time
 import bpy
 
 from ..core.types import MISSING
-from . import idmap, log
+from . import idmap, log, rigmark
 
 # ID type (bl_rna identifier) -> ((path, kind, category), ...). kind: "value" or "ref" (ID pointer).
 # category: the data kind the user can switch off in the Advanced panel (KINDS). Rows are written in
@@ -591,8 +591,10 @@ class SceneAdapter(Adapter):
         if kind_on("scene_collections"):
             out["collections"] = collection_tree(idb)
         if kind_on("objects"):
-            # linked objects are left out: bringing one back would make a local copy of it
-            out["objects"] = sorted(u for u in (idmap.claim(o) for o in idb.objects if o.library is None) if u)
+            # linked objects are left out: bringing one back would make a local copy of it. Hindsight's
+            # own Movie Mode objects (rigmark) are left out and never get an id
+            out["objects"] = sorted(u for u in (idmap.claim(o) for o in idb.objects
+                                                if o.library is None and not rigmark.is_rig(o)) if u)
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -601,7 +603,7 @@ class SceneAdapter(Adapter):
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
             return
         want = set(values["objects"])
-        have = {idmap.uid_of(o): o for o in idb.objects}
+        have = {idmap.uid_of(o): o for o in idb.objects if not rigmark.is_rig(o)}   # never removes those
         for uid in sorted(set(have) - want):
             _remove_object(have[uid])
         made = []

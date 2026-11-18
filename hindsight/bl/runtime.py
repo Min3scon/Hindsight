@@ -166,7 +166,11 @@ def find_object(uid: str):
 
 
 def is_excluded(obj) -> bool:
+    """Not recorded: excluded by Collection Filtering, or one of Hindsight's own Movie Mode objects."""
     try:
+        from . import rigmark
+        if rigmark.is_rig(obj):
+            return True
         from .filtering import is_excluded as _ex
         return bool(_ex(obj, bpy.context.scene))
     except Exception:
@@ -887,6 +891,11 @@ def tick() -> float:
         busy = bool(datarec._DIRTY)
     except Exception as e:
         log.error_once(("datarec_tick", str(e)), f"data recorder error: {e}", e)
+    try:
+        from . import camrig
+        camrig.tick()
+    except Exception as e:
+        log.error_once(("camrig_tick", str(e)), f"Movie Mode camera error: {e}", e)
     return 0.02 if (_DIRTY or busy) else 0.1
 
 

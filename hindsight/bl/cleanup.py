@@ -90,8 +90,10 @@ def report() -> dict:
     settings = [sc for sc in bpy.data.scenes if sc.library is None and _has_settings(sc)]
     keys = sum(len(_movie_fcurves(sc)) for sc in bpy.data.scenes if sc.library is None)
     files = folder_files()
+    from . import rigmark
+    movie_objects = sum(1 for ob in bpy.data.objects if ob.library is None and rigmark.is_rig(ob))
     return {"ids": len(ids), "kinds": kinds, "settings": len(settings), "text": TEXT_NAME in bpy.data.texts,
-            "keyframes": keys, "folder": folder() if files else None,
+            "keyframes": keys, "movie_objects": movie_objects, "folder": folder() if files else None,
             "folder_bytes": sum(os.path.getsize(f) for f in files),
             "steps": sum(len(h.entries) for h in runtime.reg().histories.values())}
 
@@ -110,6 +112,8 @@ def describe(r: dict) -> list:
         lines.append("The history stored in this .blend (Text .hindsight_history)")
     if r["keyframes"]:
         lines.append("Movie Mode keyframes")
+    if r.get("movie_objects"):
+        lines.append("Movie Mode's camera and lighting")
     return lines
 
 
@@ -118,6 +122,13 @@ def remove(delete_folder: bool = False) -> dict:
     from .persistence import TEXT_NAME, journal_path
     from . import datarec
     r = report()
+    from . import camrig, rigmark
+    for sc in bpy.data.scenes:             # before the settings go: they name the camera to put back
+        if sc.library is None:
+            camrig.remove(sc)
+    for ob in list(bpy.data.objects):      # marked objects that are in no scene
+        if ob.library is None and rigmark.is_rig(ob):
+            camrig._delete(ob)
     for idb in _ids_with_uid():
         del idb[idmap.UID_PROP]
     for sc in bpy.data.scenes:

@@ -71,6 +71,19 @@ DESCRIBE = {
         "system temp folder when that isn't available)",
         "while you record, so steps after the last save can be recovered after a crash",
         "emptied on every save; removed with the extension"),
+    "_hindsight_rig": (
+        "custom property (text: camera, key, fill or rim)", "in the .blend, on the camera and the three sun "
+        "lamps Hindsight adds for Movie Mode",
+        "while Movie Mode is on with Camera or Lighting switched on",
+        "switching Movie Mode off; Remove Hindsight data from this file; deleting the object"),
+    **{name: (
+        "object with its data (" + ("a camera" if role == "camera" else "a sun lamp") + ")",
+        "in the .blend, in the scene's root collection",
+        "while Movie Mode is on with " + ("Camera" if role == "camera" else "Lighting") + " switched on"
+        + ("" if role == "camera" else " and the scene has no light of its own"),
+        "switching Movie Mode or that switch off; Remove Hindsight data from this file")
+       for role, name in (("camera", "Hindsight Camera"), ("key", "Hindsight Key"), ("fill", "Hindsight Fill"),
+                          ("rim", "Hindsight Rim"))},
     "keyframes on hindsight.movie_step": (
         "animation keyframes on the scene", "in the .blend",
         "only when you use Quick auto key in Movie Mode", "deleting the keyframes; Remove Hindsight data"),
@@ -105,6 +118,10 @@ def found_names() -> dict:
         assert os.path.basename(os.path.dirname(j)) in ("journal", "hindsight_journal"), j
         out[f"journal/<id>{os.path.splitext(j)[1]}"] = "persistence.journal_path"
         out[f"keyframes on {movie.DATA_PATH}"] = "movie.DATA_PATH"
+        from hindsight.bl import camrig, rigmark
+        out[rigmark.RIG_PROP] = "hindsight/bl/rigmark.py RIG_PROP"
+        for role in rigmark.ROLES:
+            out[camrig.NAMES[role]] = "camrig.NAMES"
     finally:
         hindsight.unregister()
     return out
@@ -133,6 +150,9 @@ into a .blend or next to it that isn't listed here.
 - Opening a file with Hindsight doesn't change it. Nothing is written until recording starts on an
   object (entering Sculpt or Vertex Paint Mode on it, or switching on Record everything) or you change
   a Hindsight setting, and nothing reaches the disk until you save.
+- While Movie Mode is on, Hindsight keeps a camera and, when the scene has no light of its own, three
+  sun lamps in the scene. They are ordinary objects, never recorded, and go again when Movie Mode is
+  switched off. Your own camera and light objects are never moved or deleted.
 - Saving a file that has no history writes nothing of Hindsight's: no Text, no folder, no journal.
 - A file saved with Hindsight data opens fine without Hindsight: the id properties and the Text stay
   as plain data and do nothing.

@@ -8,7 +8,7 @@ import traceback
 # so the Undo History tab is always there to say what went wrong.
 _MODULES = (
     "props", "prefs", "runtime", "ops_core", "filtering", "warnings", "ui_menu", "slider_prop",
-    "selfcheck", "ui_panel", "header", "scrubber", "persistence", "movie", "morph", "joinsep", "dupsep",
+    "selfcheck", "ui_panel", "header", "scrubber", "persistence", "movie", "camrig", "morph", "joinsep", "dupsep",
     "cleanup",
 )
 _loaded = []

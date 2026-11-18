@@ -15,7 +15,7 @@ import bpy
 
 from ..core.history import DATA_MARK, MeshState
 from ..core.types import DATA, MISSING, DataChange, Step
-from . import adapters, guard, idmap, log
+from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
 # Modal operators that don't change data: navigation and UI. Anything else running means an
@@ -63,6 +63,7 @@ def is_linked(idb) -> bool:
 
 
 LINKED_TEXT = "Linked from another file: it can't be changed here, so Hindsight doesn't record it."
+RIG_TEXT = "Not recorded: this is Hindsight's own Movie Mode object."
 
 
 def is_tracked(idb) -> bool:
@@ -89,6 +90,9 @@ def set_tracked(idb, on: bool) -> None:
     rt = _rt()
     if on and is_linked(idb):
         log.warn(LINKED_TEXT)
+        return
+    if on and rigmark.is_rig(idb):
+        log.warn(RIG_TEXT)
         return
     uid = idmap.claim(idb)
     if uid is None:
@@ -118,6 +122,8 @@ def _track_new(uid: str) -> None:
     rt = _rt()
     ob = idmap.find(uid)
     if ob is None or is_linked(ob) or not isinstance(ob, bpy.types.Object):
+        return
+    if rigmark.is_rig(ob):
         return
     if uid in rt.reg().everything or uid in rt.reg().disabled:
         return
@@ -337,6 +343,8 @@ def _is_scene_uid(uid: str) -> bool:
 def refresh_bodies(scene, only=None) -> None:
     """Keep the bodies of the scene's objects current (all of them, or the given uids)."""
     for ob in scene.objects:
+        if rigmark.is_rig(ob):
+            continue          # Hindsight's own Movie Mode objects: no id, no body
         u = idmap.claim(ob)
         if u and (only is None or u in only):
             try:
