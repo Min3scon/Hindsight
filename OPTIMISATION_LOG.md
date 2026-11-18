@@ -100,6 +100,29 @@ stated conditions. It ends kept or reverted. Both count.
 - Agent CAMERA (S2-1, S3-1, S3-2): no report; its commit message says wide matrix products were avoided
   because they were 20 to 50 times slower under load. No numbers, not a round.
 
+## A/B confirmation of rounds without numbers (bench suite)
+
+Source: `bench/results/ab_66fcdf8_vs_dd9f35b.md` (`bench/ab.py`, alternating baseline 66fcdf8 against
+dd9f35b, 5.3.0 module, Rust engine loaded, shared noisy VM; min of runs, ms). These are measurements of
+the whole state at dd9f35b, not of one commit, so they confirm the rounds named but do not split them.
+
+| Confirms | Scenario | 66fcdf8 | dd9f35b | Note |
+|---|---|---|---|---|
+| R014 (topology reads) with the other Edit Mode work | Edit Mode step, 100,000 vertices | 16.07 | 7.50 | spread 34% / 56%, median 21.4 / 8.7 |
+| R014 | Edit Mode step, 300,000 vertices | 53.2 | 29.1 | median 58.4 / 36.4 |
+| R018 (visible objects, global history) | viewport redraw, 50 objects, global | 0.487 | 0.051 | about 10 times; panel 0.492 / 0.064 |
+| R018 | viewport redraw, 50 objects, global, filtered | 3.25 | 0.056 | about 60 times |
+| Save and load work (D85, D86) | open from folder, 100k, 1,000 steps | 563 | 146 | median 582 / 148 |
+| Save and load work | open from folder, 100k, 6,000 steps | 772 | 361 | |
+| Rust engine jump (R-series NATIVE) | jump 3,000 steps back, 100k | 136.9 | 49.5 | 1M: 881 / 228 |
+| Recorder (DATAREC) | recorder on_update, 500 objects | 5.57 | 0.078 | |
+
+Regression to investigate: `save_embed_100k_6000` (save with Embed, 100,000 vertices, 6,000 steps) took
+526 ms before and 575 ms after (median 597 / 621, ratio 1.09 min, 1.04 median, spread 13% / 16%). That is
+inside noise on its own, but it is the only save or open scenario that did not improve, while memory
+peak (VmHWM) halved (142 to 71 MB). Not investigated yet. Next step: repeat with 10 rounds on a quiet
+machine and profile the embed path at 6,000 steps.
+
 ## Count
 
 31 rounds are logged.

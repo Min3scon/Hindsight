@@ -43,6 +43,14 @@ are in `dev/reports/`; the measured optimisation rounds are in `OPTIMISATION_LOG
 11. Supported Blender: 4.2 (Python 3.11) through 5.3 (Python 3.13). No syntax or API newer than
     3.11 / 4.2 without a guard.
 
+## Output rules
+- Write short. Fragments are fine. No greeting, no recap of what you were asked, no narration of
+  every step.
+- Final message at most 200 words: commits, evidence (command and pass or fail counts), blockers.
+- Everything longer goes in `dev/reports/<NAME>.md`, not in the final message.
+- Commit often, small commits. Push right after each commit when your brief says you may push. Only
+  committed and pushed work survives an interruption.
+
 ## Running things
 - Blender as a Python module: one virtual environment per version, `bpy42` (4.2.23), `bpy50` (5.0.1),
   `bpy51` (5.1.2), `bpy52` (5.2.2), `bpy53` (5.3.0), each with `bin/python`. They lived in
