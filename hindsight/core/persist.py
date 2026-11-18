@@ -138,6 +138,9 @@ def registry_parts(reg, codec: str = "auto") -> list:
         "saved": getattr(reg, "saved", None) or {},
         "histories": hjson,
     }
+    sid = getattr(reg, "save_id", None)
+    if sid:
+        doc["save_id"] = str(sid)       # ties the crash journal to this save (ignored by older builds)
     js = json.dumps(doc, separators=(",", ":"), default=_json_default).encode("utf-8")
     parts = [REG_MAGIC, _U32.pack(len(js)), js]
     for b in blobs:
@@ -244,6 +247,8 @@ def registry_from_bytes(b):
     reg.by_object = dict(doc.get("by_object", {}))
     saved = doc.get("saved")
     reg.saved = dict(saved) if isinstance(saved, dict) else {}
+    sid = doc.get("save_id")
+    reg.save_id = str(sid) if sid else None
     if hasattr(reg, "disabled"):
         reg.disabled = set(doc.get("disabled", []))
     if hasattr(reg, "everything"):
@@ -326,13 +331,19 @@ def save_sidecar(reg, blend_path: str) -> None:
     os.makedirs(folder, exist_ok=True)
     parts = registry_parts(reg, getattr(SETTINGS, "compression", "auto") or "auto")
     atomic_write(os.path.join(folder, HSR_NAME), parts)
-    atomic_write_json(os.path.join(folder, INDEX_NAME), {
-        "version": FORMAT_VERSION,
-        "format": FORMAT_VERSION,
-        "writer": WRITER,
-        "blend": os.path.basename(blend_path),
-        "saved_at": time.time(),
-    })
+    try:
+        # A note for people looking into the folder; loading never reads it. The history is saved
+        # once history.hsr is in place, so failing to update the note doesn't fail the save.
+        atomic_write_json(os.path.join(folder, INDEX_NAME), {
+            "version": FORMAT_VERSION,
+            "format": FORMAT_VERSION,
+            "writer": WRITER,
+            "blend": os.path.basename(blend_path),
+            "saved_at": time.time(),
+            "save_id": getattr(reg, "save_id", None),
+        })
+    except OSError:
+        pass
 
 
 def load_sidecar(blend_path: str):
@@ -368,6 +379,36 @@ def sidecar_missing(blend_path: str, expected: bool) -> bool:
 # ---------------------------------------------------------------------------
 # journal replay
 # ---------------------------------------------------------------------------
+def journal_belongs(reg, records: list) -> bool:
+    """Whether the journal records were written on top of this very save of the file.
+
+    Every save gives the history a new ``save_id`` and writes it into the SAVE record that starts the
+    journal again. A journal whose last SAVE names another save (the .blend was replaced by another
+    save of the same path: a .blend1 renamed back, a copy, a crash between writing the file and
+    resetting the journal) describes positions in a different history and must not be replayed.
+    Files and journals of builds without save ids have none on either side and match as before."""
+    sid = None
+    found = False
+    for rtype, header, _p in records:
+        if rtype == "SAVE":
+            found = True
+            sid = (header or {}).get("save_id") or None
+    rid = getattr(reg, "save_id", None) or None
+    if not found:
+        return not records or rid is None
+    return sid == rid
+
+
+def _group(e) -> int:
+    """The global position (one operation) a step belongs to: extra "op", or its own number."""
+    meta = getattr(e, "meta", None)
+    ex = (meta.get("extra") if isinstance(meta, dict) else getattr(e, "extra", None)) or {}
+    try:
+        return int(ex.get("op", e.seq))
+    except (TypeError, ValueError):
+        return e.seq
+
+
 def replay(reg, records: list) -> int:
     """Apply journal records after the last SAVE onto reg. Returns records applied.
 
@@ -384,8 +425,17 @@ def replay(reg, records: list) -> int:
       (``stopped``) and keeps what it had (or stays empty after a clear).
     - A join rewrites the target's history as RESET plus every step again. Steps known from before
       are recognised by their number, and the cursor goes after the ones that are part of the file.
+    - A join whose merged history lacks steps that lead from the file's state of one of its objects
+      (that object's history was stopped, or the session had dropped steps recovery kept) has no
+      position for the file's state either: it is left out too.
+    - The steps of one operation in several histories are one global position (extra "op"). When one
+      of them is left out, the others go too, with what follows them, so the global timeline never
+      plays half an operation.
     A META record with "resync" and no history (written when a recovered file is opened) says that the
-    session went on from the recovered state, so all of this bookkeeping starts again there. Opening a
+    session went on from the recovered state, so all of this bookkeeping starts again there.
+    Records carry the id of the session that wrote them ("s"). The session named by the last SAVE (or a
+    later "resync") owns the journal; records of another session (the same file open in a second
+    Blender) are not replayed. Records without one (older builds) are. Opening a
     file that was changed without Hindsight writes what recovery needs to know about it: "mesh" in the
     RESET of a history left out (the fingerprints its later steps start from), "file_at" for a history
     that got a step for changed values (the file's state is after that step), "saved" for the values.
@@ -399,6 +449,7 @@ def replay(reg, records: list) -> int:
     for i, rec in enumerate(records):
         if rec[0] == "SAVE":
             start = i + 1
+    owner = (records[start - 1][1] or {}).get("s") if start else None
     known_members = {}
     for rtype, header, _p in records[:start]:
         if rtype == "META" and header.get("hist") and header.get("members") is not None:
@@ -420,15 +471,18 @@ def replay(reg, records: list) -> int:
     skew = {}        # uid -> steps kept at the head that the session had dropped
     stopped = {}     # uid -> steps left out since replaying this history stopped
     live = {}        # uid -> the session's own cursor, as a position in the recovered history
-    resets = {}      # uid -> [was the session at the saved state?, steps put back] of an open RESET
+    resets = {}      # uid -> [was the session at the saved state?, steps put back, sources replayed
+                     #         in full?, numbers of the file's steps that must come back]
     home = {}        # step number -> (part of the file's state?, from a history replayed in full?)
+    absorbed = []    # (history, replayed in full?, file's steps) of those a join cleared just before
+    left_ops = set()  # operations (global positions) that lost a step
 
     def settle(h):
         """Decide what the last RESET of h was, once the records after it show it."""
         st = resets.pop(h.uid, None)
         if st is None:
             return
-        synced, n = st
+        synced, n, whole, need = st
         if n == 0:
             if not synced:
                 stopped.setdefault(h.uid, 0)          # cleared somewhere else: later steps don't fit
@@ -437,10 +491,13 @@ def replay(reg, records: list) -> int:
         p = 0
         while p < n and flags[p] is not None and flags[p][0]:
             p += 1
-        if all(f is not None and f[1] for f in flags) and not any(f[0] for f in flags[p:]):
+        back = {e.seq for e in h.entries[:n]}
+        if (whole and need <= back and all(f is not None and f[1] for f in flags)
+                and not any(f[0] for f in flags[p:])):
             h.cursor = p
         else:           # the steps of the file's state aren't one run at the start: no place for it
             stopped[h.uid] = stopped.get(h.uid, 0) + len(h.entries)
+            left_ops.update(_group(e) for e in h.entries)
             h.entries = []
             h.cursor = 0
         _clamp_hist(h)
@@ -450,9 +507,23 @@ def replay(reg, records: list) -> int:
     for rtype, header, payload in records[start:]:
         header = header or {}
         uid = header.get("hist")
+        if rtype == "META" and not uid and header.get("resync"):
+            owner = header.get("s", owner)          # a recovered session took the journal over
+        elif owner is not None and header.get("s", owner) != owner:
+            continue                                # written by another Blender with the file open
+        if rtype not in ("RESET", "META", "STEP"):
+            absorbed.clear()
         if rtype == "STEP":
             if not uid:
                 continue
+            if absorbed:
+                # the first step after a join cleared the histories it took in. Without a RESET of
+                # this one (they had no steps left) this is the join itself: it starts from their
+                # objects as the session had them, which is the file's state only if they were
+                # replayed in full
+                if absorbed[-1][0] != uid and not all(c for _u, c, _s in absorbed) and uid not in stopped:
+                    stopped[uid] = 0
+                absorbed.clear()
             step = step_from_bytes(payload)
             h = get_hist(uid, step.target)
             max_seq = step.seq if max_seq is None else max(max_seq, step.seq)
@@ -468,6 +539,7 @@ def replay(reg, records: list) -> int:
                 stopped[uid] = 0                     # replaces steps that lead to the saved state
             if uid in stopped:
                 stopped[uid] += 1
+                left_ops.add(_group(step))
                 continue
             if 0 <= at < len(h.entries):
                 h.entries = h.entries[:at]
@@ -522,7 +594,18 @@ def replay(reg, records: list) -> int:
             where = live.get(uid, h.cursor) if at is None else int(at) + skew.get(uid, 0)
             for i, e in enumerate(h.entries):
                 home[e.seq] = (i < h.cursor, clean)
-            resets[uid] = [clean and where == h.cursor, 0]
+            infile = {e.seq for e in h.entries[:h.cursor]}
+            if at is None and "mesh" not in header:
+                # a join (joinsep writes no "at"): the histories it cleared just before go into this
+                # one. The file's state of their objects is only reachable if every one of them, this
+                # one too, was replayed in full, and once every step of the file's state is back
+                # (a crash can stop the join half way through writing them)
+                whole = clean and all(c for _u, c, _s in absorbed)
+                need = infile.union(*(s for _u, _c, s in absorbed))
+                resets[uid] = [clean and where == h.cursor, 0, whole, need]
+                absorbed.append((uid, clean, infile))
+            else:
+                resets[uid] = [clean and where == h.cursor, 0, True, set()]
             prints = header.get("mesh")          # cleared at load because a mesh was changed outside
             if isinstance(prints, dict) and isinstance(getattr(reg, "saved", None), dict):
                 for m, fp in prints.items():     # later steps were recorded on that mesh
@@ -573,7 +656,33 @@ def replay(reg, records: list) -> int:
         applied += 1
     for u in list(resets):
         settle(reg.histories[u])
-    reg.replay_report = {"stopped": {u: n for u, n in stopped.items() if n}}
+    # A crash in the middle of a join can leave an object pointing at a history that no longer lists
+    # it (the join cleared it and was cut off before the merged history was written). It stays that
+    # object's history, or jumps would move the cursor without moving its mesh.
+    for m, u in list(reg.by_object.items()):
+        h = reg.histories.get(u)
+        if h is None:
+            del reg.by_object[m]
+        elif m not in h.members:
+            h.members.append(m)
+    # One operation is one global position: no history keeps a step of an operation that lost a step
+    # elsewhere, nor what comes after it (its later steps start from that step's result). Steps of the
+    # file's state (before the cursor) are never touched: an operation is either all in the file or not.
+    while left_ops:
+        more = set()
+        for h in reg.histories.values():
+            for i in range(h.cursor, len(h.entries)):
+                if _group(h.entries[i]) in left_ops:
+                    cut = h.entries[i:]
+                    more.update(_group(e) for e in cut)
+                    h.entries = h.entries[:i]
+                    stopped[h.uid] = stopped.get(h.uid, 0) + len(cut)
+                    _clamp_hist(h)
+                    break
+        if not more - left_ops:
+            break
+        left_ops |= more
+    reg.replay_report ={"stopped": {u: n for u, n in stopped.items() if n}}
     if max_seq is not None and reg.next_seq <= max_seq:
         reg.next_seq = int(max_seq) + 1
     return applied
