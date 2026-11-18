@@ -130,7 +130,7 @@ machine and profile the embed path at 6,000 steps.
 
 - Kept: 28 (R001 to R005, R007 to R019, R021, R023, R024, R026 to R032).
 - Reverted: 4 (R006, R020, R022, R025).
-- Not merged, not counted: 1 (R031).
+- Not merged, not counted: 0.
 - Kept rounds that stand on weaker evidence: R001 (after is a prototype), R014 (no absolute numbers), R018
   (no numbers beyond "about half"), R021 (only breaks even under load), R024 (instruction count only).
 
