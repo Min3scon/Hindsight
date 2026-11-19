@@ -2571,6 +2571,7 @@ class SceneAdapter(Adapter):
         out = {}
         if kind_on("scene_collections"):
             out["collections"] = collection_tree(idb)
+            out[COLL_SETTINGS] = collection_settings(idb)       # D127
         if kind_on("objects"):
             # linked objects are left out: bringing one back would make a local copy of it. Hindsight's
             # own Movie Mode objects (rigmark) are left out and never get an id
@@ -2601,6 +2602,8 @@ class SceneAdapter(Adapter):
             write_scene_settings(idb, values["settings"])
         if "collections" in values and values["collections"] is not MISSING:
             _write_collection_tree(idb, values["collections"])
+        if COLL_SETTINGS in values and values[COLL_SETTINGS] is not MISSING:
+            write_collection_settings(idb, values[COLL_SETTINGS])
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
             return
         want = set(values["objects"])
@@ -2712,6 +2715,70 @@ def owned_world(sc) -> dict:
 
 
 WORLDP_PREFIX = "worldp:"
+
+
+# ----------------------------------------------------------------------------- collection settings (D127)
+COLL_SETTINGS = "coll_settings"
+_COLL_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {"active_exporter_index"})
+_LC_FLAGS = ("exclude", "hide_viewport", "holdout", "indirect_only")
+
+
+def _walk_colls(c, out):
+    for ch in c.children:
+        out.append(ch)
+        _walk_colls(ch, out)
+
+
+def collection_settings(sc) -> dict:
+    """Every collection's own settings (hide in viewport and render, selectable, colour tag, Line
+    Art, instance offset) and, per view layer, each collection's Exclude, Hide in Viewport, Holdout
+    and Indirect Only."""
+    colls = []
+    _walk_colls(sc.collection, colls)
+    vals = {}
+    for c in colls:
+        if c.library is not None:
+            continue
+        cu = idmap.claim(c)
+        if cu:
+            vals[cu] = struct_values(c, _COLL_SKIP)
+    layers = {}
+    for vl in sc.view_layers:
+        rows = {}
+        stack = list(vl.layer_collection.children)
+        while stack:
+            lc = stack.pop()
+            cu = idmap.uid_of(lc.collection)
+            if cu:
+                rows[cu] = [bool(getattr(lc, f)) for f in _LC_FLAGS]
+            stack.extend(lc.children)
+        layers[vl.name] = rows
+    return {"colls": vals, "layers": layers}
+
+
+def write_collection_settings(sc, rec) -> None:
+    if not isinstance(rec, dict):
+        return
+    try:
+        for cu, v in (rec.get("colls") or {}).items():
+            c = idmap.find(cu)
+            if c is not None and isinstance(v, dict):
+                set_struct_values(c, v)
+        for vl in sc.view_layers:
+            rows = (rec.get("layers") or {}).get(vl.name)
+            if not rows:
+                continue
+            stack = list(vl.layer_collection.children)
+            while stack:
+                lc = stack.pop()
+                want = rows.get(idmap.uid_of(lc.collection))
+                if want:
+                    for f, w in zip(_LC_FLAGS, want):     # Exclude first: it changes the others
+                        if bool(getattr(lc, f)) != w:
+                            setattr(lc, f, w)
+                stack.extend(lc.children)
+    except Exception as e:
+        log.error_once(("coll_settings", str(e)), f"could not restore collection settings: {e}", e)
 
 
 def collection_tree(scene) -> list:
@@ -2865,7 +2932,7 @@ def kind_of(adapter_id: str, path: str):
     if adapter_id == "scene":
         if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings") or path.startswith((WORLD_PREFIX, WORLDP_PREFIX)):
             return None
-        return "scene_collections" if path == "collections" else "objects"
+        return "scene_collections" if path in ("collections", COLL_SETTINGS) else "objects"
     if adapter_id == "object":
         return _OBJECT_KINDS.get(path)
     if adapter_id == "rna":
