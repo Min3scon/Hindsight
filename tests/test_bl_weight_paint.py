@@ -168,10 +168,91 @@ def test_without_vertex_groups_nothing_breaks():
     print("PASS test_without_vertex_groups_nothing_breaks")
 
 
+def wnorm(ob, names=None):
+    """weights(ob) with groups that have no member left out (a group can't be told from one with no weights)."""
+    w = weights(ob)
+    return {k: v for k, v in w.items() if v and (names is None or k in names)}
+
+
+def test_group_added_between_strokes():
+    ob, nv = setup()
+    ga = ob.vertex_groups["Arm"]
+    states = [wnorm(ob)]
+    ga.add(list(range(0, 60, 3)), 0.8, "REPLACE")
+    assert H.commit(ob) is not None
+    states.append(wnorm(ob))
+    hand = ob.vertex_groups.new(name="Hand")                  # a group made between two strokes
+    hand.add(list(range(100, 140)), 0.6, "REPLACE")
+    assert H.commit(ob) is not None
+    states.append(wnorm(ob))
+    hand.add(list(range(120, 160)), 0.2, "REPLACE")
+    assert H.commit(ob) is not None
+    states.append(wnorm(ob))
+    h = runtime.history_of(ob)
+    assert len(h.entries) == 3
+    for pos in [2, 1, 0, 3, 1, 3, 0, 2]:
+        runtime.goto(C, pos)
+        assert wnorm(ob) == states[pos], f"position {pos}"
+    print("PASS test_group_added_between_strokes")
+
+
+def test_group_removed_between_strokes():
+    ob, nv = setup()
+    ga, gb = ob.vertex_groups["Arm"], ob.vertex_groups["Leg"]
+    states = [weights(ob)]
+    ga.add(list(range(0, 60, 3)), 0.8, "REPLACE")
+    assert H.commit(ob) is not None
+    states.append(weights(ob))
+    ob.vertex_groups.remove(ob.vertex_groups["Leg"])         # a group removed between two strokes
+    ob.vertex_groups["Arm"].add(list(range(300, 330)), 0.3, "REPLACE")
+    assert H.commit(ob) is not None
+    states.append(weights(ob))
+    ob.vertex_groups["Arm"].add(list(range(310, 350)), 0.9, "REPLACE")
+    assert H.commit(ob) is not None
+    states.append(weights(ob))
+    h = runtime.history_of(ob)
+    for pos in [2, 1, 0, 3, 1, 3, 0, 2]:
+        runtime.goto(C, pos)
+        got = weights(ob)
+        # the group that is gone can't come back (a list step does that); the others are exact
+        assert got == {k: v for k, v in states[pos].items() if k in got}, f"position {pos}"
+        assert set(got) == {"Arm", "Empty"}
+    print("PASS test_group_removed_between_strokes")
+
+
+def test_crash_recovery_replays_weight_steps():
+    from hindsight.core.types import SETTINGS as S
+    ob, nv = setup()
+    S.save_mode = "SIDECAR"
+    S.crash_recovery = "INTERRUPTED"
+    ops = strokes(ob, nv)
+    states = drive(ob, ops[:2])
+    H.enter(ob, "OBJECT")
+    path = os.path.join(TMP, "crash.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    file_state = weights(ob)
+    H.enter(ob, "WEIGHT_PAINT")
+    states += drive(ob, ops[2:])[1:]                         # two more strokes: only in the journal
+    H.enter(ob, "OBJECT")
+    runtime.missing_message[0] = None
+    bpy.ops.wm.open_mainfile(filepath=path)                  # the session ends without saving
+    ob = bpy.data.objects[NAME]
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == 4, (None if h is None else len(h.entries))
+    H.enter(ob, "WEIGHT_PAINT")
+    assert weights(ob) == file_state, "mesh after recovery is the file's"
+    for pos in [4, 3, 2, 1, 0, 2, 4, 1]:
+        runtime.goto(C, pos)
+        assert h.cursor == pos
+        assert weights(ob) == states[pos], f"recovered position {pos}"
+    print("PASS test_crash_recovery_replays_weight_steps")
+
+
 if __name__ == "__main__":
     for t in (test_weight_paint_strokes_are_steps_and_exact, test_a_stroke_after_going_back_branches_like_other_modes,
               test_save_and_reload, test_journal_replay_restores_weight_steps, test_native_undo_moves_the_cursor,
-              test_without_vertex_groups_nothing_breaks):
+              test_without_vertex_groups_nothing_breaks, test_group_added_between_strokes,
+              test_group_removed_between_strokes, test_crash_recovery_replays_weight_steps):
         H.run(t)
     H.finish()
     shutil.rmtree(TMP, ignore_errors=True)
