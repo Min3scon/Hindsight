@@ -387,3 +387,4 @@ Blockers:
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds (t1_gate made version-aware; Round B and C on 4.2).
 6. More optimisation rounds toward the owner's 100 (43 logged: 38 kept, 5 reverted).
+7. Dyntopo memory (LIMITS-A 1.6): a TOPO step holds the whole mesh before and after, and each before is the previous step's after; sharing it halves packed Dyntopo steps (about 5.8 to 2.9 MB each at 100k faces). Needs a step format bump in the engine: an agent job, measured as a round.
