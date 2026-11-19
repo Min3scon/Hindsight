@@ -140,14 +140,14 @@ machine and profile the embed path at 6,000 steps.
 
 ## Count
 
-39 rounds are logged.
+43 rounds are logged (R001 to R043).
 
-- Kept: 36 (R001 to R005, R007 to R019, R021, R023, R024, R026 to R032, R034 to R041).
+- Kept: 38 (R001 to R005, R007 to R019, R021, R023, R024, R026 to R032, R034 to R043).
 - Reverted (later): R033.
 - Reverted: 4 (R006, R020, R022, R025).
 - Not merged, not counted: 0.
 - Kept rounds that stand on weaker evidence: R001 (after is a prototype), R014 (no absolute numbers), R018
   (no numbers beyond "about half"), R021 (only breaks even under load), R024 (instruction count only).
 
-The owner's target was at least 100 rounds. 26 kept and 4 reverted is the true count of what was
+The owner's target was at least 100 rounds. 38 kept and 5 reverted (43) is the true count of what was
 measured so far.

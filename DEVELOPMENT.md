@@ -385,4 +385,4 @@ Blockers:
 5. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 6. Multires (one step per Sculpt Mode visit) and Dyntopo (per stroke), behind one preference (Phase 4).
-7. More optimisation rounds toward the owner's 100 (37 logged).
+7. More optimisation rounds toward the owner's 100 (43 logged: 38 kept, 5 reverted; the agent is on the recorder's remaining overhead).
