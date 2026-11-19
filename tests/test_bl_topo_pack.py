@@ -192,6 +192,7 @@ def test_edit_mode_compares_packed_topology_by_checksum():
 def test_a_baseline_changed_while_packing_is_not_swapped():
     ob = setup()
     st = _state(ob)
+    _ = st.arrays                      # unpacked, whatever packed it before
     job = st.pack_job()
     assert job is not None
     packed = topopack.pack_all(job)
