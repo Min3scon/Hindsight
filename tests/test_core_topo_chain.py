@@ -11,7 +11,6 @@ import traceback
 
 import numpy as np
 
-import test_core_history as th                                             # noqa: E402,F401  (path setup)
 from hindsight.core import codec, delta, native, step as stepmod
 from hindsight.core.history import History, MeshState
 from hindsight.core.persist import registry_from_bytes, registry_to_bytes
