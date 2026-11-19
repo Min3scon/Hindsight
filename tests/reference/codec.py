@@ -5,7 +5,7 @@ Needs the zstandard and lz4 Python packages, which only the test environments ha
 Byte compression with optional zstd / lz4 and an always-available zlib fallback.
 
 Blob format: first byte = codec id, then payload. Ids: 0 none, 1 zlib level 1, 2 lz4 frame,
-3 zstd level 3, 4 zstd level 19, 5 zlib level 9. Ids 4 and 5 are the "strong" forms written by
+3 zstd level 3, 4 zstd strong (level 15 up to 1 MB, 19 above; R072), 5 zlib level 9. Ids 4 and 5 are the "strong" forms written by
 background recompression; they decode exactly like 3 and 1.
 Pure Python, no bpy.
 """
@@ -28,7 +28,8 @@ NONE, ZLIB, LZ4, ZSTD, ZSTD_MAX, ZLIB_MAX = 0, 1, 2, 3, 4, 5
 _IDS = {"none": NONE, "zlib": ZLIB, "lz4": LZ4, "zstd": ZSTD}
 _NAMES = {v: k for k, v in _IDS.items()}
 _NAMES.update({ZSTD_MAX: "zstd", ZLIB_MAX: "zlib"})
-STRONG_LEVEL = 19
+STRONG_LEVEL = 19          # data over 1 MB
+STRONG_LEVEL_SMALL = 15    # data up to 1 MB (R072, as the engine)
 # largest body a blob may claim, so a damaged length can't ask for a huge allocation
 MAX_RAW = 1 << 30
 
@@ -67,10 +68,12 @@ def _zc():
     return c
 
 
-def _zc_max():
-    c = getattr(_tls, "zc_max", None)
+def _zc_max(n):
+    attr = "zc_max" if n > (1 << 20) else "zc_max_small"
+    c = getattr(_tls, attr, None)
     if c is None:
-        c = _tls.zc_max = _zstd.ZstdCompressor(level=STRONG_LEVEL)
+        c = _zstd.ZstdCompressor(level=STRONG_LEVEL if n > (1 << 20) else STRONG_LEVEL_SMALL)
+        setattr(_tls, attr, c)
     return c
 
 
@@ -86,7 +89,7 @@ def compress(data, codec: str = "auto", strong: bool = False) -> bytes:
     data = bytes(data) if not isinstance(data, (bytes, bytearray, memoryview)) else data
     if name == "zstd":
         if strong:
-            return bytes((ZSTD_MAX,)) + _zc_max().compress(data)
+            return bytes((ZSTD_MAX,)) + _zc_max(len(data)).compress(data)
         return bytes((ZSTD,)) + _zc().compress(data)
     if name == "lz4":
         return bytes((LZ4,)) + _lz4f.compress(data)

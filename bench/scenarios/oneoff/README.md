@@ -28,3 +28,8 @@ line with an operation that changes nothing, a move, and the time inside `_same_
 `diff_threads_ab.py CODE_ROOT [ROUNDS] [--inproc]` (R071): a texture paint stroke on a 2K float image and a sculpt stroke
 on a 1M mesh, committed, with the time inside the engine's diff; `--inproc` alternates one thread against the engine's
 own rule in one process. Put the root's engine first with PYTHONPATH.
+
+`strong_level.py CODE_ROOT [ROUNDS]` (R072): the engine's recompress at zstd levels 19, 17, 15 and 12 (its `_strong_level`
+switch) on cached 100k stroke steps, 1M strokes and 100k topology steps: CPU per step, bytes, read time.
+`packer_level_ab.py CODE_ROOT` (R072): a store.Packer recompressing those stroke steps as after an open (its 1 s wait
+between steps cut to 1 ms); the packer thread's CPU per step and the bytes. No Blender needed; alternate the engines.

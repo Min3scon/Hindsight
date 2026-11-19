@@ -1,8 +1,8 @@
 //! Byte compression: the twin of hindsight/core/codec.py (now in tests/reference).
 //!
 //! Blob = one codec id byte, then the payload. Ids: 0 none, 1 zlib level 1, 2 lz4 frame, 3 zstd
-//! level 3, 4 zstd level 19, 5 zlib level 9. Ids 4 and 5 ("strong", written by background
-//! recompression) decode exactly like 3 and 1.
+//! level 3, 4 zstd strong (level 15 for data up to 1 MB, 19 above; R072), 5 zlib level 9. Ids 4 and 5
+//! ("strong", written by background recompression) decode exactly like 3 and 1.
 //!
 //! All three libraries are C, built from source (zstd-sys, libz-sys, lz4-sys), so the bytes written
 //! are those of the libraries Python used. Reading takes the first frame or stream and ignores
@@ -17,7 +17,27 @@ pub const LZ4: u8 = 2;
 pub const ZSTD: u8 = 3;
 pub const ZSTD_MAX: u8 = 4;
 pub const ZLIB_MAX: u8 = 5;
+/// The strong zstd level for data over 1 MB (compressed with a window as large as the data and long
+/// distance matching): a topology step's two meshes. R072 measured level 15 there at 0.15 of level
+/// 19's saving, so it stays 19.
 pub const STRONG_LEVEL: i32 = 19;
+/// R072: the strong level for data up to 1 MB (strokes): 0.86 to 0.93 of level 19's saving for 0.44
+/// to 0.55 of its CPU on real 100k and 1M stroke steps (the blobs 0.36% larger).
+pub const STRONG_LEVEL_SMALL: i32 = 15;
+const SMALL: usize = 1 << 20;
+/// A level for every strong blob instead of the two above, set by a measurement (`_strong_level`);
+/// 0: the rule above. Any level decodes the same way: this changes only the size and the time of new
+/// strong blobs.
+pub static STRONG_NOW: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// The zstd level of a strong blob of `n` bytes of data.
+pub fn strong_level(n: usize) -> i32 {
+    match STRONG_NOW.load(std::sync::atomic::Ordering::Relaxed) {
+        0 if n > SMALL => STRONG_LEVEL,
+        0 => STRONG_LEVEL_SMALL,
+        lv => lv,
+    }
+}
 /// Largest body a blob may claim, so a damaged length can't ask for a huge allocation.
 pub const MAX_RAW: u64 = 1 << 30;
 
@@ -88,6 +108,10 @@ fn zstd_compress(data: &[u8], strong: bool) -> Result<Vec<u8>, Err> {
         }
         let (n, s) = g.as_mut().unwrap();
         let ctx = if strong { s } else { n };
+        if strong {
+            ctx.set_parameter(zstd_safe::CParameter::CompressionLevel(strong_level(data.len())))
+                .map_err(|_| blob("zstd: bad level"))?;
+        }
         // A body over 1 MB gets a window as large as itself (up to 128 MB, zstd's default decoder limit) and long
         // distance matching:
         // the two meshes of a TOPO step are alike, and the default window (2 MB at level 3) never sees the
