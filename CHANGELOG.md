@@ -32,6 +32,7 @@ New:
 - Weight Paint strokes are steps, like sculpt and Vertex Paint strokes.
 - Custom normals (Blender 5) are recorded with the mesh, so going back over Set Custom Normals gives the old normals back.
 - Dyntopo strokes can be recorded (preference Record Dyntopo, off by default; meshes up to 200,000 faces): each stroke is a step, and going back turns Dyntopo on or off as it was.
+- Without Record Dyntopo (or on bigger meshes), a Sculpt Mode visit with Dyntopo on is one step when it ends, so going back over it gives the mesh from before it. Its changes used to be taken as they were, and the earlier steps could no longer be gone back to correctly.
 - Multires can be recorded (preference Record Multires, off by default): one step per Sculpt Mode visit.
 - Edit Mode steps up to (preferences): how big a mesh can be for Edit Mode to be recorded one operation at a time (300,000 vertices by default; bigger meshes are recorded once per visit).
 - Texture painting can be recorded too (preference Record texture painting, off by default; images up to 2K), in the 3D viewport and in the Image Editor's Paint mode (as a step of the active object).

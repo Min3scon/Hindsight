@@ -96,6 +96,40 @@ def _flush_dyntopo(obj) -> bool:
         return False
 
 
+_PAUSED: set = set()      # D153: uids in a Dyntopo visit that pauses recording (the baseline before it is kept)
+DYNTOPO_VISIT_LABEL = "Dyntopo"
+
+
+def _keep_paused_baseline(obj, uid, st) -> bool:
+    """D153: Dyntopo pauses recording (Record Dyntopo off, or more than DYNTOPO_TRIS_MAX faces). The baseline
+    from before the visit is kept, so the visit becomes one step when it ends (end_paused); reading the
+    mesh again here, as before, left the history's earlier steps to be applied to another mesh."""
+    if not dyntopo_active(obj) or st is None or not st.counts:
+        return False
+    h = _REG.history_for(uid)
+    if h is None or not h.entries or not h.enabled:
+        return False
+    _PAUSED.add(uid)
+    return True
+
+
+def end_paused(now: bool = False) -> None:
+    """D153: a paused Dyntopo visit that has ended (Dyntopo off, Sculpt Mode left) becomes its step; with now
+    (before a jump or a save), also one still going on: its mesh is written back first, and the rest of the
+    visit is the next step."""
+    for uid in list(_PAUSED):
+        ob = find_object(uid)
+        if ob is None:
+            _PAUSED.discard(uid)
+            continue
+        if dyntopo_active(ob) and not now:
+            continue
+        if stroke_running():
+            continue
+        commit(ob, label=DYNTOPO_VISIT_LABEL, mode="SCULPT", full=True, _pause_end=True)
+        _PAUSED.discard(uid)
+
+
 def _mode_recorded(mode) -> bool:
     return mode in RECORD_MODES and (mode != "TEXTURE_PAINT" or texture_on())
 
@@ -896,7 +930,7 @@ def _leave_shared(obj, uid) -> None:
 
 
 def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False,
-           _mr_step=None, _deep: bool = True):
+           _mr_step=None, _deep: bool = True, _pause_end: bool = False):
     """Record what changed on obj since the last commit as ONE step. Returns the Step or None."""
     if obj is None or obj.type != "MESH":
         return None
@@ -936,9 +970,14 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     if st is None or not st.counts:          # no mesh baseline yet (or data values only)
         ensure_state(obj, refresh=True)
         return None
-    if _blocking(obj):
-        ensure_state(obj, refresh=True)
+    if _blocking(obj) and not _pause_end:
+        if not _keep_paused_baseline(obj, uid, st):
+            ensure_state(obj, refresh=True)
         return None
+    if uid in _PAUSED:                       # D153: the paused visit ends here: everything it changed, one step
+        _PAUSED.discard(uid)
+        full = True
+        label = DYNTOPO_VISIT_LABEL
     h = _REG.history_for(uid)
     if h is not None and not h.enabled:
         return None
@@ -1306,6 +1345,8 @@ def _tick_once() -> bool:
     check_mode_transition()
     painting = _watch_image_paint()
     multires.flush()
+    if _PAUSED:
+        end_paused()                         # D153
     ob_ = _active()
     if ob_ is not None and ob_.mode == "SCULPT" and multires.active(ob_) and not stroke_running():
         multires.tick(ob_)
@@ -1578,6 +1619,8 @@ def goto(context, pos: int, final: bool = True) -> None:
     if stroke_running():
         log.warn("history jump skipped: a stroke is still in progress")
         return
+    if _PAUSED:
+        end_paused(now=True)                 # D153: a paused Dyntopo visit is a step before any jump
     if use_global(context):
         global_goto(context, pos, final)
     else:
@@ -1748,6 +1791,8 @@ def global_goto(context, g: int, final: bool = True) -> None:
     """Move the global timeline to position g. Steps are undone and redone across histories in
     step-number order (globaltl.transition), and the whole jump is one entry on Blender's undo."""
     from . import datarec
+    if _PAUSED:
+        end_paused(now=True)                 # D153
     vis = _visible_uids()
     groups = _groups(vis)
     old = _gpos(vis, groups)

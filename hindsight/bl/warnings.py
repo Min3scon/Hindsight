@@ -15,8 +15,9 @@ ERROR = "ERROR"
 WARNING = "WARNING"
 INFO = "INFO"
 
-TXT_DYNTOPO = "Dyntopo is on, so recording is paused on this object"
-TXT_DYNTOPO_BIG = "Dyntopo is on and this mesh has more than {n:,} faces, so recording is paused on it"
+TXT_DYNTOPO = "Dyntopo is on: strokes aren't steps one by one here, the whole visit is one step when it ends"
+TXT_DYNTOPO_BIG = ("Dyntopo is on and this mesh has more than {n:,} faces: strokes aren't steps one by one, "
+                   "the whole visit is one step when it ends")
 TXT_MULTIRES = "Multires modifier: recording is paused on this object"
 TXT_GLOBAL_UNDO = "Global Undo is off. Turn it on in Preferences > System"
 TXT_LINKED = ("This mesh is shared with other objects (a linked duplicate), so they share one history. "
