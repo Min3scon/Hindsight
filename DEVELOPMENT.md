@@ -390,12 +390,12 @@ Blockers:
 1. Merge `main-session-3` into the working branch once its full suite passes on 5.3 and 4.2; push; run
    `Blender tests` (binaries 4.2 to 5.3, the window job now on 4.2, 5.0.1, 5.1.2, 5.2, 5.3 with eight
    scenarios) and `Native engine` on GitHub; fix what they find.
-2. The agent's queue: the recorder's remaining overhead (rounds), D146 (node group animation), D147 (a UI
-   drag split on slow redraws).
+2. The recorder's remaining overhead at 500 objects: `id_props`, `idmap.claim` and constraints are the next fixed
+   costs (R044 profile); each needs a depsgraph or fingerprint check before any cache.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
    (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds (t1_gate made version-aware; Round B and C on 4.2).
-6. More optimisation rounds toward the owner's 100 (43 logged: 38 kept, 5 reverted).
+6. More optimisation rounds toward the owner's 100 (44 logged: 39 kept, 5 reverted).
 7. Dyntopo memory (LIMITS-A 1.6): a TOPO step holds the whole mesh before and after, and each before is the previous step's after; sharing it halves packed Dyntopo steps (about 5.8 to 2.9 MB each at 100k faces). Needs a step format bump in the engine: an agent job, measured as a round.

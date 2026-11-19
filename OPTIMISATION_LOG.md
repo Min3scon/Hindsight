@@ -76,6 +76,7 @@ stated conditions. It ends kept or reverted. Both count.
 | R041 | 2026-11-19 | Data recorder, an object's depsgraph-tracked parts (D117 to D137) | The parts added by D117 to D137 (settings, pose, bones, animation, node groups, particle settings, the data's settings, shape and animation) were read for every object on every operator: 500 cubes went from 30 to 45-49 ms per operator that changes nothing | Kept per object with an index of what each object depends on (its data, shape keys, actions, particle settings, node groups); dropped when the depsgraph reports the object or a dependency changed, when an operator ends with it selected, or when Hindsight writes it. Custom properties are still read every time (setting one by item doesn't tell the depsgraph) | dr_finish_nochange_500 vs 5a909c5 (before D111): 1.41 / 1.31 (min / median ratio), dr_finish_move_500 1.25 / 1.34 | 1.23 / 1.23 and 1.27 / 1.18 (R040 and R041 together); 500-material scene 50.1 to 51.1 ms against 29.8 to 36.3 before D111; dr_prime_500 (file load, reads everything) 1.42 / 1.37 | bench/ab.py --only dr_finish,dr_prime,dr_on_update, 7 alternating rounds, bpy 5.3 module, load 0.8 to 1.2 | whole suite on 5.3 and 4.2: one regression, test_bl_t1_hair_points on 5.3 (the kept shape hid a point cloud's resize, which doesn't tell the depsgraph); fixed in 8c1838d by reading the shape outside this cache (geometry_of checks its own counts) | kept | 9eb06b7, 8c1838d |
 | R042 | 2026-11-19 | Vertex group weights read per Weight Paint stroke (D140) | Every Weight Paint stroke reads every group's weights; the loop over `me.vertices` cost 84.6 ms (5.3) and 64.2 ms (4.2) at 100,489 vertices with 3 groups (no bulk read exists for weights) | the loop with `enumerate` instead of reading `v.index`; bmesh was also measured (64.3 / 66.1 ms: slower on 4.2) | 84.6 ms (5.3), 64.2 ms (4.2) | 65.6 ms (5.3), 47.8 ms (4.2) | `wbench.py` (Rust agent), min of 5, bpy 5.3 and 4.2 modules; results exact for every variant | test_bl_weight_paint on both | kept | dev/reports/RUST.md (fourth job), meshio.read_weights |
 | R043 | 2026-11-19 | Crash journal step blob per stroke commit | cProfile of a 100k commit (60 commits, median 0.95 ms with the profiler): `step_encode` of the journal blob, zstd level 3 on the main thread, is 17%, the largest part | journal step blobs written with lz4 (`types.JOURNAL_CODEC`); history, packer and save keep the user's codec; recovery reads either, mixed journals too | 100k: 0.608 / 1.122 ms; 1M: 3.654 / 5.398 ms (min / median per commit) | 100k: 0.482 / 0.977 ms (x0.79 / x0.87); 1M: 2.936 / 5.008 ms (x0.80 / x0.93); journal bytes per step +1.3% (100k), +7.2% (1M) | in-process A/B with real Journal appends, alternating, 16 rounds x 6 strokes = 96 commits per side, bpy 5.3 module (bench/ab.py spread of 25 to 38% hides it) | test_core_journal_codec (4), test_bl_journal_codec, test_core_*, recovery and faults, persistence on 5.3 and 4.2 | kept | dev/reports/RUST.md, merge efcc845 |
+| R044 | 2026-11-19 | Data recorder, RNA rows of 500 objects per operator | Profile of 500 cubes with nothing changed: 51 ms per operator, about 100 us per object; RNAAdapter.capture about 31% of it, normalise called 76,000 times | rows whose path is one name read with getattr (no path resolve); plain float, int, bool and str values skip normalise; same values and key order | RNAAdapter.capture over 500 objects 9.91 ms min, 10.59 ms median | 7.68 ms min, 8.55 ms median (about 2.2 of the 50 ms operator, 4 to 5%) | in-process A/B, alternating, 15 rounds, bpy 5.3 module; bench/ab.py inconclusive (spread 8 to 58%, load 4 to 6) | test_bl_adapters*, test_bl_datarec*, every test_bl_t1_* on 5.3 and 4.2 | kept | f6033e2 |
 
 ## Tried or done without a number (not rounds)
 
@@ -140,14 +141,14 @@ machine and profile the embed path at 6,000 steps.
 
 ## Count
 
-43 rounds are logged (R001 to R043).
+44 rounds are logged (R001 to R044).
 
-- Kept: 38 (R001 to R005, R007 to R019, R021, R023, R024, R026 to R032, R034 to R043).
+- Kept: 39 (R001 to R005, R007 to R019, R021, R023, R024, R026 to R032, R034 to R044).
 - Reverted (later): R033.
 - Reverted: 4 (R006, R020, R022, R025).
 - Not merged, not counted: 0.
 - Kept rounds that stand on weaker evidence: R001 (after is a prototype), R014 (no absolute numbers), R018
   (no numbers beyond "about half"), R021 (only breaks even under load), R024 (instruction count only).
 
-The owner's target was at least 100 rounds. 38 kept and 5 reverted (43) is the true count of what was
+The owner's target was at least 100 rounds. 39 kept and 5 reverted (44) is the true count of what was
 measured so far.
