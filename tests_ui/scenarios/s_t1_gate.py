@@ -285,7 +285,12 @@ def run(d):
     yield 0.3
     d.ev("RIGHTMOUSE", "PRESS", x=cx, y=cy)
     d.ev("RIGHTMOUSE", "RELEASE", x=cx, y=cy)
-    yield 0.4
+    # the warning waits for the grab to end, then the next timer tick: under software GL with this scene
+    # that can take longer than the 0.4 s this waited before
+    for _ in range(30):
+        yield 0.1
+        if shown:
+            break
     d.shot("alt_d_warning")
     d.check("Alt+D on a recorded mesh: the shared-mesh warning comes up", any(shown), shown,
             covers="sculpt.joinsep, obj.addremove: WARN")

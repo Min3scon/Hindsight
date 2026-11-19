@@ -37,18 +37,18 @@ MUTANTS = [
      "matrices written as nested lists (transposed)", ["obj.parenting"], None),
     ("bl/adapters.py", "        return _F64.pack(a) == _F64.pack(b)", "        return a == b",
      "float values compared with == (-0.0 equals 0.0, NaN never equal)", ["obj.transforms"], None),
-    ("bl/adapters.py", "    out = {f.data_path for f in ad.drivers}", "    return set()",
+    ("bl/adapters.py", '    out = {}\n\n    def add(f):\n        out.setdefault(f.data_path, set())', '    return {}\n    out = {}\n\n    def add(f):\n        out.setdefault(f.data_path, set())',
      "animated and driven paths recorded", ["obj.transforms", "obj.constraints"], None),
-    ("bl/adapters.py", "                if c is not None:\n                    try:\n                        c.objects.link(idb)",
-     "                if False:\n                    try:\n                        c.objects.link(idb)",
+    ("bl/adapters.py", '                try:\n                    c.objects.link(idb)\n',
+     '                try:\n                    pass\n',
      "collections an object was in not put back", ["obj.collections"], None),
-    ("bl/adapters.py", "                idb.hide_set(bool(values[\"hide\"]))", "                pass",
+    ("bl/adapters.py", '        if "hide" in values and values["hide"] is not MISSING:\n            _set_hidden(idb, values["hide"])', '        if "hide" in values and values["hide"] is not MISSING:\n            pass',
      "hidden state (H) not put back", ["obj.collections"], None),
-    ("bl/adapters.py", "    for c, w in zip(ob.constraints, want):\n        set_struct_values(c, w.get(\"values\") or {})",
-     "    for c, w in zip(ob.constraints, want):\n        pass", "constraint settings not put back",
+    ("bl/adapters.py", '    for c, w in pairs:\n        set_struct_values(c, w.get("values") or {}, ob, f\'{base}constraints["{c.name}"].\')',
+     '    for c, w in pairs:\n        pass', "constraint settings not put back",
      ["obj.constraints"], None),
-    ("bl/adapters.py", "    if have != [(w[\"type\"], w[\"name\"]) for w in want]:",
-     "    if False:", "constraint stack not rebuilt", ["obj.constraints"], None),
+    ("bl/adapters.py", '    if have == [(w["type"], w["name"]) for w in want]:\n        pairs = list(zip(st.constraints, want))',
+     '    if True:\n        pairs = list(zip(st.constraints, want))', "constraint stack not rebuilt", ["obj.constraints"], None),
     ("bl/adapters.py", "        for uid in sorted(set(have) - want):\n            _remove_object(have[uid])",
      "        for uid in sorted(set(have) - want):\n            pass", "added objects not removed again",
      ["obj.addremove"], None),
@@ -68,7 +68,7 @@ MUTANTS = [
     ("bl/datarec.py", "        if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or \"\"):\n            continue",
      "        if False:\n            continue", "a data kind switched off read as removed",
      ["obj.transforms", "obj.collections"], None),
-    ("bl/datarec.py", "        if mesh and uid in _MESH_DIRTY:", "        if False and uid in _MESH_DIRTY:",
+    ("bl/datarec.py", '        if mesh and uid in _MESH_DIRTY and not (', '        if False and uid in _MESH_DIRTY and not (',
      "Object Mode mesh changes not recorded (D14)", ["obj.transforms"], None),
     ("bl/datarec.py", "            step.extra = dict(step.extra or {}, op=op_first)", "            pass",
      "one operation on several objects is several global positions (D16)",
@@ -89,13 +89,13 @@ MUTANTS = [
      "    for _seq, hid, i in sorted(undo, key=lambda x: x[1]):", "global jumps not in step order (D17)", T1, None),
     ("core/globaltl.py", "            cur[hid] = max(cur[hid], i + 1)", "            cur[hid] = i",
      "global jump one step short", T1, None),
-    ("bl/runtime.py", "        u = any_uid(ob)\n        if u is not None and not is_excluded(ob):",
-     "        u = obj_uid(ob)\n        if u is not None and not is_excluded(ob):",
+    ("bl/runtime.py", '        u = any_uid(ob)\n        if u is not None and not excluded(ob):',
+     '        u = obj_uid(ob)\n        if u is not None and not excluded(ob):',
      "empties left off the global timeline (D20)", ["obj.transforms", "obj.parenting"], None),
     ("bl/runtime.py", "    return commit(obj, label=label, mode=\"EDIT\", full=True, _edit=True)",
      "    return None", "Edit Mode operations not recorded step by step", ["obj.editsteps"], None),
-    ("bl/meshio.py", '    cv = _corner_ints(me, ".corner_vert", "vertex_index", c["CORNER"])',
-     '    cv = _corner_ints(me, ".corner_edge", "vertex_index", c["CORNER"])',
+    ("bl/meshio.py", 'CORNER_VERT_KEY: lambda: _corner_ints(me, ".corner_vert", "vertex_index", c["CORNER"]),',
+     'CORNER_VERT_KEY: lambda: _corner_ints(me, ".corner_edge", "vertex_index", c["CORNER"]),',
      "corner vertices read from the wrong array", ["obj.editsteps", "obj.transforms"], None),
     ("bl/meshio.py", "    if deep == \"corners\":\n        return True", "    if deep:\n        return True",
      "deep topology check skips edges in Edit Mode", ["obj.editsteps"], None),
@@ -113,7 +113,7 @@ MUTANTS = [
      "    return", "objects added while the scene is recorded not recorded (D36)", ["obj.addremove"], None),
     ("bl/adapters.py", "    return sorted((p, r) for p, (r, _a, _ap) in d.items() if idmap.find(r) is None)",
      "    return []", "no note about a reference to a deleted object (D37)", ["obj.parenting", "obj.constraints"], None),
-    ("bl/datarec.py", "    if not adapters.MISSING_REFS:\n        return\n", "    return\n",
+    ("bl/datarec.py", '    if not adapters.MISSING_REFS:\n        adapters.drop_recreated_orphans()\n        return\n', '    adapters.drop_recreated_orphans()\n    return\n',
      "references not put back when the object comes back (D37)", ["obj.parenting", "obj.constraints"], None),
     ("bl/adapters.py", '    "parent": ("matrix_parent_inverse",),\n', "",
      "parent inverse not written again after the parent (D38)", ["obj.parenting"], None),
@@ -134,8 +134,8 @@ MUTANTS = [
     ("bl/datarec.py", "                if ob is not None:\n                    rt.refresh_state_any_mode(ob)",
      "                if ob is not None and ob.mode != \"EDIT\":\n                    rt.ensure_state(ob, refresh=True)",
      "after Blender's undo of a jump, an object in Edit Mode keeps a stale state (D53)", ["obj.editsteps"], None),
-    ("bl/runtime.py", "        return datarec.is_tracked(obj)\n    except Exception:\n        return False\n\n\ndef read_mesh_snapshot",
-     "        return False\n    except Exception:\n        return False\n\n\ndef read_mesh_snapshot",
+    ("bl/runtime.py", '        return datarec.is_tracked(obj)\n    except Exception:\n        return False\n\n\nEXTRAS_TOPO_MAX',
+     '        return False\n    except Exception:\n        return False\n\n\nEXTRAS_TOPO_MAX',
      "weights and shape keys not part of recorded objects' states (D43)", ["obj.editsteps"], None),
     ("bl/meshio.py", "        for name, lock in groups:\n            if ob.vertex_groups.get(name) is None:",
      "        for name, lock in []:\n            if ob.vertex_groups.get(name) is None:",
@@ -164,8 +164,8 @@ MUTANTS = [
     ("bl/datarec.py", "        if not was_on and h is not None and h.entries and _state(uid).values:",
      "        if False and h is not None and h.entries and _state(uid).values:",
      "changes made while Record everything was off not recorded when it's switched on (D46)", ["obj.transforms"], None),
-    ("bl/runtime.py", "    from . import datarec, idmap\n    for u, rec in (saved or {}).items():",
-     "    from . import datarec, idmap\n    for u, rec in {}.items():",
+    ("bl/runtime.py", '    outside = set()\n    for u, rec in (saved or {}).items():',
+     '    outside = set()\n    for u, rec in {}.items():',
      "changes made without Hindsight not noticed on opening (D46)", ["obj.transforms", "obj.editsteps"], None),
     ("bl/datarec.py", "        if st.values.get((\"rna\", \"name\")) == wanted and idb.name != wanted:", "        if False:",
      "a name Blender changed on restore recorded as a change (D47)", ["obj.addremove"], None),
@@ -174,7 +174,7 @@ MUTANTS = [
      "references to linked data recorded as empty (D48)", ["obj.parenting", "obj.constraints"], None),
     ("bl/adapters.py", "    for w in body.get(\"modifiers\") or ():", "    for w in ():",
      "a deleted object brought back without its modifiers (D49)", ["obj.addremove"], None),
-    ("bl/adapters.py", "    for key, hidden in (body.get(\"hidden\") or {}).items():", "    for key, hidden in {}.items():",
+    ("bl/adapters.py", '    _set_hidden(ob, body.get("hidden"))', '    pass',
      "a deleted object brought back visible though it was hidden (D49)", ["obj.addremove"], None),
     ("bl/datarec.py", "        editing = [o for o in bpy.context.view_layer.objects if o.mode == \"EDIT\" and o.type == \"MESH\"]",
      "        editing = [active] if active is not None and active.mode == \"EDIT\" else []",
@@ -224,12 +224,15 @@ MUTANTS = [
 
 
 def make(n, fname, old, new):
+    """A copy of hindsight/ and tests/ with one edit (none for the control, fname None)."""
     d = os.path.join(OUT, str(n))
     shutil.rmtree(d, ignore_errors=True)
     shutil.copytree(os.path.join(ROOT, "hindsight"), os.path.join(d, "hindsight"),
                     ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(d, "tests"),
                     ignore=shutil.ignore_patterns("__pycache__", "site"))
+    if fname is None:
+        return d
     path = os.path.join(d, "hindsight", fname)
     with open(path, encoding="utf-8") as f:
         src = f.read()
@@ -240,15 +243,36 @@ def make(n, fname, old, new):
     return d
 
 
-def run(exe, d, env):
+def engine_path():
+    """The folder holding this checkout's own Rust engine (its committed wheel, unpacked), or None. Blender
+    ignores PYTHONPATH, so each test run puts it on sys.path itself (CI installs the wheel instead)."""
+    sys.path.insert(0, os.path.join(ROOT, "bench"))
+    try:
+        from suite import native_env
+    finally:
+        sys.path.pop(0)
+    pp = native_env(ROOT, {}).get("PYTHONPATH")
+    return pp.split(os.pathsep)[0] if pp else None
+
+
+def run(exe, d, env, engine=None, why=None):
+    """The first test file that fails on copy d, or None. why: a list that gets the failing output."""
     for t in TESTS:
+        test = os.path.join(d, "tests", t)
+        if engine:
+            cmd = ["--python-expr", f"import sys, runpy; sys.path.insert(0, {engine!r}); "
+                                    f"sys.argv = [{test!r}]; runpy.run_path({test!r}, run_name='__main__')"]
+        else:
+            cmd = ["--python", test]
         try:
-            r = subprocess.run([exe, "-b", "--factory-startup", "--python-exit-code", "1",
-                                "--python", os.path.join(d, "tests", t)], capture_output=True, text=True,
-                               timeout=1200, env=env, cwd=d, encoding="utf-8", errors="replace")
+            r = subprocess.run([exe, "-b", "--factory-startup", "--python-exit-code", "1"] + cmd,
+                               capture_output=True, text=True, timeout=1200, env=env, cwd=d, encoding="utf-8",
+                               errors="replace")
         except subprocess.TimeoutExpired:
             return t + " (timeout)"
         if r.returncode != 0 or "FAIL " in r.stdout:
+            if why is not None:
+                why.append((r.stdout + r.stderr)[-1500:])
             return t
     return None
 
@@ -262,16 +286,26 @@ def main():
     import hs_ui
     from run_tests import _sandbox_env
     targets = [(tag, str(exe)) for tag, exe in hs_ui.select(hs_ui.find_blenders(), which)]
+    engine = engine_path()
     survived_any = False
     for tag, exe in targets:
         env = _sandbox_env("mut-" + tag)
         rows = []
         t0 = time.time()
+        # the control: unchanged code must pass every test file, or no failure below means anything
+        # (a Blender without the engine "killed" every mutant once)
+        why = []
+        d0 = make(0, None, None, None)
+        bad = run(exe, d0, env, engine, why)
+        shutil.rmtree(d0, ignore_errors=True)
+        if bad is not None:
+            print(f"[{tag}] control failed in {bad}: no mutant run\n{why[0] if why else ''}", flush=True)
+            return 2
         for n, (fname, old, new, what, row_ids, reason) in enumerate(MUTANTS, 1):
             if only and n not in only:
                 continue
             d = make(n, fname, old, new)
-            killer = run(exe, d, env)
+            killer = run(exe, d, env, engine)
             ok = killer is not None or bool(reason)
             survived_any |= not ok
             print(f"[{tag}] {n:2d} {'killed by ' + killer if killer else ('equivalent: ' + reason if reason else 'SURVIVED')}"
