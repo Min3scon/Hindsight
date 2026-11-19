@@ -51,7 +51,54 @@ def test_switch_is_quick_with_many_objects():
     print(f"  300 objects switched on in {dt * 1000:.0f} ms")
 
 
+def test_collections_made_and_deleted_with_the_file_switch():
+    """L13: with the one switch for the file, making a collection, moving an object into it and deleting a
+    collection are recorded (in the scene's history) and come back both ways."""
+    L.fresh_scene()
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    bpy.ops.hindsight.record_file(on=True)
+    L.tick_like("baseline")
+    sc = C.scene
+    read = lambda: (tuple(sorted(c.name for c in sc.collection.children_recursive)),
+                    tuple(sorted(c.name for c in bpy.data.objects["A"].users_collection)))
+    states = [read()]
+
+    assert "Made" not in bpy.data.collections and "Spare" not in bpy.data.collections
+
+    def make():
+        sc.collection.children.link(bpy.data.collections.new("Made"))
+
+    def move():
+        a = bpy.data.objects["A"]
+        for c in list(a.users_collection):
+            c.objects.unlink(a)
+        bpy.data.collections["Made"].objects.link(a)
+
+    def extra():
+        sc.collection.children.link(bpy.data.collections.new("Spare"))
+
+    def delete():
+        bpy.data.collections.remove(bpy.data.collections["Spare"])
+    for label, fn in (("make", make), ("move", move), ("extra", extra), ("delete", delete)):
+        fn()
+        L.tick_like(label)
+        states.append(read())
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    assert runtime.history_of(sc) is not None, "the scene has no history"
+    sc.hindsight.use_global = True              # the object's membership and the scene's collections: one timeline
+    pos0 = runtime.scrub_info(C)["pos"]
+    n = len(states) - 1
+    for k in list(range(1, n + 1)) + list(range(n - 1, -1, -1)):
+        runtime.goto(C, pos0 - k)
+        assert read() == states[n - k], (k, read(), states[n - k])
+    sc.hindsight.use_global = False
+    bpy.ops.hindsight.record_file(on=False)
+    datarec.FORCE_SCOPE[0] = None
+    print("PASS test_collections_made_and_deleted_with_the_file_switch")
+
+
 if __name__ == "__main__":
     H.run(test_one_switch_for_the_file)
     H.run(test_switch_is_quick_with_many_objects)
+    H.run(test_collections_made_and_deleted_with_the_file_switch)
     H.finish()
