@@ -477,6 +477,7 @@ class ObjectAdapter(Adapter):
             out.update(mesh_lists(idb))        # D108: the lists the weights and shapes belong to
         if hasattr(idb, "modifiers"):
             out.update(modifier_values(idb))   # D110: the modifier stack and each modifier's settings
+        out.update(owned_groups(idb))          # D126: the node groups it uses
         if idb.data is not None and hasattr(idb.data, "materials"):
             if len(idb.material_slots):
                 out["slots"] = material_slots(idb)  # D111: material slots (which faces use them: a mesh channel)
@@ -513,6 +514,9 @@ class ObjectAdapter(Adapter):
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
+        for path, v in values.items():          # D126: node groups before the modifiers using them
+            if path.startswith(NG_PREFIX) and isinstance(v, dict):
+                write_group(path[len(NG_PREFIX):], v)
         if "collections" in values and values["collections"] is not MISSING:
             want = set(values["collections"])
             have = {_coll_ref(c): c for c in idb.users_collection}
@@ -614,20 +618,180 @@ def material_changed(idb) -> str | None:
     except Exception:
         return None
     if isinstance(idb, bpy.types.NodeTree):
-        k = _TREE_MAT.get(k)
-        if k is None:
-            return None
+        _MAT_GROUPS.clear()
+        k = _TREE_MAT.get(k, k)          # a material's own tree, or a node group (D126)
     _MAT_CACHE.pop(k, None)
     return _MAT_OWNER_OF.get(k)
 
 
 def forget_materials() -> None:
+    _MAT_GROUPS.clear()
     _VAL_CACHE.clear()
     _GEOM_CACHE.clear()
     _ACT_CACHE.clear()
     _MAT_CACHE.clear()
     _MAT_OWNER_OF.clear()
     _TREE_MAT.clear()
+
+
+# ----------------------------------------------------------------------------- node groups (D126)
+NG_PREFIX = "@ng:"
+_IFACE_SKIP = frozenset(_UI_PROPS | {"name", "socket_type", "select", "bl_socket_idname", "identifier",
+                                     "item_type", "in_out", "index", "position", "parent", "is_panel_toggle"})
+
+
+def _groups_in_tree(nt, out: list, seen: set) -> None:
+    for n in nt.nodes:
+        g = getattr(n, "node_tree", None)
+        if g is not None and g.library is None and g.as_pointer() not in seen:
+            seen.add(g.as_pointer())
+            out.append(g)
+            _groups_in_tree(g, out, seen)
+
+
+def groups_of(ob) -> list:
+    """Node groups this object's Geometry Nodes modifiers and its materials use (nested ones too)."""
+    out, seen = [], set()
+    for m in getattr(ob, "modifiers", ()):
+        g = getattr(m, "node_group", None)
+        if g is not None and g.library is None and g.as_pointer() not in seen:
+            seen.add(g.as_pointer())
+            out.append(g)
+            _groups_in_tree(g, out, seen)
+    for sl in getattr(ob, "material_slots", ()):
+        mt = sl.material
+        nt = getattr(mt, "node_tree", None) if mt is not None else None
+        if nt is None:
+            continue
+        lst = _MAT_GROUPS.get(nt.session_uid)
+        if lst is None:                  # kept until a node tree changes (walking every node is slow)
+            lst = []
+            _groups_in_tree(nt, lst, set())
+            _MAT_GROUPS[nt.session_uid] = lst
+        for g in lst:
+            if g.as_pointer() not in seen:
+                seen.add(g.as_pointer())
+                out.append(g)
+    return out
+
+
+_MAT_GROUPS: dict = {}       # material node tree session_uid -> node groups it uses (nested too)
+
+
+def group_owner_map() -> dict:
+    """node group pointer -> uid of the object that records it (the first recorded object by name
+    that uses it). Kept for one recorder frame."""
+    fc = idmap.frame_cache()
+    if fc is not None and "ng_owner" in fc:
+        return fc["ng_owner"]
+    from . import datarec
+    users = []
+    for u in datarec.tracked_uids():
+        ob = idmap.find(u)
+        if isinstance(ob, bpy.types.Object):
+            users.append((ob.name, u, ob))
+    out = {}
+    for _n, u, ob in sorted(users, key=lambda t: t[0]):
+        for g in groups_of(ob):
+            out.setdefault(g.as_pointer(), u)
+    if fc is not None:
+        fc["ng_owner"] = out
+    return out
+
+
+def interface_items(ng) -> list:
+    iface = getattr(ng, "interface", None)
+    if iface is None:
+        return []
+    rows = []
+    for it in iface.items_tree:
+        if it.item_type == "SOCKET":
+            rows.append(["SOCKET", it.in_out, it.name, it.socket_type, it.identifier,
+                         struct_values(it, _IFACE_SKIP)])
+        else:
+            rows.append(["PANEL", "", it.name, "", "", struct_values(it, _IFACE_SKIP)])
+    return rows
+
+
+def group_record(ng, owner=None) -> dict:
+    k = ng.session_uid
+    if owner is not None:
+        _MAT_OWNER_OF[k] = owner
+    rec = _MAT_CACHE.get(k)
+    if rec is None:
+        rec = _MAT_CACHE[k] = {"tree": capture_tree(ng), "iface": interface_items(ng)}
+    return rec
+
+
+def owned_groups(ob) -> dict:
+    groups = groups_of(ob)
+    if not groups:
+        return {}
+    uid = idmap.uid_of(ob)
+    owners = None
+    out = {}
+    for g in groups:
+        if g.users > 1 + bool(g.use_fake_user):
+            if owners is None:
+                owners = group_owner_map()
+            if owners.get(g.as_pointer()) != uid:
+                continue
+        gu = idmap.claim(g)
+        if gu:
+            try:
+                out[NG_PREFIX + gu] = group_record(g, uid)
+            except Exception:
+                continue
+    return out
+
+
+def write_interface(ng, rows) -> None:
+    iface = getattr(ng, "interface", None)
+    if iface is None or not isinstance(rows, list):
+        return
+    want_ids = {r[4] for r in rows if r[0] == "SOCKET"}
+    for it in [x for x in iface.items_tree if x.item_type == "SOCKET" and x.identifier not in want_ids]:
+        iface.remove(it)
+    have = {x.identifier: x for x in iface.items_tree if x.item_type == "SOCKET"}
+    for r in rows:
+        if r[0] != "SOCKET" or r[4] in have:
+            continue
+        try:
+            it = iface.new_socket(r[2], in_out=r[1], socket_type=r[3])
+            have[r[4]] = it              # (a socket made again gets a new identifier: Blender's)
+        except Exception as e:
+            log.error_once(("iface", str(e)), f"could not restore a group input or output: {e}", e)
+    order = [have[r[4]] for r in rows if r[0] == "SOCKET" and r[4] in have]
+    for pos, it in enumerate(order):
+        try:
+            if it.position != pos:
+                iface.move(it, pos)
+        except Exception:
+            pass
+    for r in rows:
+        it = have.get(r[4]) if r[0] == "SOCKET" else None
+        if it is None:
+            continue
+        try:
+            if it.name != r[2]:
+                it.name = r[2]
+            set_struct_values(it, r[5] or {})
+        except Exception:
+            pass
+
+
+def write_group(gu: str, rec) -> None:
+    ng = idmap.find(gu)
+    if ng is None or not isinstance(rec, dict):
+        return
+    _MAT_CACHE.pop(ng.session_uid, None)
+    try:
+        write_interface(ng, rec.get("iface"))
+        if rec.get("tree"):
+            write_tree(ng, rec["tree"])
+    except Exception as e:
+        log.error_once(("group", str(e)), f"could not restore the node group {ng.name}: {e}", e)
+    _MAT_CACHE.pop(ng.session_uid, None)
 
 
 def material_owner_map() -> dict:
@@ -1956,7 +2120,7 @@ def owned_path(adapter_id: str, path: str) -> bool:
     if adapter_id == "scene":
         return path == "settings" or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
-                                                       SK_PREFIX, MATA_PREFIX))
+                                                       SK_PREFIX, MATA_PREFIX, NG_PREFIX))
 
 
 def _owns_data(ob, d) -> bool:
