@@ -1506,6 +1506,7 @@ _KEY_2 = ("co", "handle_left", "handle_right")
 _KEY_INT = ("interpolation", "type", "handle_left_type", "handle_right_type", "easing")
 _KEY_1 = ("back", "amplitude", "period")
 _ACT_CACHE: dict = {}          # action session_uid -> {slot identifier: record}
+_OWN_PATHS = ("hindsight.",)   # Hindsight's own animated properties (Movie Mode keys the scene's step)
 _SLOT_TYPES = {"OB": "OBJECT", "ME": "MESH", "MA": "MATERIAL", "WO": "WORLD", "SC": "SCENE", "CA": "CAMERA",
                "LA": "LIGHT", "KE": "KEY", "NT": "NODETREE", "CU": "CURVE", "AR": "ARMATURE"}
 
@@ -1673,6 +1674,8 @@ def action_record(action, ident) -> dict:
         return per[ident]
     rows = []
     for fc in _fcurves(action, _slot_of(action, ident)):
+        if fc.data_path.startswith(_OWN_PATHS):
+            continue                    # Hindsight's own keys (Movie Mode's step) are never recorded
         r = {"path": fc.data_path, "index": int(fc.array_index),
              "group": fc.group.name if fc.group is not None else "", "mute": bool(fc.mute),
              "extrapolation": fc.extrapolation, "lock": bool(fc.lock)}
@@ -1752,7 +1755,8 @@ def write_action(key: str, rec) -> None:
         if coll is None:
             return
         want = {(r["path"], r["index"]): r for r in rec.get("fcurves") or ()}
-        for fc in [f for f in coll if (f.data_path, f.array_index) not in want]:
+        for fc in [f for f in coll if (f.data_path, f.array_index) not in want
+                   and not f.data_path.startswith(_OWN_PATHS)]:
             coll.remove(fc)
         for r in rec.get("fcurves") or ():
             fc = coll.find(r["path"], index=r["index"])
@@ -2425,6 +2429,10 @@ class SceneAdapter(Adapter):
                 w = idmap.find(path[len(WORLDP_PREFIX):])
                 if w is not None:
                     write_id_props(w, v)
+                    if isinstance(v.get("anim"), dict):
+                        write_anim_of(w, v["anim"])
+                    if isinstance(v.get("tree_anim"), dict) and getattr(w, "node_tree", None) is not None:
+                        write_anim_of(w.node_tree, v["tree_anim"])
         if "settings" in values and values["settings"] is not MISSING and not _movie_playing():
             write_scene_settings(idb, values["settings"])
         if "collections" in values and values["collections"] is not MISSING:
@@ -2498,6 +2506,7 @@ def scene_settings(sc) -> dict:
         st = _scene_struct(sc, path)
         if st is not None:
             out[path] = struct_values(st, anim=anim or None)
+    out["anim"] = anim_of(sc)           # D125: the scene's own animation (frame range keys, ...)
     return out
 
 
@@ -2510,6 +2519,8 @@ def write_scene_settings(sc, rec) -> None:
             st = _scene_struct(sc, path)
             if st is not None and path in rec:
                 set_struct_values(st, rec[path] or {})
+        if isinstance(rec.get("anim"), dict):
+            write_anim_of(sc, rec["anim"])
     except Exception as e:
         log.error_once(("scene_settings", str(e)), f"could not restore the scene settings: {e}", e)
 
@@ -2528,7 +2539,11 @@ def owned_world(sc) -> dict:
     if not wu:
         return {}
     out = {WORLD_PREFIX + wu: material_record(w, idmap.uid_of(sc))}
-    out[WORLDP_PREFIX + wu] = id_props(w, animated_paths(w) if w.animation_data is not None else None)
+    p = id_props(w, animated_paths(w) if w.animation_data is not None else None)
+    p["anim"] = anim_of(w)                                           # D125
+    if getattr(w, "node_tree", None) is not None:
+        p["tree_anim"] = anim_of(w.node_tree)
+    out[WORLDP_PREFIX + wu] = p
     return out
 
 
