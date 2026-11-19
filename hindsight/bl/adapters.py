@@ -1787,7 +1787,7 @@ _DATA_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {
 # data types whose settings are recorded, with the settings structs they keep apart
 DATA_STRUCTS = {"Mesh": (), "Camera": ("dof", "stereo"), "SpotLight": (), "PointLight": (), "SunLight": (),
                 "AreaLight": (), "Curve": (), "TextCurve": (), "SurfaceCurve": (), "MetaBall": (),
-                "Speaker": (), "Armature": (), "Lattice": (), "GreasePencil": (), "GreasePencilv3": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
+                "Speaker": (), "Armature": (), "Lattice": (), "GreasePencil": (), "GreasePencilv3": (), "Curves": (), "PointCloud": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
                 "LightProbeVolume": ()}
 SETTINGS_KEY = "settings"
 DATA_VALUES = "values"
@@ -2371,22 +2371,119 @@ def _write_legacy_frame(f, fr) -> None:
                 st.points.foreach_set(fld, w[fld])
 
 
+# ---- hair curves and point clouds (D134): generic attributes
+def _attrs_of(owner) -> dict:
+    out = {}
+    for a in owner.attributes:
+        kw = _ATTR_KEY.get(a.data_type)
+        if kw is None or a.name.startswith("."):
+            continue
+        key, width = kw
+        kind = float if a.data_type in ("FLOAT", "FLOAT_VECTOR", "FLOAT2", "FLOAT_COLOR", "BYTE_COLOR",
+                                        "QUATERNION", "FLOAT4X4") else int
+        out[a.name] = [a.domain, a.data_type, _bulk(a.data, key, len(a.data), width, kind)]
+    return out
+
+
+def _write_attrs(owner, want: dict) -> None:
+    for a in [a for a in owner.attributes if a.name not in want and not a.name.startswith(".")]:
+        try:
+            owner.attributes.remove(a)
+        except Exception:
+            pass
+    for name, (domain, dtype, vals) in want.items():
+        a = owner.attributes.get(name)
+        if a is None or a.data_type != dtype or a.domain != domain:
+            if a is not None:
+                try:
+                    owner.attributes.remove(a)
+                except Exception:
+                    pass
+            a = owner.attributes.new(name, dtype, domain)
+        key, width = _ATTR_KEY[dtype]
+        if len(a.data) * width == len(vals):
+            a.data.foreach_set(key, vals)
+
+
+def _curve_sizes(c) -> list:
+    n = len(c.curves)
+    if not n:
+        return []
+    offs = [0] * (n + 1)
+    c.curve_offset_data.foreach_get("value", offs)
+    return [b - a for a, b in zip(offs, offs[1:])]
+
+
+def _write_hair(c, g) -> None:
+    sizes = g.get("sizes") or []
+    if _curve_sizes(c) != sizes:
+        if hasattr(c, "remove_curves"):
+            if len(c.curves):
+                c.remove_curves()
+            if sizes:
+                c.add_curves(sizes)
+        else:                                    # Blender 4.2 can only add curves
+            log.error_once(("hair", "resize"), "hair curves added or removed can't be put back on this Blender version")
+            return
+    _write_attrs(c, g.get("attrs") or {})
+    c.update_tag()
+
+
+def _write_points(pc, g) -> None:
+    n = g.get("n", 0)
+    if len(pc.points) != n:
+        if hasattr(pc, "resize"):
+            pc.resize(n)
+        else:
+            log.error_once(("points", "resize"), "points added or removed can't be put back on this Blender version")
+            return
+    _write_attrs(pc, g.get("attrs") or {})
+    pc.update_tag()
+
+
+def _geom_print(d, t):
+    """Counts that change when points, strokes or elements are added or removed: some of those calls
+    (a point cloud's resize) don't tell the depsgraph, so a kept record is checked against them."""
+    if t == "Curves":
+        return (len(d.curves), len(d.points), len(d.attributes))
+    if t == "PointCloud":
+        return (len(d.points), len(d.attributes))
+    if t == "Lattice":
+        return (len(d.points),)
+    if t == "MetaBall":
+        return (len(d.elements),)
+    if t in ("Curve", "SurfaceCurve"):
+        return tuple(len(sp.bezier_points) + len(sp.points) for sp in d.splines)
+    return (len(d.layers),)
+
+
 def geometry_of(d):
-    """The geometry of curve, surface, lattice, metaball and Grease Pencil data, or None for other
-    data."""
+    """The geometry of curve, surface, lattice, metaball, Grease Pencil, hair curves and point cloud
+    data, or None for other data."""
     t = d.bl_rna.identifier
-    if t in ("GreasePencil", "GreasePencilv3"):
-        k = d.session_uid
-        g = _GEOM_CACHE.get(k)
-        if g is None:
-            g = _GEOM_CACHE[k] = _gp_record(d)
-        return g
-    if t not in ("Curve", "SurfaceCurve", "Lattice", "MetaBall"):
+    if t not in _GEOM_TYPES:
         return None
     k = d.session_uid
-    g = _GEOM_CACHE.get(k)
-    if g is not None:
-        return g
+    fp = _geom_print(d, t)
+    hit = _GEOM_CACHE.get(k)
+    if hit is not None and hit[0] == fp:
+        return hit[1]
+    g = _read_geometry(d, t)
+    _GEOM_CACHE[k] = (fp, g)
+    return g
+
+
+_GEOM_TYPES = frozenset({"Curves", "PointCloud", "GreasePencil", "GreasePencilv3", "Curve", "SurfaceCurve",
+                         "Lattice", "MetaBall"})
+
+
+def _read_geometry(d, t):
+    if t == "Curves":
+        return {"sizes": _curve_sizes(d), "attrs": _attrs_of(d)}
+    if t == "PointCloud":
+        return {"n": len(d.points), "attrs": _attrs_of(d)}
+    if t in ("GreasePencil", "GreasePencilv3"):
+        return _gp_record(d)
     if t == "Lattice":
         n = len(d.points)
         g = {"co_deform": _bulk(d.points, "co_deform", n, 3), "weight_softbody": _bulk(d.points, "weight_softbody", n)}
@@ -2413,7 +2510,6 @@ def geometry_of(d):
             r["n"] = n
             rows.append(r)
         g = {"splines": rows}
-    _GEOM_CACHE[k] = g
     return g
 
 
@@ -2425,6 +2521,14 @@ def write_geometry(d, g) -> None:
     try:
         if t in ("GreasePencil", "GreasePencilv3"):
             _write_gp(d, g)
+            _GEOM_CACHE.pop(d.session_uid, None)
+            return
+        if t == "Curves":
+            _write_hair(d, g)
+            _GEOM_CACHE.pop(d.session_uid, None)
+            return
+        if t == "PointCloud":
+            _write_points(d, g)
             _GEOM_CACHE.pop(d.session_uid, None)
             return
         if t == "Lattice":
