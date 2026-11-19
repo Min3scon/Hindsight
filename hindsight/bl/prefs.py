@@ -180,7 +180,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
     record_multires: BoolProperty(
         name="Record Multires",
         description=("Record one step per Sculpt Mode visit on an object with a Multires modifier. "
-                     "Off by default. It has not been tried in a real window yet. "
+                     "Off by default. "
                      "Off: recording pauses on a Multires object"),
         default=False)
     welcomed: BoolProperty(default=False, options={'HIDDEN'})
