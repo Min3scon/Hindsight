@@ -632,7 +632,10 @@ pub fn assemble(l: &Layout, raw: &[u8], codec_id: u8, strong: bool) -> Result<Ve
     head.push(if l.records.is_some() { 4 } else { 3 });
     head.extend_from_slice(&[kind as u8, flags, 0]);
     head.extend_from_slice(&l.seq.to_le_bytes());
-    head.extend_from_slice(&l.time.to_le_bytes());
+    // the reference writes float(time or 0.0): a zero time of either sign goes out as +0.0 (subnormals
+    // keep their bits: whether Python calls them falsy depends on the platform's FTZ/DAZ mode)
+    let time = if l.time == 0.0 { 0.0f64 } else { l.time };
+    head.extend_from_slice(&time.to_le_bytes());
     head.extend_from_slice(&size32(raw.len())?);
     let lb = &l.label.as_bytes()[..l.label.len().min(65535)];
     head.extend_from_slice(&(lb.len() as u16).to_le_bytes());
@@ -705,7 +708,7 @@ fn sect<'a>(d: &'a Dec, r: &Option<Range>) -> Option<&'a [u8]> {
 /// are written as compact JSON, not copied).
 fn same_dec(a: &Dec, b: &Dec) -> bool {
     a.seq == b.seq
-        && a.time.to_bits() == b.time.to_bits()
+        && (a.time.to_bits() == b.time.to_bits() || (a.time == 0.0 && b.time == 0.0))
         && a.kind == b.kind
         && a.label.as_bytes()[..a.label.len().min(65535)] == *b.label.as_bytes()
         && a.mode == b.mode
