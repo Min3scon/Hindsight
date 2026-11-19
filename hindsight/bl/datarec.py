@@ -696,6 +696,7 @@ def finish_operation(label: str, select_only: bool = False, topology: bool = Tru
     refresh_mesh_users()
     adapters.forget_selected_values()     # D117
     adapters.forget_loose_groups()        # D133
+    adapters.forget_loose_data()          # D151
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
     try:

@@ -3273,6 +3273,7 @@ class SceneAdapter(Adapter):
             out["settings"] = scene_settings(idb)
             out.update(owned_world(idb))
             _upd(out, "node groups", scene_groups, idb)          # D133
+            _upd(out, "data no object uses", scene_loose, idb)   # D151
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -3291,6 +3292,9 @@ class SceneAdapter(Adapter):
         for path, v in values.items():          # D133: groups no object uses
             if path.startswith(NG_PREFIX) and isinstance(v, dict):
                 write_group(path[len(NG_PREFIX):], v)
+        for path, v in values.items():          # D151: data no object or scene uses
+            if path.startswith(LOOSE_PREFIXES):
+                write_loose(path, v)
         for path, v in values.items():          # D146: and their animation
             if path.startswith(NGA_PREFIX) and isinstance(v, dict):
                 ng = idmap.find(path[len(NGA_PREFIX):])
@@ -3463,6 +3467,120 @@ def scene_groups(sc) -> dict:
             out[NG_PREFIX + gu] = group_record(g, uid)
             out[NGA_PREFIX + gu] = anim_of(g)                # D146
     return out
+
+
+# ----------------------------------------------------------------------------- data no object uses (D151)
+TEXT_PREFIX = "@tx:"       # a text: {"body": what it says, "props": its settings}
+LMAT_PREFIX = "@lm:"       # a material no object uses (kept with a fake user, a library): material_record
+LWORLD_PREFIX = "@lw:"     # a world no scene uses: material_record
+LPROPS_PREFIX = "@lp:"     # custom properties and add-on data of a datablock nothing else records: id_props
+LOOSE_PREFIXES = (TEXT_PREFIX, LMAT_PREFIX, LWORLD_PREFIX, LPROPS_PREFIX)
+LOOSE_READ_MAX = 32        # unused materials and worlds read again per operation, in turn (see forget_loose_data)
+_TEXT_PROPS = ("filepath", "use_module", "indentation")
+# Datablocks whose custom properties and add-on data no object records: their own, file-level data.
+# (Object data, particle settings and materials an object uses are recorded with the object; node
+# groups with D133.)
+_PROP_COLLS = ("images", "actions", "palettes", "brushes", "linestyles", "masks", "movieclips", "sounds",
+               "fonts", "cache_files", "paint_curves", "textures", "texts")
+_LOOSE_TURN = [0]
+
+
+def _unused(idb) -> bool:
+    """No user but its fake user (a library kept for later, data an add-on keeps)."""
+    return idb.library is None and idb.users - int(bool(idb.use_fake_user)) <= 0
+
+
+def _loose_mats():
+    return [m for m in bpy.data.materials if _unused(m)] + [w for w in bpy.data.worlds if _unused(w)]
+
+
+def scene_loose(sc) -> dict:
+    """D151: datablocks no recorded object and no scene uses, recorded with the first recorded scene by
+    name: texts, materials and worlds nothing uses, and every other datablock's custom properties and
+    add-on data (where any are set). They aren't in the depsgraph: texts and properties are read
+    again at each operation, unused materials and worlds in turn (forget_loose_data)."""
+    from . import datarec
+    from .persistence import TEXT_NAME
+    scenes = sorted(x.name for x in bpy.data.scenes if x.library is None and datarec.is_tracked(x))
+    if scenes and scenes[0] != sc.name:
+        return {}
+    out = {}
+    suid = idmap.uid_of(sc)
+    for t in bpy.data.texts:
+        if t.library is not None or t.name == TEXT_NAME:
+            continue
+        tu = idmap.claim(t)
+        if tu:
+            out[TEXT_PREFIX + tu] = {"body": t.as_string(),
+                                     "props": {k: normalise(getattr(t, k)) for k in _TEXT_PROPS}}
+    for m in _loose_mats():
+        mu = idmap.claim(m)
+        if mu:
+            out[(LWORLD_PREFIX if isinstance(m, bpy.types.World) else LMAT_PREFIX) + mu] = material_record(m, suid)
+            p = id_props(m)
+            if p is not _ID_EMPTY4 and p is not _ID_EMPTY5:
+                out[LPROPS_PREFIX + mu] = p
+    for name in _PROP_COLLS:
+        for idb in getattr(bpy.data, name, ()):
+            if idb.library is not None or (name == "texts" and idb.name == TEXT_NAME):
+                continue
+            p = id_props(idb)
+            if p is _ID_EMPTY4 or p is _ID_EMPTY5:
+                continue
+            u = idmap.claim(idb)
+            if u:
+                out[LPROPS_PREFIX + u] = p
+    return out
+
+
+def write_loose(path: str, v) -> None:
+    """Put back one D151 record. A datablock made or deleted since is left as it is; properties that
+    weren't set then (no record) are taken off."""
+    for pre in LOOSE_PREFIXES:
+        if path.startswith(pre):
+            uid = path[len(pre):]
+            break
+    else:
+        return
+    idb = idmap.find(uid)
+    if idb is None:
+        return
+    try:
+        if pre == LPROPS_PREFIX:
+            write_id_props(idb, v if isinstance(v, dict) else {IDPROPS_KEY: {}, SYSPROPS_KEY: {}})
+        elif not isinstance(v, dict):
+            return
+        elif pre == TEXT_PREFIX:
+            if idb.as_string() != v.get("body", ""):
+                idb.from_string(v.get("body", ""))
+            for k, x in (v.get("props") or {}).items():
+                if k in _TEXT_PROPS and getattr(idb, k) != x:
+                    setattr(idb, k, x)
+        else:
+            write_material(uid, v)
+    except Exception as e:
+        log.error_once(("loose", path, str(e)), f"could not put back {getattr(idb, 'name', uid)}: {e}", e)
+
+
+def forget_loose_data() -> None:
+    """D151: an operation ended: unused materials and worlds are read again, at most LOOSE_READ_MAX of
+    them each time, in turn (a file with hundreds of them, an asset library, would otherwise read every
+    node tree at every operation); a change is found within a few operations."""
+    try:
+        if not len(bpy.data.materials) and not len(bpy.data.worlds):
+            return
+        loose = _loose_mats()
+        n = len(loose)
+        if n <= LOOSE_READ_MAX:
+            pick = loose
+        else:
+            k = _LOOSE_TURN[0] % n
+            pick = (loose[k:] + loose[:k])[:LOOSE_READ_MAX]
+            _LOOSE_TURN[0] = k + LOOSE_READ_MAX
+        for m in pick:
+            _MAT_CACHE.pop(m.session_uid, None)
+    except Exception:
+        pass
 
 
 # ----------------------------------------------------------------------------- collection settings (D127)

@@ -83,13 +83,15 @@ class HSFAKE_N_gain(bpy.types.Node):
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
-    bpy.types.Object.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
-    bpy.types.Scene.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
-    bpy.types.Material.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
+    for t in _HOSTS:
+        t.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
+
+
+_HOSTS = (bpy.types.Object, bpy.types.Scene, bpy.types.Material, bpy.types.Text, bpy.types.Image)
 
 
 def unregister():
-    for t in (bpy.types.Object, bpy.types.Scene, bpy.types.Material):
+    for t in _HOSTS:
         del t.hsfake
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)
