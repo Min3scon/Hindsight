@@ -254,3 +254,60 @@ Whole `test_bl_` without t1_prop: 82 of 84 files pass on bpy53 and on bpy42; the
 Appends (`append.py`, 5,000 steps at 100k vertices, bpy53): `History.push` 1.7 us per step. `enforce_caps` full pass 1.46 ms average over a history that grows to 5,000 entries (it sums `nbytes` over every entry); the runtime runs a full pass every 64 commits, so about 25 us per commit amortised, against a commit of about 400 us. Not worth moving.
 
 For OPTIMISATION_LOG (nothing kept as an optimisation; one measured non-attempt): "native History object: not built. Python glue is 3% of a mixed 100k jump (105 ms: 61% decode of TOPO and DATA steps, bound by zstd decompression 1.27 ms per 2.4 MB, 31% apply_steps); push 1.7 us; caps pass about 25 us per commit amortised. Nothing to gain; History made engine-only instead."
+
+---
+
+# Seventh job: R4 step 1 (record_step in `runtime.commit`) measured, not applied
+
+Fast-forwarded to main-session-3 (2d105aa). No code change in `hindsight/` or `native/`.
+
+## Profile of `runtime.commit` first (`cprof.py`, bpy53, 100k vertices, Stroker strokes of 2%, 60 commits, cProfile on; journal on)
+
+Median 0.95 ms with the profiler (about 0.5 ms without). By own time: `step_encode` 17% (the journal blob, zstd level 3 on the main thread), `diff` 14%, Blender `foreach_get` 10%, `commit` self 5%, `_observe` 3.5%, `tag_redraw_all` 3.5%, journal file writes 3%, everything else under 2% each.
+
+## Why `record_step` does not pay here (`recmeasure.py`, min and median of 200, same arrays as a Stroker stroke)
+
+`record_step` replaces diff + Step + `step_to_bytes`. The runtime still needs the raw Step's deltas (they are what the history keeps and what `goto` applies), and `record_step` returns only the blob, so using it means diffing twice. Best case, if the engine also returned the deltas and the blob were re-stamped with the final seq and extra (a new engine call: new header and CRC over the body), the saving is the Python glue only:
+
+| | diff + Step + journal blob | `record_step` | saving |
+|---|---|---|---|
+| 100k, 1,988 changed | 0.151 min / 0.193 med ms | 0.141 / 0.151 | 0.010 to 0.042 ms (2 to 8% of a 0.5 ms commit) |
+| 1M, 19,893 changed | 1.652 / 1.765 | 1.560 / 1.650 | 0.09 to 0.115 ms (3 to 4% of about 2.8 ms) |
+
+And with the journal off (no `journal_hook`) the blob is never built today; building it in the commit would add its compress cost. The saving is below the run spread of `bench/ab.py` (commit_100k spread 25 to 38%), so an A/B could not show it; no A/B run, no code written. For OPTIMISATION_LOG: "record_step in commit: not built; upper bound 0.01 to 0.04 ms of a 0.5 ms commit at 100k (3 to 4% at 1M), needs engine API change; reverted before coding".
+
+## Next measured hotspot: the journal blob's compression
+
+Time of the journal blob alone (QUICK step, one stroke), min ms and size, 100k / 1M: zstd (today) 0.187 ms, 10,119 B / 1.652 ms, 91,510 B; lz4 0.115, 10,775 B / 1.300, 103,754 B; none 0.108, 23,966 B / 1.234, 238,826 B (each includes the 0.064 / 1.01 ms diff). So zstd costs about 0.08 ms at 100k and 0.4 ms at 1M on the main thread: 15 to 16% of a commit. Using lz4 or none for the crash journal would take most of it back (journal 2.4x larger with none, 1.06x with lz4) and recovery reads any codec. I did not change it: it changes the bytes the journal holds (not the history), which rule 8 puts under "unless the brief says so". Proposal for the owner: journal blobs with lz4 (cost 0.07 ms less at 100k, 0.35 ms at 1M, size +6 to 13%). Alternatively compress on a thread, which needs the journal writer (core/journal.py, persistence.py) to take ownership of the order of records; bigger change.
+
+---
+
+# Eighth job: journal step blobs with lz4 (approved)
+
+Merged main-session-3 (245df4e). No engine change.
+
+## Change
+
+`types.JOURNAL_CODEC = "lz4"`; the five places that build a journal STEP blob (`runtime.py` x2, `datarec.py`, `joinsep.py` x2) pass it instead of `SETTINGS.compression`. History, packer, save and the user's codec setting are unchanged (`registry_parts` still uses the user's codec).
+
+## Tests
+
+* `tests/test_core_journal_codec.py` (4): the constant, old zstd journal, new lz4 journal and a mixed one (zstd, zstd, lz4, lz4, zlib, none) replay to the same steps; one file written with zstd records, closed, reopened and appended with lz4 records (an upgrade) replays all four exactly; size growth on test strokes (x1.03).
+* `tests/test_bl_journal_codec.py` (1): a real stroke commit writes an lz4 blob whatever the history codec is (zstd, zlib, none, auto).
+* Green on bpy53 and bpy42 (HINDSIGHT_NATIVE=require): test_core_* (all, including test_core_journal and test_core_journal_faults), test_bl_recovery (12) and recovery_faults (9), persistence (8), recorder (20), t0_gate (6).
+
+## Measured: in-process A/B, journal on with real `Journal` appends (`jab.py`, bpy53, alternating zstd / lz4 order flipped each round, 16 rounds x 6 strokes = 96 commits per side, same mesh and strokes)
+
+| | zstd min / median | lz4 min / median | lz4 / zstd | journal bytes per step zstd / lz4 |
+|---|---|---|---|---|
+| 100k (2% strokes) | 0.608 / 1.122 ms | 0.482 / 0.977 ms | x0.79 min, x0.87 median | 10,754 / 10,892 (+1.3%) |
+| 1M | 3.654 / 5.398 ms | 2.936 / 5.008 ms | x0.80 min, x0.93 median | 97,337 / 104,304 (+7.2%) |
+
+Kept. For OPTIMISATION_LOG: "journal step blobs lz4 instead of zstd level 3: commit with journal on, 100k min 0.608 to 0.482 ms, median 1.122 to 0.977; 1M min 3.654 to 2.936, median 5.398 to 5.008; journal +1.3% (100k), +7.2% (1M) bytes per step; kept (owner approved)".
+
+Also for "Tried": `record_step` in commit: not built, upper bound 0.01 to 0.04 ms of a 0.5 ms commit at 100k (3 to 4% at 1M), needs engine API change. cProfile of commit at 100k (60 commits, profiler on, median 0.95 ms): `step_encode` (journal blob) 17%, `diff` 14%, Blender `foreach_get` 10%, `commit` self 5%, `_observe` 3.5%, `tag_redraw_all` 3.5%, journal writes 3%, rest under 2% each.
+
+## Next hotspots: no concrete change, none tried
+
+* `diff` (0.064 ms at 100k for 2.4 MB read, 1.01 ms at 1M for 24 MB): about 24 to 37 GB/s, already near memory bandwidth for a block-wise compare. Only more threads could help, which compete with Blender's own sculpt threads on the 2 to 4 core machines this is for. Not tried.
+* `foreach_get` (about 0.1 ms per 1.2 MB position channel): Blender's call, no bulk alternative that reads less; a partial read would need to know which vertices a stroke touched, which Python does not get.
