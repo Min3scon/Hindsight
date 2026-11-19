@@ -282,6 +282,7 @@ Latest runs (2026-11-19):
 | bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine required | main line 7dc4853 (D111 to D118, Rust M1) | 84/86 each; the two failures are the known ones below |
 | same | main-session-3 45924a0 (D119 to D145, Multires, Dyntopo, journal lz4; merged as 9280a71) | 5.3: 103/105, 4.2: 103/105 (the 4.2 run's wrapper was killed after test_bl_warnings; the files after it were run one by one, all passing); the two failures are the known ones below |
 | same | main-session-4 4d856db (adds D119 to D134) | 5.3: 94/96; 4.2: the known two failures in the part that ran before the code moved on (a final run is pending) |
+| Real Blender binaries, bpy modules and real windows on GitHub (Blender tests run 44507055217, Native engine run 44507061544) | 8ed62b3 | all green: the suite in the 4.2, 5.0.1, 5.1.2, 5.2 and 5.3 binaries (only the known test_bl_t1_migrate, which needs an old release zip), the bpy module on Windows and macOS, the window job's 14 scenarios on all five versions, and the engine wheels on Windows, macOS and Linux, x64 and ARM64 |
 | Real Blender binaries on GitHub (Blender tests, run 44439641564) | 7dc4853 | 5.3.0: 84/86; 4.2.23: 84/86. Besides `test_bl_t1_migrate`, only `test_core_reference` failed: libzstd version (fixed in 099815c) and one engine divergence in `test_hostile_blobs` (with the Rust agent) |
 | bpy module on GitHub, Windows and macOS (same run) | 7dc4853 | macOS: green. Windows: 83/86, `test_core_reference` as above plus the two known |
 | Window probe under Xvfb, 5.1.2 and 5.3 (same run) | 7dc4853 | green |
@@ -410,7 +411,7 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Check `Blender tests` and `Native engine` on 8ed62b3 (pushed 2026-11-19 10:40: engine 0.7.0, D151, D152, R051 to R058, the window job with 14 scenarios) and fix what they find. The RUST agent works on R060 (its number when it reports): mesh fingerprints as xxh3-128 in the engine with tagged values; review and merge.
+1. Push main-session-3 (R059, D153 and the dyntopo_paused scenario on top of 8ed62b3, which is green on GitHub: Blender tests 44507055217, Native engine 44507061544) after its full suites, and run both workflows again. The RUST agent works on R060 (mesh fingerprints as xxh3-128 in the engine with tagged values); review and merge.
 2. The recorder's remaining overhead at 500 objects: `id_props`, `idmap.claim` and constraints are the next fixed
    costs (R044 profile); each needs a depsgraph or fingerprint check before any cache.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
@@ -418,5 +419,5 @@ Blockers:
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (58 logged: 51 kept, 7 reverted).
+6. More optimisation rounds toward the owner's 100 (59 logged: 52 kept, 7 reverted).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.
