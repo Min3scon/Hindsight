@@ -956,8 +956,14 @@ def mesh_lists(ob) -> dict:
         out["shapekeys"] = None
     else:
         blocks = []
+        anim = animated_slots(key) if key.animation_data is not None else {}
         for kb in key.key_blocks:
             row = [kb.name] + [normalise(getattr(kb, f)) for f in _SK_FIELDS]
+            if anim:
+                pre = f'key_blocks["{bpy.utils.escape_identifier(kb.name)}"].'
+                for j, f in enumerate(_SK_FIELDS):
+                    if pre + f in anim:
+                        row[1 + j] = ANIMATED     # D124: keyed or driven, it follows the frame
             row.append(kb.relative_key.name if kb.relative_key is not None else "")
             blocks.append(row)
         out["shapekeys"] = {"blocks": blocks, "use_relative": bool(key.use_relative),
@@ -1070,6 +1076,8 @@ def _write_shapekeys(ob, rec) -> list:
         if kb is None:
             continue
         for f, v in zip(_SK_FIELDS, b[1:1 + len(_SK_FIELDS)]):
+            if v == ANIMATED:
+                continue                      # D124: the animation sets it
             try:
                 if getattr(kb, f) != v:
                     setattr(kb, f, v)

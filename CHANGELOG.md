@@ -32,6 +32,7 @@ Faster and lighter:
 
 Fixed:
 
+- With Record everything, a keyed or driven shape key no longer makes a step every time the frame changes.
 - If Hindsight's engine can't load (a damaged install, an unsupported platform), the sidebar now says so, with the reason, instead of listing parts that didn't start.
 - On an object Record everything is on for, the sidebar no longer says modifiers, vertex groups, shape keys and materials aren't part of the history.
 - The on-screen slider hung to the right of the viewport. The whole slider is centred now.
