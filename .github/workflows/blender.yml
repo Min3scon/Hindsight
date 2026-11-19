@@ -162,11 +162,11 @@ jobs:
     if: github.event_name == 'push' || github.event.inputs.run_ui != 'false'
     runs-on: ubuntu-latest
     continue-on-error: true
-    timeout-minutes: 45
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        version: ["5.1.2", "5.3"]
+        version: ["4.2", "5.0.1", "5.1.2", "5.2", "5.3"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -215,6 +215,7 @@ jobs:
       - name: Build the add-on zip
         run: python tests_ui/hs_ui.py build
       - name: Slider scenario in a real window, screenshot included
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
@@ -228,6 +229,7 @@ jobs:
             python tests_ui/hs_ui.py run regress_slider_visible --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
       - name: Weight, Vertex and Texture Paint strokes in a real window
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
@@ -239,6 +241,7 @@ jobs:
             python tests_ui/hs_ui.py run paint_modes --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
       - name: Movie Mode camera, lamps and timelapse renders in a real window
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
@@ -250,6 +253,7 @@ jobs:
             python tests_ui/hs_ui.py run movie_mode --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 1200
       - name: Multires strokes and jumps in a real window
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
@@ -261,6 +265,7 @@ jobs:
             python tests_ui/hs_ui.py run multires --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
       - name: Painting in an Image Editor in a real window
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
@@ -272,6 +277,7 @@ jobs:
             python tests_ui/hs_ui.py run image_paint --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
       - name: Slider with the toolbar and the sidebar in a real window
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
@@ -283,6 +289,7 @@ jobs:
             python tests_ui/hs_ui.py run slider_layout --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
       - name: Dyntopo strokes and jumps in a real window
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
@@ -294,6 +301,7 @@ jobs:
             python tests_ui/hs_ui.py run dyntopo --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
       - name: A third-party add-on's data in a real window
+        if: success() || failure()
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
