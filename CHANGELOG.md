@@ -70,6 +70,7 @@ Fixed:
 - Record everything records the shape of curves, surfaces, lattices and metaballs: points, handles, splines and elements.
 - Record everything records Grease Pencil drawings: strokes drawn, erased and moved, their thickness, opacity and colour, frames and layers.
 - Record everything records hair curves and point clouds through their attributes.
+- Record everything records particle settings: count, hair length, emission and display.
 - A deleted light, camera, curve, text, lattice or metaball comes back with its settings and shape even after saving and opening the file.
 - Bring back: when a step refers to a parent or constraint target that is deleted now, the Warnings panel offers to bring it back.
 - Library overrides keep their history when the file is opened again.

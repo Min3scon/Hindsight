@@ -504,6 +504,7 @@ class ObjectAdapter(Adapter):
         if hasattr(idb, "modifiers"):
             out.update(modifier_values(idb))   # D110: the modifier stack and each modifier's settings
         _upd(out, "node groups", owned_groups, idb)                         # D126
+        _upd(out, "particle settings", owned_particles, idb)                # D137
         if idb.data is not None and hasattr(idb.data, "materials"):
             if len(idb.material_slots):
                 out["slots"] = material_slots(idb)  # D111: material slots (which faces use them: a mesh channel)
@@ -547,6 +548,10 @@ class ObjectAdapter(Adapter):
         for path, v in values.items():          # D126: node groups before the modifiers using them
             if path.startswith(NG_PREFIX) and isinstance(v, dict):
                 write_group(path[len(NG_PREFIX):], v)
+            elif path.startswith(PART_PREFIX) and isinstance(v, dict):     # D137
+                st = idmap.find(path[len(PART_PREFIX):])
+                if st is not None:
+                    write_settings(st, v)
         if "collections" in values and values["collections"] is not MISSING:
             want = set(values["collections"])
             have = {_coll_ref(c): c for c in idb.users_collection}
@@ -1819,6 +1824,9 @@ def forget_selected_values() -> None:
             ad = o.animation_data
             if ad is not None and ad.action is not None:
                 _ACT_CACHE.pop(ad.action.session_uid, None)
+            for ps in getattr(o, "particle_systems", ()):
+                if ps.settings is not None:
+                    _VAL_CACHE.pop(ps.settings.session_uid, None)
         except Exception:
             continue
 
@@ -2612,7 +2620,7 @@ def owned_path(adapter_id: str, path: str) -> bool:
     if adapter_id == "scene":
         return path in ("settings", COMP_TREE) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
-                                                       SK_PREFIX, MATA_PREFIX, NG_PREFIX))
+                                                       SK_PREFIX, MATA_PREFIX, NG_PREFIX, PART_PREFIX))
 
 
 def _owns_data(ob, d) -> bool:
@@ -2909,6 +2917,55 @@ def _nested_values(m) -> dict:
                 out[name] = struct_values(st)
             except Exception:
                 continue
+    return out
+
+
+# ----------------------------------------------------------------------------- particle settings (D137)
+PART_PREFIX = "@part:"
+_PART_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {"active_texture_index", "active_instanceweight_index"})
+
+
+def particle_owner_map() -> dict:
+    """particle settings pointer -> uid of the object that records them (the first recorded object
+    by name with a particle system using them). Kept for one recorder frame."""
+    fc = idmap.frame_cache()
+    if fc is not None and "part_owner" in fc:
+        return fc["part_owner"]
+    from . import datarec
+    users = []
+    for u in datarec.tracked_uids():
+        ob = idmap.find(u)
+        if isinstance(ob, bpy.types.Object) and len(getattr(ob, "particle_systems", ())):
+            users.append((ob.name, u, ob))
+    out = {}
+    for _n, u, ob in sorted(users, key=lambda t: t[0]):
+        for ps in ob.particle_systems:
+            if ps.settings is not None:
+                out.setdefault(ps.settings.as_pointer(), u)
+    if fc is not None:
+        fc["part_owner"] = out
+    return out
+
+
+def owned_particles(ob) -> dict:
+    systems = getattr(ob, "particle_systems", None)
+    if not systems or not len(systems):
+        return {}
+    uid = idmap.uid_of(ob)
+    out = {}
+    owners = None
+    for ps in systems:
+        st = ps.settings
+        if st is None or st.library is not None:
+            continue
+        if st.users > 1 + bool(st.use_fake_user):
+            if owners is None:
+                owners = particle_owner_map()
+            if owners.get(st.as_pointer()) != uid:
+                continue
+        su = idmap.claim(st)
+        if su:
+            out[PART_PREFIX + su] = settings_of(st, _PART_SKIP)
     return out
 
 
