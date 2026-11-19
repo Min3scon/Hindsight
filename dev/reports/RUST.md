@@ -109,3 +109,36 @@ In-process (`rec_bench.py` in the scratchpad, alternating 15 rounds, one 2% stro
 * `delta.py` Python fallbacks (diff, apply, pack_delta, unpack_at, `native.lib` None paths) are still in `hindsight/` and still used by twin-engine tests. Not moved to `tests/reference/delta.py`: needs engine versions of the cases `apply` refuses today (unsorted indices) and rewriting four test files. Next.
 * Patch for `hindsight/bl/runtime.py` (not mine), where the stroke step is built (about lines 495 to 515) and `Entry.to_bytes` runs for the journal: call `step.record_step("DELTA", 0, time.time(), label, mode, uid, [(key, old, new, e0, e1), ...])` to get the quick blob in one call, keep building the raw Step for the history. Not applied, so commit time is unchanged.
 * Windows and macOS wheels still never run.
+
+---
+
+# Third job: runtime patch (not applied), delta.py to reference, D-f
+
+Merged main line 099815c (ENGINE_ZSTD change) at the end; core suites green after it.
+
+## 1. `record_step` in `runtime.commit`: not applied, measured loss
+
+`_observe` already diffs every channel once to build the raw Step the history needs. The journal blob then comes from that Step (`Entry.to_bytes`), and since M2 its records are packed in the engine. `record_step` would diff again. Measured (`rec2.py`, 100k / 1M, min ms): diff only 0.069 / 0.968; journal blob from the Step 0.030 / 0.222; `record_step` (diff + blob) 0.115 / 1.199. Using it means 0.115 instead of 0.030 at 100k: a loss. Kept in the engine and tested (it is the right call once the history keeps packed steps from the start, M3), not wired into runtime. Reverted by measurement, nothing to prove equal.
+
+## 2. delta.py fallbacks moved to `tests/reference/delta.py`
+
+* `hindsight/core/delta.py` now checks arguments and calls the engine for diff, apply, pack_delta, unpack_at (new engine `pack_record`, `unpack_record`; `apply` takes any indices: unsorted or repeated go through a gather, combine, scatter path with numpy's semantics; overlapping buffers are read from a copy). Engine API 5, hindsight_native 0.5.0, six wheels rebuilt, manifest updated.
+* `tests/reference/delta.py` is the old numpy code (native branches removed). `reference.pure()` swaps the engine's delta functions for it; `test_core_native.py` compares engine against it as before (diff, apply 612 cases plus adversarial, pack 8,740 records, unpack 24,008, 6,000 damaged records).
+* Still in `hindsight/`: `as_xor`, `same_change` (numpy, used by undo matching), `packed_size` (struct arithmetic), `native.lib` None switch (only turns off `History.goto`'s `apply_steps` fast path; the per-step Python loop goes with M3).
+* Changed on purpose: apply of values that don't fit the indices says "N indices but M values" (numpy's broadcast message before; same type, array untouched; test compares type and bytes). Read-only target keeps numpy's words. Index out of range for unsorted input is a ValueError (numpy raised IndexError).
+* Check: diff and apply timing unchanged (`dtime.py`, 100k diff 0.083 old / 0.081 new ms, 1M 1.02 / 0.94; apply equal).
+
+## 3. D-f Weight Paint
+
+* `WEIGHT_PAINT` is a record and track mode (`runtime.RECORD_MODES`, `TRACK_MODES`, label "Weight Paint", follow-mode list). A stroke's step holds the weights of every vertex group (channels `vg:<name>`, NaN where the vertex is not a member, so a member at 0.0 differs from a non-member), read in `_observe` for Weight Paint whether or not Record everything is on. Entering Weight Paint on a state read without weights (a file just loaded) takes the weights as baseline instead of recording them as a step (found by the reload test: it made a bogus fifth step).
+* Read: `meshio.read_weights` (loop over `me.vertices` with `enumerate`). Measured at 100,489 vertices, 3 groups (`wbench.py`, min of 5, exact on all): current loop 84.6 ms (5.3) / 64.2 ms (4.2); enumerate 65.6 / 47.8 ms; bmesh 64.3 / 66.1 ms. Chosen: enumerate, a quarter to a third faster on both. Write: existing remove and add by value, 47 / 44 ms; bmesh write 92 / 95 ms, not used. No native helper: the cost is the Blender API call per vertex.
+* Tests `tests/test_bl_weight_paint.py` (6 tests, bpy53 and bpy42): strokes are steps with exact membership, go back and forward over every position, a stroke after going back replaces the undone step, save and reload then scrub, journal step blobs hold the weight channels, Blender's native undo moves the cursor, an object without groups. All fail without the change ("a weight stroke made no step") and pass with it. Journal replay itself was not driven end to end (the recovery suites pass; the test checks the journal payload decodes to weight deltas).
+* Unfinished: adding or removing a group during a stroke on an object without Record everything is not a list step (the group stays, weights come back); the old read is still used for full reads (same function, faster).
+
+## Tests run
+
+test_core_* 14 files: pass on bpy53 and bpy42 (HINDSIGHT_NATIVE=require, 0.5.0 Linux wheel in a private folder). bl recorder 20, recovery 12 + faults 9, persistence 8, t0_gate 6, movie 14, custom_normals 4 / 3, weight_paint 6, t1_lists, t1_meshdata, engine_missing: pass on bpy42 and bpy53 (engine_missing on 53). Whole `test_bl_` on bpy53: 61 of 71 files pass; the 10 that fail (adapters, metadata, t1_added, t1_corrupt, t1_gate, t1_jumps, t1_migrate, t1_prop, t1_real_undo, t1_reload) fail with the same counts on the baseline 9547ce3, so not from this branch.
+
+## Numbers (A/B against 9547ce3)
+
+`bench/ab.py --a <9547ce3> --rounds 5 --only commit,_100k,_1m,drag_5000_`, bpy53, load 3 to 5, min ms old / new: commit_100k 0.436 / 0.550 (spread 33%, medians 0.615 / 0.663), commit_1m 2.78 / 2.92 (medians 3.43 / 3.29), goto_bl_300_100k 5.42 / 5.65, jump_300 fwd 100k 5.21 / 4.99, jump_3000 fwd 100k 49.2 / 48.5, drag_5000 fwd 100k 98.4 / 99.4, 1M jump_3000 fwd 292 / 292, drag_5000 fwd 654 / 647. All inside run spread (2 to 58%). No gain or loss shown; no OPTIMISATION_LOG row except the weight read: "read vertex group weights, 100k verts, 3 groups: 84.6 to 65.6 ms (5.3), 64.2 to 47.8 ms (4.2), exact, kept".
