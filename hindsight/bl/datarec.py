@@ -86,7 +86,38 @@ def _adapter_failed(aid: str, exc, where: str) -> None:
     guard.fail("adapter:" + aid, exc, where)
 
 
-def set_tracked(idb, on: bool) -> None:
+def file_candidates() -> list:
+    """What "Everything in this file" records: every local scene and object, except Hindsight's own
+    Movie Mode objects."""
+    out = [sc for sc in bpy.data.scenes if sc.library is None]
+    out += [ob for ob in bpy.data.objects if ob.library is None and not rigmark.is_rig(ob)]
+    return out
+
+
+def file_tracked() -> bool:
+    """True when every local scene and object is recorded (stops at the first that isn't)."""
+    if not scope_everything():
+        return False
+    try:
+        return all(is_tracked(x) for x in file_candidates())
+    except Exception:
+        return False
+
+
+def set_file_tracked(on: bool) -> int:
+    """Switch Record everything on (or off) for every local scene and object. Returns how many
+    objects that is. Objects added later are recorded while a scene is (D36)."""
+    n = 0
+    with idmap.frame():
+        for x in file_candidates():
+            if is_tracked(x) != on:
+                set_tracked(x, on, _refresh=False)
+            n += isinstance(x, bpy.types.Object)
+        refresh_mesh_users()            # once for all (per object it was one walk each)
+    return n
+
+
+def set_tracked(idb, on: bool, _refresh: bool = True) -> None:
     """Switch "Record everything on this object" (also used by tests). Linked data is refused."""
     rt = _rt()
     if on and is_linked(idb):
@@ -113,7 +144,8 @@ def set_tracked(idb, on: bool) -> None:
     else:
         rt.reg().everything.discard(uid)
     rt._journal("META_EVERYTHING", {"uid": uid, "on": bool(on)})
-    refresh_mesh_users()
+    if _refresh:
+        refresh_mesh_users()
 
 
 def _track_new(uid: str) -> None:
