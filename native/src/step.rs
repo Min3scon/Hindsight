@@ -689,10 +689,15 @@ pub fn recompress_core(b: &[u8]) -> Result<Option<Vec<u8>>, StepErr> {
     if magic != Some(MAGIC_V3) && magic != Some(MAGIC_V1) {
         return Ok(None);
     }
-    let d = decode(b)?;
-    if d.version == 3 && codec::is_strong(d.codec) && !d.quick {
-        return Ok(None);
+    if magic == Some(MAGIC_V3) {
+        // nothing to gain, told from the header alone (the body is not read)
+        let h = parse_head(b)?;
+        let id = *h.payload.first().ok_or_else(|| StepErr::Corrupt("step blob: empty body".into()))?;
+        if codec::is_strong(id) && !h.quick {
+            return Ok(None);
+        }
     }
+    let d = decode(b)?;
     let codec_id = if d.version == 3 { codec::id_of(codec::name_of(d.codec)).unwrap_or(codec::ZLIB) } else { codec::ZSTD };
     let mut raw = try_vec(d.body.len() + 64)?;
     for x in &d.deltas {
@@ -805,7 +810,7 @@ fn codec_decompress<'py>(py: Python<'py>, blob: &Bound<'py, PyAny>, expected: Op
         let inp = input(blob)?;
         let b = inp.get();
         let exp = match expected {
-            Some(e) if e < 0 || e > codec::MAX_RAW as i128 => return Err(CorruptBlob::new_err("compressed data: implausible size")),
+            Some(e) if e < 0 || e > codec::MAX_RAW as i128 => Some(u64::MAX), // refused as implausible
             Some(e) => Some(e as u64),
             None => None,
         };
