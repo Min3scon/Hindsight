@@ -175,8 +175,61 @@ def test_zones_and_items_come_back():
     assert zone_state(ng) == states[-1], (zone_state(ng), states[-1])
 
 
+def test_loose_group_and_compositor_with_the_scene():
+    """D133: a node group no object uses (kept with a fake user, an add-on's tree) and the compositor
+    are recorded in the scene's history."""
+    L.fresh_scene()
+    sc = bpy.context.scene
+    grp = bpy.data.node_groups.new("Kept", "ShaderNodeTree")
+    grp.use_fake_user = True
+    v = grp.nodes.new("ShaderNodeValue")
+    v.name = "K"
+    v.outputs[0].default_value = 1.0
+    if hasattr(sc, "compositing_node_group"):
+        comp = bpy.data.node_groups.new("Comp", "CompositorNodeTree")
+        sc.compositing_node_group = comp
+    else:
+        sc.use_nodes = True
+        comp = sc.node_tree
+    blur = comp.nodes.new("CompositorNodeBlur")
+    blur.name = "Soft"
+    soft = lambda: (comp.nodes["Soft"].filter_type if hasattr(comp.nodes["Soft"], "filter_type")
+                    else round(comp.nodes["Soft"].inputs[-1].default_value, 4)
+                    if hasattr(comp.nodes["Soft"].inputs[-1], "default_value") else None)
+    L.track_all()
+    L.tick_like("baseline")
+    read = lambda: (round(grp.nodes["K"].outputs[0].default_value, 4), soft(),
+                    tuple(sorted(n.name for n in comp.nodes)))
+
+    def blur_change():
+        n = comp.nodes["Soft"]
+        if hasattr(n, "filter_type"):
+            n.filter_type = "FAST_GAUSS" if n.filter_type != "FAST_GAUSS" else "CUBIC"
+        else:
+            n.inputs[-1].default_value = not n.inputs[-1].default_value if isinstance(
+                n.inputs[-1].default_value, bool) else 0.5
+
+    def comp_node():
+        m = comp.nodes.new("CompositorNodeMixRGB" if bpy.app.version < (5, 0, 0) else "ShaderNodeMix")
+        m.name = "Mixer"
+    states = [read()]
+    for label, fn in (("kept value", lambda: setattr(grp.nodes["K"].outputs[0], "default_value", 2.0)),
+                      ("blur", blur_change), ("comp node", comp_node)):
+        fn()
+        L.tick_like(label)
+        states.append(read())
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(sc)
+    while h.cursor > 0:
+        runtime._goto_history(h, h.cursor - 1, True)
+    assert read() == states[0], (read(), states[0])
+    runtime._goto_history(h, len(h.entries), True)
+    assert read() == states[-1], (read(), states[-1])
+
+
 if __name__ == "__main__":
     H.run(test_geometry_nodes_group_comes_back)
     H.run(test_shader_group_in_material_and_shared_group)
     H.run(test_zones_and_items_come_back)
+    H.run(test_loose_group_and_compositor_with_the_scene)
     H.finish()

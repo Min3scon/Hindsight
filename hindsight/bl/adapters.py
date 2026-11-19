@@ -1821,6 +1821,21 @@ def forget_selected_values() -> None:
             continue
 
 
+def forget_loose_groups() -> None:
+    """D133: node groups nothing evaluates aren't in the depsgraph, so it never says they changed:
+    their kept records are read again when an operator ends."""
+    try:
+        used = group_owner_map()
+        for g in bpy.data.node_groups:
+            if g.as_pointer() not in used:
+                _MAT_CACHE.pop(g.session_uid, None)
+        nt = getattr(bpy.context.scene, "node_tree", None)
+        if nt is not None:
+            _MAT_CACHE.pop(nt.session_uid, None)
+    except Exception:
+        pass
+
+
 def value_changed(idb) -> None:
     try:
         _VAL_CACHE.pop(idb.session_uid, None)
@@ -2492,7 +2507,7 @@ def assignment_path(path: str) -> bool:
 def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
-        return path == "settings" or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
+        return path in ("settings", COMP_TREE) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
                                                        SK_PREFIX, MATA_PREFIX, NG_PREFIX))
 
@@ -2957,6 +2972,7 @@ class SceneAdapter(Adapter):
             # settings aren't read then (their coming and going is no step, datarec._owner_moves)
             out["settings"] = scene_settings(idb)
             out.update(owned_world(idb))
+            _upd(out, "node groups", scene_groups, idb)          # D133
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -2972,6 +2988,14 @@ class SceneAdapter(Adapter):
                         write_anim_of(w, v["anim"])
                     if isinstance(v.get("tree_anim"), dict) and getattr(w, "node_tree", None) is not None:
                         write_anim_of(w.node_tree, v["tree_anim"])
+        for path, v in values.items():          # D133: groups no object uses
+            if path.startswith(NG_PREFIX) and isinstance(v, dict):
+                write_group(path[len(NG_PREFIX):], v)
+        if COMP_TREE in values and isinstance(values[COMP_TREE], dict) and getattr(idb, "node_tree", None) is not None:
+            try:
+                write_tree(idb.node_tree, values[COMP_TREE])
+            except Exception as e:
+                log.error_once(("comp_tree", str(e)), f"could not restore the compositor: {e}", e)
         if "settings" in values and values["settings"] is not MISSING and not _movie_playing():
             write_scene_settings(idb, values["settings"])
         if "collections" in values and values["collections"] is not MISSING:
@@ -3109,6 +3133,30 @@ def owned_world(sc) -> dict:
 
 
 WORLDP_PREFIX = "worldp:"
+COMP_TREE = "comp_tree"
+
+
+def scene_groups(sc) -> dict:
+    """D133: node groups no recorded object uses (the compositor's on Blender 5, add-ons' custom
+    node trees, groups kept for later), recorded with the first recorded scene by name; and 4.2's
+    compositor tree, which belongs to the scene."""
+    from . import datarec
+    scenes = sorted(x.name for x in bpy.data.scenes if x.library is None and datarec.is_tracked(x))
+    out = {}
+    nt = getattr(sc, "node_tree", None)          # Blender 4: the compositor's own tree
+    if nt is not None:
+        out[COMP_TREE] = capture_tree(nt)
+    if scenes and scenes[0] != sc.name:
+        return out
+    used = group_owner_map()
+    uid = idmap.uid_of(sc)
+    for g in bpy.data.node_groups:
+        if g.library is not None or g.as_pointer() in used:
+            continue
+        gu = idmap.claim(g)
+        if gu:
+            out[NG_PREFIX + gu] = group_record(g, uid)
+    return out
 
 
 # ----------------------------------------------------------------------------- collection settings (D127)
@@ -3324,7 +3372,8 @@ _OBJECT_KINDS = {"collections": "collections", "hide": "visibility", "constraint
 def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
     if adapter_id == "scene":
-        if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings") or path.startswith((WORLD_PREFIX, WORLDP_PREFIX)):
+        if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings", COMP_TREE) or path.startswith(
+                (WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX)):
             return None
         return "scene_collections" if path in ("collections", COLL_SETTINGS) else "objects"
     if adapter_id == "object":

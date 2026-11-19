@@ -576,6 +576,7 @@ def finish_operation(label: str) -> list:
     check_exclusion()
     refresh_mesh_users()
     adapters.forget_selected_values()     # D117
+    adapters.forget_loose_groups()        # D133
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
     try:
