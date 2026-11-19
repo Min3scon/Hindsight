@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+import zlib
+
 import numpy as np
 
 # data_type -> (numpy native dtype, width per element, foreach property name)
@@ -199,20 +201,43 @@ class Step:
                 "extra": self.extra}
 
 
+_NO_BLOB = (None, None)
+
+
 class Entry:
     """One slot in a History. Holds the step raw (fast) or packed (small).
 
     Exactly one of .step / .blob is not None at any time (both may briefly
     coexist while packing). .meta is always available without unpacking.
+
+    R046: the packed bytes are kept together with their CRC-32, made when the bytes are (packing,
+    the packer's recompression, loading, where the file's checksum was just verified), so a save
+    doesn't read every packed step again. One tuple, replaced whole: the packer thread swaps it while
+    the main thread may be saving, and a reader always gets bytes and the checksum of those bytes.
     """
-    __slots__ = ("meta", "step", "blob", "_nbytes", "__weakref__")
+    __slots__ = ("meta", "step", "_bc", "_nbytes", "__weakref__")
 
     def __init__(self, step: Optional[Step] = None, blob: Optional[bytes] = None,
-                 meta: Optional[dict] = None):
+                 meta: Optional[dict] = None, crc: Optional[int] = None):
         self.step = step
-        self.blob = blob
+        if blob is None:
+            self._bc = _NO_BLOB
+        else:
+            self._bc = (blob, crc if crc is not None else zlib.crc32(blob) & 0xFFFFFFFF)
         self.meta = meta if meta is not None else (step.meta() if step else {})
         self._nbytes = None
+
+    @property
+    def blob(self) -> Optional[bytes]:
+        return self._bc[0]
+
+    @blob.setter
+    def blob(self, b: Optional[bytes]) -> None:
+        self._bc = _NO_BLOB if b is None else (b, zlib.crc32(b) & 0xFFFFFFFF)
+
+    def blob_crc(self):
+        """(packed bytes, their CRC-32), read together; (None, None) while the step is raw."""
+        return self._bc
 
     @property
     def seq(self) -> int:

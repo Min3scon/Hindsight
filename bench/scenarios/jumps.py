@@ -152,7 +152,11 @@ results = {}
 sizes = ((100_000, 5000, "100k"), (1_000_000, 5000, "1m")) if not opts.quick else ((20_000, 600, "100k"),
                                                                                   (40_000, 600, "1m"))
 for nv, n, tag in sizes:
-    if not opts.want(f"_{tag}"):
+    # the size runs when --only names any of its scenarios (a pattern such as "jump_300_" is not a
+    # substring of the size's tag, so asking for the tag alone skipped every named jump)
+    names = [f"{k}_{d}_{tag}" for k in ("jump_1", "jump_30", "jump_300", "jump_3000", "drag_5000")
+             for d in ("fwd", "back")]
+    if not opts.want(*names):
         continue
     try:
         results.update(case(nv, n, tag))
