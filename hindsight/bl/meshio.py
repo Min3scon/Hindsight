@@ -297,13 +297,22 @@ def read_weights(ob, me) -> dict:
     return out
 
 
+def sk_points(kb):
+    """R075: a mesh shape key's points for foreach_get/foreach_set: ShapeKey.points (Blender 4.1 and newer)
+    copies the positions in one go, ShapeKey.data goes through RNA point by point (2 ms against 0.01 ms for
+    40k points). The same values; .data where .points isn't there."""
+    p = getattr(kb, "points", None)
+    return kb.data if p is None else p
+
+
 def read_extras(ob, me) -> dict:
     out = read_weights(ob, me)
     sk = getattr(me, "shape_keys", None)
     if sk is not None:
         for i, kb in enumerate(sk.key_blocks):
-            co = np.empty(len(kb.data) * 3, np.float32)
-            kb.data.foreach_get("co", co)
+            pts = sk_points(kb)
+            co = np.empty(len(pts) * 3, np.float32)
+            pts.foreach_get("co", co)
             out[sk_key(i, kb.name)] = co
     return out
 
@@ -351,7 +360,7 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
     if key is None:
         return
     blocks = list(key.key_blocks)
-    if rebuilt or any(len(kb.data) != n for kb in blocks):
+    if rebuilt or any(len(sk_points(kb)) != n for kb in blocks):
         pos = np.empty(n * 3, np.float32)
         me.attributes["position"].data.foreach_get("vector", pos)
         keep = [(kb.name, kb.value, kb.slider_min, kb.slider_max, kb.mute, kb.relative_key.name,
@@ -363,7 +372,7 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
             kb = ob.shape_key_add(name=name, from_mix=False)
             kb.name = name
             co = sk_arrays.get(name)
-            kb.data.foreach_set("co", co if co is not None and co.size == n * 3 else pos)
+            sk_points(kb).foreach_set("co", co if co is not None and co.size == n * 3 else pos)
             made[name] = kb
         for name, value, smin, smax, mute, rel, vgroup, interp in keep:
             kb = made[name]
@@ -377,7 +386,7 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
     for kb in blocks:
         co = sk_arrays.get(kb.name)
         if co is not None and co.size == n * 3:
-            kb.data.foreach_set("co", co)
+            sk_points(kb).foreach_set("co", co)
 
 
 X3 = "x3:"      # R060: tag of a fingerprint made with xxh3-128 (the engine's Hasher128); one without a tag

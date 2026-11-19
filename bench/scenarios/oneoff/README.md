@@ -31,3 +31,6 @@ function (kept in tests/test_core_global_position.py) against the current one in
 `soak.py CODE_ROOT [N] [norec]` (2026-11-19): a long session (100k mesh, N strokes, jumps every 50, a save every 500),
 printing the process's memory next to what the history and baselines hold every 500 strokes; `norec` makes the same
 strokes without recording them.
+
+`shapekeys.py CODE_ROOT K` (R075): Record everything on a 40k-vertex mesh with K shape keys; a slider moved and the
+operator's end timed (`AB {...}` line).

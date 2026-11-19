@@ -438,8 +438,9 @@ def refresh_extras(obj, st=None, me=None, shapes_only: bool = False) -> None:
         vals = {}
         if sk is not None:
             for i, kb in enumerate(sk.key_blocks):
-                co = np.empty(len(kb.data) * 3, np.float32)
-                kb.data.foreach_get("co", co)
+                pts = meshio.sk_points(kb)
+                co = np.empty(len(pts) * 3, np.float32)
+                pts.foreach_get("co", co)
                 vals[meshio.sk_key(i, kb.name)] = co
         drop = [k for k in st.light if k.startswith(meshio.SK_PREFIX)]
     else:
