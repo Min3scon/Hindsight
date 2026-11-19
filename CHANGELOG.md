@@ -4,9 +4,9 @@ All notable changes to Hindsight. Dates are when the release went out.
 
 ## 1.0.0-beta.3
 
-Movie Mode sets up its own camera and lighting, a timelapse needs fewer frames and less time per frame, long sessions use less memory, and Hindsight now works on Blender 5.2 and 5.3.
+Record everything now covers almost everything in a file, add-ons' data included; Weight Paint, texture painting, Multires and Dyntopo can be recorded; Movie Mode sets up its own camera and lighting, a timelapse needs fewer frames and less time per frame, long sessions use less memory, and Hindsight now works on Blender 5.2 and 5.3.
 
-This build was tested without a Blender window, on Blender 5.0 to 5.3. It hasn't been through the test rounds in real Blender yet.
+This build was tested headless on Blender 4.2 and 5.0 to 5.3, and in real Blender windows on 5.3 and 4.2: painting in every mode, Multires, Dyntopo, Movie Mode with its renders, the slider and the earlier test rounds. The release rounds on 5.0 to 5.2 in a window are still to come.
 
 New:
 
@@ -14,6 +14,33 @@ New:
 - Lighting when the scene has none: three sun lamps around the model, added only while the scene has no light of its own, and taken out again with Movie Mode.
 - Use this view points the Movie Mode camera from the direction your viewport looks. Frame the model places it again after the model has changed.
 - Steps per frame. Quick auto key can move several steps on each frame, so a long history becomes a short movie with fewer frames to render. The panel shows how many frames and seconds the movie will have.
+- Steps per object can be raised to 100,000 in Preferences (the default stays 10,000). With global history on, recording a step no longer rebuilds the whole timeline: at 50,000 steps that took 25 to 90 ms after every stroke, now 0.3 ms.
+- Record everything records modifiers: adding, removing, reordering and their settings, Geometry Nodes inputs included. Going back over Apply Modifier gives the modifier back.
+- Record everything records material slots: adding and removing them, which material each holds, linked to the object or the mesh, and the active slot.
+- Record everything records materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
+- Record everything records node groups: editing a Geometry Nodes group or a shader group inside a material is a step that comes back, inputs and outputs, zones and item lists included.
+- Record everything records the compositor and node trees no object uses, add-ons' custom node trees included, in the scene's history.
+- Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
+- Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, view layer passes, the active camera, and the world with its node tree.
+- Record everything records collection settings: hiding a collection, making it unselectable, its colour tag, and Exclude, Holdout and Indirect Only in each view layer.
+- Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and volumes, and a mesh's remesh settings.
+- Record everything records posing: each bone's location, rotation, scale, constraints and custom properties, and the armature's Pose or Rest Position.
+- Record everything records Edit Mode changes to bones: adding, removing, moving, rolling and parenting them, their settings and bone collections.
+- Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks, and keyframes on lights, cameras, shape keys and material nodes.
+- Record everything records the shape of curves, surfaces, lattices and metaballs: points, handles, splines and elements.
+- Weight Paint strokes are steps, like sculpt and Vertex Paint strokes.
+- Custom normals (Blender 5) are recorded with the mesh, so going back over Set Custom Normals gives the old normals back.
+- Dyntopo strokes can be recorded (preference Record Dyntopo, off by default; meshes up to 200,000 faces): each stroke is a step, and going back turns Dyntopo on or off as it was.
+- Multires can be recorded (preference Record Multires, off by default): one step per Sculpt Mode visit.
+- Edit Mode steps up to (preferences): how big a mesh can be for Edit Mode to be recorded one operation at a time (300,000 vertices by default; bigger meshes are recorded once per visit).
+- Texture painting can be recorded too (preference Record texture painting, off by default; images up to 2K), in the 3D viewport and in the Image Editor's Paint mode (as a step of the active object).
+- Record everything records Grease Pencil drawings: strokes drawn, erased and moved, their thickness, opacity and colour, frames and layers.
+- Record everything records hair curves and point clouds through their attributes.
+- Record everything records particle settings: count, hair length, emission and display.
+- A deleted light, camera, curve, text, lattice, metaball or volume comes back with its settings and shape even after saving and opening the file.
+- Bring back: when a step refers to a parent or constraint target that is deleted now, the Warnings panel offers to bring it back.
+- Record everything: adding, removing, renaming and reordering vertex groups and shape keys, and switching the active UV map, now come back when you go back and forward.
+- Going back over a remesh or another topology change gives back vertex group weights and shape keys, also without Record everything (meshes up to 300,000 vertices).
 
 Faster and lighter:
 
@@ -54,35 +81,8 @@ Fixed:
 - Blender 5.0: scrubbing back over a colour layer could lose which layer is active.
 - A damaged history block stored with LZ4 is refused cleanly now.
 - After a long session a repeating error could fill the system console.
-- Steps per object can be raised to 100,000 in Preferences (the default stays 10,000). With global history on, recording a step no longer rebuilds the whole timeline: at 50,000 steps that took 25 to 90 ms after every stroke, now 0.3 ms.
-- Record everything records modifiers: adding, removing, reordering and their settings, Geometry Nodes inputs included. Going back over Apply Modifier gives the modifier back.
-- Record everything records material slots: adding and removing them, which material each holds, linked to the object or the mesh, and the active slot.
-- Record everything records materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
-- Record everything records node groups: editing a Geometry Nodes group or a shader group inside a material is a step that comes back, inputs and outputs, zones and item lists included.
-- Record everything records the compositor and node trees no object uses, add-ons' custom node trees included, in the scene's history.
-- Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
-- Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, view layer passes, the active camera, and the world with its node tree.
-- Record everything records collection settings: hiding a collection, making it unselectable, its colour tag, and Exclude, Holdout and Indirect Only in each view layer.
-- Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and volumes, and a mesh's remesh settings.
-- Record everything records posing: each bone's location, rotation, scale, constraints and custom properties, and the armature's Pose or Rest Position.
-- Record everything records Edit Mode changes to bones: adding, removing, moving, rolling and parenting them, their settings and bone collections.
-- Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks, and keyframes on lights, cameras, shape keys and material nodes.
-- Record everything records the shape of curves, surfaces, lattices and metaballs: points, handles, splines and elements.
-- Weight Paint strokes are steps, like sculpt and Vertex Paint strokes.
-- Custom normals (Blender 5) are recorded with the mesh, so going back over Set Custom Normals gives the old normals back.
-- Dyntopo strokes can be recorded (preference Record Dyntopo, off by default; meshes up to 200,000 faces): each stroke is a step, and going back turns Dyntopo on or off as it was.
-- Multires can be recorded (preference Record Multires, off by default): one step per Sculpt Mode visit.
-- Edit Mode steps up to (preferences): how big a mesh can be for Edit Mode to be recorded one operation at a time (300,000 vertices by default; bigger meshes are recorded once per visit).
-- Texture painting can be recorded too (preference Record texture painting, off by default; images up to 2K), in the 3D viewport and in the Image Editor's Paint mode (as a step of the active object).
-- Record everything records Grease Pencil drawings: strokes drawn, erased and moved, their thickness, opacity and colour, frames and layers.
-- Record everything records hair curves and point clouds through their attributes.
-- Record everything records particle settings: count, hair length, emission and display.
-- A deleted light, camera, curve, text, lattice, metaball or volume comes back with its settings and shape even after saving and opening the file.
-- Bring back: when a step refers to a parent or constraint target that is deleted now, the Warnings panel offers to bring it back.
 - Library overrides keep their history when the file is opened again.
-- Record everything: adding, removing, renaming and reordering vertex groups and shape keys, and switching the active UV map, now come back when you go back and forward.
 - A mesh changed while Hindsight wasn't running keeps its history when Blender's backup copy of the file (.blend1) still holds the mesh as Hindsight saved it: the change becomes one step.
-- Going back over a remesh or another topology change gives back vertex group weights and shape keys, also without Record everything (meshes up to 300,000 vertices).
 - Objects whose names were swapped come back with the right names when the global history goes back over the swap.
 - Linked duplicates (Alt+D) share one history, as the tab says: going back on one no longer wipes strokes made on the other.
 - Record everything: when only some items of a value are keyed (only X of Location), the others are recorded. Muted keys and drivers no longer stop a value from being recorded, and adding a keyframe makes no step.
