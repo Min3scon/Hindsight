@@ -30,6 +30,19 @@ Where a fact has no source, this page says "not measured" or "no report".
      4.2 to 5.3, on Windows and macOS as a module, and a windowed probe under Xvfb. Workflow
      `Native engine` proves the wheels on Windows, macOS and Linux, x64 and ARM64. Both are triggered
      from a session with the GitHub tools (`actions_run_trigger`); commits carry `[skip ci]`.
+   - Network: the "Hindsight" environment is Limited: package registries, MCP servers and
+     `download.blender.org` are allowed, nothing else (2026-11-19: www.blender.org, docs.blender.org, reddit,
+     Wikipedia, Stack Overflow and GitHub's artifact storage are refused). Two different refusals look alike,
+     and only the first one means "not allowed here":
+     - the proxy refuses the connection: curl says `CONNECT tunnel failed, response 403` (HTTP code 000), and
+       `curl -sS "$HTTPS_PROXY/__agentproxy/status"` lists the host under `recentRelayFailures` as
+       `connect_rejected`. The request never reached the site. Adding the host to the environment's allowed
+       domains fixes it.
+     - the site itself refuses: the connection opens and the site answers 403, 429 or 503, often from
+       Cloudflare (`server: cloudflare`, a `cf-ray` or `cf-mitigated` header, a "Just a moment" or "verify you
+       are human" page) or its own bot check (reddit answers data-center clients that way even when allowed;
+       crates.io wants a User-Agent). Allowing the host doesn't help; use the site's API (with a key) or
+       another source. Say which of the two it was, never just "blocked".
 3. Tests (from `dev/AGENT_RULES.md` and `HANDOFF.md`):
    - all: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py`
    - some: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py recovery` (a substring of the file name)
