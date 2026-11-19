@@ -409,7 +409,7 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Check `Blender tests` and `Native engine` on 8ed62b3 (pushed 2026-11-19 10:40: engine 0.7.0, D151, D152, R051 to R058, the window job with 14 scenarios) and fix what they find. The RUST agent works on R059 (its number when it reports): mesh fingerprints as xxh3-128 in the engine with tagged values; review and merge.
+1. Check `Blender tests` and `Native engine` on 8ed62b3 (pushed 2026-11-19 10:40: engine 0.7.0, D151, D152, R051 to R058, the window job with 14 scenarios) and fix what they find. The RUST agent works on R060 (its number when it reports): mesh fingerprints as xxh3-128 in the engine with tagged values; review and merge.
 2. The recorder's remaining overhead at 500 objects: `id_props`, `idmap.claim` and constraints are the next fixed
    costs (R044 profile); each needs a depsgraph or fingerprint check before any cache.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
