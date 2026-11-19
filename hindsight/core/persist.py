@@ -34,7 +34,7 @@ import json
 import os
 import struct
 import time
-import zlib
+from .native import crc32
 
 import numpy as np
 
@@ -73,6 +73,11 @@ def _json_default(o):
     if isinstance(o, (set, frozenset, tuple)):
         return list(o)
     return None   # non-serialisable (e.g. Snapshot objects); the blob keeps the real data
+
+
+# meta keys whose (few distinct) string values are shared between the steps of a loaded file; `extra`
+# is never shared (callers may change it)
+_SHARED_META = ("label", "mode", "target", "kind")
 
 
 def _meta_for_json(meta: dict) -> dict:
@@ -114,7 +119,7 @@ def registry_parts(reg, codec: str = "auto") -> list:
             b, crc = e.blob_crc()               # R046: packed steps carry their CRC-32
             if b is None:
                 b = e.to_bytes(codec, 0)        # raw steps: the quick form (main thread)
-                crc = zlib.crc32(b) & 0xFFFFFFFF
+                crc = crc32(b) & 0xFFFFFFFF
             blobs.append(b)
             crcs.append(crc)
             metas.append(_meta_for_json(e.meta))
@@ -150,7 +155,7 @@ def registry_parts(reg, codec: str = "auto") -> list:
     for b in blobs:
         parts.append(_U64.pack(len(b)))
         parts.append(b)
-    parts += [TRAILER, _U32.pack(zlib.crc32(js) & 0xFFFFFFFF)]
+    parts += [TRAILER, _U32.pack(crc32(js) & 0xFFFFFFFF)]
     return parts
 
 
@@ -239,7 +244,7 @@ def registry_from_bytes(b):
         raise NewerFormatError(found)
     if found >= 3 and len(mv) >= pos + 8 and bytes(mv[-8:-4]) == TRAILER:
         (want,) = _U32.unpack(mv[len(mv) - 4:])
-        if zlib.crc32(mv[8:pos]) & 0xFFFFFFFF != want:
+        if crc32(mv[8:pos]) & 0xFFFFFFFF != want:
             raise ValueError("damaged Hindsight registry header (checksum)")
 
     reg = Registry()
@@ -258,6 +263,7 @@ def registry_from_bytes(b):
     if hasattr(reg, "everything"):
         reg.everything = set(doc.get("everything", []))
     max_seq = 0
+    strings = {}                     # per load: label, mode, target and kind values shared between steps
     truncated = False
     size = len(mv)
     for hd in doc.get("histories", []):
@@ -279,7 +285,7 @@ def registry_from_bytes(b):
                 continue
             blob = bytes(mv[pos:pos + n])
             pos += n
-            crc = zlib.crc32(blob) & 0xFFFFFFFF
+            crc = crc32(blob) & 0xFFFFFFFF
             if crcs is not None and i < len(crcs) and crc != int(crcs[i]):
                 slots.append(None)
                 continue
@@ -291,6 +297,11 @@ def registry_from_bytes(b):
                 except Exception:
                     slots.append(None)
                     continue
+            if type(meta) is dict:
+                for k in _SHARED_META:      # equal strings become one object (json makes one per step)
+                    v = meta.get(k)
+                    if type(v) is str:
+                        meta[k] = strings.setdefault(v, v)
             slots.append(Entry(blob=blob, meta=meta, crc=crc))
             try:
                 max_seq = max(max_seq, int(meta.get("seq", 0)))

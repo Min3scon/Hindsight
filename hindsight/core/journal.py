@@ -17,7 +17,7 @@ import json
 import os
 import struct
 import tempfile
-import zlib
+from .native import crc32
 
 MAGIC = b"HSJ1"
 
@@ -53,20 +53,20 @@ def _scan(fh, limit: int, want_payload: bool):
         hbytes = fh.read(hlen)
         if len(hbytes) < hlen:
             return
-        crc = zlib.crc32(hbytes, zlib.crc32(raw))
+        crc = crc32(hbytes, crc32(raw))
         payload = None
         if want_payload:
             payload = fh.read(plen)
             if len(payload) < plen:
                 return
-            crc = zlib.crc32(payload, crc)
+            crc = crc32(payload, crc)
         else:
             left = plen
             while left:
                 chunk = fh.read(min(left, _CHUNK))
                 if not chunk:
                     return
-                crc = zlib.crc32(chunk, crc)
+                crc = crc32(chunk, crc)
                 left -= len(chunk)
         tail = fh.read(_CRC.size)
         if len(tail) < _CRC.size or _CRC.unpack(tail)[0] != (crc & 0xFFFFFFFF):
@@ -120,7 +120,7 @@ class Journal:
         if not isinstance(payload, (bytes, bytearray)):
             payload = bytes(payload)
         prefix = _HEAD.pack(MAGIC, code, len(hbytes), len(payload)) + hbytes
-        crc = zlib.crc32(payload, zlib.crc32(prefix)) & 0xFFFFFFFF
+        crc = crc32(payload, crc32(prefix)) & 0xFFFFFFFF
         start = self._size
         try:
             self._fh.write(prefix)
