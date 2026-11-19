@@ -248,3 +248,9 @@ Evidence (`mixprof.py`, `topodec.py`, bpy53, 100,489 vertices, min of 30): a ful
 ## Tests
 
 `test_core_*` (14 files) pass on bpy53 and bpy42. Whole `test_bl_` without t1_prop on both: result below. No A/B is claimed for jumps: they run the same code as before (`apply_steps` unchanged).
+
+Whole `test_bl_` without t1_prop: 82 of 84 files pass on bpy53 and on bpy42; the two failures are test_bl_metadata and test_bl_t1_migrate (known, need a Blender binary and `.tmp/old/b1.zip`).
+
+Appends (`append.py`, 5,000 steps at 100k vertices, bpy53): `History.push` 1.7 us per step. `enforce_caps` full pass 1.46 ms average over a history that grows to 5,000 entries (it sums `nbytes` over every entry); the runtime runs a full pass every 64 commits, so about 25 us per commit amortised, against a commit of about 400 us. Not worth moving.
+
+For OPTIMISATION_LOG (nothing kept as an optimisation; one measured non-attempt): "native History object: not built. Python glue is 3% of a mixed 100k jump (105 ms: 61% decode of TOPO and DATA steps, bound by zstd decompression 1.27 ms per 2.4 MB, 31% apply_steps); push 1.7 us; caps pass about 25 us per commit amortised. Nothing to gain; History made engine-only instead."
