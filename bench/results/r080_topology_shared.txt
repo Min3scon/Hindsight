@@ -1,0 +1,27 @@
+R080: MeshState.set_snapshot of a 1M grid's snapshot (9 per process, median and min) and the bytes the baseline holds
+itself. A = dcddc8e (every array copied), B = R080 (topology shared with the snapshot, read-only).
+
+1 A AB {"set_snapshot_med_ms": 6.8, "set_snapshot_min_ms": 5.9, "baseline_own_mb": 61.0}
+1 B AB {"set_snapshot_med_ms": 1.1, "set_snapshot_min_ms": 1.0, "baseline_own_mb": 11.4}
+2 A AB {"set_snapshot_med_ms": 6.0, "set_snapshot_min_ms": 5.4, "baseline_own_mb": 61.0}
+2 B AB {"set_snapshot_med_ms": 1.3, "set_snapshot_min_ms": 1.1, "baseline_own_mb": 11.4}
+3 A AB {"set_snapshot_med_ms": 6.5, "set_snapshot_min_ms": 5.9, "baseline_own_mb": 61.0}
+3 B AB {"set_snapshot_med_ms": 1.3, "set_snapshot_min_ms": 1.2, "baseline_own_mb": 11.4}
+=== 4.2
+1 A AB {"set_snapshot_med_ms": 6.4, "set_snapshot_min_ms": 5.1, "baseline_own_mb": 61.0}
+1 B AB {"set_snapshot_med_ms": 1.0, "set_snapshot_min_ms": 1.0, "baseline_own_mb": 11.4}
+2 A AB {"set_snapshot_med_ms": 7.6, "set_snapshot_min_ms": 5.3, "baseline_own_mb": 61.0}
+2 B AB {"set_snapshot_med_ms": 1.1, "set_snapshot_min_ms": 1.0, "baseline_own_mb": 11.4}
+
+End to end (topo1m.py, main thread of a topology step at 1M, 5 rounds, 5.3): A median 296 ms, B 305 ms: within the
+spread (Blender's own mode switch is about 220 ms of it).
+1 A AB {"steps": [1, 2], "main_thread_ms": 343, "until_journaled_ms": 779}
+1 B AB {"steps": [1, 2], "main_thread_ms": 301, "until_journaled_ms": 713}
+2 A AB {"steps": [1, 2], "main_thread_ms": 275, "until_journaled_ms": 817}
+2 B AB {"steps": [1, 2], "main_thread_ms": 305, "until_journaled_ms": 740}
+3 A AB {"steps": [1, 2], "main_thread_ms": 296, "until_journaled_ms": 722}
+3 B AB {"steps": [1, 2], "main_thread_ms": 267, "until_journaled_ms": 624}
+4 A AB {"steps": [1, 2], "main_thread_ms": 292, "until_journaled_ms": 724}
+4 B AB {"steps": [1, 2], "main_thread_ms": 323, "until_journaled_ms": 777}
+5 A AB {"steps": [1, 2], "main_thread_ms": 301, "until_journaled_ms": 663}
+5 B AB {"steps": [1, 2], "main_thread_ms": 324, "until_journaled_ms": 717}
