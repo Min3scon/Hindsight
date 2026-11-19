@@ -570,20 +570,32 @@ _SELECT_ONLY = frozenset({
 })
 
 
-def _select_only(prev) -> bool:
-    """R048: exactly one operator ended since the marker `prev`, and it only changes the selection.
-    Two or more (or a list that can't be told apart) read everything, as any operator does."""
+def _last_op_kind(prev):
+    """"select" (R048: one of _SELECT_ONLY), "transform" (R050: a TRANSFORM_OT_ operator: move, rotate,
+    scale, slide... They change topology only through Auto Merge, which always changes the element
+    counts) or None, when exactly one operator ended since the marker `prev`. Two or more, or a list
+    that can't be told apart, are None: everything is read, as for any operator."""
     if prev is None:
-        return False
+        return None
     info = _last_ops_info()
     if info is None:
-        return False
+        return None
     idname, before_last, n = info
-    if idname not in _SELECT_ONLY:
-        return False
     if prev[0] == 0:
-        return n == 1
-    return bool(before_last) and before_last == prev[1]
+        if n != 1:
+            return None
+    elif not before_last or before_last != prev[1]:
+        return None
+    if idname in _SELECT_ONLY:
+        return "select"
+    if isinstance(idname, str) and idname.startswith("TRANSFORM_OT_"):
+        return "transform"
+    return None
+
+
+def _select_only(prev) -> bool:
+    """R048: exactly one operator ended since the marker `prev`, and it only changes the selection."""
+    return _last_op_kind(prev) == "select"
 
 
 def _selected_uids() -> set:
@@ -660,13 +672,14 @@ def tick() -> None:
             _MESH_USERS.clear()
             return
         if finished:
-            finish_operation(_last_label(), select_only=_select_only(prev))
+            kind = _last_op_kind(prev)
+            finish_operation(_last_label(), select_only=kind == "select", topology=kind != "transform")
         else:
             refresh_mesh_users()
             commit(label="Change", uids=None, mesh=True, settled=True)
 
 
-def finish_operation(label: str, select_only: bool = False) -> list:
+def finish_operation(label: str, select_only: bool = False, topology: bool = True) -> list:
     """What happens when an operator has finished: everything it changed is recorded as one
     operation (the scene, object data, meshes, every object in Edit Mode: one position on the
     global timeline, D52 and D58). Tests call this for what the timer does.
@@ -674,7 +687,10 @@ def finish_operation(label: str, select_only: bool = False) -> list:
     select_only (R048, _select_only): the operator only changed the selection. The selected, active
     and updated datablocks are compared (a setting that doesn't tell the depsgraph is read again on
     the selected and active objects, as for any operator, D117); the rest, and Edit Mode's mesh, wait
-    for the next operator, which reads everything."""
+    for the next operator, which reads everything.
+
+    topology False (R050, a move, rotate or scale): Edit Mode compares the element counts but doesn't
+    read the edges and corners again."""
     rt = _rt()
     check_exclusion()
     refresh_mesh_users()
@@ -691,13 +707,13 @@ def finish_operation(label: str, select_only: bool = False) -> list:
         uids = (_selected_uids() if select_only else tracked_uids()) | set(_DIRTY)
         steps = commit(label=label, uids=uids, mesh=True)
         if not select_only:
-            _edit_step(label)
+            _edit_step(label, deep=topology)
     finally:
         rt.OP_GROUP[0] = None
     return steps
 
 
-def _edit_step(label: str) -> None:
+def _edit_step(label: str, deep: bool = True) -> None:
     """Edit Mode step by step: the operation that just finished, on every recorded object in Edit Mode
     (D52: with several objects in Edit Mode, each gets its step, as one operation)."""
     rt = _rt()
@@ -710,7 +726,7 @@ def _edit_step(label: str) -> None:
     for obj in editing:
         if rt.edit_steps_on(obj) and adapter_ok("edit_steps"):
             try:
-                rt.commit_edit(obj, label)
+                rt.commit_edit(obj, label, deep=deep)
             except Exception as e:
                 _adapter_failed("edit_steps", e, "capture")
                 break

@@ -8,6 +8,9 @@
   - an operator that only changes the selection (a click, box select, Select All) reads the selected,
     active and updated objects, not every recorded one, and in Edit Mode doesn't read the mesh (R048);
     the next operator that may change anything reads everything as before;
+  - in Edit Mode a move, rotate or scale (TRANSFORM_OT_*) compares the element counts but doesn't read
+    the edges and corners again: those operators change topology only by Auto Merge, which changes the
+    counts (R050); any other operator reads them as before;
   - opening a file hashes each recorded mesh once to tell whether it changed without Hindsight (R045:
     it was hashed twice when unchanged, the usual case).
 
@@ -211,9 +214,65 @@ def test_selection_only_operator_in_edit_mode_reads_no_mesh():
     assert n["commit_edit"] == 1, n
 
 
+def test_transform_in_edit_mode_reads_no_topology():
+    import bmesh
+    from hindsight.bl import meshio
+    H.fresh()
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    ob = H.make_mesh(20_000, name="T")
+    datarec.set_tracked(ob, True)
+    datarec.finish_operation("baseline")
+    H.enter(ob, "EDIT")
+    datarec.finish_operation("edit")
+    total = lambda: sum(len(h.entries) for h in runtime.reg().histories.values())
+    bm = bmesh.from_edit_mesh(ob.data)
+    for v in bm.verts:
+        v.select = v.index % 7 == 0
+    bmesh.update_edit_mesh(ob.data)
+    n0 = total()
+    bpy.ops.transform.translate(value=(0, 0, 0.05))
+    with counting((meshio, "_corner_ints"), (meshio, "_edge_verts")) as n:
+        _end_operator("TRANSFORM_OT_translate", 1)
+    assert n["_corner_ints"] == 0 and n["_edge_verts"] == 0, n
+    assert total() == n0 + 1, (n0, total())                        # the move is a step
+    # Rotate Edge keeps the counts and changes the topology: any other operator still reads it
+    bm = bmesh.from_edit_mesh(ob.data)
+    for e in bm.edges:
+        e.select = False
+    bm.edges.ensure_lookup_table()
+    inner = next(e for e in bm.edges if len(e.link_faces) == 2)
+    inner.select = True
+    bmesh.update_edit_mesh(ob.data)
+    bpy.ops.mesh.edge_rotate(use_ccw=False)
+    with counting((meshio, "_corner_ints")) as n:
+        _end_operator("MESH_OT_edge_rotate", 2)
+    assert n["_corner_ints"] >= 1, n
+    h = runtime.history_of(ob)
+    assert h.entries[-1].kind == "TOPO", h.entries[-1].kind
+    # a move with Auto Merge that merges vertices changes the counts: recorded as a topology change
+    bm = bmesh.from_edit_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+    a, b = bm.verts[0], bm.verts[1]
+    for v in bm.verts:
+        v.select = False
+    a.select = True
+    bmesh.update_edit_mesh(ob.data)
+    before = len(ob.data.vertices)
+    C.scene.tool_settings.use_mesh_automerge = True
+    try:
+        off = (b.co - a.co)
+        bpy.ops.transform.translate(value=tuple(off))
+    finally:
+        C.scene.tool_settings.use_mesh_automerge = False
+    _end_operator("TRANSFORM_OT_translate", 3)
+    ob.update_from_editmode()
+    assert len(ob.data.vertices) == before - 1, (before, len(ob.data.vertices))      # merged
+    assert h.entries[-1].kind == "TOPO", h.entries[-1].kind
+
+
 for fn in (test_sculpting_only_timer_reads_nothing, test_depsgraph_update_does_not_search_every_id,
            test_one_objects_read_per_commit, test_prime_reads_each_mesh_once,
            test_open_hashes_each_mesh_once, test_selection_only_operator_reads_the_selection,
-           test_selection_only_operator_in_edit_mode_reads_no_mesh):
+           test_selection_only_operator_in_edit_mode_reads_no_mesh, test_transform_in_edit_mode_reads_no_topology):
     H.run(fn)
 H.finish()
