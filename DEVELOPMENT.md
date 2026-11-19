@@ -87,8 +87,9 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 ### What runs in Rust today
 
-Engine `hindsight_native` 0.3.0, API 3 on the main line (M1, merged 2026-11-19); the Rust agent's branch
-has 0.4.0, API 4 (M2 part: `record_step`, custom normals), not merged yet. The engine is required: if it
+Engine `hindsight_native` 0.5.1, API 5 (M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
+diff, apply, pack and unpack, its numpy code is `tests/reference/delta.py`; `record_step` exists and is
+tested but `runtime.commit` doesn't use it, since the stroke is already diffed once). The engine is required: if it
 can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
 the add-on. The Python implementations it replaced are in `tests/reference/` as the oracle, and a test
 fails if anything under `hindsight/` imports them.
@@ -172,8 +173,8 @@ rule). Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbere
 | L12 | Deleted parent or target | "Bring back" from the note (Phase 1; lower priority) | done: Bring back button in the Warnings panel (D123) | `tests/test_bl_t1_bring_back.py` |
 | L13 | Collections need "Objects added and deleted" | recorded with Everything (Phase 1, P8) | not started (deferred: needs a registry flag, journal and panel plumbing) | none |
 | L14 | Changes without Hindsight | kept when Blender's `.blend1` has the saved mesh, otherwise today's safe behaviour (Phase 1) | done: a mesh changed while Hindsight wasn't there is bridged from Blender's .blend1 when it has the saved mesh and nothing is ahead of the cursor (D107); otherwise today's safe behaviour | `tests/test_bl_outside_backup.py`, `tests/test_bl_t1_outside.py` |
-| L15 | Modifiers, Geometry Nodes, materials, weight paint, UVs, texture paint, animation, shape keys, armatures, other object types, scene settings | P1 to P8, and G (a generic recorder for any datablock, so third-party add-ons are covered) (Phase 3); needs the P0 seam first | partial, with Record everything: vertex group, UV map and shape key lists (D108), modifiers and Geometry Nodes inputs (D110, D100), material slots (D111), materials and their node trees (D112), custom properties and any add-on's data on objects, object data, scenes and materials (D114, the generic part of G for ID properties), scene, render and world settings (D116), object settings and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and meshes (D117), armature poses with bone constraints and properties (D119), animation: actions, F-curves, keyframes, drivers and NLA of objects, their data, shape keys, material node trees, scenes and worlds (D120, D125), the shape of curves, surfaces, lattices and metaballs (D121), node groups of Geometry Nodes modifiers and materials with zones and item lists (D126, D130), collection settings (D127), view layer settings (D128), armature bones in Edit Mode (D129), Grease Pencil drawings (D131), the compositor and node trees no object uses (D133), hair curves and point clouds (D134), particle settings (D137). Not started: weight paint per stroke (Rust agent, D-f), texture paint, add-on datablocks no object or scene uses | `tests/test_bl_t1_lists.py`, `tests/test_bl_t1_modifiers.py`, `tests/test_bl_t1_material_slots.py`, `tests/test_bl_t1_materials.py`, `tests/test_bl_t1_addon_props.py` (stand-in add-on `tests/addons/hs_fake_addon.py`), `tests/test_bl_t1_scene_settings.py`, `tests/test_bl_t1_settings.py`, `tests/test_bl_t1_pose.py`, `tests/test_bl_t1_anim.py`, `tests/test_bl_t1_geometry.py`, `tests/test_bl_t1_node_groups.py`, `tests/test_bl_t1_collection_settings.py` |
-| L16 | Six defects in rows the site already claims | fixed with regression tests (rows D-a to D-f below) | partial: D-a, D-b, D-c, D-e fixed (D100, D110, D108, D103); D-d custom normals and D-f Weight Paint per stroke not started | see the table below |
+| L15 | Modifiers, Geometry Nodes, materials, weight paint, UVs, texture paint, animation, shape keys, armatures, other object types, scene settings | P1 to P8, and G (a generic recorder for any datablock, so third-party add-ons are covered) (Phase 3); needs the P0 seam first | partial, with Record everything: vertex group, UV map and shape key lists (D108), modifiers and Geometry Nodes inputs (D110, D100), material slots (D111), materials and their node trees (D112), custom properties and any add-on's data on objects, object data, scenes and materials (D114, the generic part of G for ID properties), scene, render and world settings (D116), object settings and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and meshes (D117), armature poses with bone constraints and properties (D119), animation: actions, F-curves, keyframes, drivers and NLA of objects, their data, shape keys, material node trees, scenes and worlds (D120, D125), the shape of curves, surfaces, lattices and metaballs (D121), node groups of Geometry Nodes modifiers and materials with zones and item lists (D126, D130), collection settings (D127), view layer settings (D128), armature bones in Edit Mode (D129), Grease Pencil drawings (D131), the compositor and node trees no object uses (D133), hair curves and point clouds (D134), particle settings (D137). texture painting behind a preference that is off (D141). Not started: the Image editor's paint mode, add-on datablocks no object or scene uses | `tests/test_bl_t1_lists.py`, `tests/test_bl_t1_modifiers.py`, `tests/test_bl_t1_material_slots.py`, `tests/test_bl_t1_materials.py`, `tests/test_bl_t1_addon_props.py` (stand-in add-on `tests/addons/hs_fake_addon.py`), `tests/test_bl_t1_scene_settings.py`, `tests/test_bl_t1_settings.py`, `tests/test_bl_t1_pose.py`, `tests/test_bl_t1_anim.py`, `tests/test_bl_t1_geometry.py`, `tests/test_bl_t1_node_groups.py`, `tests/test_bl_t1_collection_settings.py` |
+| L16 | Six defects in rows the site already claims | fixed with regression tests (rows D-a to D-f below) | done: D-a, D-b, D-c, D-d, D-e, D-f fixed (D100, D110, D108, D139, D103, D140) | see the table below |
 
 Also in the plan and not started: the whole-file "Record > Everything" switch with a real-window CI gate
 (Phase 3), the datablock snapshot fallback for data RNA cannot express (Phase 3), "File history" for data
@@ -188,9 +189,9 @@ Multires and Dyntopo behind one preference, off until real strokes pass in a win
 | D-a | Blender 5.2 and 5.3: an object deleted and brought back loses its Geometry Nodes input values (`adapters._id_props` raises TypeError on 5.2+; fix is a `gn_inputs()` helper used by `object_body` and `_recreate_object`) | done (D100) | `tests/test_bl_adapters_gn.py` |
 | D-b | Going back over Apply Modifier gives the mesh from before Apply without the modifier's effect | done (D110) | `tests/test_bl_t1_modifiers.py` |
 | D-c | Adding, removing or renaming a vertex group, shape key or UV map makes a step whose going back leaves the list as it is now (D43) | done (D108) | `tests/test_bl_t1_lists.py` |
-| D-d | Custom normals on 5.0+ (`custom_normal`, INT16_2D) are dropped by `meshio._recordable`; going back over Set Custom Normals keeps the new normals on the old mesh | blocked: needs the INT16_2D channel type in `core/types.py` and `native/` (P1) | none |
+| D-d | Custom normals on 5.0+ (`custom_normal`, INT16_2D) are dropped by `meshio._recordable`; going back over Set Custom Normals keeps the new normals on the old mesh | done (D139; 4.2 keeps them in a hidden layer: not recorded there) | `tests/test_bl_custom_normals.py` |
 | D-e | The first keyframe on a recorded property makes a step that does nothing when going back (the property appears as MISSING) | done (D103) | `tests/test_bl_adapters.py` `test_animation_is_not_recorded` |
-| D-f | Weight Paint strokes are not steps (`datarec.commit` reads only Object Mode meshes); needs a real window to confirm | blocked: needs P1 and a real window | none |
+| D-f | Weight Paint strokes are not steps (`datarec.commit` reads only Object Mode meshes); needs a real window to confirm | done (D140) | `tests/test_bl_weight_paint.py` |
 
 Fixed ones carry their DEFECTS.md numbers. They were found by `probe_limits.py` (80 cases on the five
 Blender versions, now lost); the verdict table is in `dev/reports/LIMITS-B.md` section 2.
@@ -305,9 +306,10 @@ Other limits of the verification:
 - Since 2026-11-19 (owner): the main session does the engineering itself and stays busy without pause,
   with about one agent beside it (two running at once at most). The agents use the middle tier
   ("sonnet"). Every agent reads `.claude/skills/ultracave/SKILL.md` and answers in that style.
-- Running: RUST (`a388cd589ccb15b22`, branch `worktree-agent-a388cd589ccb15b22`): M1 merged; now M2
-  (`record_step` wired into `runtime.commit`, `delta.py` fallbacks to `tests/reference/`), D-d custom
-  normals (done on its branch) and D-f Weight Paint per stroke.
+- RUST (`a388cd589ccb15b22`, branch `worktree-agent-a388cd589ccb15b22`): M1 and the M2 part merged; D-d
+  custom normals (D139), D-f Weight Paint (D140), texture painting (D141) and the subnormal-time engine
+  fix (0.5.1) merged into `main-session-3` on 2026-11-19. Next for it: Multires, one exact step per
+  Sculpt Mode visit (a datablock snapshot step kind), then M3 (native `History`).
 - Each agent owns disjoint files and works in its own git worktree; agents never spawn agents, never
   push; their work is merged only after the main session re-runs its tests.
 
@@ -370,8 +372,8 @@ Blockers:
    `Blender tests` and `Native engine` on GitHub.
 2. Measure the cost of D116 to D134 on an operator at 500 objects (`bench/ab.py --only dr_finish,dr_prime`
    and the 500-material scene) on a quiet machine; log rounds in `OPTIMISATION_LOG.md`.
-3. Review and merge the Rust agent's M2, D-d and D-f; then M3 (native `History`).
-4. Texture paint per stroke (off by default), after D-f (same record-mode code).
+3. Multires (one exact step per Sculpt Mode visit), then M3 (native `History`).
+4. Texture painting: try it in a real window, then decide its default; the Image editor's paint mode.
 5. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 6. Multires (one step per Sculpt Mode visit) and Dyntopo (per stroke), behind one preference (Phase 4).
