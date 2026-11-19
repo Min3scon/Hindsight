@@ -283,6 +283,7 @@ Latest runs (2026-11-19):
 | same, `run grease_pencil` and the add-on panel drag (`run addon`) | main-session-3 a9e9a2c | Grease Pencil 5/5 (v3 on 5.3.0, legacy on 4.2.23: three strokes drawn with the mouse, three steps, the global slider takes them away and brings them back with their points); addon 9/9 on both (D147: a drag on the add-on's panel slider is one step) |
 | same, `run dyntopo` with Blender's own undo | main-session-3 6d6191d | 11/11 on 5.3.0 and 4.2.23: Ctrl+Z after a Dyntopo stroke moves the history one position back (no new step, the stroke's triangles gone), Ctrl+Shift+Z forward again, and the slider still puts step 2 back exactly |
 | same, `run select_ops` (R048) | main-session-3, R048 working tree | 5/5 on 5.3.0 and 4.2.23: Blender lists a click as `VIEW3D_OT_select` and A in Edit Mode as `MESH_OT_select_all`; the click reads 2 of 34 recorded datablocks and records nothing, G after it reads all and is one step; A and a click in Edit Mode read no mesh, G after them is one Edit Mode step |
+| same, `run global_two` (R056) | main-session-3 2fa9f41 | 7/7 on 5.3.0 and 4.2.23: eight real strokes on two objects in turn are eight global positions; the global slider dragged to 0, 4, 8, 3, 0, 8 puts both meshes exactly as after that many strokes |
 | same, Rounds A to D (`tests_ui/rounds.py --pass 90 --blender 5.3 --rounds ABCD`) | e4165f2 | 9/16 runs in 76 min; Round C all passed (10k, 10k with 1,000 steps, 100k, 500k, stroke split, file load, native undo); the failures were scenarios out of date (round_b_features, round_d, fail_inject: fixed and passing since), round_b redraw times under software GL, and these findings: a stale hindsight_native 0.2.0 in the Blender binaries' own site-packages here shadowed the add-on's wheel on Install from Disk (moved aside; container only), round_b redraw times are software GL under load, rounds.py's window offset breaks the Xvfb screenshot crop |
 | Native engine on GitHub, 12 jobs (Windows, macOS, Linux; x64 and ARM64; Python 3.11 and 3.13) | 7dc4853, 847bcdd, 099815c | 7dc4853: test_core_reference failed for a missing lz4 (CI dependencies fixed in 847bcdd); 847bcdd: 2 libzstd byte comparisons (fixed in 099815c); 099815c: rerun pending |
 | same | 9280a71, 3a58015 | 9280a71 (run 44466199267): every platform failed one test, the libzstd byte comparison in test_record_equals_diff_and_encode (Windows' earlier `resource` failure was gone); fixed in cd046ab; 3a58015 (run 44466670259): all 12 jobs green |
@@ -395,7 +396,7 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Check `Blender tests` on 436d068 (`Native engine` green, run 44486200151) and fix what it finds; then push main-session-3 (engine 0.7.0 with crc32, R051 to R054, D151) after its full suites, and run both workflows again. The RUST agent (now on Python) works on D152: making and deleting datablocks no object uses taken back (texts, unused materials, worlds, node groups); review and merge when it reports.
+1. Push main-session-3 (engine 0.7.0 with crc32, R051 to R056, D151, D152, the start fix for core tests in binaries, the global_two window scenario) once its full suites pass, and run `Blender tests` and `Native engine` again (run 44486195667 on 436d068: window job, module jobs and Native engine green; every binary failed only test_core_topo_chain at start, fixed in 79005c9). The RUST agent works on R057: mesh fingerprints as xxh3-128 in the engine with tagged values (old blake2b values still compared); review and merge when it reports.
 2. The recorder's remaining overhead at 500 objects: `id_props`, `idmap.claim` and constraints are the next fixed
    costs (R044 profile); each needs a depsgraph or fingerprint check before any cache.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
@@ -403,5 +404,5 @@ Blockers:
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (54 logged: 47 kept, 7 reverted).
+6. More optimisation rounds toward the owner's 100 (56 logged: 49 kept, 7 reverted).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.
