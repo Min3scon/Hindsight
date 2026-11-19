@@ -477,6 +477,18 @@ class ObjectAdapter(Adapter):
             out.update(mesh_lists(idb))        # D108: the lists the weights and shapes belong to
         if hasattr(idb, "modifiers"):
             out.update(modifier_values(idb))   # D110: the modifier stack and each modifier's settings
+        if idb.data is not None and hasattr(idb.data, "materials"):
+            if len(idb.material_slots):
+                out["slots"] = material_slots(idb)  # D111: material slots (which faces use them: a mesh channel)
+                out.update(owned_materials(idb))     # D112: the materials it records (settings, node trees)
+            else:
+                out["slots"] = [int(idb.active_material_index)]   # what material_slots gives for none
+        out.update(id_props(idb, animated_paths(idb) if idb.animation_data is not None else None))  # D114
+        d = idb.data
+        if d is not None and d.library is None and _owns_data(idb, d):
+            for k, v in id_props(d, animated_paths(d) if getattr(d, "animation_data", None) is not None
+                                 else None).items():
+                out[DATA_PREFIX + k] = v      # the mesh's (curve's, light's, ...) own, with its owner
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -511,6 +523,293 @@ class ObjectAdapter(Adapter):
             write_mesh_lists(idb, values)
         if hasattr(idb, "modifiers"):
             write_modifiers(idb, values, recorded)
+        for path, v in values.items():          # D112: materials before the slots that hold them
+            if path.startswith(MAT_PREFIX) and isinstance(v, dict):
+                write_material(path[len(MAT_PREFIX):], v)
+            elif path.startswith(MATP_PREFIX) and isinstance(v, dict):
+                m = idmap.find(path[len(MATP_PREFIX):])
+                if m is not None:
+                    write_id_props(m, v)
+        if "slots" in values and values["slots"] is not MISSING and idb.data is not None:
+            write_material_slots(idb, values["slots"])
+        write_id_props(idb, values)             # D114: custom properties and add-on data
+        dv = {k[len(DATA_PREFIX):]: v for k, v in values.items() if k.startswith(DATA_PREFIX)}
+        if dv and idb.data is not None and idb.data.library is None:
+            write_id_props(idb.data, dv)
+
+
+# ----------------------------------------------------------------------------- materials (D112)
+MAT_PREFIX = "@mat:"
+MATP_PREFIX = "@matp:"
+_MAT_SKIP = frozenset(_UI_PROPS | {"preview_render_type", "use_preview_world", "paint_active_slot",
+                                   "use_nodes", "pass_index"}) - {"pass_index"}
+_NODE_SKIP = frozenset(_UI_PROPS | {"location", "location_absolute", "width", "height", "dimensions",
+                                    "select", "show_options", "show_preview", "show_texture", "hide",
+                                    "is_active_output", "internal_links", "parent", "warning_propagation",
+                                    "use_custom_color", "color", "name", "bl_idname", "bl_label",
+                                    "bl_description", "bl_icon", "bl_static_type", "bl_width_default",
+                                    "bl_width_min", "bl_width_max", "bl_height_default", "bl_height_min",
+                                    "bl_height_max", "type"})
+
+
+# D112: a material's record is read again only after the material or its node tree changed (the
+# depsgraph says so, datarec.on_update calls material_changed); reading every material's node tree on
+# every operator was three times the cost of the whole operator at 500 objects.
+_MAT_CACHE: dict = {}        # material session_uid -> record
+_MAT_OWNER_OF: dict = {}     # material session_uid -> uid of the object that records it
+_TREE_MAT: dict = {}         # node tree session_uid -> material session_uid
+
+
+def material_changed(idb) -> str | None:
+    """A Material or a node tree changed: forget its record. Returns the uid of the object that
+    records it (to be compared again), or None."""
+    try:
+        k = idb.session_uid
+    except Exception:
+        return None
+    if isinstance(idb, bpy.types.NodeTree):
+        k = _TREE_MAT.get(k)
+        if k is None:
+            return None
+    _MAT_CACHE.pop(k, None)
+    return _MAT_OWNER_OF.get(k)
+
+
+def forget_materials() -> None:
+    _MAT_CACHE.clear()
+    _MAT_OWNER_OF.clear()
+    _TREE_MAT.clear()
+
+
+def material_owner_map() -> dict:
+    """material pointer -> uid of the tracked object that records it: the first by name among the
+    tracked objects that use it (as for shared meshes, D39). Kept for one recorder frame."""
+    fc = idmap.frame_cache()
+    if fc is not None and "mat_owner" in fc:
+        return fc["mat_owner"]
+    from . import datarec
+    out = {}
+    users = []
+    for u in datarec.tracked_uids():
+        ob = idmap.find(u)
+        if isinstance(ob, bpy.types.Object) and ob.data is not None and hasattr(ob.data, "materials"):
+            users.append((ob.name, u, ob))
+    for _n, u, ob in sorted(users):
+        for sl in ob.material_slots:
+            m = sl.material
+            if m is not None and m.library is None:
+                out.setdefault(m.as_pointer(), u)
+    if fc is not None:
+        fc["mat_owner"] = out
+    return out
+
+
+def owned_materials(ob) -> dict:
+    uid = idmap.uid_of(ob)
+    out = {}
+    seen = set()
+    owners = None
+    single = ob.data is not None and ob.data.users == 1
+    for sl in ob.material_slots:
+        m = sl.material
+        if m is None or m.library is not None or m.as_pointer() in seen:
+            continue
+        seen.add(m.as_pointer())
+        # used by this object alone (its only user is this slot): no need to look at the others
+        if not (m.users == 1 and (single or sl.link == "OBJECT")):
+            if owners is None:
+                owners = material_owner_map()
+            if owners.get(m.as_pointer()) != uid:
+                continue
+        mu = idmap.claim(m)
+        if mu:
+            try:
+                out[MAT_PREFIX + mu] = material_record(m, uid)
+                # D114: its custom properties and add-on data, read every time (setting one with
+                # m["name"] = value doesn't tell the depsgraph, so the kept record can't hold them)
+                out[MATP_PREFIX + mu] = id_props(m, animated_paths(m) if m.animation_data is not None else None)
+            except Exception:
+                continue
+    return out
+
+
+def material_record(m, owner=None) -> dict:
+    k = m.session_uid
+    if owner is not None:
+        _MAT_OWNER_OF[k] = owner
+    rec = _MAT_CACHE.get(k)
+    if rec is not None:
+        return rec
+    vals = struct_values(m, _MAT_SKIP)
+    for p in animated_paths(m):     # (a Material has no path_from_id: struct_values can't mark them)
+        if p in vals:
+            vals[p] = ANIMATED
+    rec = {"values": vals}
+    nt = getattr(m, "node_tree", None)
+    if nt is not None:
+        rec["tree"] = capture_tree(nt)
+        _TREE_MAT[nt.session_uid] = k
+    _MAT_CACHE[k] = rec
+    return rec
+
+
+def _socket_value(sock):
+    if not hasattr(sock, "default_value"):
+        return None
+    v = sock.default_value
+    if isinstance(v, bpy.types.ID):
+        return {"ref": idmap.ref_of(v)}
+    try:
+        return normalise(v)
+    except Exception:
+        return None
+
+
+def capture_tree(nt) -> dict:
+    """A node tree: its nodes (name, type), each node's own settings and input values, and its links.
+    A node's position isn't part of it (moving a node isn't a step)."""
+    nodes = []
+    vals = {}
+    anim = animated_paths(nt)       # animated values change with the frame: left out
+    for n in nt.nodes:
+        nodes.append([n.name, n.bl_idname])
+        pre = f'nodes["{bpy.utils.escape_identifier(n.name)}"].' if anim else ""
+        rec = {"props": struct_values(n, _NODE_SKIP, anim=anim)}
+        ins = []
+        for i, sock in enumerate(n.inputs):
+            if anim and f"{pre}inputs[{i}].default_value" in anim:
+                continue
+            v = _socket_value(sock)
+            if v is not None:
+                ins.append([sock.identifier, v])
+        if ins:
+            rec["in"] = ins
+        if n.bl_idname in ("ShaderNodeValue", "ShaderNodeRGB") and n.outputs:
+            ov = _socket_value(n.outputs[0])
+            if ov is not None:
+                rec["out"] = ov
+        vals[n.name] = rec
+    links = [[l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier]
+             for l in nt.links]
+    return {"nodes": nodes, "node": vals, "links": links}
+
+
+def write_material(muid: str, rec: dict) -> None:
+    m = idmap.find(muid)
+    if m is None:
+        return
+    _MAT_CACHE.pop(m.session_uid, None)
+    try:
+        set_struct_values(m, rec.get("values") or {})
+        tree = rec.get("tree")
+        if tree and getattr(m, "node_tree", None) is not None:
+            write_tree(m.node_tree, tree)
+    except Exception as e:
+        log.error_once(("material", str(e)), f"could not restore material {m.name}: {e}", e)
+
+
+def _set_socket(sock, v) -> None:
+    if isinstance(v, dict) and "ref" in v:
+        v = idmap.find(v["ref"]) if v["ref"] else None
+    cur = _socket_value(sock)
+    if cur == v or (isinstance(v, bpy.types.ID) and sock.default_value == v):
+        return
+    sock.default_value = to_rna(v) if not isinstance(v, bpy.types.ID) else v
+
+
+def write_tree(nt, tree: dict) -> None:
+    want = [(n, t) for n, t in tree.get("nodes") or ()]
+    names = {n for n, _t in want}
+    for node in [x for x in nt.nodes if x.name not in names or (x.name, x.bl_idname) not in set(want)]:
+        nt.nodes.remove(node)
+    for n, t in want:
+        if nt.nodes.get(n) is None:
+            node = nt.nodes.new(t)
+            node.name = n
+    for n, rec in (tree.get("node") or {}).items():
+        node = nt.nodes.get(n)
+        if node is None:
+            continue
+        set_struct_values(node, rec.get("props") or {})
+        by_id = {s.identifier: s for s in node.inputs}
+        for ident, v in rec.get("in") or ():
+            sock = by_id.get(ident)
+            if sock is not None:
+                try:
+                    _set_socket(sock, v)
+                except Exception:
+                    pass
+        if "out" in rec and node.outputs:
+            try:
+                _set_socket(node.outputs[0], rec["out"])
+            except Exception:
+                pass
+    want_links = [tuple(l) for l in tree.get("links") or ()]
+    have = [(l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier)
+            for l in nt.links]
+    if have != want_links:
+        nt.links.clear()
+        for fn, fs, tn, ts in want_links:
+            a, b = nt.nodes.get(fn), nt.nodes.get(tn)
+            if a is None or b is None:
+                continue
+            so = next((x for x in a.outputs if x.identifier == fs), None)
+            si = next((x for x in b.inputs if x.identifier == ts), None)
+            if so is not None and si is not None:
+                nt.links.new(so, si)
+
+
+# ----------------------------------------------------------------------------- material slots (D111)
+def material_slots(ob) -> list:
+    """[[link, material id], ...] and, last, the active slot's index."""
+    rows = []
+    mats = ob.data.materials
+    for i, sl in enumerate(ob.material_slots):
+        dm = mats[i] if i < len(mats) else None
+        om = sl.material if sl.link == "OBJECT" else None
+        rows.append([sl.link, ref_of_material(dm), ref_of_material(om)])
+    return rows + [int(ob.active_material_index)]
+
+
+def ref_of_material(m):
+    return idmap.ref_of(m) if m is not None else None
+
+
+def write_material_slots(ob, rec) -> None:
+    if not isinstance(rec, list) or not rec:
+        return
+    want, active = rec[:-1], rec[-1]
+    data = ob.data
+    try:
+        mats = data.materials
+        if len(mats) != len(want) or len(ob.material_slots) != len(want):
+            # pop() leaves the object's own slot count behind (Blender 4.2 to 5.3); clear() doesn't.
+            # The mesh's materials are set again below with each slot
+            keep = [m for m in mats]
+            mats.clear()
+            for i in range(len(want)):
+                mats.append(keep[i] if i < len(keep) else None)
+        for i, row in enumerate(want):
+            link, dref = row[0], row[1]
+            oref = row[2] if len(row) > 2 else None
+            sl = ob.material_slots[i]
+            dm = idmap.find(dref) if dref else None
+            if dref and dm is None:
+                _note_ref(ob, f"data.materials[{i}]", dref, None, "object", "slots")
+            if mats[i] != dm:
+                mats[i] = dm                      # the mesh's material (also behind an object link)
+            if sl.link != link:
+                sl.link = link
+            if link == "OBJECT":
+                om = idmap.find(oref) if oref else None
+                if oref and om is None:
+                    _note_ref(ob, f"material_slots[{i}].material", oref, None, "object", "slots")
+                if sl.material != om:
+                    sl.material = om
+        if 0 <= int(active) < len(ob.material_slots) and ob.active_material_index != int(active):
+            ob.active_material_index = int(active)
+    except Exception as e:
+        log.error_once(("material_slots", str(e)), f"could not restore the material slots: {e}", e)
 
 
 # ----------------------------------------------------------------------------- modifiers (D110)
@@ -940,6 +1239,189 @@ def _id_props(owner) -> dict:
     return out
 
 
+# ----------------------------------------------------------------------------- ID properties (D114)
+# Custom properties and the data add-ons keep on a datablock (their PointerProperty and
+# CollectionProperty groups and other registered properties: ID properties underneath). Blender 4 keeps
+# both in the datablock's own ID properties; Blender 5 keeps an add-on's in a separate system group.
+# They are recorded as they are stored, in one read each, so any add-on's data is recorded without
+# knowing the add-on, and putting them back gives exactly what was stored (a value that wasn't set is
+# taken out again, so it reads as the add-on's default).
+IDPROPS_KEY = "idprops"
+SYSPROPS_KEY = "sysprops"
+DATA_PREFIX = "data."
+
+
+def _owns_data(ob, d) -> bool:
+    """The object that records its data's properties: the only user, or for a shared mesh the object
+    that records the mesh (D39)."""
+    if d.users <= 1 + bool(getattr(d, "use_fake_user", False)):
+        return True
+    if ob.type != "MESH":
+        return False
+    from . import datarec
+    return datarec._MESH_OWNER.get(d.as_pointer()) == idmap.uid_of(ob)
+
+
+def _own_prop(k: str) -> bool:
+    """Hindsight's own properties (ids, the camera rig mark, its scene settings) are never part of
+    what is recorded."""
+    return k == "hindsight" or k.startswith("_hindsight") or k.startswith("hindsight_")
+
+
+def _sys_group(idb, create: bool = False):
+    """Blender 5: the group add-ons' properties are stored in, or None (none yet, or Blender 4)."""
+    get = getattr(idb, "bl_system_properties_get", None)
+    if get is None:
+        return None
+    try:
+        pg = get(do_create=create)
+        return pg.id_properties_ensure() if pg is not None else None
+    except Exception:
+        return None
+
+
+def _idp_json(v):
+    """An ID property value (from to_dict) as a JSON value: a datablock becomes {REF_KEY: its id}. An
+    empty group is left out: it reads as the defaults, like no group (Blender 4 makes one when a panel
+    only reads an add-on's settings, which isn't a change)."""
+    if isinstance(v, dict):
+        out = {}
+        for k, x in v.items():
+            x = _idp_json(x)
+            if not (isinstance(x, dict) and not x):
+                out[k] = x
+        return out
+    if isinstance(v, list):
+        return [_idp_json(x) for x in v]
+    if isinstance(v, bpy.types.ID):
+        return {REF_KEY: idmap.ref_of(v)}
+    if isinstance(v, (int, float, str, bool)) or v is None:
+        return v
+    return normalise(v)
+
+
+def _idp_py(v, cur=MISSING):
+    """What _idp_json gave, ready to store again; ANIMATED parts take the value stored now (cur)."""
+    if v == ANIMATED:
+        return cur
+    if isinstance(v, dict):
+        if set(v) == {REF_KEY}:
+            return idmap.find(v[REF_KEY]) if v[REF_KEY] else None
+        c = cur if isinstance(cur, dict) else {}
+        return {k: _idp_py(x, c.get(k, MISSING)) for k, x in v.items()
+                if not (x == ANIMATED and c.get(k, MISSING) is MISSING)}
+    if isinstance(v, list):
+        c = cur if isinstance(cur, list) and len(cur) == len(v) else [MISSING] * len(v)
+        return [_idp_py(x, y) for x, y in zip(v, c)]
+    return v
+
+
+def _group_json(g) -> dict:
+    out = {}
+    if g is None:
+        return out
+    try:
+        keys = list(g.keys())
+    except Exception:
+        return out
+    for k in keys:
+        if _own_prop(k):
+            continue
+        try:
+            v = g[k]
+            v = _idp_json(v.to_dict() if hasattr(v, "to_dict") else
+                          v.to_list() if hasattr(v, "to_list") else v)
+        except Exception:
+            continue
+        if not (isinstance(v, dict) and not v):
+            out[k] = v
+    return out
+
+
+def _mark_animated(d: dict, anim) -> None:
+    """Paths an animation or driver sets ('["prop"]', 'addon.value') become ANIMATED in d."""
+    for p in anim:
+        if p.startswith('["'):
+            k = p[2:p.find('"]', 2)]
+            rest = p[p.find('"]', 2) + 2:]
+        else:
+            head = p.split(".", 1)
+            k, rest = head[0], ("." + head[1] if len(head) > 1 else "")
+            k = k.split("[", 1)[0]
+        if k not in d:
+            continue
+        node = d
+        key = k
+        ok = True
+        for part in [x for x in rest.split(".") if x]:
+            if "[" in part or not isinstance(node.get(key), dict):
+                ok = False
+                break
+            node, key = node[key], part
+        if ok and isinstance(node, dict) and key in node:
+            node[key] = ANIMATED
+        else:
+            d[k] = ANIMATED
+
+
+def id_props(idb, anim=None) -> dict:
+    """{IDPROPS_KEY: the datablock's own ID properties, SYSPROPS_KEY: Blender 5's add-on group}. Both
+    are always there (empty when nothing is set): a value that disappears would read as a kind that
+    isn't recorded, not as properties taken off."""
+    own = _group_json(idb)
+    out = {IDPROPS_KEY: own}
+    if hasattr(idb, "bl_system_properties_get"):
+        sysd = _group_json(_sys_group(idb))
+        out[SYSPROPS_KEY] = sysd
+    else:
+        sysd = None
+    if anim:
+        _mark_animated(own, anim)
+        if sysd:
+            _mark_animated(sysd, anim)
+    return out
+
+
+def _write_group(g, want: dict) -> None:
+    if g is None:
+        return
+    want = want or {}
+    for k in [k for k in g.keys() if not _own_prop(k) and k not in want]:
+        try:
+            del g[k]                     # not set then: back to the add-on's default
+        except Exception:
+            pass
+    for k, v in want.items():
+        if _own_prop(k):
+            continue
+        try:
+            cur = g[k] if k in g else MISSING
+            curv = cur.to_dict() if hasattr(cur, "to_dict") else cur.to_list() if hasattr(cur, "to_list") else cur
+            if cur is not MISSING and _idp_json(curv) == v:
+                continue
+            val = _idp_py(v, curv)
+            if val is MISSING:
+                continue
+            if isinstance(v, dict) and set(v) == {REF_KEY} and val is None and v[REF_KEY]:
+                continue                 # the datablock it points to is deleted now: left as it is
+            if k in g:
+                del g[k]                 # Blender won't store a dict over an existing group
+            g[k] = val
+        except Exception as e:
+            log.error_once(("idprop", k, str(e)), f"could not put back the property {k}: {e}", e)
+
+
+def write_id_props(idb, values: dict) -> None:
+    if IDPROPS_KEY in values and values[IDPROPS_KEY] is not MISSING:
+        _write_group(idb, values[IDPROPS_KEY])
+    elif IDPROPS_KEY in values:          # recorded as none: remove what is set now
+        _write_group(idb, {})
+    if SYSPROPS_KEY in values:
+        want = values[SYSPROPS_KEY]
+        g = _sys_group(idb, create=want is not MISSING and bool(want))
+        _write_group(g, {} if want is MISSING else want)
+
+
 def _gn_inputs(m):
     """A Geometry Nodes modifier's input values on Blender 5.2 and later, where they are RNA
     (modifier.properties.inputs.<identifier>: value, type, attribute_name) instead of custom properties.
@@ -1158,7 +1640,8 @@ def object_body(ob) -> dict:
         "physics": _physics(ob),
         "slots": [[s.link, idmap.ref_of(s.material) if s.material is not None else None] for s in ob.material_slots],
         "hidden": _hidden(ob),
-        "custom": _id_props(ob),
+        "custom": _group_json(ob),              # D114: nested groups and their pointers too
+        "sys": _group_json(_sys_group(ob)),     # D114: Blender 5 keeps add-ons' data apart
     }
 
 
@@ -1177,9 +1660,11 @@ class SceneAdapter(Adapter):
             # own Movie Mode objects (rigmark) are left out and never get an id
             out["objects"] = sorted(u for u in (idmap.claim(o) for o in idb.objects
                                                 if o.library is None and not rigmark.is_rig(o)) if u)
+        out.update(id_props(idb, animated_paths(idb) if idb.animation_data is not None else None))  # D114
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
+        write_id_props(idb, values)             # D114: custom properties and add-on data
         if "collections" in values and values["collections"] is not MISSING:
             _write_collection_tree(idb, values["collections"])
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
@@ -1331,7 +1816,9 @@ def _recreate_object(scene, uid, body, snap):
             pass
     _set_physics(ob, body.get("physics"))
     _set_hidden(ob, body.get("hidden"))
-    _set_id_props(ob, body.get("custom"))
+    _write_group(ob, body.get("custom") or {})
+    if body.get("sys"):
+        _write_group(_sys_group(ob, create=True), body["sys"])
     return ob
 
 
@@ -1342,6 +1829,8 @@ _OBJECT_KINDS = {"collections": "collections", "hide": "visibility", "constraint
 def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
     if adapter_id == "scene":
+        if path in (IDPROPS_KEY, SYSPROPS_KEY):
+            return None
         return "scene_collections" if path == "collections" else "objects"
     if adapter_id == "object":
         return _OBJECT_KINDS.get(path)

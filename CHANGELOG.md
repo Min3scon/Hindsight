@@ -32,6 +32,7 @@ Faster and lighter:
 
 Fixed:
 
+- On an object Record everything is on for, the sidebar no longer says modifiers, vertex groups, shape keys and materials aren't part of the history.
 - The on-screen slider hung to the right of the viewport. The whole slider is centred now.
 - Recovery after a crash (On open: Interrupted session) could bring back a history that didn't match the mesh in the file, so scrubbing showed shapes that never existed. It happened after the step cap or the memory limit dropped old steps, after going back past the last save and sculpting there, and after a join.
 - Steps that can't be reached from the saved file are left out of the recovered history now. The Undo History tab says how many, and for which object.
@@ -51,6 +52,8 @@ Fixed:
 - After a long session a repeating error could fill the system console.
 - Steps per object can be raised to 100,000 in Preferences (the default stays 10,000). With global history on, recording a step no longer rebuilds the whole timeline: at 50,000 steps that took 25 to 90 ms after every stroke, now 0.3 ms.
 - Record everything records modifiers: adding, removing, reordering and their settings, Geometry Nodes inputs included. Going back over Apply Modifier gives the modifier back.
+- Record everything records material slots (adding and removing them, which material each holds, linked to the object or the mesh, the active slot) and materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
+- Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
 - Library overrides keep their history when the file is opened again.
 - Record everything: adding, removing, renaming and reordering vertex groups and shape keys, and switching the active UV map, now come back when you go back and forward.
 - A mesh changed while Hindsight wasn't running keeps its history when Blender's backup copy of the file (.blend1) still holds the mesh as Hindsight saved it: the change becomes one step.

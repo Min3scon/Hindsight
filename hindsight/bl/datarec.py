@@ -355,17 +355,25 @@ def on_update(depsgraph) -> None:
     """depsgraph_update_post: remember which tracked datablocks changed."""
     uids = tracked_uids()
     if not uids:
+        adapters.forget_materials()
         return
     try:
         if bpy.context.screen is not None and bpy.context.screen.is_animation_playing:
+            adapters.forget_materials()
             return            # playback changes animated values every frame; nothing to record
     except Exception:
         pass
     now = time.time()
     scenes = _scene_uids_in(uids)
+    mats = (bpy.types.Material, bpy.types.NodeTree)
     for u in depsgraph.updates:
         idv = u.id
         orig = getattr(idv, "original", idv)
+        if isinstance(orig, mats):
+            ou = adapters.material_changed(orig)   # D112: its object records it
+            if ou in uids:
+                _DIRTY[ou] = now
+            continue
         uid = idmap.uid_of(orig)
         if uid in uids:
             _DIRTY[uid] = now
@@ -568,14 +576,30 @@ def _edit_step(label: str) -> None:
                 break
 
 
+_SLOTS_KEY = ("object", "slots")
+
+
 def _same_values(old: dict, new: dict) -> bool:
-    """True only if the two value dicts are identical: same keys in the same order, same types,
-    floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
+    """True only if the two value dicts are identical: same keys, same types, floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
     _diff finds nothing. False says nothing: _diff decides."""
     if len(old) != len(new):
         return False
     try:
-        return marshal.dumps(old, 2) == marshal.dumps(new, 2)
+        sl = new.get(_SLOTS_KEY)
+        if sl is None or len(sl) <= 1:
+            # no material slots, so no kept material records: one compare of the whole dict
+            return marshal.dumps(old, 2) == marshal.dumps(new, 2)
+        if old.keys() != new.keys():
+            return False
+        # a value that is the same object on both sides (a material's record is kept until the
+        # material changes, D112) is the same value: only the others are compared
+        a, b = {}, {}
+        for k, v in new.items():
+            o = old[k]
+            if o is not v:
+                a[k] = o
+                b[k] = v
+        return marshal.dumps(a, 2) == marshal.dumps(b, 2)
     except Exception:
         return False
 
@@ -610,6 +634,8 @@ def _diff(old: dict, new: dict) -> dict:
             continue        # stored with creation and deletion steps, never read back from Blender
         if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or ""):
             continue        # a kind switched off isn't read; that isn't a removal
+        if a is b:
+            continue        # the same object: unchanged
         if exact and a is not MISSING and b is not MISSING:
             try:
                 if dumps(a, 2) == dumps(b, 2):
@@ -1015,6 +1041,7 @@ def on_undo(direction: str = "undo") -> None:
     (undo) or after (redo) a Hindsight jump, the cursor follows; if they match a neighbouring step,
     the cursor moves one step; anything else becomes the new baseline (nothing is recorded)."""
     idmap.forget()
+    adapters.forget_materials()
     with idmap.frame():
         return _on_undo(direction)
 
@@ -1129,6 +1156,7 @@ def prime() -> None:
 
 def forget() -> None:
     _DIRTY.clear()
+    adapters.forget_materials()
     _BODIES.clear()
     _BODY_DIRTY.clear()
     _SCENE_UIDS.clear()

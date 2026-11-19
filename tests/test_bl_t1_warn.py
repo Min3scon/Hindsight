@@ -179,6 +179,31 @@ def test_linked_objects():
     assert shows("A", W.TXT_EV_LINKED)
 
 
+@covers("obj.transforms", "WARN")
+def test_recorded_data_not_called_unrecorded():
+    """D113: modifiers, vertex groups, shape keys and materials are recorded on an object Record
+    everything is on for (D108, D110 to D112): the notes saying they aren't are not shown there."""
+    setup()
+    a = bpy.data.objects["A"]
+    a.modifiers.new("Bevel", "BEVEL")
+    a.vertex_groups.new(name="G")
+    a.shape_key_add(name="Basis")
+    a.data.materials.append(bpy.data.materials.new("M"))
+    gone = (W.TXT_MODIFIERS, W.TXT_VGROUPS, W.TXT_SHAPE_KEYS, W.TXT_MATERIALS)
+    flat = " ".join(sidebar_text("A").split())
+    for t in gone:
+        assert t not in flat, t
+    datarec.set_tracked(a, False)
+    flat = " ".join(sidebar_text("A").split())
+    for t in gone:
+        assert t in flat, t
+    datarec.set_tracked(a, True)
+    datarec.FORCE_SCOPE[0] = "SCULPT"
+    flat = " ".join(sidebar_text("A").split())
+    for t in gone:
+        assert t in flat, t
+
+
 @covers(["obj.transforms", "obj.constraints", "obj.addremove", "obj.editsteps", "obj.collections"], "WARN")
 def test_nothing_said_with_sculpting_only():
     setup()
@@ -191,6 +216,6 @@ def test_nothing_said_with_sculpting_only():
 
 for fn in (test_animated_values, test_lists_in_constraint_settings, test_parenting_with_deform, test_physics_and_particles_note, test_objects_not_switched_on_and_other_types,
            test_big_mesh_edit_mode, test_new_collections_need_the_scene, test_linked_objects,
-           test_nothing_said_with_sculpting_only):
+           test_recorded_data_not_called_unrecorded, test_nothing_said_with_sculpting_only):
     H.run(fn)
 H.finish()

@@ -180,10 +180,28 @@ def claim(idb) -> str | None:
             return idb.get(UID_PROP)
         except Exception:
             return None
+    fc = _FCACHE[0]
+    if fc is not None:
+        # inside a frame no datablock is added, removed or renamed: once claimed, a datablock keeps
+        # what it got (a copy claimed later gets its own id; this one keeps this)
+        memo = fc.get("claim")
+        if memo is None:
+            memo = fc["claim"] = {}
+        ptr = idb.as_pointer()
+        u = memo.get(ptr)
+        if u is not None and idb.get(UID_PROP) == u:
+            return u
+        u = _claim(idb, ptr)
+        if u is not None:
+            memo[ptr] = u
+        return u
+    return _claim(idb, idb.as_pointer())
+
+
+def _claim(idb, ptr):
     u = uid_of(idb, create=True)
     if u is None:
         return None
-    ptr = idb.as_pointer()
     owner = _owner.get(u)
     if owner is None or owner == ptr:
         _owner[u] = ptr
