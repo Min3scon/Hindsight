@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 
+import bpy
+
 import numpy as np
 
 from ..core.types import (
@@ -185,10 +187,63 @@ def read_snapshot(me, sculpt_only: bool = False, ob=None, extras: bool = False) 
 # a weight outside that (Blender's bevel and inset can leave tiny negative ones) comes back clamped.
 VG_PREFIX = "vg:"
 SK_PREFIX = "sk:"
+IMG_PREFIX = "img:"       # texture painting: the pixels of one image (float RGBA), see read_images
+TEXTURE_MAX_PIXELS = 2048 * 2048    # larger images are not recorded: at 4K one stroke reads 268 MB (60 to 90 ms)
 
 
 def is_extra(key: str) -> bool:
-    return key.startswith(VG_PREFIX) or key.startswith(SK_PREFIX)
+    return key.startswith(VG_PREFIX) or key.startswith(SK_PREFIX) or key.startswith(IMG_PREFIX)
+
+
+def img_key(name: str) -> str:
+    return make_key(IMG_PREFIX + name, "POINT", "FLOAT_COLOR")
+
+
+def paint_images(ob) -> list:
+    """The images a texture painting stroke on `ob` can change: those of its materials' texture nodes
+    and the canvas of the image paint tool, as far as Hindsight can record them (up to
+    TEXTURE_MAX_PIXELS, with pixel data)."""
+    seen, out = set(), []
+
+    def take(img):
+        if img is None or img.name in seen:
+            return
+        seen.add(img.name)
+        w, h = img.size
+        if w * h and w * h <= TEXTURE_MAX_PIXELS and img.source in ("FILE", "GENERATED") and img.has_data:
+            out.append(img)
+
+    for slot in getattr(ob, "material_slots", ()):
+        mat = slot.material
+        if mat is not None:
+            for img in getattr(mat, "texture_paint_images", ()) or ():
+                take(img)
+    try:
+        take(bpy.context.scene.tool_settings.image_paint.canvas)
+    except Exception:
+        pass
+    return out
+
+
+def read_images(ob) -> dict:
+    """{key: float32 RGBA pixels, flat} per paintable image (reused buffers, never handed out as a baseline)."""
+    out = {}
+    for img in paint_images(ob):
+        key = img_key(img.name)
+        n = img.size[0] * img.size[1] * 4
+        buf = _buf(key, n, np.float32)
+        img.pixels.foreach_get(buf)
+        out[key] = buf
+    return out
+
+
+def _write_image(name: str, arr) -> None:
+    img = bpy.data.images.get(name)
+    if img is None or arr is None or img.size[0] * img.size[1] * 4 != arr.size:
+        return
+    img.pixels.foreach_set(arr)
+    img.update()
+    img.update_tag()
 
 
 def vg_key(name: str) -> str:
@@ -260,6 +315,9 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
     n = len(me.vertices)
     for key, arr in arrays.items():
         name = split_key(key)[0]
+        if name.startswith(IMG_PREFIX):
+            _write_image(name[len(IMG_PREFIX):], arr)
+            continue
         if name.startswith(VG_PREFIX):
             g = ob.vertex_groups.get(name[len(VG_PREFIX):])
             if g is not None and arr is not None and arr.size == n:
