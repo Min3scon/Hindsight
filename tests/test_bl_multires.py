@@ -263,8 +263,45 @@ def test_stroke_before_the_baseline_settles_stays_in_the_step():
     print("PASS test_stroke_before_the_baseline_settles_stays_in_the_step")
 
 
+def test_digest_reads_the_mesh_not_its_materials():
+    """D150: a visit is compared by a digest of the mesh's own blocks in the written file. Blender 5.0 to
+    5.2 write a material a little differently each time (one byte in its data changes between two writes
+    of the same mesh), which made a visit that changed nothing a step whenever the mesh had a material."""
+    H.fresh()
+    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3)
+    ob = C.active_object
+    ob.data.materials.append(bpy.data.materials.new("Skin"))
+    ob.modifiers.new("Multires", "MULTIRES")
+    bpy.ops.object.multires_subdivide(modifier="Multires", mode="CATMULL_CLARK")
+    raw = multires.snapshot_bytes(ob.data)
+    blocks = multires.blend_blocks(raw)
+    assert blocks and any(c == b"ME\x00\x00" for _p, c, _l in blocks), blocks[:5]
+    owner, by_id = None, []
+    for pos, code, ln in blocks:
+        if code != b"DATA":
+            owner = code
+        by_id.append((pos, code, ln, owner))
+    bh = 32 if raw[7:9] == b"17" else 24
+    ma = [(p, ln) for p, c, ln, o in by_id if o == b"MA\x00\x00" and ln > 8]
+    me = [(p, ln) for p, c, ln, o in by_id if o == b"ME\x00\x00" and c == b"DATA" and ln > 8]
+    assert ma and me, (ma[:2], me[:2])
+    d0 = multires.hash_of(raw)
+    for p, ln in ma:
+        x = bytearray(raw)
+        x[p + bh + ln // 2] ^= 0x07                     # a byte of the material's data
+        assert multires.hash_of(bytes(x)) == d0, (p, ln)
+    p, ln = me[0]
+    y = bytearray(raw)
+    y[p + bh + ln // 2] ^= 0x07                         # a byte of the mesh's data
+    assert multires.hash_of(bytes(y)) != d0
+    assert multires.hash_of(b"not a blend file") != multires.hash_of(b"not a blend file!")   # every byte then
+    # two writes of the same mesh give the same digest (on 5.0 to 5.2 the bytes themselves may differ)
+    assert multires.hash_of(multires.snapshot_bytes(ob.data)) == multires.hash_of(multires.snapshot_bytes(ob.data))
+    print(f"PASS test_digest_reads_the_mesh_not_its_materials ({len(blocks)} blocks)")
+
+
 if __name__ == "__main__":
-    for t in (test_off_by_default_pauses_as_before, test_one_step_per_visit_and_exact,
+    for t in (test_digest_reads_the_mesh_not_its_materials, test_off_by_default_pauses_as_before, test_one_step_per_visit_and_exact,
               test_a_visit_that_changes_nothing_is_no_step, test_level_change_takes_the_step, test_save_and_reload,
               test_crash_recovery_replays_the_visits, test_steps_are_counted_by_the_caps,
               test_stroke_before_the_baseline_settles_stays_in_the_step):

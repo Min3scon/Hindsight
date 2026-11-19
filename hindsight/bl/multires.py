@@ -124,9 +124,59 @@ def restore(obj, arr) -> None:
             coll.remove(idb)
 
 
+_OWN_IDS = (b"ME\x00\x00", b"KE\x00\x00")    # the mesh and its shape keys; DATA blocks follow their owner
+
+
+def blend_blocks(raw: bytes) -> list:
+    """(offset, code, length) of each block of a .blend file written by Blender 4.2 to 5.x: the old
+    header ("BLENDER-v402", 12 bytes, 24-byte block heads) or the new one ("BLENDER17-01v0500", 17
+    bytes, 32-byte block heads). [] if the bytes aren't read that way."""
+    import struct
+    try:
+        if raw[:7] != b"BLENDER":
+            return []
+        if raw[7:9] == b"17":
+            pos, head = 17, struct.Struct("<4siQqq")            # code, SDNA index, old address, length, count
+            length = lambda t: t[3]
+        elif raw[7:8] == b"-" and raw[8:9] == b"v":
+            pos, head = 12, struct.Struct("<4siQii")            # code, length, old address, SDNA index, count
+            length = lambda t: t[1]
+        else:
+            return []
+        out = []
+        while pos + head.size <= len(raw):
+            t = head.unpack_from(raw, pos)
+            n = length(t)
+            if n < 0 or pos + head.size + n > len(raw):
+                return []
+            out.append((pos, t[0], head.size + n))
+            if t[0] == b"ENDB":
+                return out
+            pos += head.size + n
+        return []
+    except Exception:
+        return []
+
+
 def hash_of(raw: bytes) -> bytes:
+    """Digest of the mesh as written: its own blocks only (the mesh and its shape keys, each with the
+    DATA blocks that follow it). D150: Blender 5.0 to 5.2 write a material slightly differently each
+    time (one byte of its data), so a digest of the whole file made a visit that changed nothing a step
+    whenever the mesh had a material. Bytes that aren't read as blocks: a digest of every byte."""
     import hashlib
-    return hashlib.blake2b(raw, digest_size=16).digest()
+    h = hashlib.blake2b(digest_size=16)
+    blocks = blend_blocks(raw)
+    if not blocks:
+        h.update(raw)
+        return h.digest()
+    own = False
+    mv = memoryview(raw)
+    for pos, code, n in blocks:
+        if code != b"DATA":
+            own = code in _OWN_IDS
+        if own:
+            h.update(mv[pos:pos + n])
+    return h.digest()
 
 
 def begin_visit(obj) -> None:
