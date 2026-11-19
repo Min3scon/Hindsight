@@ -911,10 +911,68 @@ def capture_tree(nt) -> dict:
             ov = _socket_value(n.outputs[0])
             if ov is not None:
                 rec["out"] = ov
+        items = _node_items(n)                  # D130: zone and switch items (their sockets)
+        if items:
+            rec["items"] = items
+        po = getattr(n, "paired_output", None)  # D130: a zone's input node and its output node
+        if po is not None:
+            rec["pair"] = po.name
         vals[n.name] = rec
-    links = [[l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier]
+    # sockets by identifier, and by position for item sockets made again (new identifiers)
+    links = [[l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier,
+              _sock_index(l.from_node.outputs, l.from_socket), _sock_index(l.to_node.inputs, l.to_socket)]
              for l in nt.links]
     return {"nodes": nodes, "node": vals, "links": links}
+
+
+_ITEM_COLLS_SKIP = frozenset({"inputs", "outputs", "internal_links", "panel_states"})
+_ITEM_SKIP = frozenset(_UI_PROPS | {"color"})
+
+
+def _sock_index(socks, sock) -> int:
+    for i, x in enumerate(socks):
+        if x == sock:
+            return i
+    return -1
+
+
+def _node_items(n) -> dict:
+    out = {}
+    for p in n.bl_rna.properties:
+        if p.type != "COLLECTION" or p.identifier in _ITEM_COLLS_SKIP:
+            continue
+        coll = getattr(n, p.identifier, None)
+        if coll is None or not hasattr(coll, "new"):
+            continue
+        out[p.identifier] = [struct_values(it, _ITEM_SKIP) for it in coll]
+    return out
+
+
+def _item_key(v) -> tuple:
+    return (v.get("name"), v.get("socket_type") or v.get("data_type"))
+
+
+def _write_items(node, items: dict) -> None:
+    for cname, want in items.items():
+        coll = getattr(node, cname, None)
+        if coll is None:
+            continue
+        have = [_item_key(struct_values(it, _ITEM_SKIP)) for it in coll]
+        if have != [_item_key(w) for w in want]:
+            coll.clear()
+            for w in want:
+                t = w.get("socket_type") or w.get("data_type")
+                name = w.get("name") or ""
+                for args in ((t, name), (name,), ()):
+                    if args and args[0] is None:
+                        continue
+                    try:
+                        coll.new(*args)
+                        break
+                    except Exception:
+                        continue
+        for it, w in zip(coll, want):
+            set_struct_values(it, {k: x for k, x in w.items() if k not in ("socket_type", "data_type")})
 
 
 def write_material(muid: str, rec: dict) -> None:
@@ -954,6 +1012,11 @@ def write_tree(nt, tree: dict) -> None:
         if node is None:
             continue
         set_struct_values(node, rec.get("props") or {})
+        if rec.get("items"):
+            try:
+                _write_items(node, rec["items"])
+            except Exception as e:
+                log.error_once(("node_items", str(e)), f"could not restore the items of {node.name}: {e}", e)
         by_id = {s.identifier: s for s in node.inputs}
         for ident, v in rec.get("in") or ():
             sock = by_id.get(ident)
@@ -967,17 +1030,33 @@ def write_tree(nt, tree: dict) -> None:
                 _set_socket(node.outputs[0], rec["out"])
             except Exception:
                 pass
+    for n, rec in (tree.get("node") or {}).items():     # D130: zones paired once both nodes exist
+        node, out = nt.nodes.get(n), nt.nodes.get(rec.get("pair") or "")
+        if node is not None and out is not None and hasattr(node, "pair_with_output"):
+            po = getattr(node, "paired_output", None)
+            if po is None or po.name != out.name:
+                try:
+                    node.pair_with_output(out)
+                except Exception:
+                    pass
     want_links = [tuple(l) for l in tree.get("links") or ()]
-    have = [(l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier)
+    have = [(l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier,
+             _sock_index(l.from_node.outputs, l.from_socket), _sock_index(l.to_node.inputs, l.to_socket))
             for l in nt.links]
-    if have != want_links:
+    if [h[:len(w)] for h, w in zip(have, want_links)] != want_links or len(have) != len(want_links):
         nt.links.clear()
-        for fn, fs, tn, ts in want_links:
+        for row in want_links:
+            fn, fs, tn, ts = row[:4]
+            fi, ti = (row[4], row[5]) if len(row) >= 6 else (-1, -1)
             a, b = nt.nodes.get(fn), nt.nodes.get(tn)
             if a is None or b is None:
                 continue
             so = next((x for x in a.outputs if x.identifier == fs), None)
             si = next((x for x in b.inputs if x.identifier == ts), None)
+            if so is None and 0 <= fi < len(a.outputs):
+                so = a.outputs[fi]          # an item socket made again: same place, new identifier
+            if si is None and 0 <= ti < len(b.inputs):
+                si = b.inputs[ti]
             if so is not None and si is not None:
                 nt.links.new(so, si)
 

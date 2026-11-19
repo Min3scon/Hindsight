@@ -112,7 +112,71 @@ def test_shader_group_in_material_and_shared_group():
     assert round(grp.nodes["Amount"].outputs[0].default_value, 4) == 0.75
 
 
+def zone_state(ng):
+    out = []
+    for n in sorted(ng.nodes, key=lambda n: n.name):
+        items = tuple((c, tuple(it.name for it in getattr(n, c)))
+                      for c in ("repeat_items", "capture_items", "enum_items") if hasattr(n, c))
+        po = getattr(n, "paired_output", None)
+        out.append((n.name, n.bl_idname, items, po.name if po is not None else None))
+    links = tuple(sorted((l.from_node.name, l.from_socket.name, l.to_node.name, l.to_socket.name) for l in ng.links))
+    return (tuple(out), links)
+
+
+def test_zones_and_items_come_back():
+    """D130: a repeat zone (its pairing and its items), capture items and menu items come back,
+    with the links to item sockets made again."""
+    L.fresh_scene()
+    a = bpy.data.objects["A"]
+    ng = make_gn()
+    a.modifiers.new("GN", "NODES").node_group = ng
+    L.track_all()
+    L.tick_like("baseline")
+    states = [zone_state(ng)]
+
+    def zone():
+        ri = ng.nodes.new("GeometryNodeRepeatInput")
+        ri.name = "RIn"
+        ro = ng.nodes.new("GeometryNodeRepeatOutput")
+        ro.name = "ROut"
+        ri.pair_with_output(ro)
+        gi, go = ng.nodes["Group Input"], ng.nodes["Group Output"]
+        ng.links.new(gi.outputs[0], ri.inputs["Geometry"])
+        ng.links.new(ri.outputs["Geometry"], ro.inputs["Geometry"])
+        ng.links.new(ro.outputs["Geometry"], go.inputs[0])
+
+    def item():
+        ng.nodes["ROut"].repeat_items.new("FLOAT", "Value")
+
+    def link_item():
+        ng.links.new(ng.nodes["RIn"].outputs["Value"], ng.nodes["ROut"].inputs["Value"])
+
+    def remove_item():
+        ro = ng.nodes["ROut"]
+        ro.repeat_items.remove(ro.repeat_items[1])
+
+    def menu():
+        m = ng.nodes.new("GeometryNodeMenuSwitch")
+        m.name = "Menu"
+        m.enum_items.new("Third")
+    for label, fn in (("zone", zone), ("item", item), ("link item", link_item), ("remove item", remove_item),
+                      ("menu", menu)):
+        fn()
+        L.tick_like(label)
+        states.append(zone_state(ng))
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(a)
+    for pos in list(range(len(h.entries), -1, -1)) + list(range(len(h.entries) + 1)):
+        runtime._goto_history(h, pos, True)
+        assert zone_state(ng) in states, (pos, zone_state(ng))
+    runtime._goto_history(h, 0, True)
+    assert zone_state(ng) == states[0], (zone_state(ng), states[0])
+    runtime._goto_history(h, len(h.entries), True)
+    assert zone_state(ng) == states[-1], (zone_state(ng), states[-1])
+
+
 if __name__ == "__main__":
     H.run(test_geometry_nodes_group_comes_back)
     H.run(test_shader_group_in_material_and_shared_group)
+    H.run(test_zones_and_items_come_back)
     H.finish()
