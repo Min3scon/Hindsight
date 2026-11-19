@@ -34,7 +34,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 3;
+const API: u32 = 4;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -194,6 +194,30 @@ fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut
     }
 }
 
+/// Indices of the rows (of `w` values of `isz` bytes) whose bits differ, and new - old of those
+/// rows (wrapping), as delta.diff; None if nothing differs. Sizes must match (the caller checks).
+fn diff_core(a: &[u8], b: &[u8], isz: usize, w: usize) -> Option<(Vec<u32>, Vec<u8>)> {
+    let row = isz * w;
+    const ROWS: usize = 32; // compare blocks of rows first: most of a mesh is unchanged
+    let blk = row * ROWS;
+    let mut idx: Vec<u32> = Vec::new();
+    for (bi, (ca, cb)) in a.chunks(blk).zip(b.chunks(blk)).enumerate() {
+        if ca != cb {
+            for (j, (ra, rb)) in ca.chunks_exact(row).zip(cb.chunks_exact(row)).enumerate() {
+                if ra != rb {
+                    idx.push((bi * ROWS + j) as u32); // as numpy's astype(uint32)
+                }
+            }
+        }
+    }
+    if idx.is_empty() {
+        return None;
+    }
+    let mut v = vec![0u8; idx.len() * row];
+    by_size!(isz, sub_rows(a, b, &idx, w, &mut v));
+    Some((idx, v))
+}
+
 /// diff(old, new, itemsize, width) -> None if no element changed, else (indices as uint32 bytes,
 /// new - old of the changed elements, wrapping). As delta.diff: indices of the elements (rows of
 /// `width` values) whose bits differ.
@@ -212,21 +236,10 @@ fn diff<'py>(
         if a.len() != b.len() || a.len() % row != 0 {
             return Err(bad("hindsight_native.diff: sizes don't match"));
         }
-        const ROWS: usize = 32; // compare blocks of rows first: most of a mesh is unchanged
-        let blk = row * ROWS;
-        let mut idx: Vec<u32> = Vec::new();
-        for (bi, (ca, cb)) in a.chunks(blk).zip(b.chunks(blk)).enumerate() {
-            if ca != cb {
-                for (j, (ra, rb)) in ca.chunks_exact(row).zip(cb.chunks_exact(row)).enumerate() {
-                    if ra != rb {
-                        idx.push((bi * ROWS + j) as u32); // as numpy's astype(uint32)
-                    }
-                }
-            }
-        }
-        if idx.is_empty() {
-            return Ok(None);
-        }
+        let (idx, vals) = match diff_core(a, b, isz, w) {
+            Some(r) => r,
+            None => return Ok(None),
+        };
         let k = idx.len();
         let ib = PyByteArray::new_bound_with(py, k * 4, |o| {
             for (j, &i) in idx.iter().enumerate() {
@@ -235,7 +248,7 @@ fn diff<'py>(
             Ok(())
         })?;
         let vb = PyByteArray::new_bound_with(py, k * row, |o| {
-            by_size!(isz, sub_rows(a, b, &idx, w, o));
+            o.copy_from_slice(&vals);
             Ok(())
         })?;
         Ok(Some((ib, vb)))

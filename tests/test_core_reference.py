@@ -497,8 +497,61 @@ def test_gil_released():
     print(f"PASS test_gil_released ({ticks[0]} ticks of another thread during a {elapsed:.2f} s compress)")
 
 
+def test_record_equals_diff_and_encode():
+    """record(): the whole stroke in one engine call gives the bytes of diff per channel, a Step and
+    the Python reference writing it (every channel type, runs and scatters, channels that appear or
+    go, a changed empty channel, sizes that differ, nothing changed)."""
+    from hindsight.core.types import ADD, CHANNEL_TYPES, ChannelDelta, make_key
+    keys = [make_key(f"c_{t.lower()}", "POINT", t) for t in CHANNEL_TYPES]
+    rng = np.random.default_rng(21)
+    n = 0
+    for trial in range(60):
+        nv = int(rng.integers(1, 400))
+        chans, deltas = [], []
+        for key in keys:
+            if rng.random() < 0.3:
+                continue
+            dt = np.dtype(ns.key_dtype(key))
+            w = ns.key_width(key)
+            old = ns.values(rng, key, nv)
+            how = ["run", "scatter", "nudge", "all", "same"][int(rng.integers(5))]
+            new = old if how == "same" else ns.stroke(rng, key, old, how)
+            e = (True, True)
+            r = rng.random()
+            if r < 0.1:
+                old_a, new_a, e = None, new, (False, True)
+                d = delta.diff(key, np.zeros_like(new), new, e)
+            elif r < 0.2:
+                old_a, new_a, e = old, None, (True, False)
+                d = delta.diff(key, old, np.zeros_like(old), e)
+            elif r < 0.25:
+                old_a, new_a = old, np.concatenate([new, new[:w]])          # sizes differ: left out
+                d = None
+            else:
+                old_a, new_a = old, new
+                d = delta.diff(key, old, new, e)
+            chans.append((key, old_a, new_a, e[0], e[1]))
+            if d is not None:
+                deltas.append(d)
+        for name in NAMES:
+            for quick in (False, True):
+                for strong in (False, True):
+                    eff = delta.QUICK if quick else delta.NORMAL
+                    got = stepmod.record_step("DELTA", 5, 1.5, "Stroke", "SCULPT", "obj", chans,
+                                              {"op": 1} if trial % 3 == 0 else None, name, eff, strong)
+                    if not deltas:
+                        assert got is None
+                        continue
+                    st = Step(5, "Stroke", "SCULPT", "obj", 1.5, DELTA, deltas,
+                              extra={"op": 1} if trial % 3 == 0 else {})
+                    assert got == ref_write(st, name, eff, strong), (trial, name, quick, strong)
+                    assert got == stepmod.step_to_bytes(st, name, eff, strong)
+                    n += 1
+    print(f"PASS test_record_equals_diff_and_encode ({n} strokes, bytes equal the reference)")
+
+
 def main():
-    tests = [test_nothing_in_hindsight_imports_the_reference, test_engine_runs_the_container,
+    tests = [test_record_equals_diff_and_encode, test_nothing_in_hindsight_imports_the_reference, test_engine_runs_the_container,
              test_codec_bytes_equal_the_libraries, test_codec_reads_like_the_reference, test_codec_hostile_sizes,
              test_steps_equal_the_reference, test_property, test_corpus, test_legacy_files, test_hostile_blobs,
              test_hostile_headers, test_no_unbounded_allocation, test_errors_and_exceptions, test_input_types,
