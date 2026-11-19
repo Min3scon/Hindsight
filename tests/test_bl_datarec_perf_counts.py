@@ -62,13 +62,19 @@ def test_sculpting_only_timer_reads_nothing():
     ob = C.scene.objects[0]
     with counting((datarec, "capture"), (datarec, "finish_operation"), (datarec, "refresh_mesh_users"),
                   (datarec, "commit"), (idmap, "find"), (datarec, "check_exclusion")) as n:
-        for _ in range(5):
-            ob.location.x += 0.1
-            C.view_layer.update()
-            datarec._OPS["marker"] = (-1, -1)            # an operator finished
-            datarec.tick()
-            datarec._DIRTY["x"] = 0.0                     # updates that settled
-            datarec.tick()
+        real = datarec._ops_marker
+        try:
+            for k in range(5):
+                ob.location.x += 0.1
+                C.view_layer.update()
+                datarec._OPS["marker"] = (0, 0)
+                datarec._ops_marker = lambda k=k: (1, 1000 + k)     # an operator finished (the list gained one)
+                datarec.tick()
+                datarec._ops_marker = real
+                datarec._DIRTY["x"] = 0.0                     # updates that settled
+                datarec.tick()
+        finally:
+            datarec._ops_marker = real
     assert all(v == 0 for v in n.values()), n
     assert not datarec._DIRTY
 
