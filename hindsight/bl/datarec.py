@@ -15,7 +15,7 @@ import time
 import bpy
 
 from ..core.history import DATA_MARK, MeshState
-from ..core.types import DATA, MISSING, DataChange, Step
+from ..core.types import DATA, JOURNAL_CODEC, MISSING, DataChange, Step
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
@@ -843,7 +843,7 @@ def _commit(label: str, uids, mesh: bool) -> list:
         if removed:
             rt._journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
-        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(rt.SETTINGS.compression, 0))
+        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
         rt._enforce(h)
         steps.append(step)
     if steps:

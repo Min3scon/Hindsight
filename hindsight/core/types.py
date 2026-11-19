@@ -268,4 +268,8 @@ class Settings:
     crash_recovery: str = "LAST_SAVED" # LAST_SAVED | INTERRUPTED
 
 
+# The crash journal's step blobs are written on the main thread at every stroke: lz4 costs about
+# 60% of zstd level 3 there and the journal is temporary. History, packer and save keep the user's codec.
+JOURNAL_CODEC = "lz4"
+
 SETTINGS = Settings()

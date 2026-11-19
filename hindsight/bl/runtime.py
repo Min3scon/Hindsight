@@ -12,7 +12,7 @@ from ..core import globaltl
 from ..core.history import MeshState
 from ..core.registry import Registry, new_uid
 from ..core.types import (
-    SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
+    JOURNAL_CODEC, SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
 from . import filtering, guard, log, meshio, multires, rigmark
 from . import warnings as _warn
@@ -938,7 +938,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     if removed:
         _journal("TRUNC", {"hist": h.uid, "keep": at})
     entry = h.entries[-1]
-    _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
+    _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
     _enforce(h)
     try:
         from . import datarec
@@ -1965,7 +1965,7 @@ def _bridge_from_backup(ob, uid, h, fp) -> bool:
         if removed:
             _journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
-        _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
+        _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
         return True
     except Exception as e:
         log.error_once(("blend1_bridge", str(e)), f"could not read the backup copy of the file: {e}", e)
