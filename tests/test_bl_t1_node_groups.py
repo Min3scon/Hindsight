@@ -227,9 +227,75 @@ def test_loose_group_and_compositor_with_the_scene():
     assert read() == states[-1], (read(), states[-1])
 
 
+def anim_state(ng):
+    """The group's own animation: its action's F-curves with their keys, its drivers."""
+    ad = ng.animation_data
+    if ad is None:
+        return None
+    fc = ()
+    if ad.action is not None:
+        curves = getattr(ad.action, "fcurves", None)
+        if curves is None:                                   # Blender 5: slotted actions
+            curves = [f for lay in ad.action.layers for st in lay.strips for cb in st.channelbags for f in cb.fcurves]
+        fc = tuple(sorted((f.data_path, f.array_index,
+                           tuple((round(k.co[0], 4), round(k.co[1], 4)) for k in f.keyframe_points)) for f in curves))
+    drv = tuple(sorted((d.data_path, d.array_index, d.driver.expression) for d in ad.drivers))
+    return (fc, drv)
+
+
+def test_group_animation_comes_back():
+    """D146: keys on a group node's inputs and drivers on them (the group's own animation_data) are
+    recorded with the group: going back and forward over the steps gives them back exactly."""
+    L.fresh_scene()
+    a = bpy.data.objects["A"]
+    ng = make_gn()
+    m = a.modifiers.new("GN", "NODES")
+    m.node_group = ng
+    sp = ng.nodes.new("GeometryNodeSetPosition")
+    sp.name = "Lift"
+    mix = ng.nodes.new("ShaderNodeMath")
+    mix.name = "Gain"
+    off = 'nodes["Lift"].inputs["Offset"].default_value'
+    gain = 'nodes["Gain"].inputs[0].default_value'
+    L.track_all()
+    L.tick_like("baseline")
+    assert ng.animation_data is None
+    states = [anim_state(ng)]
+
+    def key1():
+        ng.keyframe_insert(data_path=off, index=2, frame=1)
+
+    def key2():
+        sp.inputs["Offset"].default_value = (0, 0, 0.5)
+        ng.keyframe_insert(data_path=off, index=2, frame=10)
+
+    def driver():
+        fcu = ng.driver_add(gain)
+        fcu.driver.type = "SCRIPTED"
+        fcu.driver.expression = "frame * 0.5"
+
+    def driver_edit():
+        ng.animation_data.drivers[0].driver.expression = "frame * 2"
+    for label, fn in (("key", key1), ("second key", key2), ("driver", driver), ("edit driver", driver_edit)):
+        fn()
+        L.tick_like(label)
+        states.append(anim_state(ng))
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(a)
+    assert h is not None and len(h.entries) >= 4, None if h is None else len(h.entries)
+    for pos in list(range(len(h.entries), -1, -1)) + list(range(len(h.entries) + 1)):
+        runtime._goto_history(h, pos, True)
+        assert anim_state(ng) in states, (pos, anim_state(ng))
+    runtime._goto_history(h, 0, True)
+    assert anim_state(ng) == states[0], (anim_state(ng), states[0])
+    runtime._goto_history(h, len(h.entries), True)
+    assert anim_state(ng) == states[-1], (anim_state(ng), states[-1])
+
+
 if __name__ == "__main__":
     H.run(test_geometry_nodes_group_comes_back)
     H.run(test_shader_group_in_material_and_shared_group)
     H.run(test_zones_and_items_come_back)
     H.run(test_loose_group_and_compositor_with_the_scene)
+    H.run(test_group_animation_comes_back)
     H.finish()
