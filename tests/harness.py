@@ -1,7 +1,21 @@
 """Headless test helpers. Import after inserting the repo root into sys.path."""
 import os
+import shutil
 import sys
+import tempfile
 import traceback
+
+# Every temporary file of this test process (the crash journals of its sessions, saved test files,
+# history folders) goes into one folder that finish() removes. Headless Blender never unregisters the
+# add-on on exit, so the journals stayed behind: 19 GB of them and of test folders filled the disk in
+# one day of runs. Processes a test starts inherit the folder (TMPDIR) and leave it to their parent.
+# HS_KEEP_TMP=1 keeps it.
+_OWN_TMP = None
+if not os.environ.get("HS_TEST_TMP_OWNER"):
+    _OWN_TMP = tempfile.mkdtemp(prefix="hs_test_")
+    os.environ["TMPDIR"] = _OWN_TMP
+    os.environ["HS_TEST_TMP_OWNER"] = str(os.getpid())
+    tempfile.tempdir = _OWN_TMP
 
 import bpy
 import numpy as np
@@ -147,4 +161,11 @@ def finish(code=None):
         print("FAILED:", ", ".join(_failures))
     sys.stdout.flush()
     sys.stderr.flush()
+    if _OWN_TMP and not os.environ.get("HS_KEEP_TMP"):
+        shutil.rmtree(_OWN_TMP, ignore_errors=True)
+        # Blender's own temporary folder (made at start-up, before this module): exiting with os._exit
+        # skips Blender's clean-up of it
+        bt = getattr(bpy.app, "tempdir", "") or ""
+        if os.path.basename(os.path.normpath(bt)).startswith("blender_"):
+            shutil.rmtree(bt, ignore_errors=True)
     os._exit(code)

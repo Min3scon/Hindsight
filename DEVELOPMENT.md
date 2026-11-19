@@ -38,6 +38,7 @@ Where a fact has no source, this page says "not measured" or "no report".
      Python versions are in `tests/reference/`). The runner sets `HINDSIGHT_VERIFY=1` (every written step
      is read back and compared).
    - Sculpt brush operators crash headless; tests simulate strokes with `tests/harness.py`.
+   - Each test process keeps its temporary files (crash journals, saved test files, history folders) in one folder that `tests/harness.py` removes when the process ends, with Blender's own temporary folder; `HS_KEEP_TMP=1` keeps them for a look. Without it, a day of runs left 19 GB in the system temp folder and filled the disk (headless Blender never unregisters the add-on, so the journals stayed).
    - Real windows here (Xvfb, Mesa llvmpipe, the binaries in `blender/` next to the repository checkout): put a `blender` shim
      first on PATH that runs the binary with `--gpu-backend opengl` (keep `--command` first, as in
      `.github/workflows/blender.yml`), set `LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
