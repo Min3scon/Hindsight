@@ -157,6 +157,7 @@ Tests changed for a reason other than a defect in the product. A test is never w
 
 | Date | Test | Change | Reason |
 |---|---|---|---|
+| 2026-11-19 | tests/test_bl_t1_added.py, tests/test_bl_t1_warn.py | patch and read `SETTINGS.edit_steps_max` instead of `runtime.EDIT_STEPS_MAX` | the Edit Mode cap became a preference (L6); the module constant is gone. Same checks, same numbers |
 | 2026-11-19 | tests_ui/scenarios/s_round_b_features.py | before adding sphere B, A is put in Object Mode and the add must return FINISHED and make a new object | Movie Mode playback leaves A in Sculpt Mode, where Add does nothing on 5.3, so the scenario named A "B": B then "had" A's history and id, and the join checks failed (found running Rounds A to D in a real 5.3 window). The checks are unchanged and an assert is added; 18/18 after |
 | 2026-10-14 | tests/test_tools_coverage.py | checks the rule against a fixed table instead of the live COVERAGE.md; adds a test that a malformed row is refused | the test guarantee changed the statuses (supported, partial, not covered; opt-in became a separate Recording column). The old test asserted the live file's statuses, which now change through the gate. The rule itself is unchanged and still tested, plus the live file must parse |
 | 2026-10-14 | tests_ui/scenarios/s_round_b_features.py | the activate helper switches the target object to the requested mode even when it kept a mode from before | the test set up Ctrl+J in Sculpt Mode (after Movie Mode playback put A in Sculpt Mode), so the join never ran; the checks are unchanged |

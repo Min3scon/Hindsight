@@ -158,7 +158,7 @@ def test_objects_not_switched_on_and_other_types():
 @covers("obj.editsteps", "WARN")
 def test_big_mesh_edit_mode():
     setup()
-    big = H.make_mesh(runtime.EDIT_STEPS_MAX + 20_000, name="Big")
+    big = H.make_mesh(runtime.SETTINGS.edit_steps_max + 20_000, name="Big")
     datarec.set_tracked(big, True)
     assert shows("Big", W.TXT_EV_EDIT_BIG)
     assert not shows("A", W.TXT_EV_EDIT_BIG)

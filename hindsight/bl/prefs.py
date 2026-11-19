@@ -183,6 +183,12 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
                      "Off by default. "
                      "Off: recording pauses on a Multires object"),
         default=False)
+    edit_steps_max: IntProperty(
+        name="Edit Mode steps up to",
+        description=("With Record everything, Edit Mode changes are recorded one operation at a time on meshes "
+                     "up to this many vertices, and as one step per visit on bigger ones. Each operation costs "
+                     "about 25 ms per 100,000 vertices"),
+        default=300_000, min=10_000, max=5_000_000, update=_update)
     welcomed: BoolProperty(default=False, options={'HIDDEN'})
 
     def draw(self, context):
@@ -206,6 +212,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         col.prop(self, "record_scope")
         col.prop(self, "record_texture_painting")
         col.prop(self, "record_multires")
+        col.prop(self, "edit_steps_max")
         col.prop(self, "max_steps")
         col.prop(self, "truncation_threshold")
 

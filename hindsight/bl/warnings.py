@@ -164,7 +164,8 @@ TXT_EV_NOT_ON = ("Only adding and deleting this object is recorded. Switch on Re
                  "object to record its changes too")
 TXT_EV_ANIMATED = "Animated or driven, so not recorded (they follow the animation): {names}"
 TXT_EV_LISTS = "Lists in constraint settings (such as Armature constraint targets) aren't recorded"
-TXT_EV_EDIT_BIG = "Over 300,000 vertices: Edit Mode is recorded as one step per visit on this mesh"
+TXT_EV_EDIT_BIG = ("Edit Mode is recorded as one step per visit on this mesh: it has more than {n:,} vertices "
+                   "(Edit Mode steps up to, in the preferences)")
 TXT_EV_COMEBACK = ("A deleted {kind} comes back only while its data is still in this session "
                    "(meshes, empties, lights, cameras, curves, text, lattices, metaballs and volumes always come back)")
 TXT_EV_NEW_COLLECTIONS = ("Collections you make or delete are undone only when the scene is recorded "
@@ -226,8 +227,9 @@ def everything_notes(context, obj) -> list:
             out.append((INFO, TXT_EV_LISTS))
             break
     # D110: the modifier and vertex groups parenting with deform adds are recorded with it now
-    if getattr(obj, "type", None) == "MESH" and len(obj.data.vertices) > runtime.EDIT_STEPS_MAX:
-        out.append((INFO, TXT_EV_EDIT_BIG))
+    cap = runtime.SETTINGS.edit_steps_max
+    if getattr(obj, "type", None) == "MESH" and len(obj.data.vertices) > cap:
+        out.append((INFO, TXT_EV_EDIT_BIG.format(n=cap)))
     if not scene_on:
         out.append((INFO, TXT_EV_NEW_COLLECTIONS))
     if datarec.mesh_owned_elsewhere(obj):

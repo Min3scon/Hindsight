@@ -740,7 +740,7 @@ def commit_edit(obj, label: str = "Edit"):
     return commit(obj, label=label, mode="EDIT", full=True, _edit=True)
 
 
-EDIT_STEPS_MAX = 300_000   # vertices; above this an Edit Mode step (about 55 ms per 100k) is too slow
+# L6: the Edit Mode cap is SETTINGS.edit_steps_max (preference "Edit Mode steps up to", default 300,000)
 
 
 def _mesh_owned_elsewhere(obj) -> bool:
@@ -755,7 +755,7 @@ def edit_steps_on(obj) -> bool:
     try:
         from . import adapters, datarec
         return (datarec.is_tracked(obj) and adapters.kind_on("edit_steps")
-                and len(obj.data.vertices) <= EDIT_STEPS_MAX and not datarec.mesh_owned_elsewhere(obj))
+                and len(obj.data.vertices) <= SETTINGS.edit_steps_max and not datarec.mesh_owned_elsewhere(obj))
     except Exception:
         return False
 
