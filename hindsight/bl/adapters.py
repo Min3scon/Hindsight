@@ -1794,7 +1794,8 @@ _DATA_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {
 # data types whose settings are recorded, with the settings structs they keep apart
 DATA_STRUCTS = {"Mesh": (), "Camera": ("dof", "stereo"), "SpotLight": (), "PointLight": (), "SunLight": (),
                 "AreaLight": (), "Curve": (), "TextCurve": (), "SurfaceCurve": (), "MetaBall": (),
-                "Speaker": (), "Armature": (), "Lattice": (), "GreasePencil": (), "GreasePencilv3": (), "Curves": (), "PointCloud": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
+                "Speaker": (), "Armature": (), "Lattice": (), "GreasePencil": (), "GreasePencilv3": (), "Curves": (), "PointCloud": (),
+                "Volume": ("display", "render"), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
                 "LightProbeVolume": ()}
 SETTINGS_KEY = "settings"
 DATA_VALUES = "values"
@@ -3080,13 +3081,14 @@ _REMAKE = {"Camera": lambda n, v: bpy.data.cameras.new(n),
            "Speaker": lambda n, v: bpy.data.speakers.new(n),
            "Lattice": lambda n, v: bpy.data.lattices.new(n),
            "MetaBall": lambda n, v: bpy.data.metaballs.new(n),
+           "Volume": lambda n, v: bpy.data.volumes.new(n),
            "Curve": lambda n, v: bpy.data.curves.new(n, type="CURVE"),
            "SurfaceCurve": lambda n, v: bpy.data.curves.new(n, type="SURFACE"),
            "TextCurve": lambda n, v: bpy.data.curves.new(n, type="FONT")}
 for _lt in ("PointLight", "SunLight", "SpotLight", "AreaLight"):
     _REMAKE[_lt] = (lambda t: lambda n, v: bpy.data.lights.new(n, type=t))(_lt[:-5].upper())
 OBJECT_TYPES_REMADE = frozenset({"MESH", "EMPTY", "CAMERA", "SPEAKER", "LATTICE", "META", "CURVE", "SURFACE",
-                                 "FONT", "LIGHT"})
+                                 "FONT", "LIGHT", "VOLUME"})
 
 
 def _data_body(d) -> dict:

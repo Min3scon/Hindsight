@@ -63,7 +63,7 @@ Fixed:
 - Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
 - Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, view layer passes, the active camera, and the world with its node tree.
 - Record everything records collection settings: hiding a collection, making it unselectable, its colour tag, and Exclude, Holdout and Indirect Only in each view layer.
-- Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers and light probes, and a mesh's remesh settings.
+- Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and volumes, and a mesh's remesh settings.
 - Record everything records posing: each bone's location, rotation, scale, constraints and custom properties, and the armature's Pose or Rest Position.
 - Record everything records Edit Mode changes to bones: adding, removing, moving, rolling and parenting them, their settings and bone collections.
 - Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks, and keyframes on lights, cameras, shape keys and material nodes.
@@ -71,7 +71,7 @@ Fixed:
 - Record everything records Grease Pencil drawings: strokes drawn, erased and moved, their thickness, opacity and colour, frames and layers.
 - Record everything records hair curves and point clouds through their attributes.
 - Record everything records particle settings: count, hair length, emission and display.
-- A deleted light, camera, curve, text, lattice or metaball comes back with its settings and shape even after saving and opening the file.
+- A deleted light, camera, curve, text, lattice, metaball or volume comes back with its settings and shape even after saving and opening the file.
 - Bring back: when a step refers to a parent or constraint target that is deleted now, the Warnings panel offers to bring it back.
 - Library overrides keep their history when the file is opened again.
 - Record everything: adding, removing, renaming and reordering vertex groups and shape keys, and switching the active UV map, now come back when you go back and forward.
