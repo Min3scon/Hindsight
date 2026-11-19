@@ -259,7 +259,7 @@ DEFECTS.md).
 ### Other open items from the audits
 
 - `dev/reports/TOOLS.md` (static analysis): dead code and duplicates. Done by NATIVE: dead branch and
-  `_IDX_ENC` in `delta.py`, unused local in `history.py`. Not done: unused locals in `joinsep.py:342`,
+  `_IDX_ENC` in `delta.py`, unused local in `history.py`. Done since: the unused call in `joinsep.py` (HINDSIGHT_OT_join.invoke). Not done:
   unused imports (pyflakes is clean on `hindsight/` since 2026-11-19 except the deliberate import check in
   `ui_panel.engine_error`), duplicated keymap boilerplate in `joinsep.py`
   and `ops_core.py`, the unused `@fontsource-variable/*` devDependencies and the undeclared
@@ -269,8 +269,8 @@ DEFECTS.md).
   this job (see `DEFECTS.md` D63 to D69 and `OPTIMISATION_LOG.md`); item 7 (dead code, about 60 lines) and
   item 8 (duplicate helpers) are open except as noted; item 12 is replaced by the Rust `diff`.
 - `tools/mutation_bl.py`: the 12 mutants whose text no longer matched (6 to 10, 18, 26, 28, 36, 45, 57, 61) were re-targeted; the tool now runs an unchanged control first and gives the Blender runs this checkout's engine (an engine-less Blender had "killed" every mutant at import). 12/12 killed in Blender 5.3.0, by five different test files. The other 66 weren't re-run.
-- `tests/oracle.py`: the one-line fix for the Blender 4.2 `parent_type` test failure (in
-  `dev/reports/DATAREC.md` section 6) is not applied.
+- `tests/oracle.py`: the Blender 4.2 `parent_type` fix (`dev/reports/DATAREC.md` section 6) is applied
+  (the oracle reads a cleared vertex parent type as OBJECT, as the recorder does).
 - Edit Mode step cost: re-measured after R014 (L6): 14 to 18 ms at 100k vertices, 60 to 83 ms at 300k
   (bench/scenarios/editmode.py, 5.3, load 6).
 
