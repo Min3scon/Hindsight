@@ -77,3 +77,35 @@ Six abi3 wheels 0.3.0 rebuilt with `tools/build_native.sh` (Linux x86-64 and ARM
 * `tools/ci/install_deps.py`, `.github/workflows/*`: keep zstandard and lz4 for the reference tests; hindsight itself no longer needs them.
 * `INTERFACES.md` section 2 and `DEVELOPMENT.md` section c: step container and codecs are Rust; `native.py` raises `EngineMissing`; API 3.
 * CHANGELOG proposal: "The step container and codecs moved into the Rust engine (0.3.0). zstandard and lz4 Python packages are no longer used."
+
+---
+
+# M2 (second job)
+
+Merged main-session-3 (9547ce3) first. Engine 0.4.0, API 4; six wheels rebuilt, manifest and `native.py` updated.
+
+## What moved to Rust
+
+* `step_encode` takes the deltas as arrays `(key, idx, vals, itemsize, width, exists, add)` and packs the records itself, GIL released, arrays borrowed (no `pack_delta` call per channel, no joined temporaries). Bytes unchanged (3,840-step equivalence test still passes).
+* New `record(...)` / `step.record_step`: diff of every channel + packing + codec + checksum in one call, GIL released after borrowing; None when nothing changed; appearing/going channels as None arrays; size-mismatch channels left out as `runtime` does. Test `test_record_equals_diff_and_encode`: 60 random strokes x 4 codecs x quick/normal x strong, bytes equal the Python reference writing the diffed Step.
+* `diff` core shared (`diff_core`).
+
+## D-d custom normals
+
+`INT16_2D` (int16, 2, `value`) added to `CHANNEL_TYPES`; the engine handles itemsize 2 already, no native change. `tests/test_bl_custom_normals.py`: channel type through diff, step and apply (both Blenders); on 5.0+ Set Custom Normals goes back and forward exact (fails without the type: "Set Custom Normals made no step"). On 4.2 the Blender part prints `SKIP ... keeps custom normals in a hidden layer, not an attribute`; 4.2 custom normals stay unrecorded (needs a different reader, not an attribute channel).
+
+## Tests
+
+test_core_* all pass on bpy53 and bpy42 (HINDSIGHT_NATIVE=require, 0.4.0 Linux wheel in a private folder). bl recorder 20, recovery 12 + faults 9, persistence 8, t0_gate 6, movie 14, custom_normals 4 (3 on 4.2): all pass on both.
+
+## Numbers
+
+A/B `bench/ab.py --a <main-session-3> --rounds 5 --only commit,_100k,_1m,drag_5000_` (bpy53, load 3 to 5), min ms ms3 / m2: commit_100k 0.515 / 0.483, commit_1m 2.82 / 2.78, goto_bl_300_100k 5.57 / 5.19, jump_300 fwd 100k 5.86 / 5.11, jump_3000 fwd 100k 49.1 / 55.3 (spread 11%), drag_5000 fwd 100k 86.4 / 99.6, 1M jump_3000 fwd 262 / 296 (spread 37 to 41%), drag 1M fwd 653 / 656, back 697 / 657. Everything inside spread: no change shown, as expected, because `runtime.commit` does not call `record_step` yet and jumps are unchanged. No OPTIMISATION_LOG row claimed for the A/B.
+
+In-process (`rec_bench.py` in the scratchpad, alternating 15 rounds, one 2% stroke, min ms): old path diff + Step + `step_to_bytes` vs `record_step`: 100k quick 0.181 / 0.152, normal 0.240 / 0.200; 1M quick 1.456 / 1.373, normal 2.040 / 2.022. Python peak 0.04 to 0.01 MB (100k), 0.39 to 0.06 MB (1M). Row for OPTIMISATION_LOG: "record_step vs diff + Step + encode, journal quick 100k: 0.181 to 0.152 ms (kept, 16%); 1M: 1.456 to 1.373 ms (6%); Python peak memory 6x lower".
+
+## Unfinished
+
+* `delta.py` Python fallbacks (diff, apply, pack_delta, unpack_at, `native.lib` None paths) are still in `hindsight/` and still used by twin-engine tests. Not moved to `tests/reference/delta.py`: needs engine versions of the cases `apply` refuses today (unsorted indices) and rewriting four test files. Next.
+* Patch for `hindsight/bl/runtime.py` (not mine), where the stroke step is built (about lines 495 to 515) and `Entry.to_bytes` runs for the journal: call `step.record_step("DELTA", 0, time.time(), label, mode, uid, [(key, old, new, e0, e1), ...])` to get the quick blob in one call, keep building the raw Step for the history. Not applied, so commit time is unchanged.
+* Windows and macOS wheels still never run.
