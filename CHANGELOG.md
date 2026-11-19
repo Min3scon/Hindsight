@@ -50,6 +50,7 @@ Fixed:
 - A damaged history block stored with LZ4 is refused cleanly now.
 - After a long session a repeating error could fill the system console.
 - Steps per object can be raised to 100,000 in Preferences (the default stays 10,000). With global history on, recording a step no longer rebuilds the whole timeline: at 50,000 steps that took 25 to 90 ms after every stroke, now 0.3 ms.
+- Record everything records modifiers: adding, removing, reordering and their settings, Geometry Nodes inputs included. Going back over Apply Modifier gives the modifier back.
 - Library overrides keep their history when the file is opened again.
 - Record everything: adding, removing, renaming and reordering vertex groups and shape keys, and switching the active UV map, now come back when you go back and forward.
 - A mesh changed while Hindsight wasn't running keeps its history when Blender's backup copy of the file (.blend1) still holds the mesh as Hindsight saved it: the change becomes one step.

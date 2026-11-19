@@ -208,11 +208,7 @@ def everything_notes(context, obj) -> list:
                if p.identifier != "rna_type"):
             out.append((INFO, TXT_EV_LISTS))
             break
-    parent = getattr(obj, "parent", None)
-    deform = [m.name for m in getattr(obj, "modifiers", ())
-              if parent is not None and m.type in _DEFORM_MODIFIERS and getattr(m, "object", None) == parent]
-    if deform:
-        out.append((INFO, TXT_EV_PARENT_DEFORM.format(names=", ".join(deform[:3]))))
+    # D110: the modifier and vertex groups parenting with deform adds are recorded with it now
     if getattr(obj, "type", None) == "MESH" and len(obj.data.vertices) > runtime.EDIT_STEPS_MAX:
         out.append((INFO, TXT_EV_EDIT_BIG))
     if not scene_on:
