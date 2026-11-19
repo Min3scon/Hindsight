@@ -5,3 +5,7 @@ and may need small path edits. The suite's scenarios in the parent folder cover 
 `embed_ab.py CODE_ROOT` (R061): Save mode Embed at 100k vertices and 6,000 steps; prints one `AB {...}` line
 with the median save and open times, the .blend size and the memory peak while saving. Run it with
 `<bpy python> -I bench/scenarios/oneoff/embed_ab.py CODE_ROOT`, alternating the two roots under test.
+
+`replay_ab.py CODE_ROOT [N]` (R064): crash recovery of N (3,000) unsaved strokes at 100k vertices; prints one
+`AB {...}` line with the open time, how much the process grew over the open, the history's size and how many
+of its steps are decoded.
