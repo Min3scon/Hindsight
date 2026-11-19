@@ -483,9 +483,8 @@ def test_one_million_vertices():
 
 
 def test_switch():
-    """HINDSIGHT_NATIVE=0 makes delta.py use its Python paths (the engine still loads: the step
-    container and codecs have no Python path). A missing or mismatched engine is one clear
-    exception, EngineMissing, whatever the mode."""
+    """A missing or mismatched engine is one clear exception, EngineMissing, whatever HINDSIGHT_NATIVE
+    says (it has no effect: there is no Python path to switch to)."""
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     fake = ("import sys, types; m = types.ModuleType('hindsight_native'); m.API = 999; "
             "sys.modules['hindsight_native'] = m; ")
@@ -499,8 +498,8 @@ def test_switch():
             env["HINDSIGHT_NATIVE"] = mode
         return subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True)
 
-    r = run(probe, "0")
-    assert r.returncode == 0 and r.stdout.startswith("False True") and "HINDSIGHT_NATIVE=0" in r.stdout, r
+    r = run(probe, "0")           # HINDSIGHT_NATIVE is read by nobody any more: the engine is always used
+    assert r.returncode == 0 and r.stdout.startswith("True False None"), r
     for mode in (None, "require", "0"):
         r = run(fake + probe, mode)
         assert r.returncode != 0 and "EngineMissing" in r.stderr and "API 999" in r.stderr, r
@@ -513,7 +512,7 @@ def test_switch():
             "a = np.arange(9, dtype=np.float32); b = a.copy(); b[4] = -0.0; "
             "d = delta.diff('position|POINT|FLOAT_VECTOR', a, b); "
             "e = delta.unpack_delta(delta.pack_delta(d)); c = a.copy(); delta.apply(c, e); "
-            "assert native.lib is None and c.tobytes() == b.tobytes(); print('ok')", "0")
+            "assert native.lib is native.ENGINE and c.tobytes() == b.tobytes(); print('ok')", "0")
     assert r.returncode == 0 and r.stdout.strip() == "ok", r
     print(f"PASS test_switch (native here: {native.AVAILABLE})")
 

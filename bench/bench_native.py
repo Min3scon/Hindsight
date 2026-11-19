@@ -43,6 +43,8 @@ import numpy as np
 
 from hindsight.core import codec, delta, native, step as stepmod
 from hindsight.core.history import History, MeshState
+from reference.history import History as RefHistory
+from reference import pure
 from hindsight.core.types import DELTA, POSITION_KEY, Entry, Step
 
 LIB = native.lib
@@ -121,11 +123,8 @@ def case(nv):
 
     def both(name, fn, reps=reps):
         n = measure(fn, reps)
-        native.lib = None
-        try:
+        with pure():                      # tests/reference/delta.py: the numpy code the engine replaced
             p = measure(fn, reps)
-        finally:
-            native.lib = LIB
         res[name] = {"python_ms": round(p[0], 3), "native_ms": round(n[0], 3),
                      "python_peak_py_bytes": p[1], "native_peak_py_bytes": n[1],
                      "python_peak_rss_bytes": p[2], "native_peak_rss_bytes": n[2]}
@@ -218,34 +217,32 @@ def _jump_fixture(nv, folder):
 def jumps(nv, rounds, folder):
     import hashlib
     h, start, end = _jump_fixture(nv, folder)
-    engines = {"steps": LIB, "per step": _PerStep(LIB), "python": None}
+    engines = {"steps": History, "python": RefHistory}       # engine apply_steps / tests/reference/history.py
     states = {"obj": MeshState({"POINT": end.size // 3}, {POSITION_KEY: end.copy()})}
     arr = lambda: states["obj"].arrays[POSITION_KEY]     # noqa: E731
     times = {e: {} for e in engines}
     sums = {}
     for _ in range(rounds):
-        for name, lib in engines.items():
-            native.lib = lib
-            try:
+        for name, cls in engines.items():
+            g = lambda p, cls=cls: cls.goto(h, p, states)           # noqa: E731
+            if True:
                 for case, a, b in JUMP_CASES:
                     reps = 20 if abs(b - a) == 1 else (1 if abs(b - a) >= 3000 else 3)
                     for _ in range(reps):
-                        h.goto(a, states)
+                        g(a)
                         t0 = time.perf_counter()
-                        h.goto(b, states)
+                        g(b)
                         times[name].setdefault(case, []).append((time.perf_counter() - t0) * 1000)
                     sums.setdefault(case, set()).add(hashlib.sha1(arr().tobytes()).hexdigest())
                 for way, lo, hi, d in (("drag fwd", 0, JUMP_STEPS, 50), ("drag back", JUMP_STEPS, 0, -50)):
-                    h.goto(lo, states)
+                    g(lo)
                     t0 = time.perf_counter()
                     for p in range(lo + d, hi + d, d):
-                        h.goto(p, states)
+                        g(p)
                     times[name].setdefault(way, []).append((time.perf_counter() - t0) * 1000)
                 assert arr().tobytes() == start.tobytes()
-                h.goto(JUMP_STEPS, states)
+                g(JUMP_STEPS)
                 assert arr().tobytes() == end.tobytes()
-            finally:
-                native.lib = LIB
     assert all(len(v) == 1 for v in sums.values()), "engines disagree"
     res = {"vertices": nv, "rounds": rounds, "load": os.getloadavg(), "ms": {}}
     print(f"\n{nv:,} vertices, {rounds} rounds (min / median ms)")
@@ -257,22 +254,20 @@ def jumps(nv, rounds, folder):
                            for e in engines}
     res["peak_MB"] = {}
     print("  peak memory of the jump, MB (tracemalloc / VmHWM over RSS)")
-    for name, lib in engines.items():
-        native.lib = lib
-        try:
+    for name, cls in engines.items():
+        g = lambda p, cls=cls: cls.goto(h, p, states)                # noqa: E731
+        if True:
             for case, a, b in (("300 fwd", 2000, 2300), ("3000 back", 4000, 1000)):
-                h.goto(a, states)
+                g(a)
                 hw = reset_hwm()
                 rss0 = proc("VmRSS")
                 tracemalloc.start()
-                h.goto(b, states)
+                g(b)
                 pk = tracemalloc.get_traced_memory()[1] / 1e6
                 tracemalloc.stop()
                 hwm = round((proc("VmHWM") - rss0) / 1e6, 3) if hw else None
                 res["peak_MB"][f"{name}, {case}"] = [round(pk, 3), hwm]
                 print(f"    {name:10s} {case:10s} {pk:8.3f} / {hwm}")
-        finally:
-            native.lib = LIB
     h.goto(JUMP_STEPS, states)
     return res
 
@@ -341,7 +336,7 @@ def main():
     if "--jumps" in sys.argv:
         import tempfile
         arg = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d     # noqa: E731
-        assert hasattr(LIB, "apply_steps"), "this module has no apply_steps (API 1)"
+        assert hasattr(LIB, "apply_steps")
         folder = arg("--fixtures", os.path.join(tempfile.gettempdir(), "hindsight_bench_jumps"))
         out = [jumps(nv, int(arg("--rounds", 5)), folder)
                for nv in ([int(arg("--nv", 0))] if "--nv" in sys.argv else (100_000, 1_000_000))]
