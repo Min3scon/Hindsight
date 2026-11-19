@@ -34,10 +34,20 @@ Where a fact has no source, this page says "not measured" or "no report".
    - all: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py`
    - some: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py recovery` (a substring of the file name)
    - one file: `<venv>/bin/python tests/test_bl_recovery.py`; each test prints `PASS test_name` or `FAIL test_name`
-   - `HINDSIGHT_NATIVE=require` forces the Rust engine, `HINDSIGHT_NATIVE=0` forces Python. Run both
-     where the code touches the engine. The runner sets `HINDSIGHT_VERIFY=1` (every written step is read
-     back and compared).
+   - The engine is always used (no Python path ships; `HINDSIGHT_NATIVE` selects nothing any more, the
+     Python versions are in `tests/reference/`). The runner sets `HINDSIGHT_VERIFY=1` (every written step
+     is read back and compared).
    - Sculpt brush operators crash headless; tests simulate strokes with `tests/harness.py`.
+   - Real windows here (Xvfb, Mesa llvmpipe, the binaries in `/home/user/blender/`): put a `blender` shim
+     first on PATH that runs the binary with `--gpu-backend opengl` (keep `--command` first, as in
+     `.github/workflows/blender.yml`), set `LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+     MESA_GL_VERSION_OVERRIDE=4.5 MESA_GLSL_VERSION_OVERRIDE=450 HS_UI_XSHOT=1`, then
+     `xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" python3 tests_ui/hs_ui.py run <scenario>
+     --blender 5.3 --fresh --geometry 0,0,1600,900` (a window at 0,0 so screenshots crop right). Each run
+     uses the worktree's `.tmp/profiles`: never two at once in one worktree. `tests_ui/rounds.py --pass N
+     --blender 5.3 --rounds ABCD` runs the rounds with the right flags (`hs_ui.py models` first). Never
+     install `hindsight_native` into a Blender binary's own Python here: a stale copy shadowed the add-on's
+     wheel on Install from Disk (moved aside 2026-11-19).
    - User-facing text: `python3 tools/check_copy.py`.
 4. Benchmarks: see section f.
 5. Commits: small, subject ends with ` [skip ci]` so no Pages deploy runs. A commit without it deploys the
