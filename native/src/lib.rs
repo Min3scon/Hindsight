@@ -34,7 +34,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 6;
+const API: u32 = 7;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -183,6 +183,7 @@ macro_rules! by_size {
 mod codec;
 mod step;
 mod crc;
+mod hash;
 
 // ------------------------------------------------------------------------------------ diff
 fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut [u8]) {
@@ -1363,5 +1364,6 @@ fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(unpack, m)?)?;
     step::register(m)?;
     crc::register(m)?;
+    hash::register(m)?;
     Ok(())
 }

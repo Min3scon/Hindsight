@@ -1617,16 +1617,24 @@ def _reenter_edit(context, name) -> None:
             log.error_once(("reenter_edit", str(e)), f"could not go back to Edit Mode after a jump: {e}", e)
 
 
-def mesh_fingerprint(ob) -> str:
+def mesh_changed(ob, stored) -> bool:
+    """Is the object's mesh not the one a stored fingerprint was made of? The stored value says how it was
+    made (R057: blake2b before, xxh3-128 now), and the mesh is hashed that way, so a value written by an
+    older build still compares; a tag this build doesn't know is taken as unchanged."""
+    algo = meshio.print_algo(stored)
+    return algo is not None and mesh_fingerprint(ob, algo) != stored
+
+
+def mesh_fingerprint(ob, algo: str = "x3") -> str:
     """meshio.fingerprint of an object's mesh, also in Edit Mode (read from a copy)."""
     with_ob = ob if extras_on(ob) else None
     if ob.mode != "EDIT":
-        return meshio.fingerprint(ob.data, with_ob)
+        return meshio.fingerprint(ob.data, with_ob, algo)
     with suspended():
         ob.update_from_editmode()
         tmp = ob.data.copy()
     try:
-        return meshio.fingerprint(tmp, with_ob)
+        return meshio.fingerprint(tmp, with_ob, algo)
     finally:
         with suspended():
             bpy.data.meshes.remove(tmp)
@@ -2061,7 +2069,8 @@ def _bridge_from_backup(ob, uid, h, fp) -> bool:
         if loaded is None:
             return False
         ext = extras_on(ob)
-        if meshio.fingerprint(loaded, ob if ext else None) != fp:
+        algo = meshio.print_algo(fp)
+        if algo is None or meshio.fingerprint(loaded, ob if ext else None, algo) != fp:
             return False
         with_extras = ext or topo_extras_on(ob)
         before = meshio.read_snapshot(loaded, ob=ob, extras=with_extras)
@@ -2103,7 +2112,7 @@ def check_outside_changes(saved: dict) -> None:
         h = _REG.history_for(u)
         fp = rec.get("mesh")
         if fp and isinstance(ob, bpy.types.Object) and ob.type == "MESH" and h is not None and h.entries:
-            changed = mesh_fingerprint(ob) != fp     # R045: hashed once (it was twice when unchanged)
+            changed = mesh_changed(ob, fp)           # R045: hashed once (it was twice when unchanged)
             if (changed and h.cursor == len(h.entries) and len(h.members) == 1
                     and _bridge_from_backup(ob, u, h, fp)):
                 # D107 (only with nothing recovered ahead of the saved position, and for one object):
