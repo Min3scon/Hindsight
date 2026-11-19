@@ -114,9 +114,8 @@ gates it; `bench/suite.py` A/B proves the gain; then the Python copy leaves `hin
 Rust runs: every suite runs with the engine required; a test fails if anything under `hindsight/` imports
 a reference module; Copy diagnostics names the engine and its API; CI loads the wheel on Windows, macOS
 and Linux (x64 and ARM64) and in real Blender binaries. One agent owns `native/` at a time. The
-interface design (module layout, buffer ownership, error mapping, threading) is the first deliverable of
-the Rust lead agent and must be reviewed before code is written: the design agent was interrupted
-before it reported, so none exists.
+interface design (module layout, buffer ownership, error mapping, threading, milestones M1 to M6) is
+`dev/RUST_DESIGN.md`; the agents' reports are in `dev/reports/RUST.md`.
 
 | Step | Content | Status |
 |---|---|---|
@@ -256,6 +255,7 @@ Latest runs (2026-11-19):
 | Level | Code | Result |
 |---|---|---|
 | bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine required | main line 7dc4853 (D111 to D118, Rust M1) | 84/86 each; the two failures are the known ones below |
+| same | main-session-3 45924a0 (D119 to D145, Multires, Dyntopo, journal lz4; merged as 9280a71) | 5.3: 103/105, 4.2: 103/105 (the 4.2 run's wrapper was killed after test_bl_warnings; the files after it were run one by one, all passing); the two failures are the known ones below |
 | same | main-session-4 4d856db (adds D119 to D134) | 5.3: 94/96; 4.2: the known two failures in the part that ran before the code moved on (a final run is pending) |
 | Real Blender binaries on GitHub (Blender tests, run 44439641564) | 7dc4853 | 5.3.0: 84/86; 4.2.23: 84/86. Besides `test_bl_t1_migrate`, only `test_core_reference` failed: libzstd version (fixed in 099815c) and one engine divergence in `test_hostile_blobs` (with the Rust agent) |
 | bpy module on GitHub, Windows and macOS (same run) | 7dc4853 | macOS: green. Windows: 83/86, `test_core_reference` as above plus the two known |
@@ -387,3 +387,4 @@ Blockers:
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds (t1_gate made version-aware; Round B and C on 4.2).
 6. More optimisation rounds toward the owner's 100 (43 logged: 38 kept, 5 reverted).
+7. Dyntopo memory (LIMITS-A 1.6): a TOPO step holds the whole mesh before and after, and each before is the previous step's after; sharing it halves packed Dyntopo steps (about 5.8 to 2.9 MB each at 100k faces). Needs a step format bump in the engine: an agent job, measured as a round.

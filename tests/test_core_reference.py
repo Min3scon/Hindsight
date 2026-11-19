@@ -635,10 +635,17 @@ def test_record_equals_diff_and_encode():
                         continue
                     st = Step(5, "Stroke", "SCULPT", "obj", 1.5, DELTA, deltas,
                               extra={"op": 1} if trial % 3 == 0 else {})
-                    assert got == ref_write(st, name, eff, strong), (trial, name, quick, strong)
+                    rb = ref_write(st, name, eff, strong)
+                    if bytes_comparable(name):
+                        assert got == rb, (trial, name, quick, strong)
+                    else:                   # another libzstd in python-zstandard: the same step inside
+                        assert stepmod.same_step(stepmod.step_from_bytes(got), ref_read(rb)), (trial, name)
+                        assert stepmod.same_step(st, ref_read(got)), (trial, name)
                     assert got == stepmod.step_to_bytes(st, name, eff, strong)
                     n += 1
-    print(f"PASS test_record_equals_diff_and_encode ({n} strokes, bytes equal the reference)")
+    how = "bytes equal the reference" if bytes_comparable("zstd") else \
+        f"zstd compared by content: libzstd {PY_ZSTD} in python-zstandard, {ENGINE_ZSTD} in the engine"
+    print(f"PASS test_record_equals_diff_and_encode ({n} strokes, {how})")
 
 
 def main():
