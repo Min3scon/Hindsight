@@ -147,13 +147,13 @@ changelog page change with the version.
   and Image Editor painting; Multires and Dyntopo; Rounds A to D on 5.3 (Round C all passed). They found
   D142 and D144 (texture painting) and out-of-date scenarios, all fixed. The Movie Mode panel's rows were looked at
   in a screenshot (s_movie_panel; two cut labels fixed, D148). Not checked here: real 5.0.1/5.1/5.2
-  binaries (download blocked here; the GitHub window job now runs them). COVERAGE.md is unchanged.
+  binaries (only 4.2.23 and 5.3.0 are downloaded here; download.blender.org is allowed, the others were simply not fetched; the GitHub window job runs all five). COVERAGE.md is unchanged.
 - Known and not ours to fix here: on Blender 4.2 tests/test_bl_t1_gate.py::test_gate_parenting fails
   (parent_type at one position; it fails on beta.2 code too; handed to DATAREC to find the cause).
 - tools/mutation_bl.py compiles again; mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
 - Blender 4.2 (below the gate): the module run has failures that were there before this job
   (test_bl_t0_gate and test_bl_t0_reload crash, test_bl_t1_reload, test_bl_t1_corrupt and others).
-- Test environment here: `HINDSIGHT_PY=/home/user/venvs/bpy53/bin/python python3 tests/run_tests.py`
+- Test environment here: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py` (venvs in `venvs/` next to the checkout)
   (venvs bpy42, bpy50, bpy51, bpy52, bpy53: `pip install bpy==<version> numpy zstandard hypothesis`).
 
 ## Publish 1.0.0-beta.2 site (owner, 2026-10-15, top priority, live by 09:00 UK)

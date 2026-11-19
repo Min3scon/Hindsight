@@ -420,6 +420,38 @@ def test_steps_after_values_changed_without_hindsight():
         assert state() == states[pos], f"position {pos}"
 
 
+# R064: recovery takes the journal's step bytes as they are (meta from the step's header), so opening a
+# file after a crash decodes no step; the steps come back packed and play exactly as the session's did.
+def test_recovery_decodes_no_step():
+    from hindsight.core import step as stepmod
+    setup()
+    ob, after, path = start("nodecode", 3)
+    file_state = save(ob, path)
+    for s in range(12):
+        stroke(ob, 80 + s, after)
+    live = seqs(ob)
+    real = stepmod.step_from_bytes
+    calls = []
+
+    def spy(b):
+        calls.append(1)
+        return real(b)
+    stepmod.step_from_bytes = spy
+    try:
+        ob = interrupt(path)
+    finally:
+        stepmod.step_from_bytes = real
+    h = runtime.history_of(ob)
+    assert seqs(ob) == live and h.cursor == 3, (seqs(ob), h.cursor)
+    assert not calls, f"recovery decoded {len(calls)} steps"
+    recovered = h.entries[3:]
+    assert all(e.is_packed() and e.blob is not None for e in recovered)
+    for e in recovered:
+        st = e.load()
+        assert st.seq == e.seq and st.target == e.target and st.meta()["label"] == e.meta["label"], e.meta
+    check(ob, after, file_state)
+
+
 if __name__ == "__main__":
     try:
         for name, fn in list(globals().items()):

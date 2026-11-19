@@ -11,6 +11,10 @@
   - in Edit Mode a move, rotate or scale (TRANSFORM_OT_*) compares the element counts but doesn't read
     the edges and corners again: those operators change topology only by Auto Merge, which changes the
     counts (R050); any other operator reads them as before;
+  - a drag of the global slider doesn't read every recorded value at each event; a final jump reads them
+    before and after, in an id frame (R057);
+  - recorded steps share their object id, mode and label strings (R058: Blender gives a new string
+    each time they are read, about 150 bytes held per step);
   - opening a file hashes each recorded mesh once to tell whether it changed without Hindsight (R045:
     it was hashed twice when unchanged, the usual case).
 
@@ -270,9 +274,44 @@ def test_transform_in_edit_mode_reads_no_topology():
     assert h.entries[-1].kind == "TOPO", h.entries[-1].kind
 
 
+def test_global_drag_reads_no_recorded_values():
+    scene(40, tracked=True)
+    obs = [o for o in C.scene.objects if o.type == "MESH"]
+    for k, o in enumerate(obs[:6]):
+        o.location.x += 0.1 * (k + 1)
+        C.view_layer.update()
+        datarec.finish_operation("Move")
+    C.scene.hindsight.use_global = True
+    vis = runtime._visible_uids()
+    n = len(runtime._groups(vis))
+    assert n >= 6, n
+    with counting((datarec, "recorded_values")) as c:
+        for g in (n - 2, 1, n - 1):
+            runtime.global_goto(C, g, final=False)
+    assert c["recorded_values"] == 0, c
+    with counting((datarec, "recorded_values"), (idmap, "_objects_index")) as c:
+        runtime.global_goto(C, n, final=True)
+    assert c["recorded_values"] <= 2, c
+
+
+def test_steps_share_their_strings():
+    H.fresh()
+    ob = H.make_mesh(2000, name="S")
+    H.enter(ob, "SCULPT")
+    for k in range(4):
+        H.fake_stroke(ob, k + 1)
+        assert runtime.commit(ob) is not None
+    es = runtime.history_of(ob).entries
+    assert len(es) == 4
+    for key in ("target", "mode", "label"):
+        vals = [e.meta[key] for e in es]
+        assert all(v is vals[0] for v in vals), (key, [id(v) for v in vals])
+
+
 for fn in (test_sculpting_only_timer_reads_nothing, test_depsgraph_update_does_not_search_every_id,
            test_one_objects_read_per_commit, test_prime_reads_each_mesh_once,
            test_open_hashes_each_mesh_once, test_selection_only_operator_reads_the_selection,
-           test_selection_only_operator_in_edit_mode_reads_no_mesh, test_transform_in_edit_mode_reads_no_topology):
+           test_selection_only_operator_in_edit_mode_reads_no_mesh, test_transform_in_edit_mode_reads_no_topology,
+           test_global_drag_reads_no_recorded_values, test_steps_share_their_strings):
     H.run(fn)
 H.finish()

@@ -156,10 +156,77 @@ def test_dyntopo_layers_are_not_recorded():
     print("PASS test_dyntopo_layers_are_not_recorded")
 
 
+def paused_session(big):
+    """Strokes recorded, then a Dyntopo visit that pauses recording (the preference off, or the mesh over the
+    face limit); while it pauses, Dyntopo triangulates the mesh and an edit (hidden from Hindsight) moves it."""
+    ob = setup()
+    if not big:
+        runtime.FORCE_DYNTOPO[0] = False
+    for k in range(2):
+        H.fake_stroke(ob, k + 1)
+        assert runtime.commit(ob) is not None
+    states = [None, None, read(ob)]
+    h = runtime.history_of(ob)
+    dyntopo(ob)
+    assert W.blocking(C, ob)
+    assert runtime.commit(ob) is None                         # paused: no step for each change
+    in_object_mode(ob, move)
+    assert runtime.commit(ob) is None
+    return ob, h, states
+
+
+def test_paused_visit_becomes_one_step():
+    """D153: a Dyntopo visit that pauses recording is one step when it ends (Dyntopo off, Sculpt Mode left, a
+    jump, a save), from the mesh before it to the mesh after; going back over it gives the mesh before it
+    exactly (quads and all), and the earlier strokes still come back right. It was baked into the baseline
+    with no step, and going back left the triangles."""
+    old = runtime.DYNTOPO_TRIS_MAX
+    try:
+        for big, end in ((False, "dyntopo off"), (False, "leave"), (True, "jump"), (False, "save")):
+            if big:
+                runtime.DYNTOPO_TRIS_MAX = 10
+            ob, h, states = paused_session(big)
+            n = len(h.entries)
+            if end == "dyntopo off":
+                dyntopo(ob, False)
+                runtime._tick_once()
+            elif end == "leave":
+                H.enter(ob, "OBJECT")
+                runtime._tick_once()
+                runtime._tick_once()
+            elif end == "jump":
+                after = read(ob)
+                runtime.goto(C, n)                            # the paused part is a step first, then the jump
+                assert len(h.entries) == n + 1 and h.cursor == n, (end, len(h.entries), h.cursor)
+                assert read(ob) == states[2], (end, read(ob), states[2])
+                runtime.goto(C, n + 1)
+            else:
+                import tempfile
+                bpy.ops.wm.save_as_mainfile(filepath=os.path.join(tempfile.mkdtemp(), "paused.blend"))
+            assert len(h.entries) == n + 1 and h.cursor == n + 1, (end, len(h.entries), h.cursor)
+            assert h.entries[-1].kind == "TOPO", (end, h.entries[-1].kind)
+            if end != "jump":
+                after = read(ob)
+            assert after[1] != states[2][1], (end, after, states[2])          # the triangles are in it
+            runtime.goto(C, n)
+            assert read(ob) == states[2], (end, read(ob), states[2])
+            runtime.goto(C, n - 1)
+            runtime.goto(C, n)
+            assert read(ob) == states[2], (end, "strokes before the visit", read(ob), states[2])
+            runtime.goto(C, n + 1)
+            assert read(ob)[:2] == after[:2], (end, read(ob), after)
+            runtime.DYNTOPO_TRIS_MAX = old
+            runtime.FORCE_DYNTOPO[0] = True
+    finally:
+        runtime.DYNTOPO_TRIS_MAX = old
+        runtime.FORCE_DYNTOPO[0] = True
+    print("PASS test_paused_visit_becomes_one_step")
+
+
 if __name__ == "__main__":
     for t in (test_off_by_default_pauses_as_before, test_each_change_is_a_step_and_exact,
               test_a_change_after_going_back_replaces_the_later_steps, test_big_mesh_still_pauses,
-              test_dyntopo_layers_are_not_recorded):
+              test_dyntopo_layers_are_not_recorded, test_paused_visit_becomes_one_step):
         H.run(t)
     runtime.FORCE_DYNTOPO[0] = None
     H.finish()

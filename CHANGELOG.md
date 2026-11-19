@@ -20,7 +20,8 @@ New:
 - Record everything records materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
 - Record everything records node groups: editing a Geometry Nodes group or a shader group inside a material is a step that comes back, inputs and outputs, zones and item lists included.
 - Record everything records the compositor and node trees no object uses, add-ons' custom node trees included, in the scene's history.
-- Record everything records what no object uses, in the scene's history: texts (an add-on's settings, scripts), materials and worlds kept for later, and the custom properties and add-on data of images, actions, palettes, brushes and the file's other datablocks. Making or deleting a text, an unused material or world or a node group is taken back too (going back over the making removes it if nothing uses it, going back over the deletion makes it again with what was recorded; images, actions, palettes and brushes are not made again, their properties are).
+- Record everything records what no object uses, in the scene's history: texts (an add-on's settings, scripts), materials and worlds kept for later, and the custom properties and add-on data of images, actions, palettes, brushes and the file's other datablocks.
+- Making or deleting a text, an unused material or world or a node group is taken back too. Going back over the making removes it if nothing uses it; going back over the deletion makes it again with what was recorded. Images, actions, palettes and brushes are not made again, but their properties are.
 - Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
 - Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, view layer passes, the active camera, and the world with its node tree.
 - Record everything records collection settings: hiding a collection, making it unselectable, its colour tag, and Exclude, Holdout and Indirect Only in each view layer.
@@ -32,6 +33,7 @@ New:
 - Weight Paint strokes are steps, like sculpt and Vertex Paint strokes.
 - Custom normals (Blender 5) are recorded with the mesh, so going back over Set Custom Normals gives the old normals back.
 - Dyntopo strokes can be recorded (preference Record Dyntopo, off by default; meshes up to 200,000 faces): each stroke is a step, and going back turns Dyntopo on or off as it was.
+- Without Record Dyntopo (or on bigger meshes), a Sculpt Mode visit with Dyntopo on is one step when it ends, so going back over it gives the mesh from before it. Its changes used to be taken as they were, and the earlier steps could no longer be gone back to correctly.
 - Multires can be recorded (preference Record Multires, off by default): one step per Sculpt Mode visit.
 - Edit Mode steps up to (preferences): how big a mesh can be for Edit Mode to be recorded one operation at a time (300,000 vertices by default; bigger meshes are recorded once per visit).
 - Texture painting can be recorded too (preference Record texture painting, off by default; images up to 2K), in the 3D viewport and in the Image Editor's Paint mode (as a step of the active object).
@@ -46,18 +48,23 @@ New:
 Faster and lighter:
 
 - Playing or rendering a timelapse: Hindsight's own work per frame went from 22.6 ms to 2.7 ms at 5,000 steps on a 100k mesh. A frame that shows the same step as the one before costs about 0.1 ms.
-- Going back and forward on the global timeline over strokes made on several objects in turn writes each object once per jump instead of once per stroke: with two 100k-vertex objects and 600 strokes, jumping to the start went from about 200 ms to 30 ms, and each step of a drag from 9 ms to under 2 ms.
+- The global timeline writes each object once per jump over strokes made on several objects in turn, instead of once per stroke: with two 100k-vertex objects and 600 strokes, jumping to the start went from about 200 ms to 30 ms, and each step of a drag from 9 ms to under 2 ms.
+- Dragging the global slider over long histories is faster: with 50,000 steps on 50 objects, a step of the drag went from about 60 ms to 7 ms; with Record everything on 500 objects, from 9 ms to under 2 ms.
 - With global history on, the slider, the header and the sidebar no longer rebuild the whole timeline on every redraw. That took 18 ms each time at 10,000 steps.
 - Saving and loading history works step by step. Peak memory while saving a 6,000-step history of a 100k mesh went from 89 MB to 43 MB, and loading from 141 MB to 83 MB. Recording a remesh at 1M vertices needs 426 MB instead of 609 MB.
 - What Hindsight remembers about its own jumps for Blender's undo is kept only as far back as Blender can undo. It used to keep up to 512 copies of every recorded value.
 - Once the memory limit is reached, a stroke no longer rescans every step.
 - Saving with the history inside the .blend needs about half the extra memory it did: 74 to 86 MB instead of 143 MB at 6,000 steps.
+- History inside the .blend (Save mode Embed or Both) is stored as it is instead of as text. With 6,000 steps of a 100k-vertex mesh, saving takes about 0.2 s instead of 0.4 s, opening 0.15 s instead of 0.35 s, and saving needs 54 MB of extra memory instead of 72 MB.
+- A file saved without Compress File (the Blender 4.2 default) is about a quarter smaller with the history inside: 60 MB instead of 78 MB. Beta 2 opens such a file without its history.
+- Opening a file after a crash keeps the recovered steps packed, as saved steps are. With 3,000 unsaved strokes of a 100k-vertex mesh, opening takes 0.16 s instead of 0.23 s, and the recovered history takes 32 MB of memory instead of 92 MB.
 - Background recompression of steps waits while you sculpt or scrub. It also starts after a file is opened now, not only after the first new stroke was packed.
 - Redraws cost less. The on-screen slider keeps its drawing between redraws and rebuilds only the handle while you drag. The viewport warning and Collection Filtering do less work on each redraw: with 50 objects, global history and a filter list, a redraw went from 3.9 ms to 1.2 ms.
 - Scrubbing and Movie Mode are 2 to 3 times faster through packed history: a run of steps is checked, unpacked and applied in one call of the Rust engine. A jump over 3,000 steps of a 1M-vertex mesh went from 1.4 s to 0.5 s.
 - Edit Mode step by step and topology changes read the mesh's edges and corners through its attributes, which is many times faster than the old way.
 - Record everything costs less in big scenes: with 500 recorded objects an operation is recorded in under half the time, and each object takes about a third less memory. With Record set to Sculpting only the recorder does no work.
-- With Record everything, selecting (a click, box select, Select All and the other Select menu items) reads only the selected and active objects: with 500 recorded objects, Hindsight's work after a click went from 47 ms to 3 ms. In Edit Mode, selecting no longer reads the mesh (36 ms at 300,000 vertices). The next operation that can change anything reads everything, as before.
+- With Record everything, selecting (a click, box select, Select All and the other Select menu items) reads only the selected and active objects: with 500 recorded objects, Hindsight's work after a click went from 47 ms to 3 ms. The next operation that can change anything reads everything, as before.
+- In Edit Mode, selecting no longer reads the mesh (36 ms at 300,000 vertices).
 - Opening a file checks each recorded mesh once instead of twice (about 12 ms less per 100k-vertex mesh), and saving no longer reads every packed step again for its checksum (18 ms less per save with 6,000 steps of a 100k mesh).
 - The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 

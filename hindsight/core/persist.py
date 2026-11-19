@@ -29,7 +29,6 @@ in ``reg.load_report``.
 """
 from __future__ import annotations
 
-import binascii
 import json
 import os
 import struct
@@ -159,43 +158,10 @@ def registry_parts(reg, codec: str = "auto") -> list:
     return parts
 
 
-_B64_CHUNK = 3 << 16     # bytes encoded per call (a multiple of 3, so the pieces join up exactly)
-
-
-def parts_to_b64(parts) -> str:
-    """base64 of the buffers in `parts` joined, as ASCII text: exactly
-    ``base64.b64encode(b"".join(parts)).decode("ascii")``, but the joined bytes and a second full-size
-    encoded copy are never made. The text is written piece by piece into one buffer of its final size
-    and decoded once, so the peak is the encoded size twice instead of the history plus that twice."""
-    total = sum(memoryview(p).nbytes for p in parts)
-    out = bytearray(4 * ((total + 2) // 3))
-    o = 0
-    head = b""                  # up to 2 bytes left over from the previous buffer
-    enc = binascii.b2a_base64
-    for p in parts:
-        mv = memoryview(p).cast("B")
-        if head:
-            need = 3 - len(head)
-            if len(mv) < need:
-                head += bytes(mv)
-                continue
-            e = enc(head + bytes(mv[:need]), newline=False)
-            out[o:o + 4] = e
-            o += 4
-            mv = mv[need:]
-        n = len(mv) - len(mv) % 3
-        for i in range(0, n, _B64_CHUNK):
-            e = enc(mv[i:min(i + _B64_CHUNK, n)], newline=False)
-            out[o:o + len(e)] = e
-            o += len(e)
-        head = bytes(mv[n:])
-    if head:
-        e = enc(head, newline=False)
-        out[o:o + len(e)] = e
-        o += len(e)
-    if o != len(out):           # never: the size is exact
-        raise AssertionError("base64 size mismatch")
-    return out.decode("ascii")
+def parts_to_bytes(parts) -> bytes:
+    """The buffers in `parts` joined: the history as the .blend stores it (R061; earlier builds stored its
+    base64 as text). One allocation of the final size."""
+    return b"".join(parts)
 
 
 class _FileBytes:
@@ -423,6 +389,25 @@ def journal_belongs(reg, records: list) -> bool:
     return sid == rid
 
 
+def _journal_entry(payload, strings: dict, decode) -> Entry:
+    """R064: a journaled step as an Entry holding its bytes, with the meta read from the step's header (no
+    decompression, as for a step loaded from a history file; the journal's checksum covers the bytes). A
+    step whose header can't be read that way (an older step format) is decoded as before."""
+    from .step import read_header
+    blob = payload if type(payload) is bytes else bytes(payload)
+    try:
+        meta = read_header(blob).get("meta")
+    except Exception:
+        meta = None
+    if type(meta) is not dict or "seq" not in meta or "target" not in meta:
+        return Entry(step=decode(blob))
+    for k in _SHARED_META:
+        v = meta.get(k)
+        if type(v) is str:
+            meta[k] = strings.setdefault(v, v)
+    return Entry(blob=blob, meta=meta)
+
+
 def _group(e) -> int:
     """The global position (one operation) a step belongs to: extra "op", or its own number."""
     meta = getattr(e, "meta", None)
@@ -469,6 +454,7 @@ def replay(reg, records: list) -> int:
     from .history import History
     from .step import step_from_bytes
 
+    strings = {}                     # label, mode, target and kind values shared between the steps
     start = 0
     for i, rec in enumerate(records):
         if rec[0] == "SAVE":
@@ -548,12 +534,12 @@ def replay(reg, records: list) -> int:
                 if absorbed[-1][0] != uid and not all(c for _u, c, _s in absorbed) and uid not in stopped:
                     stopped[uid] = 0
                 absorbed.clear()
-            step = step_from_bytes(payload)
-            h = get_hist(uid, step.target)
-            max_seq = step.seq if max_seq is None else max(max_seq, step.seq)
+            entry = _journal_entry(payload, strings, step_from_bytes)
+            h = get_hist(uid, entry.target)
+            max_seq = entry.seq if max_seq is None else max(max_seq, entry.seq)
             st = resets.get(uid)
             if st is not None:
-                if step.seq in home and uid not in stopped:
+                if entry.seq in home and uid not in stopped:
                     st[1] += 1                       # a step the history had before: put back
                 else:
                     settle(h)
@@ -563,11 +549,11 @@ def replay(reg, records: list) -> int:
                 stopped[uid] = 0                     # replaces steps that lead to the saved state
             if uid in stopped:
                 stopped[uid] += 1
-                left_ops.add(_group(step))
+                left_ops.add(_group(entry))
                 continue
             if 0 <= at < len(h.entries):
                 h.entries = h.entries[:at]
-            h.entries.append(Entry(step=step))
+            h.entries.append(entry)
             live[uid] = len(h.entries)
             _clamp_hist(h)
         elif rtype == "CURSOR":

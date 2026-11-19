@@ -146,7 +146,7 @@ def test_session_writes_only_what_is_listed():
     unlisted = sorted(n for n in blend | files if not matches(n, want))
     assert not unlisted, f"written but not in METADATA.md: {unlisted}"
     for must in ("_hindsight_uid", "Scene.hindsight", ".hindsight_history", ".hindsight_history[sidecar]",
-                 ".hindsight_history[hindsight_data]", "keyframes on hindsight.movie_step",
+                 ".hindsight_history[hindsight_data_bin]", "keyframes on hindsight.movie_step",
                  "<file>_hindsight/", "<file>_hindsight/history.hsr", "<file>_hindsight/index.json"):
         assert matches(must, blend | files) or must in blend | files, f"the session didn't write {must}"
     j = persistence.journal_path(path)
