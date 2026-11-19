@@ -123,7 +123,8 @@ def run(d):
     yield from d.drag(reg, [(p.x - 30 + i * 6, p.y) for i in range(11)], step_wait=0.015)
     yield 0.5
     d.check("B has its own history", rt.history_of(b) is not None and len(rt.history_of(b).entries) == 1,
-            None if rt.history_of(b) is None else len(rt.history_of(b).entries))
+            None if rt.history_of(b) is None else [(e.meta.get("label"), e.meta.get("mode"))
+                                                   for e in rt.history_of(b).entries])
     activate(d, a, "OBJECT")
     with d.override():
         b.select_set(True)
