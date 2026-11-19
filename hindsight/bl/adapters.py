@@ -284,6 +284,9 @@ def _without_animated(a, b) -> bool:
     return not same(a, b)
 
 
+_SIMPLE_PATH: dict = {}      # RNA path -> True when it is one attribute name (no dot, no index)
+
+
 class RNAAdapter(Adapter):
     """Properties from ALLOWLIST, read and written by RNA path."""
     id = "rna"
@@ -304,11 +307,17 @@ class RNAAdapter(Adapter):
     def capture(self, idb) -> dict:
         out = {}
         anim = animated_slots(idb)
+        on = ENABLED_KINDS[0]
         for path, _kind, cat in self.rows(idb):
-            if not kind_on(cat):
+            if on is not None and cat not in on:
                 continue
             try:
-                v = normalise(idb.path_resolve(path))
+                s = _SIMPLE_PATH.get(path)
+                if s is None:
+                    s = _SIMPLE_PATH[path] = "." not in path and "[" not in path
+                v = getattr(idb, path) if s else idb.path_resolve(path)    # a plain name needs no path parsing
+                if type(v) not in _PLAIN:
+                    v = normalise(v)
             except Exception:
                 continue
             idx = anim.get(path)
@@ -502,6 +511,10 @@ def _ext_part(idb) -> dict:
     if groups and groups is not _FAILED:
         e.update(groups)
     deps += [g for g in groups_of(idb)] if groups is not _FAILED else []
+    for g in (groups_of(idb) if groups is not _FAILED else ()):          # D146: and the actions they play
+        gad = g.animation_data
+        if gad is not None and gad.action is not None:
+            deps.append(gad.action)
     _upd(e, "particle settings", owned_particles, idb)                      # D137
     deps += [ps.settings for ps in getattr(idb, "particle_systems", ()) if ps.settings is not None]
     _put(e, SETTINGS_KEY, "settings", settings_of, idb, _OBJ_SETTINGS_SKIP)  # D117
@@ -609,6 +622,11 @@ class ObjectAdapter(Adapter):
                 st = idmap.find(path[len(PART_PREFIX):])
                 if st is not None:
                     write_settings(st, v)
+        for path, v in values.items():          # D146: the groups' animation, after the groups
+            if path.startswith(NGA_PREFIX) and isinstance(v, dict):
+                ng = idmap.find(path[len(NGA_PREFIX):])
+                if ng is not None:
+                    write_anim_of(ng, v)
         if "collections" in values and values["collections"] is not MISSING:
             want = set(values["collections"])
             have = {_coll_ref(c): c for c in idb.users_collection}
@@ -735,6 +753,7 @@ def forget_materials() -> None:
 
 # ----------------------------------------------------------------------------- node groups (D126)
 NG_PREFIX = "@ng:"
+NGA_PREFIX = "@nga:"       # a node group's own animation (keys on its inputs, drivers, NLA): "@nga:<group id>" -> anim_of
 _IFACE_SKIP = frozenset(_UI_PROPS | {"name", "socket_type", "select", "bl_socket_idname", "identifier",
                                      "item_type", "in_out", "index", "position", "parent", "is_panel_toggle"})
 
@@ -841,6 +860,7 @@ def owned_groups(ob) -> dict:
         if gu:
             try:
                 out[NG_PREFIX + gu] = group_record(g, uid)
+                out[NGA_PREFIX + gu] = anim_of(g)            # D146: always there (None without animation)
             except Exception:
                 continue
     return out
@@ -2721,9 +2741,9 @@ def assignment_path(path: str) -> bool:
 def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
-        return path in ("settings", COMP_TREE) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX))
+        return path in ("settings", COMP_TREE) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX, NGA_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
-                                                       SK_PREFIX, MATA_PREFIX, NG_PREFIX, PART_PREFIX))
+                                                       SK_PREFIX, MATA_PREFIX, NG_PREFIX, NGA_PREFIX, PART_PREFIX))
 
 
 def _owns_data(ob, d) -> bool:
@@ -3271,6 +3291,11 @@ class SceneAdapter(Adapter):
         for path, v in values.items():          # D133: groups no object uses
             if path.startswith(NG_PREFIX) and isinstance(v, dict):
                 write_group(path[len(NG_PREFIX):], v)
+        for path, v in values.items():          # D146: and their animation
+            if path.startswith(NGA_PREFIX) and isinstance(v, dict):
+                ng = idmap.find(path[len(NGA_PREFIX):])
+                if ng is not None:
+                    write_anim_of(ng, v)
         if COMP_TREE in values and isinstance(values[COMP_TREE], dict) and getattr(idb, "node_tree", None) is not None:
             try:
                 write_tree(idb.node_tree, values[COMP_TREE])
@@ -3436,6 +3461,7 @@ def scene_groups(sc) -> dict:
         gu = idmap.claim(g)
         if gu:
             out[NG_PREFIX + gu] = group_record(g, uid)
+            out[NGA_PREFIX + gu] = anim_of(g)                # D146
     return out
 
 
@@ -3655,7 +3681,7 @@ def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
     if adapter_id == "scene":
         if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings", COMP_TREE) or path.startswith(
-                (WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX)):
+                (WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX, NGA_PREFIX)):
             return None
         return "scene_collections" if path in ("collections", COLL_SETTINGS) else "objects"
     if adapter_id == "object":
