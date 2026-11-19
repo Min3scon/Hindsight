@@ -396,6 +396,23 @@ jobs:
           xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" \
             python tests_ui/hs_ui.py run dyntopo_paused --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
+      - name: Crash recovery after Blender is killed with unsaved strokes (R064, R065, R067)
+        if: success() || failure()
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          HS_UI_XSHOT: "1"
+        run: |
+          # make: strokes, save, more strokes, then SIGKILL; check keeps the profile (the crash journal
+          # lives in the extension's user folder) and opens the file again
+          xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" \
+            python tests_ui/hs_ui.py run crash --blender "${{ matrix.version }}" \
+            --fresh --geometry 0,0,1600,900 --timeout 600 --arg phase=make --arg dir=.tmp/crash
+          xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" \
+            python tests_ui/hs_ui.py run crash --blender "${{ matrix.version }}" \
+            --no-install --geometry 0,0,1600,900 --timeout 600 --arg phase=check --arg dir=.tmp/crash
       - name: Collect screenshots and logs
         if: always()
         run: |

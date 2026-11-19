@@ -109,14 +109,16 @@ def _close_journal(remove_untitled: bool = False) -> None:
                 pass
 
 
-def _open_journal(blend_path: str) -> Journal:
-    """(Re)open the journal for blend_path, keeping the current one if it is the same file."""
+def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) -> Journal:
+    """(Re)open the journal for blend_path, keeping the current one if it is the same file. keep: the
+    records are read right after (crash recovery), so opening reads them already (R065). discard: the
+    journal starts again right after (no recovery), so what is in it is let go unread (R067)."""
     path = journal_path(blend_path)
     j = _J["journal"]
     if j is not None and not j.closed and _J["path"] == path:
         return j
     _close_journal(remove_untitled=True)
-    j = Journal(path)
+    j = Journal(path, keep=keep, discard=discard)
     _J["journal"] = j
     _J["path"] = path
     return j
@@ -532,7 +534,8 @@ def on_load_post(*args) -> None:
     # step); one with history, or with a journal left by an interrupted session, gets it now
     if reg is not None or os.path.isfile(journal_path(path)):
         try:
-            j = _open_journal(path)
+            # without recovery the journal is emptied below in any case (not kept): R067 lets it go now
+            j = _open_journal(path, keep=recover, discard=not recover)
         except Exception as e:
             guard.fail("loading", e, "could not open the journal")
     else:

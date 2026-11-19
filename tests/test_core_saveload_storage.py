@@ -336,6 +336,46 @@ class _CountingCrc:
         return self._real(b, *a)
 
 
+def test_save_encodes_raw_steps_on_threads():
+    """R066: with much to encode, the raw steps (the newest per history, kept unpacked) are encoded on a
+    few threads (the engine packs without the GIL); the file is byte for byte what one thread writes,
+    and reads back. Little to encode: one thread, as before."""
+    from hindsight.core.history import History
+    from hindsight.core.registry import Registry
+    reg = Registry()
+    hs = {}
+    for k in range(2):
+        h = History(f"H{k}", [f"obj{k}"])
+        for i in range(24):
+            h.push(_step(100 * k + i + 1, 4000 + 50 * i))
+        for e in h.entries[:4]:
+            e.pack("zstd")
+        hs[h.uid] = h
+    reg.histories = hs
+    reg.by_object = {f"obj{k}": f"H{k}" for k in range(2)}
+    reg.next_seq = 300
+    saved = (persist._ENCODE_THREADS, persist._PAR_MIN_BYTES)
+    try:
+        persist._ENCODE_THREADS, persist._PAR_MIN_BYTES = 1, 0
+        persist.ENCODED_ON_THREADS[0] = 0
+        one = b"".join(persist.registry_parts(reg))
+        assert persist.ENCODED_ON_THREADS[0] == 0
+        persist._ENCODE_THREADS, persist._PAR_MIN_BYTES = 4, 0
+        many = b"".join(persist.registry_parts(reg))
+        assert persist.ENCODED_ON_THREADS[0] == 40, persist.ENCODED_ON_THREADS[0]
+        assert many == one
+        persist._ENCODE_THREADS, persist._PAR_MIN_BYTES = 4, 1 << 40      # little to encode: one thread
+        persist.ENCODED_ON_THREADS[0] = 0
+        assert b"".join(persist.registry_parts(reg)) == one and persist.ENCODED_ON_THREADS[0] == 0
+    finally:
+        persist._ENCODE_THREADS, persist._PAR_MIN_BYTES = saved
+    assert all(not e.is_packed() for h in hs.values() for e in h.entries[4:]), "saving packed the raw steps"
+    back = persist.registry_from_bytes(many)
+    for uid, h in hs.items():
+        got = back.histories[uid].entries
+        assert len(got) == 24 and all(stepmod.same_step(a.load(), b.load()) for a, b in zip(got, h.entries))
+
+
 def test_save_reuses_known_step_checksums():
     """R046: a packed step's CRC-32 is known from when its bytes were made (packed, recompressed,
     loaded), so saving doesn't read every packed step again; the file is the same and reads back."""
@@ -381,7 +421,7 @@ TESTS = [test_embedded_bytes_are_the_parts_joined, test_embedded_bytes_of_a_regi
          test_journal_failed_flush_is_reported_and_cut_back, test_can_gain_matches_recompress,
          test_can_gain_same_answer_as_before_r047,
          test_packer_skips_steps_with_nothing_to_gain, test_packer_waits_while_the_user_works,
-         test_packer_without_activity_recompresses_as_before, test_save_reuses_known_step_checksums]
+         test_packer_without_activity_recompresses_as_before, test_save_reuses_known_step_checksums, test_save_encodes_raw_steps_on_threads]
 
 
 def main():

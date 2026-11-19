@@ -320,6 +320,60 @@ def test_append_read_roundtrip():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_open_keeping_records():
+    """R065: Journal(path, keep=True) reads the records in the scan that opens it; the first read() gives
+    exactly what a fresh read of the file gives (a cut-off last record and a header that isn't JSON
+    included), and anything written or cut since makes read() read the file again."""
+    from hindsight.core.journal import Journal, _HEAD, _CRC, MAGIC, RTYPES
+    d = _tmp()
+    try:
+        path = os.path.join(d, "j.hsj")
+        j = Journal(path)
+        recs = [("SAVE", {"blend": "x", "s": "a"}, b"")]
+        recs += [("STEP", {"hist": "H", "at": i}, os.urandom(3000 + 37 * i)) for i in range(40)]
+        for r in recs:
+            j.append(*r)
+        j.flush()
+        j.close()
+        with open(path, "ab") as fh:                 # a record cut off by a crash
+            fh.write(_HEAD.pack(MAGIC, RTYPES["STEP"], 2, 5000) + b"{}" + b"x" * 100)
+        k = Journal(path, keep=True)
+        assert k.read() == recs
+        assert k.read() == recs                      # the second read reads the file
+        k.append("CURSOR", {"hist": "H", "cursor": 3})
+        k.close()
+        k = Journal(path, keep=True)
+        k.append("CURSOR", {"hist": "H", "cursor": 4})
+        got = k.read()
+        assert got[:-2] == recs and got[-1] == ("CURSOR", {"hist": "H", "cursor": 4}, b""), got[-3:]
+        k.close()
+        k = Journal(path, keep=True)
+        assert k.read(upto=k.size() - 1) == Journal(path).read(upto=k.size() - 1)
+        k.truncate(0)
+        assert k.read() == []
+        k.close()
+        # a header that isn't JSON: read() has always stopped there, and so do the kept records
+        bad = os.path.join(d, "bad.hsj")
+        b = Journal(bad)
+        b.append("STEP", {"hist": "H", "at": 0}, b"p0")
+        b.close()
+        hb = b"{not json"
+        prefix = _HEAD.pack(MAGIC, RTYPES["STEP"], len(hb), 2) + hb
+        from hindsight.core.crc import crc32
+        with open(bad, "ab") as fh:
+            fh.write(prefix + b"p1" + _CRC.pack(crc32(b"p1", crc32(prefix)) & 0xFFFFFFFF))
+        b = Journal(bad)
+        b.append("STEP", {"hist": "H", "at": 2}, b"p2")
+        b.close()
+        plain = Journal(bad).read()
+        assert plain == [("STEP", {"hist": "H", "at": 0}, b"p0")], plain
+        kb = Journal(bad, keep=True)
+        assert kb.read() == plain and kb.size() == os.path.getsize(bad)
+        kb.close()
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def test_crash_tolerance():
     from hindsight.core.journal import Journal
     d = _tmp()
@@ -891,6 +945,7 @@ TESTS = [
     test_replay_file_changed_without_hindsight,
     test_embed_base64,
     test_sidecar_streamed_both_ways,
+    test_open_keeping_records,
 ]
 
 

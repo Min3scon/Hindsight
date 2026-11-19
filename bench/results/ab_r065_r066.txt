@@ -1,0 +1,33 @@
+R065 and R066 A/B, bpy 5.3.0 module, alternating processes (another agent's tests ran on the machine at the same time, alike for both sides).
+R065: A = 2beea2b (R064), B = R065 (journal read through a 1 MB buffer, one scan when recovering). replay_ab.py: open after 3,000 unsaved strokes at 100k.
+R066: A = 2beea2b, B = R066 (raw steps encoded on up to 4 threads from 4 MB). rawsave_ab.py: persist.registry_parts with the newest 64 steps unpacked (70 strokes of 2%), 7 builds per process.
+
+=== R065 replay 5.3
+1 A AB {"open_ms": 157.1, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+1 B AB {"open_ms": 136.6, "rss_growth_mb": -6.4, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+2 A AB {"open_ms": 164.1, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+2 B AB {"open_ms": 139.9, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+3 A AB {"open_ms": 146.1, "rss_growth_mb": 0.9, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+3 B AB {"open_ms": 138.5, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+4 A AB {"open_ms": 154.6, "rss_growth_mb": 0.9, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+4 B AB {"open_ms": 136.4, "rss_growth_mb": -5.6, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+5 A AB {"open_ms": 160.8, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+5 B AB {"open_ms": 141.4, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+=== R066 raw save 1M 5.3
+1 A AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 52.1, "parts_med_ms": 53.9}
+1 B AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 19.4, "parts_med_ms": 24.0}
+2 A AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 51.0, "parts_med_ms": 57.3}
+2 B AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 17.7, "parts_med_ms": 18.3}
+3 A AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 53.6, "parts_med_ms": 54.6}
+3 B AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 19.9, "parts_med_ms": 24.5}
+4 A AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 45.8, "parts_med_ms": 52.0}
+4 B AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 18.8, "parts_med_ms": 22.3}
+5 A AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 46.3, "parts_med_ms": 48.2}
+5 B AB {"vertices": 1000000, "raw_steps": 64, "raw_mb": 19.4, "parts_min_ms": 18.2, "parts_med_ms": 20.0}
+=== R066 raw save 100k 5.3
+1 A AB {"vertices": 100000, "raw_steps": 64, "raw_mb": 2.0, "parts_min_ms": 4.3, "parts_med_ms": 4.4}
+1 B AB {"vertices": 100000, "raw_steps": 64, "raw_mb": 2.0, "parts_min_ms": 4.7, "parts_med_ms": 5.7}
+2 A AB {"vertices": 100000, "raw_steps": 64, "raw_mb": 2.0, "parts_min_ms": 4.2, "parts_med_ms": 4.4}
+2 B AB {"vertices": 100000, "raw_steps": 64, "raw_mb": 2.0, "parts_min_ms": 4.4, "parts_med_ms": 4.5}
+3 A AB {"vertices": 100000, "raw_steps": 64, "raw_mb": 2.0, "parts_min_ms": 4.2, "parts_med_ms": 4.9}
+3 B AB {"vertices": 100000, "raw_steps": 64, "raw_mb": 2.0, "parts_min_ms": 4.3, "parts_med_ms": 4.5}
