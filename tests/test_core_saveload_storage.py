@@ -228,6 +228,49 @@ def test_can_gain_matches_recompress():
     assert store._can_gain(b"")
 
 
+def _can_gain_r046(blob) -> bool:
+    """_can_gain as it was before R047 (memoryviews), the reference for the check below."""
+    from hindsight.core.codec import is_strong
+    mv = memoryview(blob)
+    if len(mv) < 13:
+        return True
+    if mv[:4] != stepmod.STEP_MAGIC:
+        return True
+    hl = mv[8] | (mv[9] << 8)
+    if len(mv) <= 10 + hl:
+        return True
+    quick = bool(mv[12] & stepmod.QUICK_FLAG)
+    return quick or not is_strong(mv[10 + hl:])
+
+
+def test_can_gain_same_answer_as_before_r047():
+    """R047 reads the bytes by index: the same answer as the memoryview version for real steps of every
+    codec and setting, cut short at every length, with the header length and flags changed, and for
+    random bytes; for bytes, bytearray and memoryview alike."""
+    rng = np.random.default_rng(47)
+    s = _step(7, 400)
+    real = [stepmod.step_to_bytes(s, c) for c in ("zstd", "lz4", "zlib", "none")]
+    real += [stepmod.step_to_bytes(s, "auto", 0)]
+    real += [b for b in (stepmod.recompress(x) for x in list(real)) if b is not None]
+    cases = []
+    for b in real:
+        cases += [b[:k] for k in range(0, 40)] + [b]
+        for k in range(4, 16):
+            for v in (0, 1, 2, 3, 4, 5, 0x40, 0x80, 0xFF):
+                x = bytearray(b)
+                x[k] = v
+                cases.append(bytes(x))
+    for _ in range(3000):
+        n = int(rng.integers(0, 64))
+        body = rng.bytes(n)
+        cases.append(body)
+        cases.append(stepmod.STEP_MAGIC + body)
+    for c in cases:
+        want = _can_gain_r046(c)
+        for form in (c, bytearray(c), memoryview(c)):
+            assert store._can_gain(form) == want, (c[:24], type(form).__name__, want)
+
+
 def test_packer_skips_steps_with_nothing_to_gain():
     """A file saved after recompression: nothing is queued again, so the packer doesn't spend an
     idle second per step reading and checking them."""
@@ -347,6 +390,7 @@ def test_save_reuses_known_step_checksums():
 TESTS = [test_b64_text_is_exactly_b64encode, test_b64_text_of_a_registry_reads_back, test_b64_text_peak_memory,
          test_journal_fsync_failure_is_reported, test_journal_full_disk_keeps_records_before_and_after,
          test_journal_failed_flush_is_reported_and_cut_back, test_can_gain_matches_recompress,
+         test_can_gain_same_answer_as_before_r047,
          test_packer_skips_steps_with_nothing_to_gain, test_packer_waits_while_the_user_works,
          test_packer_without_activity_recompresses_as_before, test_save_reuses_known_step_checksums]
 
