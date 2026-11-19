@@ -22,6 +22,7 @@ import zlib
 
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference copies (Blender's --python adds no path)
 from reference import journal as rjournal, persist as rpersist                 # noqa: E402
 from hindsight.core import journal, native, persist, step as stepmod          # noqa: E402
 from hindsight.core.history import History                                    # noqa: E402
