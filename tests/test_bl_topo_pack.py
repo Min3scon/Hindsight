@@ -200,12 +200,48 @@ def test_a_baseline_changed_while_packing_is_not_swapped():
     assert not st.finish_pack(job, packed) and not st.is_packed()
 
 
+def test_topology_step_shares_its_topology_with_the_state():
+    """R080: after a topology step the baseline holds the step's own topology arrays (read-only), not
+    copies (about 25 ms and 50 MB at 1M vertices); positions are still the baseline's own copy."""
+    from hindsight.core.types import POSITION_KEY
+    H.fresh()
+    ob = H.make_mesh(3000, name="Share")
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 1)
+    assert runtime.commit(ob) is not None
+    H.enter(ob, "OBJECT")
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:30], cuts=1)
+    bm.to_mesh(ob.data)
+    bm.free()
+    ob.data.update()
+    H.enter(ob, "SCULPT")
+    runtime._tick_once()
+    runtime.commit(ob)
+    h = runtime.history_of(ob)
+    e = [x for x in h.entries if x.kind == "TOPO"][-1]
+    step = e.step if e.step is not None else e.load()
+    st = _state(ob)
+    for k in meshio.TOPO_KEYS:
+        if k in step.after.arrays:
+            assert st.light[k] is step.after.arrays[k], k
+            assert not st.light[k].flags.writeable, k
+    assert st.light[POSITION_KEY] is not step.after.arrays[POSITION_KEY]
+    assert st.light[POSITION_KEY].flags.writeable
+    H.fake_stroke(ob, 2)                     # positions change in place in the baseline: the step's stay
+    before = step.after.arrays[POSITION_KEY].copy()
+    assert runtime.commit(ob) is not None
+    assert np.array_equal(step.after.arrays[POSITION_KEY], before)
+
+
 if __name__ == "__main__":
     try:
         for t in (test_pack_round_trip_is_exact, test_idle_packs_the_topology_and_strokes_never_unpack,
                   test_topology_change_with_packed_baseline_goes_back_exactly,
                   test_edit_mode_compares_packed_topology_by_checksum,
-                  test_a_baseline_changed_while_packing_is_not_swapped):
+                  test_a_baseline_changed_while_packing_is_not_swapped,
+                  test_topology_step_shares_its_topology_with_the_state):
             H.run(t)
     finally:
         runtime.TOPO_PACK_MIN[0] = runtime.TOPO_PACK_DEFAULT

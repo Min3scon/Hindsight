@@ -143,9 +143,22 @@ class MeshState:
 
     # --------------------------------------------------------------- snapshots
     def set_snapshot(self, snap: Snapshot) -> None:
+        from .topopack import TOPO_KEYS
         old_keys = self.all_keys()        # no unpacking only to be replaced
         self.counts = dict(snap.counts)
-        self.arrays = {k: np.array(v, copy=True) for k, v in snap.arrays.items()}
+        arrays = {}
+        for k, v in snap.arrays.items():
+            if k in TOPO_KEYS:
+                # R080: nothing writes topology in place (a change of it is a new snapshot), so the baseline holds
+                # the step's own arrays, read-only so that a write would fail instead of changing the step (a 1M
+                # copy was 25 ms and 50 MB). The channels are copied: strokes write the baseline's in place.
+                a = np.asarray(v)
+                if a.flags.writeable:
+                    a.flags.writeable = False
+                arrays[k] = a
+            else:
+                arrays[k] = np.array(v, copy=True)
+        self.arrays = arrays
         new_keys = set(self._arrays)
         self.removed |= old_keys - new_keys
         self.removed -= new_keys
@@ -157,7 +170,9 @@ class MeshState:
 def _share_chain(prev: Entry, step: Step) -> None:
     """A TOPO step's `before` is the mesh the TOPO step before it left (its `after`): where the two
     are bit for bit the same, the new step holds the older step's arrays, not a second copy of them.
-    Nothing writes into a step's arrays (the state takes copies, set_snapshot), so sharing is safe;
+    Nothing writes into a step's arrays (the state copies the channels and, since R080, holds the topology
+    read-only, set_snapshot), so sharing is safe; after R080 the topology of `before` usually is the older
+    step's own arrays already (the state's), and the compare is skipped;
     only raw neighbours share (a packed one has no arrays)."""
     ps = prev.step
     if (ps is None or ps.kind != TOPO or step.kind != TOPO or ps.after is None or step.before is None

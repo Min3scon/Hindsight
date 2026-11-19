@@ -15,17 +15,18 @@ by nobody (CI sets it to "require", which is what happens anyway).
 """
 from __future__ import annotations
 
-API = 7                     # the module's API number (native/src/lib.rs) this code is written for
+API = 8                     # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
 # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
 # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
 # API 5: + pack_record, unpack_record; apply takes any indices (the numpy fallbacks of delta.py are gone).
 # API 6: + crc32 (zlib.crc32 at 20 GB/s; registry, journal and Entry checksums).
 # API 7: + Hasher128 (xxh3-128, incremental): mesh fingerprints.
+# API 8: + same_values (strict equality of the data recorder's values, R070).
 
 
 class EngineMissing(ImportError):
-    """The Rust engine (hindsight_native, API 7) is missing, broken or the wrong version."""
+    """The Rust engine (hindsight_native, API 8) is missing, broken or the wrong version."""
 
 
 def _load():

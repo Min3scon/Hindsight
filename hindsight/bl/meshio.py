@@ -146,15 +146,43 @@ def _set_ints(me, name: str, domain: str, dtype: str, count: int, arr, legacy, l
         legacy.foreach_set(legacy_prop, arr)
 
 
+def _face_offsets(me, n_faces: int, n_corners: int) -> np.ndarray:
+    """Where each face's corners start, and the corner count last (n_faces + 1 ints). R077: from Blender's
+    triangles (a face of n corners is n - 2 triangles, whatever its shape), counted per face and summed:
+    `me.polygons.foreach_get("loop_start")` goes through RNA face by face (19 to 25 ms at 1M faces, 10 to 13
+    through the triangles, which Blender usually has already). Never `calc_loop_triangles()`: forcing them
+    again changed what a later operator did on Blender 4.2 (the T0 gate); reading them only builds Blender's
+    own cache when it has none. The sizes must add up to the corner count, or the faces are read one by
+    one as before: the result is the same array."""
+    out = np.empty(n_faces + 1, np.int32)
+    out[-1] = n_corners
+    if not n_faces:
+        return out
+    try:
+        ltp = me.loop_triangle_polygons
+        if not len(ltp):
+            raise ValueError("no triangles")
+        tp = np.empty(len(ltp), np.int32)
+        ltp.foreach_get("value", tp)
+        if len(tp) and (int(tp.min()) < 0 or int(tp.max()) >= n_faces):
+            raise ValueError("triangle of no face")
+        sizes = np.bincount(tp, minlength=n_faces) + 2
+        if int(sizes.sum()) != n_corners:
+            raise ValueError("face sizes don't add up")
+        out[0] = 0
+        np.cumsum(sizes[:-1], out=out[1:-1])
+        return out
+    except Exception:
+        me.polygons.foreach_get("loop_start", out[:-1])
+        return out
+
+
 def _topology_readers(me, c: dict) -> dict:
     def ev():
         return _edge_verts(me, c["EDGE"])
 
     def fo():
-        out = np.empty(c["FACE"] + 1, np.int32)
-        me.polygons.foreach_get("loop_start", out[:-1])
-        out[-1] = c["CORNER"]
-        return out
+        return _face_offsets(me, c["FACE"], c["CORNER"])
     return {EDGE_VERTS_KEY: ev,
             CORNER_VERT_KEY: lambda: _corner_ints(me, ".corner_vert", "vertex_index", c["CORNER"]),
             CORNER_EDGE_KEY: lambda: _corner_ints(me, ".corner_edge", "edge_index", c["CORNER"]),
@@ -297,13 +325,22 @@ def read_weights(ob, me) -> dict:
     return out
 
 
+def sk_points(kb):
+    """R075: a mesh shape key's points for foreach_get/foreach_set: ShapeKey.points (Blender 4.1 and newer)
+    copies the positions in one go, ShapeKey.data goes through RNA point by point (2 ms against 0.01 ms for
+    40k points). The same values; .data where .points isn't there."""
+    p = getattr(kb, "points", None)
+    return kb.data if p is None else p
+
+
 def read_extras(ob, me) -> dict:
     out = read_weights(ob, me)
     sk = getattr(me, "shape_keys", None)
     if sk is not None:
         for i, kb in enumerate(sk.key_blocks):
-            co = np.empty(len(kb.data) * 3, np.float32)
-            kb.data.foreach_get("co", co)
+            pts = sk_points(kb)
+            co = np.empty(len(pts) * 3, np.float32)
+            pts.foreach_get("co", co)
             out[sk_key(i, kb.name)] = co
     return out
 
@@ -351,7 +388,7 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
     if key is None:
         return
     blocks = list(key.key_blocks)
-    if rebuilt or any(len(kb.data) != n for kb in blocks):
+    if rebuilt or any(len(sk_points(kb)) != n for kb in blocks):
         pos = np.empty(n * 3, np.float32)
         me.attributes["position"].data.foreach_get("vector", pos)
         keep = [(kb.name, kb.value, kb.slider_min, kb.slider_max, kb.mute, kb.relative_key.name,
@@ -363,7 +400,7 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
             kb = ob.shape_key_add(name=name, from_mix=False)
             kb.name = name
             co = sk_arrays.get(name)
-            kb.data.foreach_set("co", co if co is not None and co.size == n * 3 else pos)
+            sk_points(kb).foreach_set("co", co if co is not None and co.size == n * 3 else pos)
             made[name] = kb
         for name, value, smin, smax, mute, rel, vgroup, interp in keep:
             kb = made[name]
@@ -377,7 +414,7 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
     for kb in blocks:
         co = sk_arrays.get(kb.name)
         if co is not None and co.size == n * 3:
-            kb.data.foreach_set("co", co)
+            sk_points(kb).foreach_set("co", co)
 
 
 X3 = "x3:"      # R060: tag of a fingerprint made with xxh3-128 (the engine's Hasher128); one without a tag

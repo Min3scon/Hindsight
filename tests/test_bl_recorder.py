@@ -243,8 +243,22 @@ def test_topology_step_owns_its_before():
     step = h.entries[-1].step
     assert step is not None and step.kind == "TOPO"
     st = runtime._STATES[runtime.obj_uid(ob)]
+    from hindsight.core.topopack import TOPO_KEYS
     for k, a in st.arrays.items():
-        for b in list(step.before.arrays.values()) + list(step.after.arrays.values()):
+        if k in TOPO_KEYS:
+            # R080: the state holds the step's own topology (`after`, the same key) read-only, never a copy;
+            # a write fails instead of changing the step, and nothing else is shared
+            assert not a.flags.writeable, k
+            try:
+                a[...] = a
+                wrote = True
+            except ValueError:
+                wrote = False
+            assert not wrote, ("a write into the shared topology went through", k)
+            others = list(step.before.arrays.values()) + [b for kk, b in step.after.arrays.items() if kk != k]
+        else:
+            others = list(step.before.arrays.values()) + list(step.after.arrays.values())
+        for b in others:
             assert not np.shares_memory(a, b), k
     for seed in (3, 4, 5):
         H.fake_stroke(ob, seed)

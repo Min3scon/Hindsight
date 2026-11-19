@@ -1535,7 +1535,7 @@ def _fill_made(ob, made) -> None:
                 continue
             for k, arr in st.light.items():
                 if k.startswith(meshio.SK_PREFIX) and meshio._sk_name(k) == name and arr.size == n * 3:
-                    kb.data.foreach_set("co", arr)
+                    meshio.sk_points(kb).foreach_set("co", arr)
                     break
 
 

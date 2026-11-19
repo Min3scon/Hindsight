@@ -1,0 +1,35 @@
+R075 A/B: Record everything, 40k-vertex mesh with K shape keys, one shape key's slider moved, then finish_operation
+(median and min of 8 per process). A = 97df9fc (ShapeKey.data), B = R075 (ShapeKey.points). Alternating processes.
+
+=== K=100
+1 A AB {"shape_keys": 100, "min_ms": 195.3, "med_ms": 210.8, "steps": 8}
+1 B AB {"shape_keys": 100, "min_ms": 16.8, "med_ms": 17.1, "steps": 8}
+2 A AB {"shape_keys": 100, "min_ms": 222.3, "med_ms": 243.7, "steps": 8}
+2 B AB {"shape_keys": 100, "min_ms": 17.2, "med_ms": 17.6, "steps": 8}
+3 A AB {"shape_keys": 100, "min_ms": 226.8, "med_ms": 229.9, "steps": 8}
+3 B AB {"shape_keys": 100, "min_ms": 16.0, "med_ms": 17.9, "steps": 8}
+4 A AB {"shape_keys": 100, "min_ms": 217.8, "med_ms": 228.1, "steps": 8}
+4 B AB {"shape_keys": 100, "min_ms": 18.4, "med_ms": 20.6, "steps": 8}
+5 A AB {"shape_keys": 100, "min_ms": 231.2, "med_ms": 248.8, "steps": 8}
+5 B AB {"shape_keys": 100, "min_ms": 14.0, "med_ms": 14.8, "steps": 8}
+=== K=10
+1 A AB {"shape_keys": 10, "min_ms": 25.6, "med_ms": 26.4, "steps": 8}
+1 B AB {"shape_keys": 10, "min_ms": 2.6, "med_ms": 3.0, "steps": 8}
+2 A AB {"shape_keys": 10, "min_ms": 25.7, "med_ms": 26.4, "steps": 8}
+2 B AB {"shape_keys": 10, "min_ms": 2.2, "med_ms": 2.4, "steps": 8}
+3 A AB {"shape_keys": 10, "min_ms": 25.4, "med_ms": 28.8, "steps": 8}
+3 B AB {"shape_keys": 10, "min_ms": 2.5, "med_ms": 2.6, "steps": 8}
+4 A AB {"shape_keys": 10, "min_ms": 21.5, "med_ms": 24.5, "steps": 8}
+4 B AB {"shape_keys": 10, "min_ms": 2.2, "med_ms": 2.5, "steps": 8}
+5 A AB {"shape_keys": 10, "min_ms": 26.0, "med_ms": 27.1, "steps": 8}
+5 B AB {"shape_keys": 10, "min_ms": 2.3, "med_ms": 2.6, "steps": 8}
+=== 4.2 K=100
+1 A AB {"shape_keys": 100, "min_ms": 205.6, "med_ms": 210.5, "steps": 6}
+1 B AB {"shape_keys": 100, "min_ms": 15.7, "med_ms": 16.6, "steps": 6}
+2 A AB {"shape_keys": 100, "min_ms": 205.8, "med_ms": 209.9, "steps": 6}
+2 B AB {"shape_keys": 100, "min_ms": 14.8, "med_ms": 16.2, "steps": 6}
+3 A AB {"shape_keys": 100, "min_ms": 207.4, "med_ms": 215.1, "steps": 6}
+3 B AB {"shape_keys": 100, "min_ms": 17.4, "med_ms": 18.2, "steps": 6}
+
+One read of 40,401 points (skpoints probe): kb.data.foreach_get 2.00 ms (4.2.23), 2.48 ms (5.0.1), 1.61 ms (5.3.0);
+kb.points.foreach_get 0.01 ms on all three, the same values.

@@ -1,0 +1,26 @@
+R077 A/B: a 1M grid; the first mesh fingerprint in the process, then 6 more (median), and 5 read_snapshot (median).
+A = 97df9fc (face offsets through me.polygons loop_start), B = R077 (counted from Blender's triangles, read without
+calc_loop_triangles). Alternating processes.
+
+1 A AB {"fingerprint_first_ms": 109.9, "fingerprint_med_ms": 45.3, "read_snapshot_med_ms": 39.0}
+1 B AB {"fingerprint_first_ms": 60.0, "fingerprint_med_ms": 33.7, "read_snapshot_med_ms": 22.4}
+2 A AB {"fingerprint_first_ms": 123.8, "fingerprint_med_ms": 50.1, "read_snapshot_med_ms": 36.4}
+2 B AB {"fingerprint_first_ms": 63.2, "fingerprint_med_ms": 32.8, "read_snapshot_med_ms": 23.0}
+3 A AB {"fingerprint_first_ms": 110.9, "fingerprint_med_ms": 45.0, "read_snapshot_med_ms": 38.6}
+3 B AB {"fingerprint_first_ms": 71.8, "fingerprint_med_ms": 32.8, "read_snapshot_med_ms": 22.7}
+4 A AB {"fingerprint_first_ms": 116.0, "fingerprint_med_ms": 46.2, "read_snapshot_med_ms": 37.3}
+4 B AB {"fingerprint_first_ms": 83.4, "fingerprint_med_ms": 32.8, "read_snapshot_med_ms": 23.8}
+=== 4.2
+1 A AB {"fingerprint_first_ms": 70.4, "fingerprint_med_ms": 54.3, "read_snapshot_med_ms": 52.0}
+1 B AB {"fingerprint_first_ms": 54.7, "fingerprint_med_ms": 33.9, "read_snapshot_med_ms": 24.5}
+2 A AB {"fingerprint_first_ms": 80.4, "fingerprint_med_ms": 45.4, "read_snapshot_med_ms": 35.3}
+2 B AB {"fingerprint_first_ms": 55.8, "fingerprint_med_ms": 36.9, "read_snapshot_med_ms": 27.2}
+3 A AB {"fingerprint_first_ms": 56.1, "fingerprint_med_ms": 44.8, "read_snapshot_med_ms": 40.7}
+3 B AB {"fingerprint_first_ms": 55.0, "fingerprint_med_ms": 36.5, "read_snapshot_med_ms": 24.9}
+
+The offsets alone, 8 reads in one process (offsets_rep probe), ms:
+5.3.0 loop_start 26.2 25.1 37.9 25.8 24.2 26.9 26.7 37.1; triangles 20.4 12.1 11.2 11.2 10.9 10.0 9.8 13.0
+4.2.23 loop_start 19.2 18.5 18.2 18.4 27.8 18.2 19.4 19.0; triangles (with calc_loop_triangles, before the gate fix) 24.1 15.0 14.0 12.6 13.4 12.6 12.3 12.1
+
+First version called me.calc_loop_triangles(): test_bl_t0_gate test_gate_topology failed on 4.2 (operation 8 gave
+another mesh with Hindsight than without); without the call the T0 gate passes on 4.2 and 5.3.

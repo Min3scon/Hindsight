@@ -1232,6 +1232,21 @@ fn _test_fault(on: bool) {
     FAULT.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Measurements (R072): _strong_level(level=None) -> the level every strong zstd blob gets (0: the
+/// rule, codec::strong_level), after setting it to `level` (0, or 1 to 22) if given. Not used by the add-on.
+#[pyfunction]
+#[pyo3(signature = (level=None))]
+fn _strong_level(level: Option<i32>) -> PyResult<i32> {
+    use std::sync::atomic::Ordering::Relaxed;
+    if let Some(lv) = level {
+        if !(0..=22).contains(&lv) {
+            return Err(PyValueError::new_err("zstd level must be 0 (the rule) or 1 to 22"));
+        }
+        codec::STRONG_NOW.store(lv, Relaxed);
+    }
+    Ok(codec::STRONG_NOW.load(Relaxed))
+}
+
 /// recompress(blob) -> a smaller blob for the same step, or None (see step.recompress).
 #[pyfunction]
 fn recompress<'py>(py: Python<'py>, blob: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyBytes>>> {
@@ -1319,6 +1334,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(record, m)?)?;
     m.add_function(wrap_pyfunction!(recompress, m)?)?;
     m.add_function(wrap_pyfunction!(_test_fault, m)?)?;
+    m.add_function(wrap_pyfunction!(_strong_level, m)?)?;
     let py = m.py();
     m.add("CorruptStep", py.get_type_bound::<CorruptStep>())?;
     m.add("CorruptBlob", py.get_type_bound::<CorruptBlob>())?;

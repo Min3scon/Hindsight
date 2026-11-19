@@ -60,6 +60,8 @@ Faster and lighter:
 - Opening a file after a crash keeps the recovered steps packed, as saved steps are, and reads the crash record once instead of twice. With 3,000 unsaved strokes of a 100k-vertex mesh, opening takes 0.14 s instead of 0.23 s, and the recovered history takes 32 MB of memory instead of 92 MB.
 - Saving a 1M-vertex mesh right after sculpting is quicker: the newest strokes, kept unpacked for quick undo, are packed for the file on several cores. With 64 such strokes that part of the save takes 22 ms instead of 54 ms.
 - Each recorded mesh needs less memory: while you pause, the mesh's connectivity that Hindsight keeps for comparison is packed. A 1.5M-vertex remeshed sculpt holds 87 MB instead of 140 MB, a 1M-vertex grid 12 MB instead of 61 MB.
+- Shape keys are read and written about 200 times faster. With Record everything on a 40k-vertex mesh with 100 shape keys, moving a shape key slider costs Hindsight 18 ms instead of 230 ms.
+- A topology change on a big mesh (Voxel Remesh, Dyntopo) hands control back sooner: its crash-recovery record is packed and written in the background. At 1M vertices Hindsight's share went from 0.76 s to 0.34 s.
 - Background recompression of steps waits while you sculpt or scrub. It also starts after a file is opened now, not only after the first new stroke was packed.
 - Redraws cost less. The on-screen slider keeps its drawing between redraws and rebuilds only the handle while you drag. The viewport warning and Collection Filtering do less work on each redraw: with 50 objects, global history and a filter list, a redraw went from 3.9 ms to 1.2 ms.
 - Scrubbing and Movie Mode are 2 to 3 times faster through packed history: a run of steps is checked, unpacked and applied in one call of the Rust engine. A jump over 3,000 steps of a 1M-vertex mesh went from 1.4 s to 0.5 s.
@@ -69,6 +71,9 @@ Faster and lighter:
 - In Edit Mode, selecting no longer reads the mesh (36 ms at 300,000 vertices).
 - Opening a file checks each recorded mesh once instead of twice (about 12 ms less per 100k-vertex mesh), and saving no longer reads every packed step again for its checksum (18 ms less per save with 6,000 steps of a 100k mesh).
 - Saving and opening a file with big recorded meshes takes less time: the check of each mesh runs in the Rust engine. With three recorded 1M-vertex meshes, that check went from 0.36 s to 0.11 s per save, and opening the file from 0.79 s to 0.55 s. Older files open as before.
+- With Record everything on 500 objects, the check that nothing changed runs in the Rust engine: 3.2 ms instead of 7.4 ms, about a tenth of each operation.
+- Finding what a stroke changed uses two cores for big images and meshes. A texture paint stroke on a 2K image is recorded in 17 ms instead of 20 ms, a sculpt stroke on a 1M-vertex mesh in 3.9 ms instead of 4.4 ms.
+- After a file is opened, packing its history tighter in the background takes about half the CPU: 1.0 ms instead of 2.0 ms per step of a 100k-vertex mesh, 15 ms instead of 25 ms at 1M vertices. The history is 0.4% larger.
 - The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 
 Fixed:

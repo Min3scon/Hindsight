@@ -17,7 +17,9 @@ from __future__ import annotations
 import binascii
 import hashlib
 import os
+import queue
 import tempfile
+import threading
 import uuid
 
 import bpy
@@ -88,11 +90,70 @@ def journal_path(blend_path: str) -> str:
 
 
 def current_journal():
-    """The live Journal (or None if none has been opened yet)."""
+    """The live Journal (or None if none has been opened yet), with every record handed to the helper in it."""
+    drain_journal_writer()
     return _J["journal"]
 
 
+# R079: the records of big steps (a topology change at 1M vertices is about 120 MB to encode and write) are
+# encoded and written on a helper thread, in order: once one is waiting, every later record waits behind it.
+# Whatever reads, empties, switches or closes the journal waits for the helper first. A crash can lose only the
+# newest records still waiting, so the journal recovery reads is always a prefix of what was written.
+BIG_RECORD_DEFAULT = 4 << 20     # a step held with this many bytes or more is journaled by the helper
+BIG_RECORD = [BIG_RECORD_DEFAULT]
+_JW = {"q": None, "thread": None, "error": None}
+_JLOCK = threading.Lock()        # one writer at a time into the journal file
+
+
+def _writer_loop(q) -> None:
+    while True:
+        item = q.get()
+        try:
+            if item is None:
+                return
+            j, rtype, header, fn = item
+            payload = fn() if fn is not None else b""
+            with _JLOCK:
+                if not j.closed:
+                    j.append(rtype, header, payload)
+                    j.flush(fsync=False)
+        except Exception as e:
+            _JW["error"] = e
+        finally:
+            q.task_done()
+
+
+def _writer_queue():
+    q = _JW["q"]
+    t = _JW["thread"]
+    if q is None or t is None or not t.is_alive():
+        q = _JW["q"] = queue.Queue()
+        t = _JW["thread"] = threading.Thread(target=_writer_loop, args=(q,), name="hindsight-journal", daemon=True)
+        t.start()
+    return q
+
+
+def drain_journal_writer() -> None:
+    """Wait until every record handed to the helper is in the journal (main thread)."""
+    q = _JW["q"]
+    if q is not None:
+        q.join()
+    e, _JW["error"] = _JW["error"], None
+    if e is not None:
+        log.error_once(("journal_writer", str(e)), f"crash-recovery journal error: {e}", e)
+
+
+def _stop_journal_writer() -> None:
+    q, t = _JW["q"], _JW["thread"]
+    if q is not None and t is not None and t.is_alive():
+        drain_journal_writer()
+        q.put(None)
+        t.join(timeout=10.0)
+    _JW["q"] = _JW["thread"] = None
+
+
 def _close_journal(remove_untitled: bool = False) -> None:
+    drain_journal_writer()
     j = _J["journal"]
     path = _J["path"]
     _J["journal"] = None
@@ -116,6 +177,8 @@ def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) ->
     path = journal_path(blend_path)
     j = _J["journal"]
     if j is not None and not j.closed and _J["path"] == path:
+        if keep or discard:
+            drain_journal_writer()
         return j
     _close_journal(remove_untitled=True)
     j = Journal(path, keep=keep, discard=discard)
@@ -142,9 +205,15 @@ def _on_journal(rtype, header, payload_fn=None) -> None:
     j = _J["journal"]
     if j is None or j.closed:
         j = _open_journal(_current_blend())
+    header = dict(header, s=_J["sid"])
+    q = _JW["q"]
+    if (q is not None and q.unfinished_tasks) or getattr(payload_fn, "size", 0) >= BIG_RECORD[0]:
+        _writer_queue().put((j, rtype, header, payload_fn))       # R079: encoded and written by the helper
+        return
     payload = payload_fn() if payload_fn is not None else b""
-    j.append(rtype, dict(header, s=_J["sid"]), payload)
-    j.flush(fsync=False)
+    with _JLOCK:
+        j.append(rtype, header, payload)
+        j.flush(fsync=False)
 
 
 def _new_session() -> None:
@@ -157,6 +226,7 @@ def _new_session() -> None:
 def _mark_saved(j: Journal, blend_path: str, save_id=None) -> None:
     """Start the journal again at a save point: SAVE names the save of the history it follows
     (``save_id``, as the saved history holds it) and the session writing it."""
+    drain_journal_writer()
     j.append("SAVE", {"blend": os.path.abspath(blend_path) if blend_path else "", "save_id": save_id or None,
                       "s": _J["sid"]})
     j.flush(fsync=True)
@@ -374,6 +444,7 @@ def on_save_post(*args) -> None:
         return
     try:
         j = _open_journal(path)
+        drain_journal_writer()
         j.truncate(0)            # everything before this point is in the saved file
         _mark_saved(j, path, getattr(runtime.reg(), "save_id", None))
     except Exception as e:
@@ -545,6 +616,7 @@ def on_load_post(*args) -> None:
     if reg is not None:
         if recover and j is not None:
             try:
+                drain_journal_writer()
                 recs = j.read()
                 if any(r[0] == "SAVE" for r in recs) and persist.journal_belongs(reg, recs):
                     persist.replay(reg, recs)
@@ -572,6 +644,7 @@ def on_load_post(*args) -> None:
         # way this comes before the check for changes made without Hindsight, whose records the
         # next recovery needs (D82, D83).
         try:
+            drain_journal_writer()
             j.truncate(0)
             _mark_saved(j, path, getattr(reg, "save_id", None) if reg is not None else None)
         except Exception as e:
@@ -641,6 +714,7 @@ def register() -> None:
 
 
 def unregister() -> None:
+    _stop_journal_writer()
     for name, fn in _HANDLERS:
         hl = getattr(bpy.app.handlers, name)
         while fn in hl:

@@ -1,0 +1,15 @@
+Long session, bpy 5.3.0 module, 100k vertices, strokes of 2%, a jump back 10 and forward again every 50 strokes,
+a save every 500 (bench/scenarios/oneoff/soak.py). Memory as VmRSS; history and ram as runtime.memory_stats().
+
+Recorded, 5,000 strokes:
+SOAK {"strokes": 500, "rss_mb": 336.8, "history_mb": 5.8, "ram_mb": 11.9, "steps": 500, "py_objects": 71302}
+SOAK {"strokes": 5000, "rss_mb": 388.3, "history_mb": 45.5, "ram_mb": 51.6, "steps": 5000, "py_objects": 84770}
+(growth 51.5 MB, of it 39.7 MB the history; the Python objects grow by 3 per step)
+
+tracemalloc between 1,000 and 3,000 recorded strokes: 18.7 MB, of it 17.9 MB the packed steps (the packer thread)
+and about 1.3 MB the per-step Entry and metadata objects (0.65 KB a step); nothing else grows.
+
+The same strokes without recording them (norec):
+SOAK {"strokes": 500, "rss_mb": 335.4, ...}
+SOAK {"strokes": 5000, "rss_mb": 423.5, ...}
+(grows more: the rest is Blender and the allocator under the mesh writes, not the add-on)

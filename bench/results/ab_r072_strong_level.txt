@@ -1,0 +1,75 @@
+R072: the zstd level of idle recompression (the packer's step.recompress, the "strong" setting).
+Engine 0.9.0 with a measurement switch (_strong_level) that sets one level for every strong blob.
+
+1) Levels on real steps (bench/scenarios/oneoff/strong_level.py, 3 rounds, levels in alternating order, CPU = the
+   calling thread's time inside recompress, median of rounds; sizes are exact and the same every round):
+   s100k = the 1,000 stroke steps of a 100k mesh cached by bench/saveload_bench.py; s1m = 60 strokes of a 1M mesh;
+   topo = 3 topology steps of a 100k mesh (Blender's subdivision of 1% of the edges): bodies over 1 MB, where the
+   engine compresses with a window as large as the body and long distance matching (R049).
+   "saving" = bytes saved against the normal (level 3) blobs; "read" = step_from_bytes of the result.
+
+bpy 5.3.0 module:
+load ['1.61', '1.99', '2.60'] rounds 3
+  s100k 1000 steps, 9149100 B before
+    L19: cpu     1.646 ms/step (1.00 of L19), 8913213 B, saving 235887 B (1.00 of L19's), read 0.046 ms/step
+    L17: cpu     0.965 ms/step (0.59 of L19), 8932016 B, saving 217084 B (0.92 of L19's), read 0.053 ms/step
+    L15: cpu     0.731 ms/step (0.44 of L19), 8945282 B, saving 203818 B (0.86 of L19's), read 0.041 ms/step
+    L12: cpu     0.408 ms/step (0.25 of L19), 9066849 B, saving 82251 B (0.35 of L19's), read 0.04 ms/step
+  s1m 60 steps, 5140449 B before
+    L19: cpu    21.352 ms/step (1.00 of L19), 4893799 B, saving 246650 B (1.00 of L19's), read 0.385 ms/step
+    L17: cpu    15.800 ms/step (0.74 of L19), 4894147 B, saving 246302 B (1.00 of L19's), read 0.366 ms/step
+    L15: cpu    11.693 ms/step (0.55 of L19), 4911421 B, saving 229028 B (0.93 of L19's), read 0.322 ms/step
+    L12: cpu     6.403 ms/step (0.30 of L19), 5051491 B, saving 88958 B (0.36 of L19's), read 0.367 ms/step
+  topo 3 steps, 8777676 B before
+    L19: cpu  2611.956 ms/step (1.00 of L19), 6006493 B, saving 2771183 B (1.00 of L19's), read 21.315 ms/step
+    L17: cpu  1830.196 ms/step (0.70 of L19), 6926158 B, saving 1851518 B (0.67 of L19's), read 16.677 ms/step
+    L15: cpu   604.542 ms/step (0.23 of L19), 8373996 B, saving 403680 B (0.15 of L19's), read 14.307 ms/step
+    L12: cpu   283.571 ms/step (0.11 of L19), 8439323 B, saving 338353 B (0.12 of L19's), read 13.565 ms/step
+
+bpy 4.2.23 module:
+load ['1.88', '1.55', '1.78'] rounds 3
+  s100k 1000 steps, 9149100 B before
+    L19: cpu     1.587 ms/step (1.00 of L19), 8913213 B, saving 235887 B (1.00 of L19's), read 0.041 ms/step
+    L17: cpu     0.969 ms/step (0.61 of L19), 8932016 B, saving 217084 B (0.92 of L19's), read 0.043 ms/step
+    L15: cpu     0.806 ms/step (0.51 of L19), 8945282 B, saving 203818 B (0.86 of L19's), read 0.037 ms/step
+    L12: cpu     0.402 ms/step (0.25 of L19), 9066849 B, saving 82251 B (0.35 of L19's), read 0.038 ms/step
+  s1m 60 steps, 5140449 B before
+    L19: cpu    19.406 ms/step (1.00 of L19), 4893799 B, saving 246650 B (1.00 of L19's), read 0.379 ms/step
+    L17: cpu    12.903 ms/step (0.66 of L19), 4894147 B, saving 246302 B (1.00 of L19's), read 0.354 ms/step
+    L15: cpu    12.785 ms/step (0.66 of L19), 4911421 B, saving 229028 B (0.93 of L19's), read 0.34 ms/step
+    L12: cpu     6.327 ms/step (0.33 of L19), 5051491 B, saving 88958 B (0.36 of L19's), read 0.335 ms/step
+  topo 3 steps, 8777676 B before
+    L19: cpu  2645.111 ms/step (1.00 of L19), 6006493 B, saving 2771183 B (1.00 of L19's), read 21.43 ms/step
+    L17: cpu  1781.519 ms/step (0.67 of L19), 6926158 B, saving 1851518 B (0.67 of L19's), read 17.389 ms/step
+    L15: cpu   620.867 ms/step (0.23 of L19), 8373996 B, saving 403680 B (0.15 of L19's), read 14.261 ms/step
+    L12: cpu   293.149 ms/step (0.11 of L19), 8439323 B, saving 338353 B (0.12 of L19's), read 14.578 ms/step
+
+   Decision: data up to 1 MB (every stroke here) gets level 15: 0.86 (100k) and 0.93 (1M) of level 19's saving for
+   0.44 to 0.66 of its CPU, blobs 0.36% larger, reads no slower. Data over 1 MB keeps level 19: level 15 keeps only
+   0.15 of the saving there (17 keeps 0.67). Old strong blobs (level 19) read as before and aren't redone.
+
+2) End to end (bench/scenarios/oneoff/packer_level_ab.py): a store.Packer given the steps as after opening a file,
+   working until every step was looked at (the add-on's pacing, with the 1 s wait between two steps cut to 1 ms);
+   separate processes alternating, A = engine of R071 (level 19 everywhere), B = R072 (the rule); 5 rounds on bpy
+   5.3.0, 3 on 4.2.23. Raw lines:
+== bpy53 load 1.28 1.38 1.85
+1 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 1.958, "cpu_ms_per_step": 1.958, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 9.47}, "s1m": {"steps": 60, "cpu_s": 1.516, "cpu_ms_per_step": 25.274, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 6.27}, "load": ["1.22", "1.36", "1.83"]}
+1 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.035, "cpu_ms_per_step": 1.035, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.6}, "s1m": {"steps": 60, "cpu_s": 0.92, "cpu_ms_per_step": 15.34, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 3.89}, "load": ["1.10", "1.33", "1.82"]}
+2 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 1.918, "cpu_ms_per_step": 1.918, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 9.27}, "s1m": {"steps": 60, "cpu_s": 1.472, "cpu_ms_per_step": 24.533, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 6.36}, "load": ["1.08", "1.31", "1.80"]}
+2 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.043, "cpu_ms_per_step": 1.043, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.6}, "s1m": {"steps": 60, "cpu_s": 0.96, "cpu_ms_per_step": 16.006, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 4.09}, "load": ["1.14", "1.32", "1.80"]}
+3 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 2.125, "cpu_ms_per_step": 2.125, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 10.13}, "s1m": {"steps": 60, "cpu_s": 1.637, "cpu_ms_per_step": 27.287, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 6.89}, "load": ["1.31", "1.35", "1.80"]}
+3 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.071, "cpu_ms_per_step": 1.071, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.73}, "s1m": {"steps": 60, "cpu_s": 0.96, "cpu_ms_per_step": 15.999, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 4.16}, "load": ["1.26", "1.33", "1.79"]}
+4 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 1.873, "cpu_ms_per_step": 1.873, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 9.08}, "s1m": {"steps": 60, "cpu_s": 1.525, "cpu_ms_per_step": 25.415, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 6.31}, "load": ["1.28", "1.33", "1.78"]}
+4 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.046, "cpu_ms_per_step": 1.046, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.7}, "s1m": {"steps": 60, "cpu_s": 0.91, "cpu_ms_per_step": 15.169, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 3.89}, "load": ["1.31", "1.34", "1.78"]}
+5 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 1.984, "cpu_ms_per_step": 1.984, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 9.54}, "s1m": {"steps": 60, "cpu_s": 1.455, "cpu_ms_per_step": 24.256, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 5.93}, "load": ["1.46", "1.37", "1.78"]}
+5 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.034, "cpu_ms_per_step": 1.034, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.68}, "s1m": {"steps": 60, "cpu_s": 0.88, "cpu_ms_per_step": 14.666, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 3.67}, "load": ["1.46", "1.38", "1.78"]}
+== bpy42 load 1.46 1.38 1.78
+1 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 1.792, "cpu_ms_per_step": 1.792, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 8.64}, "s1m": {"steps": 60, "cpu_s": 1.502, "cpu_ms_per_step": 25.036, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 6.22}, "load": ["1.44", "1.37", "1.77"]}
+1 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.072, "cpu_ms_per_step": 1.072, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.7}, "s1m": {"steps": 60, "cpu_s": 0.846, "cpu_ms_per_step": 14.092, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 3.47}, "load": ["1.45", "1.38", "1.77"]}
+2 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 1.924, "cpu_ms_per_step": 1.924, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 9.19}, "s1m": {"steps": 60, "cpu_s": 1.458, "cpu_ms_per_step": 24.307, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 5.95}, "load": ["1.32", "1.35", "1.75"]}
+2 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.0, "cpu_ms_per_step": 1.0, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.41}, "s1m": {"steps": 60, "cpu_s": 0.874, "cpu_ms_per_step": 14.566, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 3.67}, "load": ["1.37", "1.36", "1.75"]}
+3 A AB {"engine_strong_switch": null, "s100k": {"steps": 1000, "cpu_s": 1.886, "cpu_ms_per_step": 1.886, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8913213, "wall_s": 9.0}, "s1m": {"steps": 60, "cpu_s": 1.442, "cpu_ms_per_step": 24.026, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4893799, "wall_s": 6.0}, "load": ["1.66", "1.43", "1.77"]}
+3 B AB {"engine_strong_switch": 0, "s100k": {"steps": 1000, "cpu_s": 1.0, "cpu_ms_per_step": 1.0, "recompressed": 1000, "bytes_before": 9149100, "bytes_after": 8945282, "wall_s": 5.41}, "s1m": {"steps": 60, "cpu_s": 0.944, "cpu_ms_per_step": 15.726, "recompressed": 60, "bytes_before": 5140449, "bytes_after": 4911421, "wall_s": 3.91}, "load": ["1.56", "1.41", "1.76"]}
+   Medians of the runs, CPU of the packer thread per step (ms):
+   bpy 5.3.0: s100k 1.958 -> 1.043 (0.53); s1m 25.274 -> 15.340 (0.61); bytes after +0.36% for both sets
+   bpy 4.2.23: s100k 1.886 -> 1.000 (0.53); s1m 24.307 -> 14.566 (0.60)

@@ -28,7 +28,7 @@ from mathutils import Matrix, Vector
 
 from ..core import framing
 from ..core.types import POSITION_KEY
-from . import guard, log, rigmark, runtime
+from . import guard, log, meshio, rigmark, runtime
 
 NAMES = {"camera": "Hindsight Camera", "key": "Hindsight Key", "fill": "Hindsight Fill", "rim": "Hindsight Rim"}
 LIGHT_ROLES = ("key", "fill", "rim")
@@ -632,9 +632,8 @@ def _stretch(ob, ev, bs) -> float:
     me = ob.data
     ne = len(me.edges)
     if ne:
-        ed = np.empty(ne * 2, np.int32)
-        me.edges.foreach_get("vertices", ed)
-        ed = ed.reshape(-1, 2)
+        # R076: the ".edge_verts" attribute (one copy) instead of me.edges (RNA edge by edge: 86 ms at 1M)
+        ed = meshio._edge_verts(me, ne).reshape(-1, 2)
         with np.errstate(invalid="ignore", over="ignore", divide="ignore"):
             lb = np.linalg.norm(bs[ed[:, 0]].astype(np.float64) - bs[ed[:, 1]], axis=1)
             le = np.linalg.norm(ev[ed[:, 0]].astype(np.float64) - ev[ed[:, 1]], axis=1)

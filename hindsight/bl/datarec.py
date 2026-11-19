@@ -15,7 +15,8 @@ import time
 import bpy
 
 from ..core.history import DATA_MARK, MeshState
-from ..core.types import DATA, JOURNAL_CODEC, MISSING, DataChange, Entry, Step
+from ..core.native import ENGINE as _ENGINE
+from ..core.types import DATA, MISSING, DataChange, Entry, Step
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
@@ -733,12 +734,21 @@ def _edit_step(label: str, deep: bool = True) -> None:
                 break
 
 
+_STRICT_SAME = _ENGINE.same_values    # R070: exact types, floats by bits, dicts in the same key order
+
+
 def _same_values(old: dict, new: dict) -> bool:
     """True only if the two value dicts are identical: same keys, same types, floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
     _diff finds nothing. False says nothing: _diff decides."""
     if len(old) != len(new):
         return False
     try:
+        # R070: the engine's strict comparison walks both dicts at once (a value that is the same
+        # object on both sides is equal at once). True means marshal would find them equal too;
+        # False (another key order, a type it doesn't know, a real change) says nothing, and the
+        # marshal compare below decides as before
+        if _STRICT_SAME(old, new):
+            return True
         if old.keys() != new.keys():
             return False
         # a value that is the same object on both sides (kept records: a material's until the
@@ -984,7 +994,7 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
         if removed:
             rt._journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
-        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
+        rt._journal("STEP", {"hist": h.uid, "at": at}, rt.step_payload(entry))
         rt._enforce(h)
         steps.append(step)
     if steps:
@@ -1048,7 +1058,7 @@ def _apply_continued(h, st, uid, step, records) -> None:
     if step.records:
         h.entries[-1] = Entry(step)
         entry = h.entries[-1]
-        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
+        rt._journal("STEP", {"hist": h.uid, "at": at}, rt.step_payload(entry))
         _RECENT[uid] = (step.seq, _now())
         rt._enforce(h)
     else:

@@ -280,7 +280,7 @@ def test_corpus():
     z = zipfile.ZipFile(CORPUS)
     index = json.loads(z.read("index.json"))
     kinds = set()
-    rewritten = 0
+    rewritten = strong_rows = 0
     for row in index:
         b = z.read(row["name"])
         e_step, r_step = stepmod.step_from_bytes(b), ref_read(b)
@@ -291,14 +291,33 @@ def test_corpus():
         if row.get("legacy"):
             assert stepmod.version_of(b) == 1
             continue
-        # the engine writes back exactly the bytes the baseline wrote
-        again = stepmod.step_to_bytes(e_step, row["codec"], row["effort"], row["strong"])
-        if row["recompressed"]:
-            again = stepmod.recompress(again) or again
-        assert again == b, (row["name"], len(again), len(b))
+        # the engine writes back exactly the bytes the baseline wrote. Strong blobs were written at zstd
+        # level 19: since R072 data up to 1 MB gets level 15, so they are written again at 19 (the engine's
+        # measurement switch) for the byte check, and with the rule they must hold the same step, strong
+        def write():
+            again = stepmod.step_to_bytes(e_step, row["codec"], row["effort"], row["strong"])
+            if row["recompressed"]:
+                again = stepmod.recompress(again) or again
+            return again
+        if row["strong"] or row["recompressed"]:
+            native.ENGINE._strong_level(19)
+            try:
+                old = write()
+            finally:
+                native.ENGINE._strong_level(0)
+            assert old == b, (row["name"], len(old), len(b))
+            now = write()
+            assert stepmod.same_step(stepmod.step_from_bytes(now), e_step), row["name"]
+            assert stepmod.read_header(now) == stepmod.read_header(b), row["name"]
+            strong_rows += 1
+        else:
+            again = write()
+            assert again == b, (row["name"], len(again), len(b))
         rewritten += 1
     assert kinds == {"DELTA", "TOPO", "JOIN", "DATA"}, kinds
-    print(f"PASS test_corpus ({len(index)} baseline steps read by both, {rewritten} written back identically)")
+    assert strong_rows > 0
+    print(f"PASS test_corpus ({len(index)} baseline steps read by both, {rewritten} written back identically, "
+          f"{strong_rows} of them strong: at level 19 and, with the rule, the same step)")
 
 
 def test_legacy_files():

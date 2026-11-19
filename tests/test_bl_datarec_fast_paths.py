@@ -240,6 +240,77 @@ def test_same_values_never_hides_a_difference():
     assert not datarec._same_values(cap, cap2) and datarec._diff(cap, cap2)
 
 
+def _same_values_before_r070(old, new):
+    """datarec._same_values as it was before R070: the marshal compare alone."""
+    import marshal
+    if len(old) != len(new):
+        return False
+    try:
+        if old.keys() != new.keys():
+            return False
+        ks = [k for k, v in new.items() if old[k] is not v]
+        return marshal.dumps([old[k] for k in ks], 2) == marshal.dumps([new[k] for k in ks], 2)
+    except Exception:
+        return False
+
+
+def test_same_values_answers_as_before_r070():
+    """R070: _same_values asks the engine's strict comparison first. Its answer is the one of the marshal
+    compare it had before, on random values and on what the recorder holds for 60 objects with changes;
+    the only allowed difference is True where marshal saw a string interned on one side only, and then
+    _diff finds nothing either."""
+    H.fresh()
+    rng = random.Random(70)
+    calls = []
+    real = datarec._STRICT_SAME
+
+    def counted(a, b):
+        r = real(a, b)
+        calls.append(r)
+        return r
+    datarec._STRICT_SAME = counted
+    try:
+        n_same = n_diff = 0
+        for _ in range(4000):
+            keys = [(rng.choice(["rna", "object", "scene"]), f"p{k}") for k in range(rng.randint(1, 6))]
+            a = {k: _values(rng) for k in keys}
+            b = {k: _mutate(rng, v) for k, v in a.items()} if rng.random() < 0.7 else {k: v for k, v in a.items()}
+            if rng.random() < 0.2:
+                b = dict(reversed(list(b.items())))
+            got, want = datarec._same_values(a, b), _same_values_before_r070(a, b)
+            assert got == want or (got and not datarec._diff(a, b)), (a, b, got, want)
+            n_same += got
+            n_diff += not got
+        assert n_same > 500 and n_diff > 1000, (n_same, n_diff)
+        # what the recorder holds: 60 objects, a third with a constraint, captured, changed, captured again
+        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        obs = []
+        for i in range(60):
+            bpy.ops.mesh.primitive_cube_add(size=0.3, location=(i * 0.5, 0, 0))
+            ob = C.active_object
+            if i % 3 == 0:
+                ob.constraints.new("COPY_ROTATION")
+            obs.append(ob)
+        before = [datarec.capture(ob) for ob in obs]
+        calls.clear()
+        for ob, cap in zip(obs, before):
+            assert datarec._same_values(cap, datarec.capture(ob)) and _same_values_before_r070(cap, datarec.capture(ob))
+        assert len(calls) == len(obs) and all(calls), "the engine decided every unchanged object"
+        for i, ob in enumerate(obs):
+            if i % 4 == 0:
+                ob.location.x = -0.0 if ob.location.x == 0.0 else ob.location.x + 1e-6
+            elif i % 4 == 1:
+                ob.hide_render = not ob.hide_render
+            elif i % 4 == 2:
+                ob["prop"] = {"a": [1.0, 2.0], "b": 3}
+        for i, (ob, cap) in enumerate(zip(obs, before)):
+            now = datarec.capture(ob)
+            got, want = datarec._same_values(cap, now), _same_values_before_r070(cap, now)
+            assert got == want == (i % 4 == 3), (i, got, want)
+    finally:
+        datarec._STRICT_SAME = real
+
+
 def test_fast_compare_only_with_exact_adapters():
     """An adapter with its own comparison (or a test's fault injection) always goes through _diff."""
     H.fresh()
@@ -604,7 +675,8 @@ def test_undo_then_a_change():
     assert h.cursor == len(h.entries) and h.entries[-1].load().kind == DATA
 
 
-for fn in (test_same_values_never_hides_a_difference, test_fast_compare_only_with_exact_adapters,
+for fn in (test_same_values_never_hides_a_difference, test_same_values_answers_as_before_r070,
+           test_fast_compare_only_with_exact_adapters,
            test_normalise_matches_the_plain_path, test_users_collection_table_matches_blender,
            test_find_in_a_frame_matches_find, test_scene_uids_match_the_plain_check,
            test_recordings_are_byte_for_byte_the_plain_ones, test_recordings_with_undo_and_redo_are_the_plain_ones,
