@@ -62,3 +62,9 @@ Anything that needs `bpy`: `foreach_get` and `foreach_set`, RNA reads in `datare
 ## Compatibility
 
 Files from beta 2 and from the current release load bit for bit: the reader accepts step formats 1 to 4. Bytes written by the engine stay what the Python code wrote, checked per codec by tests that encode the same step with the reference and the engine and compare bytes; where a library version could change bytes (zstd, zlib, lz4 frames), tests assert that both decode to the same data and report whether bytes are equal. Six abi3 wheels (Linux x86-64 and ARM64, Windows x86-64 and ARM64, macOS x86-64 and arm64) ship in `hindsight/wheels`, listed in the manifest. The crate links zstd, zlib and lz4 from source (C, built with zig for every target). No new user dependency: `zstandard` and `lz4` Python wheels are no longer used.
+
+## Multires step (Blender side, no engine change)
+
+A visit to Sculpt Mode on an object with a Multires modifier is one step, because a stroke changes the displacement layers (CD_MDISPS), which are not attributes and have no diff. Preference "Record Multires", off by default.
+
+The step is a TOPO step (extra `{"multires": 1}`): `before` and `after` snapshots, each with one int8 channel `multires:blob|POINT|INT8` holding the mesh datablock as the bytes of a .blend file (`bpy.data.libraries.write`), compressed with the engine's zstd before it enters the Step, so the raw tier and the caps count the compressed size. Restore is `libraries.load` plus `user_remap`, then the copies the load made of the materials are dropped. The step container, journal and save need nothing new: it is a TOPO step with an int8 array. The state of such an object holds the blob as its only array. The recorder commits nothing else on a Multires object while the preference is on (`commit` returns None unless it is given the visit's step).

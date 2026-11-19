@@ -60,7 +60,11 @@ def _has_dyntopo(obj):
 
 
 def _has_multires(obj):
-    return any(m.type == 'MULTIRES' for m in getattr(obj, "modifiers", ()))
+    """A Multires modifier that pauses recording (not while Record Multires is on: then a visit is a step)."""
+    if not any(m.type == 'MULTIRES' for m in getattr(obj, "modifiers", ())):
+        return False
+    from . import multires
+    return not multires.enabled()
 
 
 def blocking_reason(context, obj):

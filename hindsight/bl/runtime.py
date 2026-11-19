@@ -14,7 +14,7 @@ from ..core.registry import Registry, new_uid
 from ..core.types import (
     SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
-from . import filtering, guard, log, meshio, rigmark
+from . import filtering, guard, log, meshio, multires, rigmark
 from . import warnings as _warn
 from .ctx import active_object as _ctx_active
 
@@ -648,9 +648,15 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
                 return
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
+            if multires.MR_KEY in st.arrays:
+                multires.restore(obj, st.arrays[multires.MR_KEY])
+                me = obj.data
+            else:
+                meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode=mode)
+            if obj.mode == "SCULPT" and multires.active(obj):
+                multires.begin_visit(obj)
         else:
             meshio.write_changes(me, st.arrays, keys, st.removed, ob=obj)
             if obj.mode == "SCULPT" and final and _refresh_toggle():
@@ -754,13 +760,16 @@ def _leave_shared(obj, uid) -> None:
     ensure_state(obj, refresh=obj.mode != "EDIT")
 
 
-def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False):
+def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False,
+           _mr_step=None):
     """Record what changed on obj since the last commit as ONE step. Returns the Step or None."""
     if obj is None or obj.type != "MESH":
         return None
     uid = obj_uid(obj, create=True)
     _DIRTY.pop(uid, None)
     _STROKE_SEEN.discard(uid)
+    if _mr_step is None and multires.active(obj):
+        return None      # a Multires object: its step is the visit's (multires.end_visit), never a stroke's
     if not _edit and obj.mode != "EDIT":
         _leave_shared(obj, uid)
         shared = _shared_owner(obj, uid)
@@ -787,6 +796,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         return None
     mode = mode or obj.mode
     st = _STATES.get(uid)
+    if st is not None and multires.MR_KEY in st.arrays and _mr_step is None:
+        st = ensure_state(obj, refresh=True)      # the state held a Multires snapshot: read the mesh again
     if st is None or not st.counts:          # no mesh baseline yet (or data values only)
         ensure_state(obj, refresh=True)
         return None
@@ -818,7 +829,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         with suspended():
             src = obj.data.copy()
     try:
-        step = _observe(obj, st, full, label, mode, me=src)
+        step = _mr_step if _mr_step is not None else _observe(obj, st, full, label, mode, me=src)
     finally:
         if src is not None:
             with suspended():
@@ -1037,6 +1048,8 @@ def _active():
 def _enter(obj) -> None:
     uid = obj_uid(obj, create=True)
     _WROTE.discard(uid)      # entering a mode starts a fresh Blender undo context for it
+    if obj.mode == "SCULPT" and multires.active(obj):
+        multires.begin_visit(obj)
     h = _REG.history_for(uid)
     st = _STATES.get(uid)
     if _mesh_owned_elsewhere(obj):
@@ -1078,6 +1091,8 @@ def check_mode_transition() -> None:
     prev = find_object(_TRACK["uid"]) if _TRACK["uid"] else None
     pmode = _TRACK["mode"]
     _TRACK.update(name=name, uid=obj_uid(obj) if obj is not None else None, mode=mode)
+    if prev is not None and pmode == "SCULPT" and prev.mode != "SCULPT" and multires.active(prev):
+        multires.leave(prev)              # a Multires visit is one step, taken (flush) once Sculpt Mode has ended
     if prev is not None and pmode == "EDIT" and prev.mode != "EDIT":
         if _mesh_owned_elsewhere(prev):
             ensure_state(prev, refresh=True)    # D39: the mesh's owner records this visit
@@ -1141,6 +1156,10 @@ def _on_depsgraph(scene, depsgraph=None) -> None:
 def _tick_once() -> bool:
     check_mode_transition()
     painting = _watch_image_paint()
+    multires.flush()
+    ob_ = _active()
+    if ob_ is not None and ob_.mode == "SCULPT" and multires.active(ob_) and not stroke_running():
+        multires.tick(ob_)
     if _DIRTY and stroke_running():
         return painting   # never split a stroke, even if a slow modifier stack pauses its updates
     now = time.time()
@@ -1295,6 +1314,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     """Move one history to pos and write what changed to Blender. With acc (a global jump), the
     move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
     from . import datarec
+    multires.flush()
     states = {}
     for m in list(h.members):
         ob = find_object(m)

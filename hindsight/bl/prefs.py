@@ -175,7 +175,13 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
     record_texture_painting: BoolProperty(
         name="Record texture painting",
         description=("Record each texture painting stroke as a step. Off by default. It reads the whole image "
-                     "after every stroke and has not been tried in a real window yet. Images over 2K are left out"),
+                     "after every stroke. Images over 2K are left out"),
+        default=False)
+    record_multires: BoolProperty(
+        name="Record Multires",
+        description=("Record one step per Sculpt Mode visit on an object with a Multires modifier. "
+                     "Off by default. It has not been tried in a real window yet. "
+                     "Off: recording pauses on a Multires object"),
         default=False)
     welcomed: BoolProperty(default=False, options={'HIDDEN'})
 
@@ -199,6 +205,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         col = section("History", 'RECOVER_LAST')
         col.prop(self, "record_scope")
         col.prop(self, "record_texture_painting")
+        col.prop(self, "record_multires")
         col.prop(self, "max_steps")
         col.prop(self, "truncation_threshold")
 
