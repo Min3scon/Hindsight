@@ -16,7 +16,7 @@ import bpy
 
 from ..core.history import DATA_MARK, MeshState
 from ..core.native import ENGINE as _ENGINE
-from ..core.types import DATA, JOURNAL_CODEC, MISSING, DataChange, Entry, Step
+from ..core.types import DATA, MISSING, DataChange, Entry, Step
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
@@ -994,7 +994,7 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
         if removed:
             rt._journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
-        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
+        rt._journal("STEP", {"hist": h.uid, "at": at}, rt.step_payload(entry))
         rt._enforce(h)
         steps.append(step)
     if steps:
@@ -1058,7 +1058,7 @@ def _apply_continued(h, st, uid, step, records) -> None:
     if step.records:
         h.entries[-1] = Entry(step)
         entry = h.entries[-1]
-        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
+        rt._journal("STEP", {"hist": h.uid, "at": at}, rt.step_payload(entry))
         _RECENT[uid] = (step.seq, _now())
         rt._enforce(h)
     else:

@@ -215,6 +215,21 @@ class suspended:
         _SUSPEND[0] -= 1
 
 
+def step_payload(entry):
+    """The journal payload of a step: a function giving its bytes, with `.size` (the step's size as it is held)
+    for the journal to decide where to encode it (R079: a big step's record is encoded and written on a helper
+    thread). The step is taken now: the packer may pack the entry meanwhile."""
+    st, blob = entry.step, entry.blob
+
+    def fn():
+        if blob is not None:
+            return blob
+        from ..core.step import step_to_bytes
+        return step_to_bytes(st, JOURNAL_CODEC, 0)
+    fn.size = entry.nbytes()
+    return fn
+
+
 def _journal(rtype, header, payload_fn=None):
     if journal_hook is not None:
         try:
@@ -1085,7 +1100,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     if removed:
         _journal("TRUNC", {"hist": h.uid, "keep": at})
     entry = h.entries[-1]
-    _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
+    _journal("STEP", {"hist": h.uid, "at": at}, step_payload(entry))
     _enforce(h)
     try:
         from . import datarec
@@ -2229,7 +2244,7 @@ def _bridge_from_backup(ob, uid, h, fp) -> bool:
         if removed:
             _journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
-        _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
+        _journal("STEP", {"hist": h.uid, "at": at}, step_payload(entry))
         return True
     except Exception as e:
         log.error_once(("blend1_bridge", str(e)), f"could not read the backup copy of the file: {e}", e)
