@@ -170,7 +170,9 @@ class MeshState:
 def _share_chain(prev: Entry, step: Step) -> None:
     """A TOPO step's `before` is the mesh the TOPO step before it left (its `after`): where the two
     are bit for bit the same, the new step holds the older step's arrays, not a second copy of them.
-    Nothing writes into a step's arrays (the state takes copies, set_snapshot), so sharing is safe;
+    Nothing writes into a step's arrays (the state copies the channels and, since R080, holds the topology
+    read-only, set_snapshot), so sharing is safe; after R080 the topology of `before` usually is the older
+    step's own arrays already (the state's), and the compare is skipped;
     only raw neighbours share (a packed one has no arrays)."""
     ps = prev.step
     if (ps is None or ps.kind != TOPO or step.kind != TOPO or ps.after is None or step.before is None

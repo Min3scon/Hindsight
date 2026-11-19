@@ -54,5 +54,7 @@ between steps cut to 1 ms); the packer thread's CPU per step and the bytes. No B
 
 `topo1m.py CODE_ROOT` (R079): a topology change on a saved 1M grid recorded on entering Sculpt Mode; the main thread's
 time and the time until its journal record is written.
+`dyn_commit.py CODE_ROOT` (R079): a Dyntopo step at about 100k triangles (a UV sphere 256 x 200 with a few
+edges subdivided between steps); the median time of `runtime.commit`.
 
 `setsnap.py CODE_ROOT` (R080): `MeshState.set_snapshot` of a 1M snapshot and what the baseline holds itself.
