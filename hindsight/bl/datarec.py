@@ -890,6 +890,58 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
     _DIRTY.pop(idmap.uid_of(idb), None)
 
 
+def find_deleted(uid):
+    """(scene, body, mesh snapshot) of the newest recorded deletion of uid at or before a scene
+    history's cursor, or None."""
+    rt = _rt()
+    key = f"body:{uid}"
+    for sc in bpy.data.scenes:
+        su = idmap.uid_of(sc)
+        h = rt.reg().history_for(su) if su else None
+        if h is None:
+            continue
+        for e in reversed(h.entries[:h.cursor]):
+            step = e.load()
+            for r in step.records:
+                if r.adapter != "scene":
+                    continue
+                ch = r.changes.get(key)
+                if ch and ch[0] is not MISSING and ch[1] is MISSING:
+                    snap = ((step.extra or {}).get("_snapshots") or {}).get(uid)
+                    return sc, ch[0], snap
+    return None
+
+
+BROUGHT_BACK = "Bring Back"
+
+
+def bring_back(uid: str):
+    """L12: make a deleted object a step's reference waits for exist again, as a new step of the
+    scene's history (its own history can't, the global history could only by going back). Returns
+    the object, or None."""
+    if not uid or idmap.find(uid) is not None:
+        return None
+    hit = find_deleted(uid)
+    if hit is None:
+        body = _body(uid)
+        if body is None:
+            return None
+        hit = (bpy.context.scene, body, None)
+    sc, body, snap = hit
+    ob = adapters._recreate_object(sc, uid, body, snap)
+    if ob is None:
+        return None
+    if isinstance(body, dict) and body.get("parent"):
+        par = idmap.find(body["parent"])
+        if par is not None:
+            ob.parent = par
+            ob.matrix_parent_inverse = adapters.to_rna(body["parent_inverse"])
+    idmap.forget()
+    finish_operation(BROUGHT_BACK)            # the scene records it coming back; references resolve
+    resolve_missing_refs()
+    return ob
+
+
 def ref_label(ref) -> str:
     """How the sidebar names a deleted object or collection a reference waits for."""
     if ref in adapters.COLL_NAMES:

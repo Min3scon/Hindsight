@@ -62,6 +62,7 @@ Fixed:
 - Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks.
 - Record everything records the shape of curves, surfaces, lattices and metaballs: points, handles, splines and elements.
 - A deleted light, camera, curve, text, lattice or metaball comes back with its settings and shape even after saving and opening the file.
+- Bring back: when a step refers to a parent or constraint target that is deleted now, the Warnings panel offers to bring it back.
 - Library overrides keep their history when the file is opened again.
 - Record everything: adding, removing, renaming and reordering vertex groups and shape keys, and switching the active UV map, now come back when you go back and forward.
 - A mesh changed while Hindsight wasn't running keeps its history when Blender's backup copy of the file (.blend1) still holds the mesh as Hindsight saved it: the change becomes one step.

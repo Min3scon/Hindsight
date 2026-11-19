@@ -173,7 +173,7 @@ TXT_EV_PHYSICS = ("If this object is deleted and brought back by the global hist
                   "settings come back, except Dynamic Paint surfaces and baked caches")
 TXT_EV_NAME_TAKEN = "At this step it is called {want}, but another object has that name, so it's {got}"
 TXT_EV_MISSING_REF = ("This step refers to {names}, which is deleted now. This object's own history can't "
-                      "bring it back; the global history can")
+                      "bring it back; Bring back below or the global history can")
 TXT_EV_PARENT_DEFORM = ("Parenting with deform added a modifier ({names}). Modifiers and vertex groups aren't "
                         "recorded yet, so going back past the parenting keeps them")
 _DEFORM_MODIFIERS = {"ARMATURE", "LATTICE", "CURVE"}

@@ -122,6 +122,26 @@ class HINDSIGHT_OT_record_scene(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class HINDSIGHT_OT_bring_back(bpy.types.Operator):
+    bl_idname = "hindsight.bring_back"
+    bl_label = "Bring Back"
+    bl_description = ("Bring back the deleted object this step refers to, as it was when it was deleted. "
+                      "Bringing it back is a new step of the scene's history")
+    bl_options = {'REGISTER'}
+
+    uid: bpy.props.StringProperty(options={'HIDDEN', 'SKIP_SAVE'})
+
+    def execute(self, context):
+        from . import datarec, runtime
+        ob = datarec.bring_back(self.uid)
+        runtime.tag_redraw_all()
+        if ob is None:
+            self.report({'WARNING'}, "It can't be brought back: Hindsight has no record of it being deleted")
+            return {'CANCELLED'}
+        self.report({'INFO'}, f"Brought back {ob.name}")
+        return {'FINISHED'}
+
+
 class HINDSIGHT_OT_record_file(bpy.types.Operator):
     bl_idname = "hindsight.record_file"
     bl_label = "Record Everything in This File"
@@ -140,7 +160,7 @@ class HINDSIGHT_OT_record_file(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (HINDSIGHT_OT_step_back, HINDSIGHT_OT_step_forward, HINDSIGHT_OT_goto, HINDSIGHT_OT_record_everything, HINDSIGHT_OT_record_file,
+classes = (HINDSIGHT_OT_step_back, HINDSIGHT_OT_step_forward, HINDSIGHT_OT_goto, HINDSIGHT_OT_record_everything, HINDSIGHT_OT_record_file, HINDSIGHT_OT_bring_back,
            HINDSIGHT_OT_record_scene,
            HINDSIGHT_OT_confirm_truncate)
 
