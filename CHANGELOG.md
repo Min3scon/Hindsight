@@ -68,6 +68,9 @@ Faster and lighter:
 - In Edit Mode, selecting no longer reads the mesh (36 ms at 300,000 vertices).
 - Opening a file checks each recorded mesh once instead of twice (about 12 ms less per 100k-vertex mesh), and saving no longer reads every packed step again for its checksum (18 ms less per save with 6,000 steps of a 100k mesh).
 - Saving and opening a file with big recorded meshes takes less time: the check of each mesh runs in the Rust engine. With three recorded 1M-vertex meshes, that check went from 0.36 s to 0.11 s per save, and opening the file from 0.79 s to 0.55 s. Older files open as before.
+- With Record everything on 500 objects, the check that nothing changed runs in the Rust engine: 3.2 ms instead of 7.4 ms, about a tenth of each operation.
+- Finding what a stroke changed uses two cores for big images and meshes. A texture paint stroke on a 2K image is recorded in 17 ms instead of 20 ms, a sculpt stroke on a 1M-vertex mesh in 3.9 ms instead of 4.4 ms.
+- After a file is opened, packing its history tighter in the background takes about half the CPU: 1.0 ms instead of 2.0 ms per step of a 100k-vertex mesh, 15 ms instead of 25 ms at 1M vertices. The history is 0.4% larger.
 - The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 
 Fixed:
