@@ -479,11 +479,13 @@ def test_one_million_vertices():
 
 
 def test_switch():
-    """HINDSIGHT_NATIVE=0 uses Python; =require refuses a missing or mismatched module; without
-    the variable a mismatched module is ignored (with the reason kept)."""
+    """HINDSIGHT_NATIVE=0 makes delta.py use its Python paths (the engine still loads: the step
+    container and codecs have no Python path). A missing or mismatched engine is one clear
+    exception, EngineMissing, whatever the mode."""
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     fake = ("import sys, types; m = types.ModuleType('hindsight_native'); m.API = 999; "
             "sys.modules['hindsight_native'] = m; ")
+    gone = "import sys; sys.modules['hindsight_native'] = None; "
     probe = "from hindsight.core import native; print(native.AVAILABLE, native.lib is None, repr(native.ERROR))"
 
     def run(code, mode):
@@ -495,10 +497,13 @@ def test_switch():
 
     r = run(probe, "0")
     assert r.returncode == 0 and r.stdout.startswith("False True") and "HINDSIGHT_NATIVE=0" in r.stdout, r
-    r = run(fake + probe, None)
-    assert r.returncode == 0 and r.stdout.startswith("False True") and "API 999" in r.stdout, r
-    r = run(fake + probe, "require")
-    assert r.returncode != 0 and "ImportError" in r.stderr and "API 999" in r.stderr, r
+    for mode in (None, "require", "0"):
+        r = run(fake + probe, mode)
+        assert r.returncode != 0 and "EngineMissing" in r.stderr and "API 999" in r.stderr, r
+        r = run(gone + probe, mode)
+        assert r.returncode != 0 and "EngineMissing" in r.stderr and "could not load" in r.stderr, r
+    r = run("import sys; sys.modules['hindsight_native'] = None; from hindsight.core import step", None)
+    assert r.returncode != 0 and "EngineMissing" in r.stderr, r
     # with the switch off, the whole engine still round-trips
     r = run("from hindsight.core import delta, native; import numpy as np; "
             "a = np.arange(9, dtype=np.float32); b = a.copy(); b[4] = -0.0; "

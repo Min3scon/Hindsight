@@ -60,8 +60,7 @@ QUICK = 0     # crash-recovery journal, on the main thread: values stored as the
 NORMAL = 1    # packing and saving: per component, the order with the smallest estimated size
 
 
-class CorruptDelta(ValueError):
-    """A packed delta is damaged or not a delta at all."""
+CorruptDelta = _native.ENGINE.CorruptDelta     # ValueError: a packed delta is damaged or not a delta
 
 
 def view_bits(arr: np.ndarray) -> np.ndarray:
