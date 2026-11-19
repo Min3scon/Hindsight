@@ -452,6 +452,39 @@ def test_recovery_decodes_no_step():
     check(ob, after, file_state)
 
 
+# R067: with Crash Recovery set to Last saved (the default) the journal of an earlier session is let go
+# when the file is opened: it isn't read first (it was read through, checksums and all, and then emptied)
+def test_last_saved_doesn_t_read_the_old_journal():
+    from hindsight.core import journal as J
+    setup()
+    ob, after, path = start("lastsaved", 2)
+    file_state = save(ob, path)
+    for s in range(15):
+        stroke(ob, 90 + s, after)
+    jp = persistence.journal_path(path)
+    assert os.path.getsize(jp) > 10_000
+    SETTINGS.crash_recovery = "LAST_SAVED"
+    real = J._scan
+    scans = []
+
+    def spy(*a, **k):
+        scans.append(a[1])
+        return real(*a, **k)
+    J._scan = spy
+    try:
+        ob = interrupt(path)
+    finally:
+        J._scan = real
+        SETTINGS.crash_recovery = "INTERRUPTED"
+    assert not [n for n in scans if n > 1000], scans
+    h = runtime.history_of(ob)
+    assert seqs(ob) == seqs(ob)[:2] and h.cursor == 2 and len(h.entries) == 2, (seqs(ob), h.cursor)
+    H.enter(ob, "SCULPT")
+    H.assert_same(H.snapshot(ob), file_state, "the saved mesh")
+    recs = J.Journal(jp).read()
+    assert recs and recs[0][0] == "SAVE" and not [r for r in recs if r[0] == "STEP"], [r[0] for r in recs]
+
+
 if __name__ == "__main__":
     try:
         for name, fn in list(globals().items()):

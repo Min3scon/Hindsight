@@ -99,17 +99,21 @@ def _records(scan, out: list):
 class Journal:
     """Append-only record file. See module docstring for the record format."""
 
-    def __init__(self, path: str, keep: bool = False):
+    def __init__(self, path: str, keep: bool = False, discard: bool = False):
         """keep (R065): the caller reads the journal right away (crash recovery). The scan that finds
         where the good records end reads them too, and the first read() gets them from it instead of
-        reading the file a second time (if nothing was written in between)."""
+        reading the file a second time (if nothing was written in between).
+        discard (R067): the caller starts the journal again (no recovery): what is in it is let go
+        unread instead of being read through first."""
         self.path = os.path.abspath(path)
         parent = os.path.dirname(self.path)
         if parent:
             os.makedirs(parent, exist_ok=True)
         self._size = 0
         self._kept = None                # (size, records) from that scan, until read() takes them
-        if os.path.exists(self.path):
+        if discard and not keep and os.path.exists(self.path):
+            os.truncate(self.path, 0)
+        elif os.path.exists(self.path):
             file_size = os.path.getsize(self.path)
             recs = [] if keep else None
             with open(self.path, "rb", buffering=_READ_BUF) as fh:

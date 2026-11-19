@@ -12,3 +12,6 @@ of its steps are decoded.
 
 `rawsave_ab.py CODE_ROOT VERTICES` (R066): what a save spends building the history it writes
 (`persist.registry_parts`) with the newest 64 steps of a mesh still unpacked; prints one `AB {...}` line.
+
+`open_journal_ab.py CODE_ROOT` (R067): `replay_ab.py` with the crash recovery setting taken from `HS_RECOVERY`
+(`LAST_SAVED` times an open that lets an earlier session's journal go).
