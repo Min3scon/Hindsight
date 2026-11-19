@@ -76,6 +76,23 @@ def begin(obj) -> bool:
     return True
 
 
+def in_box(co, c, r: float, hidden=None):
+    """Indices (ascending) of the vertices of co (N x 3, float32) within r of c on every axis, hidden ones left out.
+
+    R081: one axis at a time, each on the vertices still in, instead of all three axes of every vertex at once
+    (a float64 copy of the whole mesh and a reduce: 34 of the 40 ms of a dab at 1M vertices). The differences
+    are the same float64 numbers as before (the vertex in float64 minus the centre), so the same vertices pass.
+    """
+    cand = np.flatnonzero(np.abs(np.subtract(co[:, 0], c[0], dtype=np.float64)) <= r)
+    for ax in (1, 2):
+        if cand.size == 0:
+            return cand
+        cand = cand[np.abs(np.subtract(co[cand, ax], c[ax], dtype=np.float64)) <= r]
+    if hidden is not None and cand.size:
+        cand = cand[~hidden[cand]]
+    return cand
+
+
 def apply_morph_at(obj, center_local, radius_local: float, strength: float) -> int:
     """One dab at center_local (object space). Returns the number of vertices moved.
 
@@ -94,10 +111,7 @@ def apply_morph_at(obj, center_local, radius_local: float, strength: float) -> i
     co = cur.reshape(-1, 3)
     r = float(radius_local)
     # cheap box test first, then exact distances on the candidates
-    near = np.all(np.abs(co - c) <= r, axis=1)
-    if s["hidden"] is not None:
-        near &= ~s["hidden"]
-    cand = np.flatnonzero(near)
+    cand = in_box(co, c, r, s["hidden"])
     if cand.size == 0:
         return 0
     d = np.sqrt(((co[cand].astype(np.float64) - c) ** 2).sum(axis=1))

@@ -1,0 +1,28 @@
+R081: Morph History dab (apply_morph_at), bench/scenarios/oneoff/morph_dab.py, alternating A/B in separate processes;
+A = 760a65f (box test over all vertices at once), B = the per-axis box test. 40 dabs x 3 strokes per process, radius ~3% of the vertices.
+
+=== 1M, bpy 5.3
+1 A AB {"n": 1000000, "dab_med_ms": 38.74, "dab_min_ms": 30.68, "begin_med_ms": 30.09, "moved": 1079068}
+1 B AB {"n": 1000000, "dab_med_ms": 14.02, "dab_min_ms": 10.96, "begin_med_ms": 25.35, "moved": 1079068}
+2 A AB {"n": 1000000, "dab_med_ms": 38.22, "dab_min_ms": 28.95, "begin_med_ms": 33.03, "moved": 1079068}
+2 B AB {"n": 1000000, "dab_med_ms": 14.54, "dab_min_ms": 11.18, "begin_med_ms": 26.73, "moved": 1079068}
+3 A AB {"n": 1000000, "dab_med_ms": 39.13, "dab_min_ms": 31.66, "begin_med_ms": 30.47, "moved": 1079068}
+3 B AB {"n": 1000000, "dab_med_ms": 13.45, "dab_min_ms": 10.69, "begin_med_ms": 25.16, "moved": 1079068}
+4 A AB {"n": 1000000, "dab_med_ms": 36.21, "dab_min_ms": 29.47, "begin_med_ms": 31.61, "moved": 1079068}
+4 B AB {"n": 1000000, "dab_med_ms": 14.28, "dab_min_ms": 12.23, "begin_med_ms": 25.14, "moved": 1079068}
+5 A AB {"n": 1000000, "dab_med_ms": 38.72, "dab_min_ms": 30.12, "begin_med_ms": 28.1, "moved": 1079068}
+5 B AB {"n": 1000000, "dab_med_ms": 13.92, "dab_min_ms": 10.94, "begin_med_ms": 29.74, "moved": 1079068}
+=== 100k, bpy 5.3
+1 A AB {"n": 99856, "dab_med_ms": 3.77, "dab_min_ms": 3.19, "begin_med_ms": 3.69, "moved": 109754}
+1 B AB {"n": 99856, "dab_med_ms": 1.36, "dab_min_ms": 1.12, "begin_med_ms": 2.68, "moved": 109754}
+2 A AB {"n": 99856, "dab_med_ms": 3.6, "dab_min_ms": 3.22, "begin_med_ms": 3.74, "moved": 109754}
+2 B AB {"n": 99856, "dab_med_ms": 1.9, "dab_min_ms": 1.23, "begin_med_ms": 3.58, "moved": 109754}
+3 A AB {"n": 99856, "dab_med_ms": 3.83, "dab_min_ms": 2.73, "begin_med_ms": 3.85, "moved": 109754}
+3 B AB {"n": 99856, "dab_med_ms": 1.13, "dab_min_ms": 1.01, "begin_med_ms": 2.23, "moved": 109754}
+=== 1M, bpy 4.2
+1 A AB {"n": 1000000, "dab_med_ms": 39.49, "dab_min_ms": 30.54, "begin_med_ms": 29.14, "moved": 1079068}
+1 B AB {"n": 1000000, "dab_med_ms": 14.12, "dab_min_ms": 10.6, "begin_med_ms": 27.17, "moved": 1079068}
+2 A AB {"n": 1000000, "dab_med_ms": 36.17, "dab_min_ms": 28.11, "begin_med_ms": 29.02, "moved": 1079068}
+2 B AB {"n": 1000000, "dab_med_ms": 13.86, "dab_min_ms": 10.85, "begin_med_ms": 28.79, "moved": 1079068}
+3 A AB {"n": 1000000, "dab_med_ms": 34.35, "dab_min_ms": 28.8, "begin_med_ms": 27.45, "moved": 1079068}
+3 B AB {"n": 1000000, "dab_med_ms": 14.23, "dab_min_ms": 10.47, "begin_med_ms": 27.74, "moved": 1079068}
