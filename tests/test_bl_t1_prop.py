@@ -73,7 +73,17 @@ SCENE = st.one_of(
     st.tuples(st.just("dup"), OBJ, st.booleans()),
 )
 EDIT = st.tuples(st.just("edit"), st.sampled_from(["E", "B"]), EDITS, st.integers(0, 10_000))
-ANY = st.one_of(RNA, OBJECT, SCENE, EDIT)
+# Record everything's later kinds (D110 to D120): checked by the oracle (object RNA, custom properties,
+# modifiers, material slots) and by Blender's undo matching; not required in every sequence
+EXTRA = st.one_of(
+    st.tuples(st.just("prop"), OBJ, st.integers(0, 3)),
+    st.tuples(st.just("display"), OBJ, st.sampled_from(["BOUNDS", "WIRE", "SOLID", "TEXTURED"])),
+    st.tuples(st.just("mod_add"), MESH, st.sampled_from(["BEVEL", "SUBSURF", "ARRAY", "SOLIDIFY"])),
+    st.tuples(st.just("mod_del"), MESH, st.integers(0, 2)),
+    st.tuples(st.just("mat"), MESH, st.integers(0, 2)),
+    st.tuples(st.just("key"), OBJ, st.integers(1, 30)),
+)
+ANY = st.one_of(RNA, OBJECT, SCENE, EDIT, EXTRA)
 SEQUENCES = st.tuples(RNA, OBJECT, SCENE, EDIT, st.lists(ANY, max_size=5)).flatmap(
     lambda t: st.permutations(list(t[:4]) + list(t[4])))
 
@@ -163,6 +173,51 @@ def run_spec(spec):
         return T.delete([a[0]]).fn()
     if kind == "dup":
         return T.duplicate(a[0], a[1]).fn()
+    if kind == "prop":                        # a custom property (the N panel's Custom Properties)
+        T.select(a[0])
+        ob = _ob(a[0])
+        if a[1] == 0:
+            if "level" not in ob.keys():
+                return {"CANCELLED"}
+            del ob["level"]
+        else:
+            ob["level"] = a[1]
+        return {"FINISHED"}
+    if kind == "display":                     # Object Properties > Viewport Display > Display As
+        T.select(a[0])
+        _ob(a[0]).display_type = a[1]
+        return {"FINISHED"}
+    if kind == "mod_add":
+        if _ob(a[0]).type != "MESH":
+            return {"CANCELLED"}
+        T.select(a[0])
+        with C.temp_override(object=_ob(a[0]), active_object=_ob(a[0])):
+            return bpy.ops.object.modifier_add(type=a[1])
+    if kind == "mod_del":
+        ob = _ob(a[0])
+        if ob.type != "MESH" or a[1] >= len(ob.modifiers):
+            return {"CANCELLED"}
+        T.select(a[0])
+        with C.temp_override(object=ob, active_object=ob):
+            return bpy.ops.object.modifier_remove(modifier=ob.modifiers[a[1]].name)
+    if kind == "mat":                         # a material slot with one of three materials
+        ob = _ob(a[0])
+        if ob.type != "MESH":
+            return {"CANCELLED"}
+        name = f"Prop{a[1]}"
+        m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+        T.select(a[0])
+        if len(ob.material_slots) < 2:
+            ob.data.materials.append(m)
+        else:
+            ob.material_slots[0].material = m
+        return {"FINISHED"}
+    if kind == "key":                         # I over the Viewport Display colour field
+        # (a property no other operation here changes: a keyed value follows the animation, so
+        # changing it by hand isn't a step, which the oracle would count as a change without one)
+        T.select(a[0])
+        _ob(a[0]).keyframe_insert("color", frame=a[1])
+        return {"FINISHED"}
     if kind == "edit":
         if _ob(a[0]) is None or _ob(a[0]).type != "MESH":
             return {"CANCELLED"}

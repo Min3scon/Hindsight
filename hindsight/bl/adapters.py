@@ -2186,14 +2186,8 @@ def write_action(key: str, rec) -> None:
 def write_anim(ob, want) -> None:
     try:
         if want is None:
-            ad = ob.animation_data
-            if ad is not None:                     # animated later than this: nothing plays then
-                if ad.action is not None:
-                    ad.action = None
-                for fc in list(ad.drivers):
-                    ad.drivers.remove(fc)
-                for t in list(ad.nla_tracks):
-                    ad.nla_tracks.remove(t)
+            if ob.animation_data is not None:      # animated later than this: it had none then
+                ob.animation_data_clear()
             return
         ad = ob.animation_data or ob.animation_data_create()
         ref = (want.get("action") or {}).get("ref")
@@ -3013,7 +3007,15 @@ def object_body(ob) -> dict:
         "custom": _group_json(ob),              # D114: nested groups and their pointers too
         "sys": _group_json(_sys_group(ob)),     # D114: Blender 5 keeps add-ons' data apart
         **_data_body(data),                     # D122: other data, to make it again when it's gone
+        **_anim_body(ob),                       # D135: its animation, and its action if it's the only user
     }
+
+
+def _anim_body(ob) -> dict:
+    if ob.animation_data is None:
+        return {}
+    r = _part("the animation", anim_of, ob)
+    return {"anim": r} if r is not _FAILED else {}
 
 
 # data types a deleted object's data can be made again from (D122): bl_rna type -> how to make it
@@ -3471,6 +3473,8 @@ def _recreate_object(scene, uid, body, snap):
     _write_group(ob, body.get("custom") or {})
     if body.get("sys"):
         _write_group(_sys_group(ob, create=True), body["sys"])
+    if isinstance(body.get("anim"), dict):
+        write_anim_of(ob, body["anim"])         # D135
     return ob
 
 
