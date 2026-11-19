@@ -94,6 +94,14 @@ class Driver:
     def note(self, key, value):
         self.notes[key] = value
 
+    def crash_now(self):
+        """Write the results so far, then end Blender the way a crash does: SIGKILL, so no handler, no
+        save and no quit runs (what crash recovery is for). Unix only."""
+        _finish()
+        sys.stdout.flush()
+        import signal
+        os.kill(os.getpid(), signal.SIGKILL)
+
     def console(self):
         return "".join(CAPTURED)
 
