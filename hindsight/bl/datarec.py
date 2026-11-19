@@ -369,6 +369,7 @@ def on_update(depsgraph) -> None:
     for u in depsgraph.updates:
         idv = u.id
         orig = getattr(idv, "original", idv)
+        adapters.value_changed(orig)          # D117: its kept settings are read again
         if isinstance(orig, mats):
             ou = adapters.material_changed(orig)   # D112: its object records it
             if ou in uids:
@@ -542,6 +543,7 @@ def finish_operation(label: str) -> list:
     rt = _rt()
     check_exclusion()
     refresh_mesh_users()
+    adapters.forget_selected_values()     # D117
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
     try:
@@ -576,23 +578,17 @@ def _edit_step(label: str) -> None:
                 break
 
 
-_SLOTS_KEY = ("object", "slots")
-
-
 def _same_values(old: dict, new: dict) -> bool:
     """True only if the two value dicts are identical: same keys, same types, floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
     _diff finds nothing. False says nothing: _diff decides."""
     if len(old) != len(new):
         return False
     try:
-        sl = new.get(_SLOTS_KEY)
-        if sl is None or len(sl) <= 1:
-            # no material slots, so no kept material records: one compare of the whole dict
-            return marshal.dumps(old, 2) == marshal.dumps(new, 2)
         if old.keys() != new.keys():
             return False
-        # a value that is the same object on both sides (a material's record is kept until the
-        # material changes, D112) is the same value: only the others are compared
+        # a value that is the same object on both sides (kept records: a material's until the
+        # material changes, D112; settings until their datablock changes, D117) is the same value:
+        # only the others are compared
         a, b = {}, {}
         for k, v in new.items():
             o = old[k]

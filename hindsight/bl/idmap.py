@@ -15,7 +15,8 @@ UID_PROP = "_hindsight_uid"
 # bpy.data collections searched by find(), in a fixed order (objects first: most lookups)
 COLLECTIONS = ("objects", "meshes", "materials", "node_groups", "worlds", "scenes", "collections",
                "cameras", "lights", "curves", "hair_curves", "armatures", "actions", "lattices",
-               "metaballs", "grease_pencils", "texts", "images", "shape_keys", "particles")
+               "metaballs", "grease_pencils", "texts", "images", "shape_keys", "particles", "fonts", "sounds",
+               "speakers", "lightprobes")
 
 _cache: dict = {}        # uid -> (collection name, datablock name)
 _owner: dict = {}        # uid -> as_pointer() of the datablock that owns it this session
