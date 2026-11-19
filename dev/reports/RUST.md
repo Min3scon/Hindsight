@@ -177,3 +177,52 @@ test_core_* (14 files) pass on bpy53 and bpy42 with the 0.5.1 module. bl recorde
 ## The 10 baseline test_bl_ failures (names)
 
 test_bl_adapters, test_bl_metadata, test_bl_t1_added, test_bl_t1_corrupt, test_bl_t1_gate, test_bl_t1_jumps, test_bl_t1_migrate, test_bl_t1_prop, test_bl_t1_real_undo, test_bl_t1_reload (bpy53). Not my environment: I ran them on a plain `git archive 9547ce3` with no PYTHONPATH (venv engine 0.3.0, as the main session does) and got the same pass and fail counts per file. The tip of main-session-3 (c7bb443) passed t1_jumps, t1_added, t1_gate, t1_corrupt and adapters when I tried it, so those five were fixed after 9547ce3.
+
+---
+
+# Fifth job: Multires, one exact step per Sculpt Mode visit
+
+Merged main-session-3 (81bc008) first (fast-forward). No engine change (0.5.1, API 5).
+
+## Design (also in `dev/RUST_DESIGN.md`)
+
+* New module `hindsight/bl/multires.py`, preference `record_multires` (off by default, listed under History in the add-on preferences, `check_copy` clean).
+* Step: kind TOPO, extra `{"multires": 1}`. `before` and `after` are Snapshots with one int8 channel `multires:blob|POINT|INT8`: the mesh datablock written by `bpy.data.libraries.write` (displacements and shape keys travel with it), compressed with the engine's zstd before it goes into the Step (so the raw tier and the caps count compressed bytes). Journal, save and load need nothing new.
+* Restore: `libraries.load` the mesh, put the original materials on it (the load makes copies, which are removed), `user_remap`, remove the old mesh, rename. Done in Object Mode (the TOPO path leaves and re-enters the mode).
+* A visit: `begin_visit` on entering Sculpt Mode takes the baseline, refreshed at the first tick after 0.25 s (Sculpt Mode adds its own layers to the mesh after its first update, which is not a change). Leaving Sculpt Mode marks the visit ended; the step is taken at the next timer tick, before a jump (`_goto_history`) or before a save (`persistence.on_save_pre`, one added line): inside the mode change the mesh is not settled yet (4.2 gave a different blob there, so a no-op visit looked like a change). A change of the Multires levels while sculpting ends the visit's step and starts the next. A visit whose blob digest equals the baseline makes no step.
+* With the preference on, `warnings` no longer pauses recording for Multires (`_has_multires` is False), and `runtime.commit` of such an object returns None unless it is given the visit's step (`_mr_step`). With it off, everything is as before (a test checks the pause stays).
+
+## Deterministic change for tests
+
+Strokes can't run headless. `multires_reshape` against a displaced copy of the evaluated top level (noise from a seeded generator) changes the displacement layers identically every run; it runs inside the visit with the mode switch hidden from the recorder (`runtime.suspended()`), and leaving the mode takes the step.
+
+Exactness check: hashes of the evaluated vertices at every level 0 to top plus the base mesh. The bytes of a written mesh are not compared: they are not a function of the content alone (a restored mesh differs by a flag; on 4.2 the size differs between two restores), but the visit detector compares two blobs of the same mesh in the same state, which are equal.
+
+## Tests `tests/test_bl_multires.py` (7, bpy53 and bpy42)
+
+Off by default pauses as before; three visits make three steps and every position (back, forward, jumps) is exact for every level, materials and modifier kept; a visit that changes nothing makes no step; a level change takes the step; save and reopen then scrub; crash recovery (save, one more visit only in the journal, reopen without saving, both visits replay exactly); step sizes are the compressed blob (counted by the caps). Failing before: the module and mode did not exist (no step was made).
+
+Tests run: all above plus recorder 20, recovery 12 + faults 9, persistence 8, t0_gate 6, movie 14, weight_paint 9, texture_paint 7, custom_normals, t1_meshdata, t1_lists, panels, warnings on both venvs; `test_core_*` on both. Whole `test_bl_` on bpy53 (without t1_prop): see the end of this section.
+
+## Measured (`mrbench.py`, bpy53 / bpy42; min of 3 writes; `libraries.write` to a temp file and read; zstd level 3; load = `libraries.load` + remap, min of 2)
+
+10,086-face base (cube, 40 cuts), unsculpted displacement (zero, so it compresses extremely; a real sculpt compresses much less, my noise test about 1.0):
+
+| level | quads | write | size | zstd | compressed | load + remap |
+|---|---|---|---|---|---|---|
+| 2 | 161,376 | 12 / 6 ms | 7.7 / 7.4 MB | 10 / 11 ms | 0.5 / 0.5 MB | 31 / 30 ms |
+| 4 | 2,582,016 | 60 / 41 ms | 42.6 / 42.3 MB | 39 / 59 ms | 0.5 / 1.7 MB | 104 / 87 ms |
+| 6 | not measured: 41 M quads, over 600 MB of displacement | | | | | |
+
+Level 6 on an 80-face base (327,680 quads): write 7 / 4 ms, 3.3 MB, zstd 3 / 4 ms, load 21 / 8 ms.
+Noise-displaced Suzanne-like sphere (tests, level 3, 3,842 verts at top): blob 345 KB, a step (two sides) about 250 to 350 KB each side at zstd 3: random displacement does not compress.
+Cost per visit at a 10k base and level 4: one write at the start (about 60 ms), one at the end (60 ms) plus compress (40 to 60 ms); a jump costs a load (about 100 ms). Memory of a step is two compressed blobs; a sculpt that touches a lot of the surface makes them large (up to the blob size, 42 MB at level 4 each side), which the caps then evict as for any step.
+
+## Unfinished
+
+* Not tried in a real window (the preference stays off): real strokes, Blender's own undo inside a visit (the visit is the unit; undo during a visit is not tracked), and a timer that fires between leaving the mode and the step.
+* The first visit's `before` blob is taken inside Sculpt Mode, so going back to position 0 restores the mesh with Sculpt Mode's own layers; the geometry and displacement are as before.
+* Objects sharing a Multires mesh, and a Multires modifier added or removed between visits, are not handled specially (a changed modifier stack is a normal change of the mesh blob only).
+* A restored mesh is a new datablock (same name, same users); anything holding a pointer to the old one (the shared-mesh bookkeeping of D39/D44 when Record everything is on) may take it for a mesh change.
+
+Whole `test_bl_` on bpy53 without t1_prop: 81 of 84 files pass; the three failures are metadata and migrate (known) and t1_hair_points (fixed upstream in main-session-4 8c1838d).
