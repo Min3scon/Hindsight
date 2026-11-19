@@ -15,3 +15,8 @@ of its steps are decoded.
 
 `open_journal_ab.py CODE_ROOT` (R067): `replay_ab.py` with the crash recovery setting taken from `HS_RECOVERY`
 (`LAST_SAVED` times an open that lets an earlier session's journal go).
+
+`fingerprint_ab.py CODE_ROOT [K]` (R060): mesh fingerprints at 100k and 1M vertices, `runtime.saved_prints()` with K (3)
+recorded 1M meshes, and opening that file (`check_outside_changes` alone and the whole open); prints one `AB {...}` line
+with the engine's version. A venv holds one engine version, so put each side's own engine (its wheel unpacked) first
+with PYTHONPATH (no `-I`): `PYTHONPATH=<engine folder> <bpy python> bench/scenarios/oneoff/fingerprint_ab.py CODE_ROOT`.

@@ -1,0 +1,45 @@
+R060 A/B: mesh fingerprints, blake2b-128 in Python (A) against xxh3-128 in the engine's Hasher128 (B).
+A = 2beea2b (main-session-3, before R060) with engine 0.7.0, B = the R060 branch (a4746d6) with engine 0.8.0.
+Probe: bench/scenarios/oneoff/fingerprint_ab.py, run as
+    PYTHONPATH=<engine folder> <bpy python> bench/scenarios/oneoff/fingerprint_ab.py <code root>
+alternating A and B in separate processes, 5 rounds per Blender module, 4-core shared VM, load in the lines.
+Columns (ms, medians of each run's reps after a warm-up): fp_100k and fp_1m = runtime.mesh_fingerprint of one
+mesh (bench_bl.make_mesh, 9 and 5 reps); fp_1m_peak_mb = tracemalloc peak of one 1M fingerprint; saved_prints =
+runtime.saved_prints() with 3 recorded 1M meshes (what a save computes, 3 reps); check = runtime.check_outside_changes
+while opening the saved file with those 3 meshes, open = the whole open (3 opens).
+
+bpy 5.3.0 module:
+load before: 1.71 1.42 1.26
+1 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 12.28, "fp_1m": 125.1, "fp_1m_peak_mb": 15.2, "saved_prints": 333.16, "check": 371.76, "open": 766.18}
+1 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.58, "fp_1m": 42.4, "fp_1m_peak_mb": 15.2, "saved_prints": 119.4, "check": 153.46, "open": 596.69}
+2 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 12.21, "fp_1m": 125.33, "fp_1m_peak_mb": 15.2, "saved_prints": 376.44, "check": 385.89, "open": 827.83}
+2 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.61, "fp_1m": 36.46, "fp_1m_peak_mb": 15.2, "saved_prints": 118.07, "check": 123.21, "open": 513.5}
+3 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 12.53, "fp_1m": 128.63, "fp_1m_peak_mb": 15.2, "saved_prints": 377.98, "check": 384.82, "open": 797.72}
+3 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.47, "fp_1m": 39.88, "fp_1m_peak_mb": 15.2, "saved_prints": 109.87, "check": 116.65, "open": 508.58}
+4 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 10.82, "fp_1m": 117.83, "fp_1m_peak_mb": 15.2, "saved_prints": 363.5, "check": 376.79, "open": 788.95}
+4 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.53, "fp_1m": 38.45, "fp_1m_peak_mb": 15.2, "saved_prints": 94.98, "check": 117.67, "open": 551.31}
+5 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 12.4, "fp_1m": 136.88, "fp_1m_peak_mb": 15.2, "saved_prints": 357.82, "check": 318.54, "open": 688.73}
+5 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.48, "fp_1m": 40.27, "fp_1m_peak_mb": 15.2, "saved_prints": 109.16, "check": 122.03, "open": 562.33}
+load after: 2.69 1.82 1.42
+bpy 4.2.23 module:
+load before: 2.69 1.82 1.42
+1 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 12.56, "fp_1m": 127.59, "fp_1m_peak_mb": 15.2, "saved_prints": 390.3, "check": 380.42, "open": 541.83}
+1 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.29, "fp_1m": 43.01, "fp_1m_peak_mb": 15.2, "saved_prints": 106.79, "check": 114.5, "open": 293.91}
+2 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 12.58, "fp_1m": 106.55, "fp_1m_peak_mb": 15.2, "saved_prints": 368.8, "check": 374.36, "open": 563.91}
+2 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.29, "fp_1m": 50.84, "fp_1m_peak_mb": 15.2, "saved_prints": 107.5, "check": 116.62, "open": 284.41}
+3 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 11.94, "fp_1m": 133.28, "fp_1m_peak_mb": 15.2, "saved_prints": 336.04, "check": 372.29, "open": 551.95}
+3 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.23, "fp_1m": 50.64, "fp_1m_peak_mb": 15.2, "saved_prints": 123.14, "check": 124.58, "open": 316.17}
+4 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 12.15, "fp_1m": 124.36, "fp_1m_peak_mb": 15.2, "saved_prints": 312.07, "check": 374.67, "open": 558.04}
+4 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.25, "fp_1m": 40.03, "fp_1m_peak_mb": 15.2, "saved_prints": 99.98, "check": 116.95, "open": 294.37}
+5 A AB {"engine": "0.7.0", "api": 6, "fp_100k": 10.61, "fp_1m": 122.81, "fp_1m_peak_mb": 15.2, "saved_prints": 364.91, "check": 375.72, "open": 534.41}
+5 B AB {"engine": "0.8.0", "api": 7, "fp_100k": 3.41, "fp_1m": 36.17, "fp_1m_peak_mb": 15.2, "saved_prints": 110.52, "check": 115.23, "open": 280.34}
+load after: 2.57 1.99 1.52
+
+Summary (median of the 5 run medians, A / B, ratio B/A; min of the run medians in brackets):
+bpy 5.3.0: fp_100k 12.28 / 3.53 (0.29) [10.82 / 3.47]; fp_1m 125.33 / 39.88 (0.32) [117.83 / 36.46];
+           saved_prints 363.50 / 109.87 (0.30) [333.16 / 94.98]; check 376.79 / 122.03 (0.32) [318.54 / 116.65];
+           open 788.95 / 551.31 (0.70) [688.73 / 508.58]
+bpy 4.2.23: fp_100k 12.15 / 3.29 (0.27) [10.61 / 3.23]; fp_1m 124.36 / 43.01 (0.35) [106.55 / 36.17];
+           saved_prints 364.91 / 107.50 (0.29) [312.07 / 99.98]; check 374.67 / 116.62 (0.31) [372.29 / 114.50];
+           open 551.95 / 293.91 (0.53) [534.41 / 280.34]
+Memory: fp_1m_peak_mb 15.2 MB on both sides (one array at a time, R005); the hash itself allocates nothing.

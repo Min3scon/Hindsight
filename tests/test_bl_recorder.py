@@ -255,21 +255,24 @@ def test_topology_step_owns_its_before():
 
 def test_fingerprint_streamed_same_digest():
     """Memory work: meshio.fingerprint hashes one array at a time; the digest must be the one of
-    the whole snapshot (fingerprints are saved in files, D46), and it must not copy the whole mesh."""
+    the whole snapshot (fingerprints are saved in files, D46), and it must not copy the whole mesh.
+    R060: the value is xxh3-128 with the tag "x3:"; the blake2b form older builds saved is still made
+    from the same bytes (to compare with such a value)."""
     import hashlib
     import tracemalloc
     import numpy as np
     from hindsight.bl import meshio
+    from hindsight.core.native import ENGINE
 
-    def reference(me, ob=None):
+    def reference(me, ob=None, algo="x3"):
         snap = meshio.read_snapshot(me, ob=ob, extras=ob is not None)
-        h = hashlib.blake2b(digest_size=16)
+        h = hashlib.blake2b(digest_size=16) if algo == "blake2b" else ENGINE.Hasher128()
         h.update(repr(sorted(snap.counts.items())).encode())
         for key in sorted(snap.arrays):
             a = np.ascontiguousarray(snap.arrays[key])
             h.update(key.encode() + b"\0" + str(a.dtype).encode() + b"\0")
             h.update(a.view(np.uint8))
-        return h.hexdigest()
+        return ("x3:" if algo == "x3" else "") + h.hexdigest()
     H.fresh()
     ob = H.make_mesh(20000)
     for ch in ("mask", "fset", "hide", "color", "bytecolor"):
@@ -282,6 +285,8 @@ def test_fingerprint_streamed_same_digest():
     assert meshio.fingerprint(me) == reference(me)
     assert meshio.fingerprint(me, ob) == reference(me, ob)
     assert meshio.fingerprint(me, ob) != meshio.fingerprint(me)
+    assert meshio.fingerprint(me, None, "blake2b") == reference(me, None, "blake2b")
+    assert meshio.fingerprint(me, ob, "blake2b") == reference(me, ob, "blake2b")
     whole = meshio.read_snapshot(me).nbytes()
     tracemalloc.start()
     meshio.fingerprint(me)

@@ -186,7 +186,8 @@ def find_versions(blend: str, autosave_folders=(), git_exe: str | None = None, r
 
 # ----------------------------------------------------------------------------- steps between versions
 def snapshot_digest(snap: Snapshot) -> str:
-    """Digest of a mesh: counts, topology and every channel (same as meshio.fingerprint)."""
+    """Digest of a mesh: counts, topology and every channel (meshio.fingerprint's "blake2b" form; it
+    only compares two snapshots with each other, never with a stored fingerprint)."""
     h = hashlib.blake2b(digest_size=16)
     h.update(repr(sorted(snap.counts.items())).encode())
     for key in sorted(snap.arrays):
