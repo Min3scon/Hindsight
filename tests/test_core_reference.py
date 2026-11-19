@@ -445,13 +445,39 @@ def test_hostile_headers():
     print(f"PASS test_hostile_headers ({stats})")
 
 
+def _peak_mb() -> float:
+    """Peak resident memory of this process in MB: ru_maxrss (KB on Linux, bytes on macOS), or the peak
+    working set on Windows (no resource module there)."""
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class PMC(ctypes.Structure):
+            _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD),
+                        ("PeakWorkingSetSize", ctypes.c_size_t), ("WorkingSetSize", ctypes.c_size_t),
+                        ("QuotaPeakPagedPoolUsage", ctypes.c_size_t), ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                        ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t), ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                        ("PagefileUsage", ctypes.c_size_t), ("PeakPagefileUsage", ctypes.c_size_t)]
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+        k32.K32GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(PMC), wintypes.DWORD]
+        k32.K32GetProcessMemoryInfo.restype = wintypes.BOOL
+        pmc = PMC()
+        pmc.cb = ctypes.sizeof(PMC)
+        if not k32.K32GetProcessMemoryInfo(k32.GetCurrentProcess(), ctypes.byref(pmc), pmc.cb):
+            raise OSError(ctypes.get_last_error(), "GetProcessMemoryInfo failed")
+        return pmc.PeakWorkingSetSize / 2 ** 20
+    import resource
+    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return r / 2 ** 20 if sys.platform == "darwin" else r / 1024
+
+
 def test_no_unbounded_allocation():
     """Headers that claim sizes of gigabytes fail at once, before anything is allocated."""
-    import resource
     st = [s for s in captured_steps(5, n_steps=30, n=100) if s.deltas][0]
     blob = stepmod.step_to_bytes(st, "none", delta.NORMAL)
     hl = struct.unpack_from("<H", blob, 8)[0]
-    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    before = _peak_mb()
     for off, size, val in ((10 + 20, 4, 0xFFFFFFFF), (10 + 20, 4, 1 << 30), (10 + 20, 4, (1 << 30) + 1)):
         b = bytearray(blob)
         b[off:off + size] = struct.pack("<I", val)
@@ -471,7 +497,7 @@ def test_no_unbounded_allocation():
         stepmod.step_from_bytes(bytes(rest))
     except stepmod.CorruptStep:
         pass
-    grew = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) / 1024
+    grew = _peak_mb() - before
     assert grew < 200, f"peak memory grew {grew:.0f} MB on claims of gigabytes"
     print(f"PASS test_no_unbounded_allocation (peak grew {grew:.0f} MB)")
 
