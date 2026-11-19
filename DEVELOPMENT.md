@@ -23,8 +23,9 @@ Where a fact has no source, this page says "not measured" or "no report".
    that script when a session's container is built; it was created on 2026-11-18 and its setup script
    is unproven until a fresh session has started on it. `bash tools/build_native.sh` rebuilds the six
    engine wheels into `hindsight/wheels/`.
-   - There is no Blender binary and no GPU in the container (`download.blender.org` is blocked).
-     Real Blender runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
+   - No GPU in the container. Since 2026-11-18 the "Hindsight" environment allows `download.blender.org`:
+     Blender 4.2 and 5.3 Linux binaries are unpacked in `/home/user/blender/` and
+     `python3 tools/ci/run_suite.py --blender <binary>` runs the suite in them. Real Blender also runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
      hand with inputs `versions`, `filter`, `run_module`, `run_ui`) runs the suite in Blender binaries
      4.2 to 5.3, on Windows and macOS as a module, and a windowed probe under Xvfb. Workflow
      `Native engine` proves the wheels on Windows, macOS and Linux, x64 and ARM64. Both are triggered
@@ -45,20 +46,18 @@ Where a fact has no source, this page says "not measured" or "no report".
 ## b. Repository and branch state
 
 - Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default and the
-  Pages source. There is no open pull request and none is planned: work goes straight to this branch.
-- Main line: see `git log`. Merged and tested by the orchestrator on 2026-11-18: crash recovery D77 to
-  D83, redraw work (D84), save and load work (D85, D86), data recorder work (D87), the Rust engine 0.2.0
-  (`apply_steps`), the runtime work (D88 to D90, topology reads through attributes, cached slider info
-  wired into the slider, header and panel), Movie Mode listing the visible objects once per frame, this
-  record, the CI workflow and scripts, and engine wheels for Windows ARM64 and Linux ARM64.
-- In progress on agent branches (local to the session's container until merged; check `git branch`):
-  CAMERA-FINISH (review and completion of the Movie Mode camera fixes S2-1, S3-1, S3-2 from the
-  unmerged branch `worktree-agent-ac952619567257298`), BENCH (`bench/suite.py`, `bench/ab.py`),
-  RECOVERY-REVIEW (fault injection for the journal and saves), RUST (core design, then migration).
+  Pages source. No pull requests: work is merged into this branch after its tests pass.
+- Main line (2026-11-19): everything up to D118 and the Rust engine M1 (merge `7dc4853`, CI dependency
+  fix `847bcdd`). Work since then is on the main session's local branches `main-session-3` and
+  `main-session-4` (worktrees `.claude/worktrees/ms-p8` and `ms-eng`): D119 to D134 (poses, animation,
+  curves and other shapes, node groups and zones, collection and view layer settings, bones, Grease
+  Pencil, hair and points, Bring back, whole-file switch). It is merged after its full suite on 5.3 and
+  4.2. The Rust agent works on `worktree-agent-a388cd589ccb15b22` (M2, custom normals D-d, Weight Paint
+  D-f).
 - Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and `docs/download/hindsight.zip`
   is the beta.2 zip. `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
-- The site (`site/`, `docs/`) was not edited in this job (owner: "don't edit site, just get the add-on
-  updated"). `COVERAGE.md` and `TEST_EVIDENCE.md` are unchanged.
+- The site (`site/`, `docs/`) is not edited outside a release (owner: "don't edit site, just get the add-on
+  updated").
 
 ## c. Architecture
 
@@ -88,23 +87,23 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 ### What runs in Rust today
 
-Exactly five functions of `hindsight_native`:
+Engine `hindsight_native` 0.3.0, API 3 on the main line (M1, merged 2026-11-19); the Rust agent's branch
+has 0.4.0, API 4 (M2 part: `record_step`, custom normals), not merged yet. The engine is required: if it
+can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
+the add-on. The Python implementations it replaced are in `tests/reference/` as the oracle, and a test
+fails if anything under `hindsight/` imports them.
 
-| Function | What it does | Used by |
-|---|---|---|
-| `diff` | changed elements of a channel and their wrapping differences | `core/delta.py` |
-| `apply` | applies a delta in place (ADD both ways, XOR) | `core/delta.py` |
-| `pack` (`pack_delta`) | format 3 record: index coding, prediction orders 0 to 3, zigzag, byte planes | `core/delta.py` |
-| `unpack` (`unpack_at`) | the same transforms read back | `core/delta.py` |
-| `apply_steps` | a run of packed DELTA steps of one object: CRC, header, zstd, decode, apply, GIL released, up to 3 helper threads for long runs | `History.goto` |
+| In Rust (API 3) | Used by |
+|---|---|
+| `diff`, `apply`, `pack`, `unpack` (channels, records) | `core/delta.py` |
+| `apply_steps` (runs of DELTA steps, GIL released, helper threads) | `History.goto` |
+| codecs zstd, lz4, zlib, none | `core/codec.py` (facade) |
+| step container: formats 1 to 4 read, 3 and 4 written, all step kinds, recompress, CRC | `core/step.py` (facade) |
+| errors `CorruptStep`, `CorruptBlob`, `CorruptDelta`, `NewerFormatError`, `EngineMissing` | `core/native.py` |
 
-Everything else is Python: step headers and the container, error types, compression calls (zstd, lz4,
-zlib are C libraries), history, store, persist, journal, registry, global timeline, framing, morph and
-the whole Blender side. Steps that `apply_steps` does not take (TOPO, JOIN, DATA, extras, format 1,
-zlib or lz4 bodies, channels that appear or go, any damage) are crossed by Python, which also raises
-every error. The Python implementations are still the fallback in `hindsight/`; the owner's decision
-that Rust is required, with the Python copies moved to `tests/reference/`, has not been carried out
-(`tests/reference/` does not exist, and nothing fails if the module is missing).
+Still Python: history, store, persist, journal, registry, global timeline, framing, morph, and the whole
+Blender side (by design: it needs bpy). `HINDSIGHT_NATIVE=0` only switches `delta.py` to its Python paths
+for tests and A/B runs.
 
 ### Migration plan to Rust (from the approved plan)
 
@@ -310,25 +309,16 @@ Other limits of the verification:
 
 ## g. Agents
 
-- Rules: `dev/AGENT_RULES.md` (the brief every agent had, adapted). Reports of the agents of 2026-11-18
-  are in `dev/reports/`: NATIVE, SAVELOAD, DRAW, DATAREC (merged), TOOLS, LIMITS-A, LIMITS-B (reports
-  only), `review.md` and `ponytail_audit.md`. There is no report for RUNTIME (merged; the report was lost,
-  its seven commits and tests are the record: `6d8f06d`, `5e6ca36`, `9c2c77b`, `2475d91`, `ff67677`,
-  `07996c0`, `a207a88`), MOVIE (2 commits, not merged), CAMERA (2 commits, not merged). A design agent
-  for the Rust interface was interrupted before it reported.
-- Model tiers (plan): the orchestrator is the main session on the strongest model. Agents: the strongest
-  tier ("opus") for Rust, data integrity, recovery, recording semantics, concurrency and reviews; the
-  middle tier ("sonnet") for CI workflows, routine tests, docs, benchmark harness; the smallest ("haiku")
-  for running suites and summarising. Never the orchestrator's own model for agents.
-- Limit: at most 4 agents at once, at most 3 of them on the strongest tier. Reason: bursts of 10
-  strongest-tier agents hit the 5-hour usage limit twice in the session of 2026-11-18. On a rate-limit
-  sign: start no new agents, commit and push, update this file, report.
+- Rules: `dev/AGENT_RULES.md`. Reports of the agents of 2026-11-18 are in `dev/reports/`; the Rust
+  agent's design is `dev/RUST_DESIGN.md` and its report `dev/reports/RUST.md`.
+- Since 2026-11-19 (owner): the main session does the engineering itself and stays busy without pause,
+  with about one agent beside it (two running at once at most). The agents use the middle tier
+  ("sonnet"). Every agent reads `.claude/skills/ultracave/SKILL.md` and answers in that style.
+- Running: RUST (`a388cd589ccb15b22`, branch `worktree-agent-a388cd589ccb15b22`): M1 merged; now M2
+  (`record_step` wired into `runtime.commit`, `delta.py` fallbacks to `tests/reference/`), D-d custom
+  normals (done on its branch) and D-f Weight Paint per stroke.
 - Each agent owns disjoint files and works in its own git worktree; agents never spawn agents, never
-  push; work is merged only after the orchestrator re-runs its tests; agents cannot write report files,
-  the final message is the report. Agents that were not finished can be resumed with the same context
-  (MOVIE, CAMERA were meant to be).
-- Commit trailers: the brief asked for "Claude Fable 5.2"; the agents' session instructions said
-  "Claude Opus 5.5" and replaced it, so most agent commits carry the latter. Not a defect.
+  push; their work is merged only after the main session re-runs its tests.
 
 ## h. Blockers and decisions
 
@@ -385,43 +375,13 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Merge this record (`dev/`, `DEVELOPMENT.md`, `OPTIMISATION_LOG.md`) into the default branch and push.
-   Review and merge the two unmerged branches, or re-brief them: CAMERA (S2-1, S3-1, S3-2) needs a full
-   review of its 1,548 lines and a run of the whole suite; MOVIE needs its patch for `runtime.goto` with
-   `vis=` and a report. They exist only in the old container.
-2. Make the environment reproducible: commit `tools/dev_env.sh` (venvs 4.2 and 5.3 by default, `--all`
-   adds 5.0, 5.1, 5.2; test dependencies; maturin and zig; installs the committed wheel) and
-   `tools/build_native.sh`; propose the personal cloud environment "Hindsight".
-3. First wave, at most 4 agents:
-   - CI on real Blender (middle tier): `.github/workflows/blender.yml` with `workflow_dispatch` and push on
-     `hindsight/** tests/** native/**`, real 4.2 LTS, 5.0, 5.1, 5.2, 5.3 (Linux tarballs cached), the full
-     suite headless with Rust required, a bpy-module job on Windows and macOS for 5.3; then the UI gate
-     under xvfb with `tests_ui/hs_ui.py`.
-   - BENCH (middle tier): `bench/suite.py`, move the lost scratch benches into `bench/`, a baseline JSON at
-     the merged commit.
-   - RECOVERY-REVIEW (strongest tier): an independent review of D77 to D86 and fault-injection tests
-     (journal cut at every record boundary and byte offset, interrupted sidecar writes, crash mid-jump,
-     mid-save, mid-join). Owns `tests/test_bl_recovery_faults.py`, `core/journal.py`, `persist.replay`.
-   - Rust formats R2 (strongest tier), starting with the interface design for review.
-4. Release 1.0.0-beta.3: bump the manifest, build the wheels, build the zip with `blender_ext.py build`,
-   install-test, update `docs/download/hindsight.zip`, `tools/check_copy.py`, push without `[skip ci]`,
-   verify the Pages run, check the live zip. Before the release, check in a real window what the
-   HANDOFF "Beta 3 job" lists.
-5. Phase 1, data integrity first, in waves of 3 to 4 agents, one agent per file: linked duplicates (L7),
-   strokes made while paused, taken-name swaps (L9), D-a, D-e, the Blender 4.2 parenting test and
-   `test_bl_t1_reload` on 4.2. Resume CAMERA for S2-1, S3-1, S3-2. File ownership as in LIMITS-A work
-   packages: runtime.py and dupsep.py; datarec.py and globaltl.py; adapters.py; warnings, ui_panel,
-   ui_menu and prefs (texts). Then the cheap limits: animated per-index and muted curves (L4), physics
-   settings (L5), topology extras, overrides, `.blend1` recovery (L14), history maximum 100,000 (L10),
-   incremental groups.
-6. Phase 2, Rust migration R2 to R6 as in section c, one agent on `native/` at a time.
-7. Phase 3, the P0 seam, then P1 and P2 (they fix D-b to D-d, D-f and D-a), then P3 to P8 and the generic
-   recorder (LIMITS-B section 6 and 7 give sizes and the test plan).
-8. Phase 4, Multires and Dyntopo.
-9. Throughout: optimisation rounds toward the target of 100, in the areas not yet covered (startup,
-   shutdown and idle cost, recording when nothing changed, Edit Mode steps, large scenes with 500 or more
-   objects, long histories of 50,000 steps, memory growth over long sessions, timelapse frames, weight and
-   shape key reads); clear the audit's dead code and the stale mutants; a beta per phase.
-10. At every merge: changed suites on bpy53 and bpy42 locally, with Rust required and off where relevant;
-    at every phase end the full suite on five versions plus `blender.yml`; update this file's test matrix
-    with what really ran. Nothing is marked done on an agent's word alone.
+1. Merge `main-session-4` (D119 to D134) once its full suite passes on 5.3 and 4.2; push; run
+   `Blender tests` and `Native engine` on GitHub.
+2. Measure the cost of D116 to D134 on an operator at 500 objects (`bench/ab.py --only dr_finish,dr_prime`
+   and the 500-material scene) on a quiet machine; log rounds in `OPTIMISATION_LOG.md`.
+3. Review and merge the Rust agent's M2, D-d and D-f; then M3 (native `History`).
+4. Texture paint per stroke (off by default), after D-f (same record-mode code).
+5. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
+   `docs/download/hindsight.zip`, push without `[skip ci]`.
+6. Multires (one step per Sculpt Mode visit) and Dyntopo (per stroke), behind one preference (Phase 4).
+7. More optimisation rounds toward the owner's 100 (37 logged).
