@@ -31,7 +31,9 @@ from hindsight.core.types import Entry                                        # 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORPUS = os.path.join(HERE, "fixtures", "step_corpus_base.zip")
 RNG = np.random.default_rng(5)
-SCRATCH = tempfile.mkdtemp(prefix="hs_fcrc_")      # one folder for the whole run, removed at the end
+SCRATCH = tempfile.mkdtemp(prefix="hs_fcrc_")      # one folder for the whole run, removed at exit (also on failure)
+import atexit, shutil                                # noqa: E402
+atexit.register(shutil.rmtree, SCRATCH, True)
 
 
 def test_crc32_equals_zlib():
