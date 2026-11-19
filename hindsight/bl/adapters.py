@@ -483,6 +483,71 @@ def _put(out: dict, key: str, what: str, fn, *args) -> None:
         out[key] = r
 
 
+# The parts of an object's record the depsgraph reports changes of (its settings, pose, bones,
+# animation, node groups, particle settings, its data's settings, shape and animation): kept per
+# object until the object or something it depends on changes (datarec.on_update calls
+# value_changed), an operator ends with it selected, or Hindsight writes it.
+_EXT_CACHE: dict = {}        # object session_uid -> values
+_EXT_DEPS: dict = {}         # session_uid of a datablock -> session_uids of the objects using it
+
+
+def _ext_part(idb) -> dict:
+    sid = idb.session_uid
+    e = _EXT_CACHE.get(sid)
+    if e is not None:
+        return e
+    e = {}
+    deps = []
+    groups = _part("node groups", owned_groups, idb)                        # D126
+    if groups and groups is not _FAILED:
+        e.update(groups)
+    deps += [g for g in groups_of(idb)] if groups is not _FAILED else []
+    _upd(e, "particle settings", owned_particles, idb)                      # D137
+    deps += [ps.settings for ps in getattr(idb, "particle_systems", ()) if ps.settings is not None]
+    _put(e, SETTINGS_KEY, "settings", settings_of, idb, _OBJ_SETTINGS_SKIP)  # D117
+    if idb.type == "ARMATURE":
+        _put(e, POSE_KEY, "pose", pose_values, idb)                          # D119
+        if idb.data is not None and idb.data.library is None and _owns_data(idb, idb.data):
+            _put(e, DATA_PREFIX + BONES, "bones", bones_of, idb.data)        # D129
+    _put(e, ANIM_KEY, "animation", anim_values, idb)                         # D120
+    ad = idb.animation_data
+    if ad is not None:
+        _upd(e, "the action", owned_action, idb)
+        if ad.action is not None:
+            deps.append(ad.action)
+    d = idb.data
+    if d is not None and d.library is None and _owns_data(idb, d):
+        deps.append(d)
+        nested = DATA_STRUCTS.get(d.bl_rna.identifier)
+        if nested is not None:
+            _put(e, DATA_PREFIX + DATA_VALUES, "the data's settings", settings_of, d, _DATA_SKIP, nested)
+            if idb.mode != "EDIT":
+                _put(e, DATA_PREFIX + GEOM, "the shape", geometry_of, d)      # D121, D131
+        # D125: always there (None without animation), so the first keyframe is a change
+        if hasattr(d, "animation_data"):
+            r = _part("the data's animation", anim_of, d)
+            for k, v in (r if r is not _FAILED else {}).items():
+                e[(DATA_PREFIX + k) if k == ANIM_KEY else k] = v
+            dad = getattr(d, "animation_data", None)
+            if dad is not None and dad.action is not None:
+                deps.append(dad.action)
+        key = getattr(d, "shape_keys", None)
+        if key is not None:
+            deps.append(key)
+            r = _part("the shape keys' animation", anim_of, key)
+            for k, v in (r if r is not _FAILED else {}).items():
+                e[(SK_PREFIX + k) if k == ANIM_KEY else k] = v
+            if key.animation_data is not None and key.animation_data.action is not None:
+                deps.append(key.animation_data.action)
+    for x in deps:
+        try:
+            _EXT_DEPS.setdefault(x.session_uid, set()).add(sid)
+        except Exception:
+            continue
+    _EXT_CACHE[sid] = e
+    return e
+
+
 class ObjectAdapter(Adapter):
     """Object data that isn't a plain property: the collections it is in, its view-layer hide state
     (the eye in the outliner) and its constraint stack."""
@@ -503,48 +568,36 @@ class ObjectAdapter(Adapter):
             out.update(mesh_lists(idb))        # D108: the lists the weights and shapes belong to
         if hasattr(idb, "modifiers"):
             out.update(modifier_values(idb))   # D110: the modifier stack and each modifier's settings
-        _upd(out, "node groups", owned_groups, idb)                         # D126
-        _upd(out, "particle settings", owned_particles, idb)                # D137
+        out.update(_ext_part(idb))             # D117 to D137: kept until a dependency changes
         if idb.data is not None and hasattr(idb.data, "materials"):
             if len(idb.material_slots):
-                out["slots"] = material_slots(idb)  # D111: material slots (which faces use them: a mesh channel)
-                _upd(out, "materials", owned_materials, idb)                # D112: settings, node trees
-            else:
-                out["slots"] = [int(idb.active_material_index)]   # what material_slots gives for none
+                hit = _OBMAT_CACHE.get(idb.session_uid)
+                if hit is None:
+                    r = _part("materials", owned_materials, idb)
+                    r = r if r is not _FAILED else None
+                    hit = (material_slots(idb), r, _owned_refs(idb, r))          # D111, D112
+                    _OBMAT_CACHE[idb.session_uid] = hit
+                out["slots"] = hit[0]
+                if hit[1]:
+                    out.update(hit[1])
+                    _upd(out, "material properties", material_props, hit[2])
+            else:                               # what material_slots gives for none (shared: never changed)
+                i = int(idb.active_material_index)
+                out["slots"] = _NO_SLOTS.get(i) or _NO_SLOTS.setdefault(i, [i])
+        # custom properties are read every time: ob["name"] = value doesn't tell the depsgraph
         _upd(out, "custom properties", id_props, idb,
              animated_paths(idb) if idb.animation_data is not None else None)   # D114
-        _put(out, SETTINGS_KEY, "settings", settings_of, idb, _OBJ_SETTINGS_SKIP)   # D117
-        if idb.type == "ARMATURE":
-            _put(out, POSE_KEY, "pose", pose_values, idb)                    # D119
-            if idb.data is not None and idb.data.library is None and _owns_data(idb, idb.data):
-                _put(out, DATA_PREFIX + BONES, "bones", bones_of, idb.data)  # D129
-        _put(out, ANIM_KEY, "animation", anim_values, idb)                   # D120
-        if idb.animation_data is not None:
-            _upd(out, "the action", owned_action, idb)
         d = idb.data
         if d is not None and d.library is None and _owns_data(idb, d):
             props = _part("the data's custom properties", id_props, d,
                           animated_paths(d) if getattr(d, "animation_data", None) is not None else None)
             for k, v in (props if props is not _FAILED else {}).items():
                 out[DATA_PREFIX + k] = v      # the mesh's (curve's, light's, ...) own, with its owner
-            nested = DATA_STRUCTS.get(d.bl_rna.identifier)
-            if nested is not None:
-                _put(out, DATA_PREFIX + DATA_VALUES, "the data's settings", settings_of, d, _DATA_SKIP, nested)
-                if idb.mode != "EDIT":
-                    _put(out, DATA_PREFIX + GEOM, "the shape", geometry_of, d)      # D121, D131
-            # D125: always there (None without animation), so the first keyframe is a change
-            if hasattr(d, "animation_data"):
-                r = _part("the data's animation", anim_of, d)
-                for k, v in (r if r is not _FAILED else {}).items():
-                    out[(DATA_PREFIX + k) if k == ANIM_KEY else k] = v
-            key = getattr(d, "shape_keys", None)
-            if key is not None:
-                r = _part("the shape keys' animation", anim_of, key)
-                for k, v in (r if r is not _FAILED else {}).items():
-                    out[(SK_PREFIX + k) if k == ANIM_KEY else k] = v
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
+        _OBMAT_CACHE.pop(idb.session_uid, None)
+        _EXT_CACHE.pop(idb.session_uid, None)
         for path, v in values.items():          # D126: node groups before the modifiers using them
             if path.startswith(NG_PREFIX) and isinstance(v, dict):
                 write_group(path[len(NG_PREFIX):], v)
@@ -663,6 +716,9 @@ def material_changed(idb) -> str | None:
 
 
 def forget_materials() -> None:
+    _EXT_CACHE.clear()
+    _EXT_DEPS.clear()
+    _OBMAT_CACHE.clear()
     _BONES_CACHE.clear()
     _MAT_GROUPS.clear()
     _VAL_CACHE.clear()
@@ -879,15 +935,42 @@ def owned_materials(ob) -> dict:
         if mu:
             try:
                 out[MAT_PREFIX + mu] = material_record(m, uid)
-                # D114: its custom properties and add-on data, read every time (setting one with
-                # m["name"] = value doesn't tell the depsgraph, so the kept record can't hold them)
-                out[MATP_PREFIX + mu] = id_props(m, animated_paths(m) if m.animation_data is not None else None)
-                nt = getattr(m, "node_tree", None)
-                if nt is not None:                                        # D125: keyed node values
-                    for k, v in anim_of(nt).items():
-                        out[(MATA_PREFIX + mu + "|" + k) if k == ANIM_KEY else k] = v
             except Exception:
                 continue
+    return out
+
+
+# D117 style: an object's material part (slots, owned material records) is kept until the depsgraph
+# reports the object changed (a slot or its material changing tags it) or an operator ends with it
+# selected; what the depsgraph doesn't see is read every time (material_props)
+_OBMAT_CACHE: dict = {}      # object session_uid -> (slots, {MAT_PREFIX + id: record})
+
+
+def _owned_refs(ob, owned) -> list:
+    """[(material id, material)] for the owned records (kept with them: no search every time)."""
+    if not owned:
+        return []
+    by_id = {}
+    for sl in ob.material_slots:
+        m = sl.material
+        if m is not None:
+            u = idmap.uid_of(m)
+            if u is not None:
+                by_id[u] = m
+    return [(k[len(MAT_PREFIX):], by_id[k[len(MAT_PREFIX):]]) for k in owned
+            if k[len(MAT_PREFIX):] in by_id]
+
+
+def material_props(refs) -> dict:
+    """D114/D125: the owned materials' custom properties and add-on data, and their node trees'
+    animation, read every time (setting m["name"] = value doesn't tell the depsgraph)."""
+    out = {}
+    for mu, m in refs:
+        out[MATP_PREFIX + mu] = id_props(m, animated_paths(m) if m.animation_data is not None else None)
+        nt = getattr(m, "node_tree", None)
+        if nt is not None:
+            for k, v in anim_of(nt).items():
+                out[(MATA_PREFIX + mu + "|" + k) if k == ANIM_KEY else k] = v
     return out
 
 
@@ -1015,6 +1098,7 @@ def write_material(muid: str, rec: dict) -> None:
     if m is None:
         return
     _MAT_CACHE.pop(m.session_uid, None)
+    _OBMAT_CACHE.clear()
     try:
         set_struct_values(m, rec.get("values") or {})
         tree = rec.get("tree")
@@ -1818,6 +1902,8 @@ def forget_selected_values() -> None:
     for o in obs:
         try:
             _VAL_CACHE.pop(o.session_uid, None)
+            _OBMAT_CACHE.pop(o.session_uid, None)
+            _EXT_CACHE.pop(o.session_uid, None)
             if o.data is not None:
                 _VAL_CACHE.pop(o.data.session_uid, None)
                 _GEOM_CACHE.pop(o.data.session_uid, None)
@@ -1856,6 +1942,12 @@ def value_changed(idb) -> None:
         _ACT_CACHE.pop(idb.session_uid, None)
         _GEOM_CACHE.pop(idb.session_uid, None)
         _BONES_CACHE.pop(idb.session_uid, None)
+        _OBMAT_CACHE.pop(idb.session_uid, None)
+        _EXT_CACHE.pop(idb.session_uid, None)
+        for o in _EXT_DEPS.pop(idb.session_uid, ()):
+            _EXT_CACHE.pop(o, None)
+        if isinstance(idb, (bpy.types.Material, bpy.types.NodeTree)) and _OBMAT_CACHE:
+            _OBMAT_CACHE.clear()        # its users' records are read again (cheap: records are kept)
     except Exception:
         pass
 
@@ -2586,9 +2678,15 @@ SK_PREFIX = "sk."               # the shape keys' own (their animation)
 MATA_PREFIX = "@mata:"          # a recorded material's node tree animation: "@mata:<material id>|<key>"
 
 
+_NO_ANIM = {"anim": None}
+_NO_SLOTS: dict = {}            # active index -> [index], the slots value of an object without slots
+
+
 def anim_of(x) -> dict:
     """{ANIM_KEY: how x plays its animation} and, when x is the only user of its action, the action
     (D120 for data other than objects)."""
+    if x.animation_data is None:
+        return _NO_ANIM
     out = {ANIM_KEY: anim_values(x)}
     ad = x.animation_data
     if ad is not None and ad.action is not None and ad.action.library is None:
@@ -2737,19 +2835,27 @@ def _mark_animated(d: dict, anim) -> None:
             d[k] = ANIMATED
 
 
+_NONE = {}                       # a shared empty group: never changed, so a value that is the same
+                                 # object on both sides of a compare is skipped (datarec._same_values)
+_ID_EMPTY4 = {IDPROPS_KEY: _NONE}
+_ID_EMPTY5 = {IDPROPS_KEY: _NONE, SYSPROPS_KEY: _NONE}
+
+
 def id_props(idb, anim=None) -> dict:
     """{IDPROPS_KEY: the datablock's own ID properties, SYSPROPS_KEY: Blender 5's add-on group}. Both
     are always there (empty when nothing is set): a value that disappears would read as a kind that
     isn't recorded, not as properties taken off."""
-    own = _group_json(idb)
+    own = _group_json(idb) or _NONE
+    five = hasattr(idb, "bl_system_properties_get")
+    sysd = (_group_json(_sys_group(idb)) or _NONE) if five else None
+    if own is _NONE and not sysd:
+        return _ID_EMPTY5 if five else _ID_EMPTY4
     out = {IDPROPS_KEY: own}
-    if hasattr(idb, "bl_system_properties_get"):
-        sysd = _group_json(_sys_group(idb))
+    if five:
         out[SYSPROPS_KEY] = sysd
-    else:
-        sysd = None
     if anim:
-        _mark_animated(own, anim)
+        if own is not _NONE:
+            _mark_animated(own, anim)
         if sysd:
             _mark_animated(sysd, anim)
     return out
@@ -3294,8 +3400,8 @@ def owned_world(sc) -> dict:
     if not wu:
         return {}
     out = {WORLD_PREFIX + wu: material_record(w, idmap.uid_of(sc))}
-    p = id_props(w, animated_paths(w) if w.animation_data is not None else None)
-    p["anim"] = anim_of(w)                                           # D125
+    p = dict(id_props(w, animated_paths(w) if w.animation_data is not None else None))   # (a copy: id_props
+    p["anim"] = anim_of(w)                                           # D125     can give a shared constant)
     if getattr(w, "node_tree", None) is not None:
         p["tree_anim"] = anim_of(w.node_tree)
     out[WORLDP_PREFIX + wu] = p

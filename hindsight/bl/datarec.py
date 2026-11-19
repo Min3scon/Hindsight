@@ -622,13 +622,8 @@ def _same_values(old: dict, new: dict) -> bool:
         # a value that is the same object on both sides (kept records: a material's until the
         # material changes, D112; settings until their datablock changes, D117) is the same value:
         # only the others are compared
-        a, b = {}, {}
-        for k, v in new.items():
-            o = old[k]
-            if o is not v:
-                a[k] = o
-                b[k] = v
-        return marshal.dumps(a, 2) == marshal.dumps(b, 2)
+        ks = [k for k, v in new.items() if old[k] is not v]
+        return marshal.dumps([old[k] for k in ks], 2) == marshal.dumps([new[k] for k in ks], 2)
     except Exception:
         return False
 
