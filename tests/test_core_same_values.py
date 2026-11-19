@@ -167,7 +167,11 @@ def test_hypothesis():
     except ImportError:
         print("SKIP test_hypothesis: hypothesis not installed (test_random_pairs checks the same rule)")
         return
-    leaf = hs.none() | hs.booleans() | hs.integers() | hs.floats(allow_nan=True, allow_infinity=True) | hs.text(max_size=8)
+    # The Blender program runs with denormals flushed to zero (its CPU mode, as test_bl_t1_prop notes); hypothesis then
+    # refuses to make subnormal floats. Where they exist (the bpy module) they are drawn; test_cases has some from their bits.
+    sub = float.fromhex('0x1p-1060') * float.fromhex('0x1p-10') > 0.0   # False when flushed to zero
+    leaf = (hs.none() | hs.booleans() | hs.integers() | hs.floats(allow_nan=True, allow_infinity=True, allow_subnormal=sub)
+            | hs.text(max_size=8))
     value = hs.recursive(leaf, lambda ch: hs.lists(ch, max_size=4) | hs.tuples(ch, ch)
                          | hs.dictionaries(hs.text(max_size=4) | hs.integers(-3, 3), ch, max_size=4), max_leaves=30)
 
@@ -203,6 +207,11 @@ def test_cases():
     assert S(0.0, F64.unpack(F64.pack(0.0))[0]) and not S(0.0, -0.0) and not S([0.0], [-0.0])
     assert S(nan(7), nan(7)) and not S(nan(7), nan(8)) and not S(nan(0), -nan(0)) and not S(float("nan"), 0.0)
     assert S(float("inf"), float("inf")) and not S(float("inf"), float("-inf"))
+    # subnormals, made from their bits (so also where the process flushes them to zero in arithmetic): by bits
+    sub1, sub2 = (struct.unpack("<d", struct.pack("<Q", b))[0] for b in (1, 2))
+    msub = struct.unpack("<d", struct.pack("<Q", (1 << 63) | 1))[0]
+    assert S(sub1, sub1) and S([sub2], [struct.unpack("<d", struct.pack("<Q", 2))[0]])
+    assert not S(sub1, sub2) and not S(sub1, 0.0) and not S(sub1, msub) and not S({"a": sub1}, {"a": 0.0})
     assert S(0.1 + 0.2, 0.30000000000000004) and not S(0.1 + 0.2, 0.3)
     # subclasses and other types are another type: False even when equal
     assert not S(MyInt(3), 3) and not S(MyInt(3), MyInt(3)) and not S(MyStr("a"), MyStr("a")) and not S(MyStr("a"), "a")
