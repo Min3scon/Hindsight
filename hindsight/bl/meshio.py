@@ -146,15 +146,43 @@ def _set_ints(me, name: str, domain: str, dtype: str, count: int, arr, legacy, l
         legacy.foreach_set(legacy_prop, arr)
 
 
+def _face_offsets(me, n_faces: int, n_corners: int) -> np.ndarray:
+    """Where each face's corners start, and the corner count last (n_faces + 1 ints). R077: from Blender's
+    triangles (a face of n corners is n - 2 triangles, whatever its shape), counted per face and summed:
+    `me.polygons.foreach_get("loop_start")` goes through RNA face by face (19 to 25 ms at 1M faces, 10 to 13
+    through the triangles, which Blender usually has already). Never `calc_loop_triangles()`: forcing them
+    again changed what a later operator did on Blender 4.2 (the T0 gate); reading them only builds Blender's
+    own cache when it has none. The sizes must add up to the corner count, or the faces are read one by
+    one as before: the result is the same array."""
+    out = np.empty(n_faces + 1, np.int32)
+    out[-1] = n_corners
+    if not n_faces:
+        return out
+    try:
+        ltp = me.loop_triangle_polygons
+        if not len(ltp):
+            raise ValueError("no triangles")
+        tp = np.empty(len(ltp), np.int32)
+        ltp.foreach_get("value", tp)
+        if len(tp) and (int(tp.min()) < 0 or int(tp.max()) >= n_faces):
+            raise ValueError("triangle of no face")
+        sizes = np.bincount(tp, minlength=n_faces) + 2
+        if int(sizes.sum()) != n_corners:
+            raise ValueError("face sizes don't add up")
+        out[0] = 0
+        np.cumsum(sizes[:-1], out=out[1:-1])
+        return out
+    except Exception:
+        me.polygons.foreach_get("loop_start", out[:-1])
+        return out
+
+
 def _topology_readers(me, c: dict) -> dict:
     def ev():
         return _edge_verts(me, c["EDGE"])
 
     def fo():
-        out = np.empty(c["FACE"] + 1, np.int32)
-        me.polygons.foreach_get("loop_start", out[:-1])
-        out[-1] = c["CORNER"]
-        return out
+        return _face_offsets(me, c["FACE"], c["CORNER"])
     return {EDGE_VERTS_KEY: ev,
             CORNER_VERT_KEY: lambda: _corner_ints(me, ".corner_vert", "vertex_index", c["CORNER"]),
             CORNER_EDGE_KEY: lambda: _corner_ints(me, ".corner_edge", "edge_index", c["CORNER"]),

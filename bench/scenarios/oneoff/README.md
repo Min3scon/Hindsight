@@ -36,3 +36,5 @@ strokes without recording them.
 operator's end timed (`AB {...}` line).
 
 `stretch_ab.py CODE_ROOT` (R076): Movie Mode's stretch estimate (`camrig._stretch`) for a 1M grid with Simple Deform.
+
+`fp_ab.py CODE_ROOT` (R077): a 1M grid's mesh fingerprint (first and repeated) and `meshio.read_snapshot`.
