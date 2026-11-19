@@ -1334,6 +1334,10 @@ def settings_of(idb, skip, nested=()) -> dict:
         return v
     anim = animated_paths(idb) if getattr(idb, "animation_data", None) is not None else ()
     v = struct_values(idb, _skip_with_runtime(idb, skip))
+    if v.get("use_auto_texspace"):
+        # worked out from the geometry while auto is on: not a setting then (it changed with every edit)
+        v.pop("texspace_location", None)
+        v.pop("texspace_size", None)
     for p in anim:                      # (an ID has no path_from_id: struct_values can't mark these)
         if p in v:
             v[p] = ANIMATED
