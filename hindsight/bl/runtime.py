@@ -1723,6 +1723,15 @@ def _pos_index(groups):
     return _GROUPS["pidx"]
 
 
+def _plan_index(groups):
+    """globaltl.plan_index of the kept groups (R059), built once per version of them."""
+    if _GROUPS.get("groups") is not groups:
+        return None
+    if _GROUPS.get("plan_ver") != _GROUPS.get("ver"):
+        _GROUPS.update(plan=globaltl.plan_index(groups), plan_ver=_GROUPS.get("ver"))
+    return _GROUPS["plan"]
+
+
 def _gpos(vis, groups) -> int:
     return globaltl.global_position(_REG, vis, groups, _pos_index(groups))
 
@@ -1747,7 +1756,7 @@ def global_goto(context, g: int, final: bool = True) -> None:
     # the whole scene before the jump (objects it brings back or removes must not count on the wrong
     # side), for Blender's undo of a final jump only: R057, a drag doesn't read it at every event
     pre = _recorded_values() if final and not IN_HANDLER[0] else None
-    for hid, cur in globaltl.transition(_REG, g, vis, groups):
+    for hid, cur in globaltl.transition(_REG, g, vis, groups, _plan_index(groups)):
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
             _goto_history(h, cur, final, acc)
