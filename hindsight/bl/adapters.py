@@ -498,6 +498,10 @@ class ObjectAdapter(Adapter):
             nested = DATA_STRUCTS.get(d.bl_rna.identifier)
             if nested is not None:
                 out[DATA_PREFIX + DATA_VALUES] = settings_of(d, _DATA_SKIP, nested)   # D117
+                if idb.mode != "EDIT":
+                    geo = geometry_of(d)                                            # D121
+                    if geo is not None:
+                        out[DATA_PREFIX + GEOM] = geo
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -547,6 +551,8 @@ class ObjectAdapter(Adapter):
             write_id_props(idb.data, dv)
             if DATA_VALUES in dv and dv[DATA_VALUES] is not MISSING:
                 write_settings(idb.data, dv[DATA_VALUES], DATA_STRUCTS.get(idb.data.bl_rna.identifier) or ())
+            if GEOM in dv and dv[GEOM] is not MISSING and idb.mode != "EDIT":
+                write_geometry(idb.data, dv[GEOM])          # after the settings (lattice resolution)
         if SETTINGS_KEY in values and values[SETTINGS_KEY] is not MISSING:
             write_settings(idb, values[SETTINGS_KEY])
         for path, v in values.items():          # D120: the actions, then which one it plays
@@ -597,6 +603,7 @@ def material_changed(idb) -> str | None:
 
 def forget_materials() -> None:
     _VAL_CACHE.clear()
+    _GEOM_CACHE.clear()
     _ACT_CACHE.clear()
     _MAT_CACHE.clear()
     _MAT_OWNER_OF.clear()
@@ -1365,7 +1372,7 @@ _DATA_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {
 # data types whose settings are recorded, with the settings structs they keep apart
 DATA_STRUCTS = {"Mesh": (), "Camera": ("dof", "stereo"), "SpotLight": (), "PointLight": (), "SunLight": (),
                 "AreaLight": (), "Curve": (), "TextCurve": (), "SurfaceCurve": (), "MetaBall": (),
-                "Speaker": (), "Armature": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
+                "Speaker": (), "Armature": (), "Lattice": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
                 "LightProbeVolume": ()}
 SETTINGS_KEY = "settings"
 DATA_VALUES = "values"
@@ -1390,6 +1397,7 @@ def forget_selected_values() -> None:
             _VAL_CACHE.pop(o.session_uid, None)
             if o.data is not None:
                 _VAL_CACHE.pop(o.data.session_uid, None)
+                _GEOM_CACHE.pop(o.data.session_uid, None)
             ad = o.animation_data
             if ad is not None and ad.action is not None:
                 _ACT_CACHE.pop(ad.action.session_uid, None)
@@ -1401,6 +1409,7 @@ def value_changed(idb) -> None:
     try:
         _VAL_CACHE.pop(idb.session_uid, None)
         _ACT_CACHE.pop(idb.session_uid, None)
+        _GEOM_CACHE.pop(idb.session_uid, None)
     except Exception:
         pass
 
@@ -1762,6 +1771,114 @@ def write_anim(ob, want) -> None:
             _write_nla(ad, want.get("nla") or [])
     except Exception as e:
         log.error_once(("anim", str(e)), f"could not restore which animation {ob.name} plays: {e}", e)
+
+
+# ----------------------------------------------------------------------------- geometry of other types (D121)
+# Curve and surface splines with their points, lattice points and metaball elements: editable in
+# Object Mode, so recorded like settings (kept until the depsgraph reports the data changed). Changes
+# made in Edit Mode reach the data when Edit Mode ends, and are recorded then.
+GEOM = "geom"
+_GEOM_CACHE: dict = {}         # data session_uid -> recorded geometry
+_SPLINE_SKIP = frozenset(_UI_PROPS | {"hide"})
+_BEZ_3 = ("co", "handle_left", "handle_right")
+_BEZ_INT = ("handle_left_type", "handle_right_type")
+_PT_1 = ("radius", "tilt", "weight_softbody")
+_MB_SKIP = frozenset(_UI_PROPS | {"select", "hide"})
+
+
+def _bulk(coll, field, n, width=1, kind=float):
+    buf = [kind(0)] * (n * width)
+    if n:
+        coll.foreach_get(field, buf)
+    return buf
+
+
+def geometry_of(d):
+    """The geometry of curve, surface, lattice and metaball data, or None for other data."""
+    t = d.bl_rna.identifier
+    if t not in ("Curve", "SurfaceCurve", "Lattice", "MetaBall"):
+        return None
+    k = d.session_uid
+    g = _GEOM_CACHE.get(k)
+    if g is not None:
+        return g
+    if t == "Lattice":
+        n = len(d.points)
+        g = {"co_deform": _bulk(d.points, "co_deform", n, 3), "weight_softbody": _bulk(d.points, "weight_softbody", n)}
+    elif t == "MetaBall":
+        g = {"elements": [struct_values(e, _MB_SKIP) for e in d.elements]}
+    else:
+        rows = []
+        for sp in d.splines:
+            r = {"values": struct_values(sp, _SPLINE_SKIP)}
+            if sp.type == "BEZIER":
+                pts = sp.bezier_points
+                n = len(pts)
+                for f in _BEZ_3:
+                    r[f] = _bulk(pts, f, n, 3)
+                for f in _BEZ_INT:
+                    r[f] = _bulk(pts, f, n, 1, int)
+            else:
+                pts = sp.points
+                n = len(pts)
+                r["co"] = _bulk(pts, "co", n, 4)
+                r["weight"] = _bulk(pts, "weight", n)
+            for f in _PT_1:
+                r[f] = _bulk(pts, f, n)
+            r["n"] = n
+            rows.append(r)
+        g = {"splines": rows}
+    _GEOM_CACHE[k] = g
+    return g
+
+
+def write_geometry(d, g) -> None:
+    if not isinstance(g, dict):
+        return
+    _GEOM_CACHE.pop(d.session_uid, None)
+    t = d.bl_rna.identifier
+    try:
+        if t == "Lattice":
+            if len(d.points) * 3 == len(g.get("co_deform") or ()):
+                d.points.foreach_set("co_deform", g["co_deform"])
+                d.points.foreach_set("weight_softbody", g["weight_softbody"])
+                d.update_tag()
+        elif t == "MetaBall":
+            want = g.get("elements") or []
+            if [e.type for e in d.elements] != [w.get("type") for w in want]:
+                d.elements.clear()
+                for w in want:
+                    d.elements.new(type=w.get("type", "BALL"))
+            for e, w in zip(d.elements, want):
+                set_struct_values(e, w)
+        elif t in ("Curve", "SurfaceCurve"):
+            want = g.get("splines") or []
+            same = [(sp.type, len(sp.bezier_points) if sp.type == "BEZIER" else len(sp.points)) for sp in d.splines] \
+                == [(w["values"].get("type"), w["n"]) for w in want]
+            if not same:
+                d.splines.clear()
+                for w in want:
+                    sp = d.splines.new(w["values"].get("type", "POLY"))
+                    pts = sp.bezier_points if sp.type == "BEZIER" else sp.points
+                    if w["n"] > len(pts):
+                        pts.add(w["n"] - len(pts))
+            for sp, w in zip(d.splines, want):
+                set_struct_values(sp, {k: x for k, x in w["values"].items() if k != "type"})
+                if sp.type == "BEZIER":
+                    pts = sp.bezier_points
+                    for f in _BEZ_INT:          # handle types first: setting one moves the handles
+                        pts.foreach_set(f, w[f])
+                    for f in _BEZ_3:
+                        pts.foreach_set(f, w[f])
+                else:
+                    pts = sp.points
+                    pts.foreach_set("co", w["co"])
+                    pts.foreach_set("weight", w["weight"])
+                for f in _PT_1:
+                    pts.foreach_set(f, w[f])
+            d.update_tag()
+    except Exception as e:
+        log.error_once(("geometry", str(e)), f"could not restore the shape of {d.name}: {e}", e)
 
 
 def owned_path(adapter_id: str, path: str) -> bool:
