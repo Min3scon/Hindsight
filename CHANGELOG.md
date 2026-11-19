@@ -59,6 +59,10 @@ Faster and lighter:
 
 Fixed:
 
+- Record everything: an object hidden, shown again and then deleted came back hidden when you went back over the delete. It comes back as it was.
+- Record everything: dragging a value in a panel (an add-on's slider too) is one step, even when the viewport redraws slowly or right after another operation.
+- Record everything records keys and drivers on the inputs inside a node group.
+- The Movie Mode panel no longer cuts its labels at the sidebar's usual width.
 - An animated object deleted and brought back by the global history keeps its animation.
 - If one part of what an object records can't be read, only that part is left out; the rest of the object, and every other object, is still recorded.
 - With Record everything, a keyed or driven shape key no longer makes a step every time the frame changes.
