@@ -683,6 +683,16 @@ def _diff(old: dict, new: dict) -> dict:
     return out
 
 
+def _data_diff(old: dict, new: dict) -> dict:
+    """_diff without the values that only come and go with ownership (see _owner_moves): after
+    Blender's undo another object can own a shared mesh than when the history was made."""
+    out = _diff(old, new)
+    for k in [k for k, (a, b) in out.items()
+              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+        del out[k]
+    return out
+
+
 def _owner_moves(st, changes: dict) -> None:
     """Values an object records for data it owns (its mesh's properties, the materials it records)
     come and go with the ownership: another user deleted, a material put in a slot. That isn't a change
@@ -1065,7 +1075,7 @@ def _jump_matches(j, seen: dict) -> bool:
     want = j["vb"] if back else j["va"]
     if not want and not j["meshes"]:
         return False
-    if not all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
+    if not all(uid in seen and not _data_diff(vals, seen[uid]) for uid, vals in want.items()):
         return False
     # a datablock that exists on the other side of the jump only (brought back or removed by it)
     # must not exist now
@@ -1124,7 +1134,7 @@ def _on_undo(direction: str):
             # deep: an undone Edit Mode step can change the edges alone (Sort Mesh Elements)
             mesh_step = rt._observe(idb, st, True, "Undo", "OBJECT", deep=True)
             rt._NATIVE_PENDING.discard(uid)
-        diff = _diff(st.values, vals)
+        diff = _data_diff(st.values, vals)
         if (diff or mesh_step is not None) and h is not None and h.uid not in moved:
             # the direction Blender went first: after a step that returned to an earlier state,
             # both neighbours can match
