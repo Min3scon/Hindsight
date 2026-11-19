@@ -105,10 +105,39 @@ def registry_to_bytes(reg, codec: str = "auto") -> bytes:
     return b"".join(registry_parts(reg, codec))
 
 
+# R066: the raw steps a save has to encode (the newest of each history are kept unpacked) are encoded on
+# a few threads when there is much to encode: the engine packs and compresses without the GIL, so four
+# threads take about a third of the time of one (64 strokes of a 1M mesh: about 50 ms on one).
+_ENCODE_THREADS = min(4, os.cpu_count() or 1)
+_PAR_MIN_BYTES = 4 << 20        # raw bytes to encode before threads pay
+ENCODED_ON_THREADS = [0]        # tests: raw steps the last save encoded on threads
+
+
+def _encode_raw(hists, codec: str) -> dict:
+    """{id(entry): (bytes, crc)} of the raw steps, encoded on threads; {} when one thread is the better
+    choice (then registry_parts encodes them in place, as it always did). The bytes are the same."""
+    ENCODED_ON_THREADS[0] = 0
+    if _ENCODE_THREADS < 2:
+        return {}
+    raw = [e for h in hists for e in h.entries if e.step is not None]
+    if len(raw) < 2 or sum(e.nbytes() for e in raw) < _PAR_MIN_BYTES:
+        return {}
+    from concurrent.futures import ThreadPoolExecutor
+
+    def enc(e):
+        b = e.to_bytes(codec, 0)
+        return b, crc32(b) & 0xFFFFFFFF
+    with ThreadPoolExecutor(max_workers=min(_ENCODE_THREADS, len(raw))) as pool:
+        done = list(pool.map(enc, raw))
+    ENCODED_ON_THREADS[0] = len(raw)
+    return {id(e): r for e, r in zip(raw, done)}
+
+
 def registry_parts(reg, codec: str = "auto") -> list:
     """The registry blob as a list of buffers (the step blobs themselves, not copies): written to a
     file one after another, the history is never held twice while saving."""
     hists = list(reg.histories.values())
+    pre = _encode_raw(hists, codec)
     blobs = []
     hjson = []
     for h in hists:
@@ -117,8 +146,12 @@ def registry_parts(reg, codec: str = "auto") -> list:
         for e in h.entries:
             b, crc = e.blob_crc()               # R046: packed steps carry their CRC-32
             if b is None:
-                b = e.to_bytes(codec, 0)        # raw steps: the quick form (main thread)
-                crc = crc32(b) & 0xFFFFFFFF
+                hit = pre.get(id(e))
+                if hit is not None:
+                    b, crc = hit
+                else:
+                    b = e.to_bytes(codec, 0)    # raw steps: the quick form (main thread)
+                    crc = crc32(b) & 0xFFFFFFFF
             blobs.append(b)
             crcs.append(crc)
             metas.append(_meta_for_json(e.meta))

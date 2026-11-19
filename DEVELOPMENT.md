@@ -320,7 +320,7 @@ Other limits of the verification:
 
 ## f. Benchmarks
 
-- Measured rounds: `OPTIMISATION_LOG.md` (63 rows: 54 kept, 9 reverted). The target is at
+- Measured rounds: `OPTIMISATION_LOG.md` (65 rows: 56 kept, 9 reverted). The target is at
   least 100 rounds; the log is the only count.
 - Earlier prose and tables: `PERF_LOG.md` (compression format 3, tier 1 budgets, memory and the Rust
   question, Movie Mode playback, Rust engine, redraw cost, saving and the re-packer).
@@ -419,5 +419,5 @@ Blockers:
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (63 logged: 54 kept, 9 reverted; R060 on a branch). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; a native parse of the step table is the next step there).
+6. More optimisation rounds toward the owner's 100 (65 logged: 56 kept, 9 reverted; R060 on a branch). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; a native parse of the step table is the next step there).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.

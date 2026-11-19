@@ -9,3 +9,6 @@ with the median save and open times, the .blend size and the memory peak while s
 `replay_ab.py CODE_ROOT [N]` (R064): crash recovery of N (3,000) unsaved strokes at 100k vertices; prints one
 `AB {...}` line with the open time, how much the process grew over the open, the history's size and how many
 of its steps are decoded.
+
+`rawsave_ab.py CODE_ROOT VERTICES` (R066): what a save spends building the history it writes
+(`persist.registry_parts`) with the newest 64 steps of a mesh still unpacked; prints one `AB {...}` line.
