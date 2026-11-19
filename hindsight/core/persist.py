@@ -29,7 +29,6 @@ in ``reg.load_report``.
 """
 from __future__ import annotations
 
-import binascii
 import json
 import os
 import struct
@@ -159,43 +158,10 @@ def registry_parts(reg, codec: str = "auto") -> list:
     return parts
 
 
-_B64_CHUNK = 3 << 16     # bytes encoded per call (a multiple of 3, so the pieces join up exactly)
-
-
-def parts_to_b64(parts) -> str:
-    """base64 of the buffers in `parts` joined, as ASCII text: exactly
-    ``base64.b64encode(b"".join(parts)).decode("ascii")``, but the joined bytes and a second full-size
-    encoded copy are never made. The text is written piece by piece into one buffer of its final size
-    and decoded once, so the peak is the encoded size twice instead of the history plus that twice."""
-    total = sum(memoryview(p).nbytes for p in parts)
-    out = bytearray(4 * ((total + 2) // 3))
-    o = 0
-    head = b""                  # up to 2 bytes left over from the previous buffer
-    enc = binascii.b2a_base64
-    for p in parts:
-        mv = memoryview(p).cast("B")
-        if head:
-            need = 3 - len(head)
-            if len(mv) < need:
-                head += bytes(mv)
-                continue
-            e = enc(head + bytes(mv[:need]), newline=False)
-            out[o:o + 4] = e
-            o += 4
-            mv = mv[need:]
-        n = len(mv) - len(mv) % 3
-        for i in range(0, n, _B64_CHUNK):
-            e = enc(mv[i:min(i + _B64_CHUNK, n)], newline=False)
-            out[o:o + len(e)] = e
-            o += len(e)
-        head = bytes(mv[n:])
-    if head:
-        e = enc(head, newline=False)
-        out[o:o + len(e)] = e
-        o += len(e)
-    if o != len(out):           # never: the size is exact
-        raise AssertionError("base64 size mismatch")
-    return out.decode("ascii")
+def parts_to_bytes(parts) -> bytes:
+    """The buffers in `parts` joined: the history as the .blend stores it (R061; earlier builds stored its
+    base64 as text). One allocation of the final size."""
+    return b"".join(parts)
 
 
 class _FileBytes:

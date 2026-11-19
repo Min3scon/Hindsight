@@ -320,7 +320,7 @@ Other limits of the verification:
 
 ## f. Benchmarks
 
-- Measured rounds: `OPTIMISATION_LOG.md` (31 rows: 26 kept, 4 reverted, 1 not merged). The target is at
+- Measured rounds: `OPTIMISATION_LOG.md` (60 rows: 53 kept, 7 reverted). The target is at
   least 100 rounds; the log is the only count.
 - Earlier prose and tables: `PERF_LOG.md` (compression format 3, tier 1 budgets, memory and the Rust
   question, Movie Mode playback, Rust engine, redraw cost, saving and the re-packer).
@@ -406,12 +406,12 @@ Blockers:
   whose setup script runs it do not exist (creating one needs the owner's approval prompt).
 - The Rust interface design does not exist (R2 and later wait for it).
 - Items that need the P0 seam first: D-b, D-c, D-d, D-f and all of Phase 3.
-- Dropping the embedded history text after a save would free about 69 MB at 6,000 steps but would leave
-  autosaves without a history: an owner decision, not made.
+- Dropping the embedded history after a save would free about 52 MB at 6,000 steps (since R061 the bytes, not
+  base64 text) but would leave autosaves without a history: an owner decision, not made.
 
 ## i. Next actions, in priority order
 
-1. Push main-session-3 (R059, D153 and the dyntopo_paused scenario on top of 8ed62b3, which is green on GitHub: Blender tests 44507055217, Native engine 44507061544) after its full suites, and run both workflows again. The RUST agent works on R060 (mesh fingerprints as xxh3-128 in the engine with tagged values); review and merge.
+1. main-session-3 up to ee5ba67 (R059, D153, dyntopo_paused) is merged and pushed as a054125 after full suites on 5.3 and 4.2 (108/110 each, only the two sandbox-only files); Blender tests 44517505569 and Native engine 44517510460 run on it. R061 (Embed stores the history as bytes in `hindsight_data_bin`, base64 `hindsight_data` still read) is next: push it after its tests, then run both workflows. The RUST agent works on R060 (mesh fingerprints as xxh3-128 in the engine with tagged values); review and merge.
 2. The recorder's remaining overhead at 500 objects: `id_props`, `idmap.claim` and constraints are the next fixed
    costs (R044 profile); each needs a depsgraph or fingerprint check before any cache.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
@@ -419,5 +419,5 @@ Blockers:
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (59 logged: 52 kept, 7 reverted).
+6. More optimisation rounds toward the owner's 100 (60 logged: 53 kept, 7 reverted; R060 on a branch). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.

@@ -64,7 +64,8 @@ def roundtrip(mode):
     text = bpy.data.texts.get(persistence.TEXT_NAME)
     assert text is not None and text.use_fake_user
     assert bool(text.get("sidecar")) == (mode in ("SIDECAR", "BOTH"))
-    assert ("hindsight_data" in text) == (mode in ("EMBED", "BOTH"))
+    assert ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
+    assert "hindsight_data" not in text           # R061: the base64 copy is never written
     h = runtime.history_of(ob)
     assert h is not None, "history not restored"
     assert len(h.entries) == 4 and h.cursor == 4, (len(h.entries), h.cursor)
