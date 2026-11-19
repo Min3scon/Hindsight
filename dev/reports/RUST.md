@@ -344,3 +344,43 @@ Two parts, both in `datarec.py`, tests in `tests/test_bl_datarec_settle.py` (5, 
 * Tests: the 0.44, 0.24, 0.23, 0.25, 0.23, 0.24 s drag is ONE step and back goes to the start in one jump (it was two); a single change still commits after 0.3 s (not at 0.25 s); the wait follows the gap (0.31 s after an update that followed a 0.24 s gap: no step yet, 0.41 s: step); a drag back to where it began leaves no step (with a stored value: an unset property reads as the default, which is not the same record as an explicit default); a change after another step is not merged and a change 5 s later is separate.
 * Not covered headless: the real-window probe (panel slider dragged 8 x 6 px) for you to rerun; journal replay of a merged step was reasoned from the existing replay semantics (STEP at an earlier position truncates) but not driven end to end.
 * DEFECTS row D147 added.
+
+---
+
+# Tenth job: LIMITS-A 1.6, the TOPO chain (measured round)
+
+Merged main-session-3 (b5bea4a). Engine 0.6.0 (API 5 unchanged), six wheels rebuilt, manifest updated. Only PIDs I started were killed.
+
+## Measured first
+
+Real Blender 5.3, 100,442-vertex sphere, six TOPO steps made by topology edits between commits (`chainbl.py`: Object Mode subdivide plus move hidden from the recorder, `runtime.commit`): before this round, `before` of each step held its own copy of the mesh the step before had left, and the packed body put the two meshes of a step in one zstd level 3 body whose window (2 MB) never reached back to the first mesh.
+* In memory: arrays held by the six raw steps 117.2 MB (the state's copies were taken, not shared).
+* Packed: 7.47 MB per step, 125 ms per step to pack, goto 0 and back over the six packed steps 405 ms.
+* Synthetic 100k mesh with local edits (`topochain.py`): one mesh 6.4 MB; a step body (before + after) 13.1 MB; level 3 default window 5.24 MB; level 3 with a 16 MB window and long distance matching 2.66 MB, the same as `after` alone (2.64 MB). Level 19 (the packer's) already gets 1.86 MB. lz4 9.42 MB.
+
+## Decision: two changes, no format bump
+
+* Packed (engine, `native/src/codec.rs`): a zstd body over 1 MB is compressed with `windowLog` = ceil(log2(size)) (at most 27, zstd's default decoder limit) and long distance matching (ldm hash log 20); smaller bodies keep the level's own settings (the parameters are reset on every call, the compressors are reused). The frame is an ordinary zstd frame: no step format change, every reader of this and earlier builds decodes it (a test decodes with python's zstd, which knows nothing of the build). Written bytes for bodies over 1 MB differ from before (smaller); bodies under 1 MB are byte-identical (test_core_reference still compares them to the Python libraries). This removes the second mesh of a step from the blob instead of sharing it across steps: a cross-step reference needs the neighbouring entry at read time, breaks on drop-oldest, truncate and the independent journal and save records, and needs a format bump; the gain left on top of this is the `after` of each step (one mesh per link), which only a delta-coded `after` could cut (not attempted).
+* In memory (`core/history.py`, `History.push`): a new TOPO step's `before` takes the previous raw TOPO step's `after` arrays wherever they are bit for bit equal (checked with an exact compare, 1 to 2 ms per 6 MB mesh, against a commit of 100+ ms). Safe because nothing writes into a step's arrays: the state takes copies (`set_snapshot`), `goto` writes into the state's arrays. Only raw neighbours share; a DELTA between two TOPO steps ends the sharing for the arrays it changed. Byte counts are unchanged (`Step.nbytes` still counts both snapshots, so the caps count the chain as before and evict a little earlier than the memory needs; changing that would change eviction).
+
+## Before and after (same script, `chainbl.py`, bpy53, SHARE=0 with the 0.5.1 engine against SHARE=1 with 0.6.0)
+
+| | before | after |
+|---|---|---|
+| arrays held, 6 TOPO steps, 100k | 117.2 MB | 68.4 MB (-42%) |
+| packed per step (level 3) | 7.47 MB | 3.83 MB (-49%) |
+| pack time per step | 125 ms | 105 ms |
+| goto 0 and back, 6 packed steps | 405 ms | 261 ms (-36%) |
+
+Synthetic: blob per TOPO step 5.30 to 2.68 MB (-49%), pack time 79 to 80 ms. Kept. For OPTIMISATION_LOG: "TOPO chain: zstd window as large as a body over 1 MB plus long distance matching, and `before` sharing the previous raw TOPO step's `after`; 100k-vertex chain of 6 TOPO steps in Blender 5.3: arrays held 117.2 to 68.4 MB, packed 7.47 to 3.83 MB per step, pack 125 to 105 ms per step, jump over the chain 405 to 261 ms; kept; caps still count the old size".
+
+## Exactness: tests/test_core_topo_chain.py (5, bpy53 and bpy42)
+
+Sharing is by identity for consecutive TOPO steps and memory drops; 12 jumps across a history of TOPO, DELTA and DATA steps give the same state and changed keys as a history that owns its arrays, and no array of any step changes during the jumps; save and reload (registry blob) then jumps equal; drop-oldest keeps the next step's `before`; a step after going back truncates; a 100k-size step is about one mesh in the blob (within 1.25 x `after` alone), reads back exactly with the engine and with python's zstd; a quick (journal-style) step recompresses with the strong setting and is the same step. JOIN steps hold per-member snapshots and are not shared. The journal blobs are lz4 and not touched. Failing first: before the change the blob is 2 x (5.30 against 2.68 MB measured above) and the arrays were separate.
+
+## Not done
+
+* Delta-coded `after` (a TOPO step storing only what differs from its `before`): would take the chain to a few hundred KB per step for local edits; needs a format bump and a rule for edits that renumber everything (Dyntopo reindexing).
+* Caps accounting by unique arrays.
+
+Tests: test_core_* (all, including the new test_core_topo_chain) on bpy53 and bpy42 with the 0.6.0 wheel; whole test_bl_ (t1_prop included) on both: 86 of 89 files, the failures are test_bl_metadata and test_bl_t1_migrate (known) and test_bl_datarec_fast_paths test_changes_while_off_then_on, which fails the same way on the unchanged main-session-3 tip b5bea4a (not from this round; looks like the D147 marker change).

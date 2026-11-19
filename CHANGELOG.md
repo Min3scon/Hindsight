@@ -55,6 +55,8 @@ Faster and lighter:
 - Scrubbing and Movie Mode are 2 to 3 times faster through packed history: a run of steps is checked, unpacked and applied in one call of the Rust engine. A jump over 3,000 steps of a 1M-vertex mesh went from 1.4 s to 0.5 s.
 - Edit Mode step by step and topology changes read the mesh's edges and corners through its attributes, which is many times faster than the old way.
 - Record everything costs less in big scenes: with 500 recorded objects an operation is recorded in under half the time, and each object takes about a third less memory. With Record set to Sculpting only the recorder does no work.
+- With Record everything, selecting (a click, box select, Select All and the other Select menu items) reads only the selected and active objects: with 500 recorded objects, Hindsight's work after a click went from 47 ms to 3 ms. In Edit Mode, selecting no longer reads the mesh (36 ms at 300,000 vertices). The next operation that can change anything reads everything, as before.
+- Opening a file checks each recorded mesh once instead of twice (about 12 ms less per 100k-vertex mesh), and saving no longer reads every packed step again for its checksum (18 ms less per save with 6,000 steps of a 100k mesh).
 - The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 
 Fixed:

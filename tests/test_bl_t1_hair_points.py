@@ -8,11 +8,13 @@ from tests import t1_gate_lib as L
 from hindsight.bl import runtime
 
 C = bpy.context
-RESIZE = bpy.app.version >= (5, 0, 0)
+RESIZE = "resize" in bpy.types.PointCloud.bl_rna.functions   # PointCloud.resize came with Blender 5.1 (not 5.0)
 
 
 def pos_sum(owner):
-    a = owner.attributes["position"]
+    a = owner.attributes.get("position")
+    if a is None:                  # an empty point cloud has no position attribute on Blender 5.0
+        return 0.0
     buf = [0.0] * (3 * len(a.data))
     a.data.foreach_get("vector", buf)
     return round(sum(buf), 4)
@@ -61,7 +63,7 @@ def test_hair_and_points():
     if RESIZE:
         ops += [("move points", move_points), ("attribute", add_attr)]
     else:
-        print("  SKIP point cloud part: Blender 4.2 can't give a point cloud points from Python")
+        print("  SKIP point cloud part: this Blender (4.2, 5.0) can't give a point cloud points from Python")
     if RESIZE:
         ops += [("more hair", lambda: hc.add_curves([2])), ("fewer points", lambda: pc.resize(3))]
     for label, fn in ops:

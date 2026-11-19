@@ -5,6 +5,12 @@
   - a depsgraph update with the scene recorded doesn't search for every recorded object's id;
   - one commit reads bpy.data.objects for its id lookups at most once;
   - prime() (after loading a file) reads each recorded mesh once;
+  - an operator that only changes the selection (a click, box select, Select All) reads the selected,
+    active and updated objects, not every recorded one, and in Edit Mode doesn't read the mesh (R048);
+    the next operator that may change anything reads everything as before;
+  - in Edit Mode a move, rotate or scale (TRANSFORM_OT_*) compares the element counts but doesn't read
+    the edges and corners again: those operators change topology only by Auto Merge, which changes the
+    counts (R050); any other operator reads them as before;
   - opening a file hashes each recorded mesh once to tell whether it changed without Hindsight (R045:
     it was hashed twice when unchanged, the usual case).
 
@@ -144,8 +150,129 @@ def test_open_hashes_each_mesh_once():
     assert n["mesh_fingerprint"] == 3, n
 
 
+def _end_operator(idname, k):
+    """The timer sees one operator end: the list gained `idname` (fake pointers, as headless Blender
+    registers no operators run from Python)."""
+    real_marker, real_info = datarec._ops_marker, datarec._last_ops_info
+    datarec._OPS["marker"] = (k, 1000 + k)
+    datarec._ops_marker = lambda: (k + 1, 1001 + k)
+    datarec._last_ops_info = lambda: (idname, 1000 + k, k + 1)
+    try:
+        datarec.tick()
+    finally:
+        datarec._ops_marker, datarec._last_ops_info = real_marker, real_info
+
+
+def test_selection_only_operator_reads_the_selection():
+    scene(80, tracked=True)
+    obs = list(C.scene.objects)
+    for o in obs:
+        o.select_set(False)
+    obs[7].select_set(True)
+    C.view_layer.objects.active = obs[7]
+    datarec._DIRTY.clear()
+    total = lambda: sum(len(h.entries) for h in runtime.reg().histories.values())
+    with counting((datarec, "capture")) as n:
+        _end_operator("VIEW3D_OT_select", 3)
+    assert n["capture"] <= 3, n                          # the selected and active object (was all 81)
+    # the next operator that may change anything compares every recorded object, and a change made
+    # before it on an object that isn't selected is recorded then
+    before = total()
+    obs[40].location.x += 0.5
+    with counting((datarec, "capture")) as n:
+        _end_operator("TRANSFORM_OT_translate", 4)
+    assert n["capture"] >= 80, n
+    assert total() == before + 1, (before, total())
+    # two operators ended between two ticks, the last a selection: everything is read
+    with counting((datarec, "capture")) as n:
+        real_marker, real_info = datarec._ops_marker, datarec._last_ops_info
+        datarec._OPS["marker"] = (5, 1005)
+        datarec._ops_marker = lambda: (7, 1007)
+        datarec._last_ops_info = lambda: ("VIEW3D_OT_select", 1006, 7)
+        try:
+            datarec.tick()
+        finally:
+            datarec._ops_marker, datarec._last_ops_info = real_marker, real_info
+    assert n["capture"] >= 80, n
+
+
+def test_selection_only_operator_in_edit_mode_reads_no_mesh():
+    H.fresh()
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    ob = H.make_mesh(20_000, name="E")
+    datarec.set_tracked(ob, True)
+    datarec.finish_operation("baseline")
+    H.enter(ob, "EDIT")
+    datarec.finish_operation("edit")
+    assert runtime.edit_steps_on(ob)
+    with counting((runtime, "commit_edit")) as n:
+        _end_operator("MESH_OT_select_all", 1)
+        _end_operator("VIEW3D_OT_select", 2)
+    assert n["commit_edit"] == 0, n
+    with counting((runtime, "commit_edit")) as n:
+        _end_operator("MESH_OT_delete", 3)                 # any other operator: the mesh is read
+    assert n["commit_edit"] == 1, n
+
+
+def test_transform_in_edit_mode_reads_no_topology():
+    import bmesh
+    from hindsight.bl import meshio
+    H.fresh()
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    ob = H.make_mesh(20_000, name="T")
+    datarec.set_tracked(ob, True)
+    datarec.finish_operation("baseline")
+    H.enter(ob, "EDIT")
+    datarec.finish_operation("edit")
+    total = lambda: sum(len(h.entries) for h in runtime.reg().histories.values())
+    bm = bmesh.from_edit_mesh(ob.data)
+    for v in bm.verts:
+        v.select = v.index % 7 == 0
+    bmesh.update_edit_mesh(ob.data)
+    n0 = total()
+    bpy.ops.transform.translate(value=(0, 0, 0.05))
+    with counting((meshio, "_corner_ints"), (meshio, "_edge_verts")) as n:
+        _end_operator("TRANSFORM_OT_translate", 1)
+    assert n["_corner_ints"] == 0 and n["_edge_verts"] == 0, n
+    assert total() == n0 + 1, (n0, total())                        # the move is a step
+    # Rotate Edge keeps the counts and changes the topology: any other operator still reads it
+    bm = bmesh.from_edit_mesh(ob.data)
+    for e in bm.edges:
+        e.select = False
+    bm.edges.ensure_lookup_table()
+    inner = next(e for e in bm.edges if len(e.link_faces) == 2)
+    inner.select = True
+    bmesh.update_edit_mesh(ob.data)
+    bpy.ops.mesh.edge_rotate(use_ccw=False)
+    with counting((meshio, "_corner_ints")) as n:
+        _end_operator("MESH_OT_edge_rotate", 2)
+    assert n["_corner_ints"] >= 1, n
+    h = runtime.history_of(ob)
+    assert h.entries[-1].kind == "TOPO", h.entries[-1].kind
+    # a move with Auto Merge that merges vertices changes the counts: recorded as a topology change
+    bm = bmesh.from_edit_mesh(ob.data)
+    bm.verts.ensure_lookup_table()
+    a, b = bm.verts[0], bm.verts[1]
+    for v in bm.verts:
+        v.select = False
+    a.select = True
+    bmesh.update_edit_mesh(ob.data)
+    before = len(ob.data.vertices)
+    C.scene.tool_settings.use_mesh_automerge = True
+    try:
+        off = (b.co - a.co)
+        bpy.ops.transform.translate(value=tuple(off))
+    finally:
+        C.scene.tool_settings.use_mesh_automerge = False
+    _end_operator("TRANSFORM_OT_translate", 3)
+    ob.update_from_editmode()
+    assert len(ob.data.vertices) == before - 1, (before, len(ob.data.vertices))      # merged
+    assert h.entries[-1].kind == "TOPO", h.entries[-1].kind
+
+
 for fn in (test_sculpting_only_timer_reads_nothing, test_depsgraph_update_does_not_search_every_id,
            test_one_objects_read_per_commit, test_prime_reads_each_mesh_once,
-           test_open_hashes_each_mesh_once):
+           test_open_hashes_each_mesh_once, test_selection_only_operator_reads_the_selection,
+           test_selection_only_operator_in_edit_mode_reads_no_mesh, test_transform_in_edit_mode_reads_no_topology):
     H.run(fn)
 H.finish()

@@ -45,7 +45,7 @@ ROUNDS = {
     # beta 3: what Record everything, the paint modes, Multires, Dyntopo and Movie Mode do in a real window
     "H": [(s, {}, "fresh") for s in ("paint_modes", "image_paint", "multires", "dyntopo", "movie_mode", "movie_panel",
                                      "slider_layout", "addon", "grease_pencil", "pose_keys", "modifier_keys",
-                                     "settings_keys")],
+                                     "settings_keys", "select_ops")],
 }
 # Screenshots worth keeping per scenario (generated test models only).
 KEEP = {"ui_tour": ["C_sculpt_before_stroke", "D_sculpt_three_steps", "G_popover", "I_f3_search", "K_edit_mode",

@@ -806,9 +806,10 @@ def _sculpt_refresh(obj) -> None:
         pass
 
 
-def commit_edit(obj, label: str = "Edit"):
+def commit_edit(obj, label: str = "Edit", deep: bool = True):
     """Edit Mode step by step (Record everything on this object): record what the operation that
-    just finished changed, as one step. Without it, Edit Mode is one step per visit."""
+    just finished changed, as one step. Without it, Edit Mode is one step per visit. deep False
+    (R050, after a move, rotate or scale): the topology is compared by the element counts only."""
     if obj is None or obj.type != "MESH" or obj.mode != "EDIT":
         return None
     st = _STATES.get(obj_uid(obj))
@@ -816,7 +817,7 @@ def commit_edit(obj, label: str = "Edit"):
         return None
     with suspended():
         obj.update_from_editmode()
-    return commit(obj, label=label, mode="EDIT", full=True, _edit=True)
+    return commit(obj, label=label, mode="EDIT", full=True, _edit=True, _deep=deep)
 
 
 # L6: the Edit Mode cap is SETTINGS.edit_steps_max (preference "Edit Mode steps up to", default 300,000)
@@ -882,7 +883,7 @@ def _leave_shared(obj, uid) -> None:
 
 
 def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False,
-           _mr_step=None):
+           _mr_step=None, _deep: bool = True):
     """Record what changed on obj since the last commit as ONE step. Returns the Step or None."""
     if obj is None or obj.type != "MESH":
         return None
@@ -958,7 +959,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         with suspended():
             src = obj.data.copy()
     try:
-        step = _mr_step if _mr_step is not None else _observe(obj, st, full, label, mode, me=src)
+        step = _mr_step if _mr_step is not None else _observe(obj, st, full, label, mode, me=src, deep=_deep)
     finally:
         if src is not None:
             with suspended():
