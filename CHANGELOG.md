@@ -68,6 +68,9 @@ Fixed:
 - Record everything records Edit Mode changes to bones: adding, removing, moving, rolling and parenting them, their settings and bone collections.
 - Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks, and keyframes on lights, cameras, shape keys and material nodes.
 - Record everything records the shape of curves, surfaces, lattices and metaballs: points, handles, splines and elements.
+- Weight Paint strokes are steps, like sculpt and Vertex Paint strokes.
+- Custom normals (Blender 5) are recorded with the mesh, so going back over Set Custom Normals gives the old normals back.
+- Texture painting can be recorded too (preference Record texture painting, off by default; images up to 2K).
 - Record everything records Grease Pencil drawings: strokes drawn, erased and moved, their thickness, opacity and colour, frames and layers.
 - Record everything records hair curves and point clouds through their attributes.
 - Record everything records particle settings: count, hair length, emission and display.

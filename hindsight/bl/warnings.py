@@ -24,7 +24,7 @@ TXT_SHAPE_KEYS = "Shape keys aren't part of the history"
 TXT_DEFORM = "Deform modifiers such as Armature and Displace can make older steps look different"
 TXT_MODIFIERS = "Modifiers aren't part of the history"
 TXT_ANIMATED = "This object is animated, so older steps can look different on other frames"
-TXT_VGROUPS = "Vertex groups and weight paint aren't part of the history"
+TXT_VGROUPS = "Adding, removing and renaming vertex groups isn't part of the history (Weight Paint strokes are)"
 TXT_MATERIALS = "Materials aren't part of the history"
 TXT_LARGE = ("Large mesh ({verts:.1f}M vertices). Steps that change most of it use a lot of memory; "
              "the memory limit is {limit} MB")
