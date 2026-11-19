@@ -20,3 +20,7 @@ of its steps are decoded.
 recorded 1M meshes, and opening that file (`check_outside_changes` alone and the whole open); prints one `AB {...}` line
 with the engine's version. A venv holds one engine version, so put each side's own engine (its wheel unpacked) first
 with PYTHONPATH (no `-I`): `PYTHONPATH=<engine folder> <bpy python> bench/scenarios/oneoff/fingerprint_ab.py CODE_ROOT`.
+
+`same_values_ab.py CODE_ROOT [ROUNDS]` (R070): the recorder's "nothing changed" check at 500 recorded objects, the
+function before R070 (copied into the probe) against the current one, alternating in one process; prints one `AB {...}`
+line with an operation that changes nothing, a move, and the time inside `_same_values`.
