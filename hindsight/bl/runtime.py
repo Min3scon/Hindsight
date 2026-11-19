@@ -385,23 +385,65 @@ def _image_stroke_running() -> bool:
     return False
 
 
+def _image_editor_images() -> set:
+    """Names of the images shown in an Image Editor in Paint mode (2D texture painting)."""
+    out = set()
+    try:
+        for win in bpy.context.window_manager.windows:
+            for area in win.screen.areas:
+                if area.type == "IMAGE_EDITOR":
+                    sp = area.spaces.active
+                    if getattr(sp, "mode", None) == "PAINT" and sp.image is not None:
+                        out.add(sp.image.name)
+    except Exception:
+        pass
+    return out
+
+
+def _paint_target():
+    """(object, in_mode): the mesh object a texture painting stroke changes, or (None, False). In
+    Texture Paint, the active object; D144: in an Image Editor's Paint mode, the active mesh object
+    in Object Mode when the image shown there is one of the images it paints."""
+    if not texture_on():
+        return None, False
+    obj = _active()
+    if obj is None or obj.type != "MESH" or is_excluded(obj):
+        return None, False
+    if obj.mode == "TEXTURE_PAINT":
+        return obj, True
+    if obj.mode == "OBJECT":
+        shown = _image_editor_images()
+        if shown and not shown.isdisjoint(i.name for i in meshio.paint_images(obj)):
+            return obj, False
+    return None, False
+
+
 def _watch_image_paint() -> bool:
     """D142: painting an image sends no depsgraph update (seen in a real window), so the end of a
-    texture painting stroke is seen from its operator, which the timer polls while the active object
-    is in Texture Paint. True while there is something to watch (the timer then runs faster)."""
-    obj = _active()
-    watching = (obj is not None and obj.type == "MESH" and obj.mode == "TEXTURE_PAINT" and texture_on()
-                and not is_excluded(obj))
-    if watching and _image_stroke_running():
-        _PAINTING[0] = obj_uid(obj)
+    texture painting stroke is seen from its operator, which the timer polls while there is a
+    target (see _paint_target). True while there is one (the timer then runs faster)."""
+    obj, in_mode = _paint_target()
+    if obj is not None and _image_stroke_running():
+        _PAINTING[0] = (obj_uid(obj, create=True), in_mode)
         return True
-    uid, _PAINTING[0] = _PAINTING[0], None
-    if uid is not None:
-        _DIRTY[uid] = time.time()
-        _STROKE_SEEN.add(uid)          # a stroke ended: committed at once
-    elif watching and obj_uid(obj) not in _DIRTY:
+    held, _PAINTING[0] = _PAINTING[0], None
+    if held is not None:
+        uid, was_in_mode = held
+        if was_in_mode:
+            _DIRTY[uid] = time.time()
+            _STROKE_SEEN.add(uid)      # a stroke ended: committed at once
+        else:
+            ob = find_object(uid)      # D144: painted in an Image Editor, the object stays in Object Mode
+            if ob is not None and ob.mode == "OBJECT":
+                commit(ob, label="Texture Paint", mode="TEXTURE_PAINT")
+    elif obj is not None and obj_uid(obj) not in _DIRTY:
+        if not in_mode:
+            uid = obj_uid(obj, create=True)
+            st = _STATES.get(uid)
+            if st is None or not st.counts:
+                ensure_state(obj, refresh=True)     # a baseline before the first stroke
         _read_new_images(obj)
-    return watching
+    return obj is not None
 
 
 def read_mesh_snapshot(obj):

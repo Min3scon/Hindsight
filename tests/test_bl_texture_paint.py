@@ -175,11 +175,52 @@ def test_stroke_seen_from_its_operator():
     print("PASS test_stroke_seen_from_its_operator")
 
 
+def test_painting_in_the_image_editor():
+    """D144: painting in an Image Editor's Paint mode (2D) changes an image of the active object's
+    materials: each stroke is a Texture Paint step of that object, which stays in Object Mode. An image
+    of no recorded object isn't recorded. (Headless there is no Image Editor: what it shows is given.)"""
+    ob, imgs = setup()
+    runtime.FORCE_TEXTURE[0] = True
+    C.view_layer.objects.active = ob
+    assert ob.mode == "OBJECT"
+    other = bpy.data.images.new("Loose", 16, 16)
+    real_run = getattr(runtime, "_image_stroke_running", None)
+    real_shown = getattr(runtime, "_image_editor_images", None)
+
+    def stroke(img, shown, value):
+        runtime._image_editor_images = lambda: {shown}
+        runtime._tick_once()                   # between strokes: baselines
+        runtime._image_stroke_running = lambda: True
+        runtime._tick_once()
+        a = pixels(img)
+        a[:128] = value
+        img.pixels.foreach_set(a)              # no depsgraph update, as in a window
+        runtime._image_stroke_running = lambda: False
+        runtime._tick_once()
+    try:
+        want = [pixels(imgs[0])]
+        stroke(imgs[0], imgs[0].name, 0.3)
+        want.append(pixels(imgs[0]))
+        stroke(imgs[0], imgs[0].name, 0.6)
+        want.append(pixels(imgs[0]))
+        stroke(other, other.name, 0.9)         # not an image of the object: nothing
+    finally:
+        runtime._image_stroke_running = real_run
+        runtime._image_editor_images = real_shown
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == 2, (h and [e.meta.get("label") for e in h.entries])
+    assert all(e.meta["mode"] == "TEXTURE_PAINT" for e in h.entries) and ob.mode == "OBJECT"
+    for pos in (0, 2, 1, 0, 2):
+        runtime.goto(C, pos)
+        assert pixels(imgs[0]).tobytes() == want[pos].tobytes(), f"position {pos}"
+    print("PASS test_painting_in_the_image_editor")
+
+
 if __name__ == "__main__":
     for t in (test_off_by_default_records_nothing, test_byte_image_strokes_are_exact,
               test_float_image_strokes_are_exact, test_two_images_on_one_object, test_images_over_2k_are_left_out,
               test_steps_are_small_and_counted, test_leaving_the_mode_and_painting_again,
-              test_stroke_seen_from_its_operator):
+              test_stroke_seen_from_its_operator, test_painting_in_the_image_editor):
         H.run(t)
     runtime.FORCE_TEXTURE[0] = None
     H.finish()

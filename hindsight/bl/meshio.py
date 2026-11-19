@@ -213,11 +213,24 @@ def paint_images(ob) -> list:
         if w * h and w * h <= TEXTURE_MAX_PIXELS and img.source in ("FILE", "GENERATED") and img.has_data:
             out.append(img)
 
+    def nodes(tree, trees):
+        # D144: texture_paint_images is filled only once the object has been in Texture Paint; an
+        # Image Editor paints the image texture nodes' images in any mode, so those are read too
+        if tree is None or tree.name in trees:
+            return
+        trees.add(tree.name)
+        for n in tree.nodes:
+            if n.bl_idname == "ShaderNodeTexImage":
+                take(n.image)
+            elif n.bl_idname == "ShaderNodeGroup":
+                nodes(n.node_tree, trees)
+
     for slot in getattr(ob, "material_slots", ()):
         mat = slot.material
         if mat is not None:
             for img in getattr(mat, "texture_paint_images", ()) or ():
                 take(img)
+            nodes(getattr(mat, "node_tree", None), set())
     try:
         take(bpy.context.scene.tool_settings.image_paint.canvas)
     except Exception:
