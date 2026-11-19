@@ -1251,6 +1251,11 @@ SYSPROPS_KEY = "sysprops"
 DATA_PREFIX = "data."
 
 
+def owned_path(adapter_id: str, path: str) -> bool:
+    """A value an object records only while it owns the data (D112, D114)."""
+    return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX))
+
+
 def _owns_data(ob, d) -> bool:
     """The object that records its data's properties: the only user, or for a shared mesh the object
     that records the mesh (D39)."""

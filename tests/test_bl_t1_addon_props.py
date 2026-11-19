@@ -154,6 +154,31 @@ def test_object_data_props():
     assert me["wear"] == 0.75
 
 
+def test_owner_deleted_is_not_a_step_for_the_others():
+    """The object that records a shared mesh's properties and a shared material is deleted: the
+    linked duplicate takes them over without a step of its own (it changed nothing)."""
+    addon_on()
+    L.fresh_scene()
+    a = bpy.data.objects["A"]
+    m = bpy.data.materials.new("Shared")
+    a.data.materials.append(m)
+    a.data["wear"] = 0.5
+    m["tone"] = 2
+    dup = a.copy()
+    dup.name = "Z-dup"
+    C.scene.collection.objects.link(dup)
+    L.track_all()
+    L.tick_like("baseline")
+    nd = _len(dup)
+    with C.temp_override(selected_objects=[a], active_object=a, object=a):
+        bpy.ops.object.delete()
+    L.tick_like("delete")
+    assert _len(dup) == nd, (_len(dup), nd)
+    dup.data["wear"] = 0.9
+    L.tick_like("after")
+    assert _len(dup) == nd + 1, "the new owner records the mesh's properties from now on"
+
+
 def _len(ob):
     h = runtime.history_of(ob)
     return len(h.entries) if h is not None else 0
@@ -254,6 +279,7 @@ if __name__ == "__main__":
     H.run(test_object_custom_and_addon_props)
     H.run(test_scene_and_material_props)
     H.run(test_object_data_props)
+    H.run(test_owner_deleted_is_not_a_step_for_the_others)
     H.run(test_reading_settings_is_not_a_step)
     H.run(test_addon_missing_when_going_back)
     H.run(test_deleted_object_keeps_them)

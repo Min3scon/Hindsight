@@ -655,6 +655,19 @@ def _diff(old: dict, new: dict) -> dict:
     return out
 
 
+def _owner_moves(st, changes: dict) -> None:
+    """Values an object records for data it owns (its mesh's properties, the materials it records)
+    come and go with the ownership: another user deleted, a material put in a slot. That isn't a change
+    of the data, so it only becomes the new baseline (no step)."""
+    for k in [k for k, (a, b) in changes.items()
+              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+        _a, b = changes.pop(k)
+        if b is MISSING:
+            st.values.pop(k, None)
+        else:
+            st.values[k] = b
+
+
 def _mesh_step(ob, uid: str, label: str):
     """What an Object Mode operation (Apply, Shade Smooth, Set Origin, ...) changed on a tracked
     object's mesh, as an unsaved Step, or None."""
@@ -722,6 +735,8 @@ def _commit(label: str, uids, mesh: bool) -> list:
             continue
         new = capture(idb)
         changes = {} if fast and _same_values(st.values, new) else _diff(st.values, new)
+        if changes:
+            _owner_moves(st, changes)
         if changes:
             adapters.drop_changed_refs(uid, changes)
         if not changes and mesh_step is None:
