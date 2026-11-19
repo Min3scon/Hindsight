@@ -266,6 +266,8 @@ class Settings:
     truncation_threshold: int = 10     # confirm before dropping >= this many future steps
     save_mode: str = "SIDECAR"         # SIDECAR | EMBED | BOTH
     crash_recovery: str = "LAST_SAVED" # LAST_SAVED | INTERRUPTED
+    edit_steps_max: int = 300_000      # vertices: Record everything records Edit Mode per operation up to
+                                       # this, per visit above (about 20 to 27 ms per 100k per operation)
 
 
 # The crash journal's step blobs are written on the main thread at every stroke: lz4 costs about

@@ -21,7 +21,7 @@ import bpy
 import numpy as np
 
 from ..core import codec
-from ..core.types import DELTA, TOPO, Snapshot, Step, make_key
+from ..core.types import TOPO, Snapshot, Step, make_key
 
 MR_KEY = make_key("multires:blob", "POINT", "INT8")
 FORCE = [None]            # tests: True or False when the preferences aren't registered

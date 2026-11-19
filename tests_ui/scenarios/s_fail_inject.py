@@ -73,7 +73,12 @@ def run(d):
     with d.override():
         bpy.ops.hindsight.self_check()
     yield from C.real_stroke(d, 4)
-    d.check("recording resumes after self-check", guard.ok("recorder") and C.info(d)["len"] == 3, C.info(d))
+    # D46, D95: the two strokes made while the recorder was off become one step of their own, then the
+    # new stroke is the next: nothing made while it was off is lost
+    h = rt.history_of(bpy.context.active_object)
+    labels = [e.meta.get("label") for e in h.entries] if h else None
+    d.check("recording resumes after self-check; the strokes made while it was off are one step",
+            guard.ok("recorder") and C.info(d)["len"] == 4, (C.info(d), labels))
 
     # ---------------------------------------------------------------- File > Open keeps recording
     path = os.path.join(d.out, "reopen.blend")
@@ -93,5 +98,5 @@ def run(d):
     yield from C.real_stroke(d, 0)
     after = (C.info(d) or {}).get("len", 0)
     d.check("a stroke after File > Open is recorded", after == before + 1, f"{before} -> {after}")
-    d.check("history came back with the file", before == 3, before)
+    d.check("history came back with the file", before == 4, before)
     d.shot("after_reopen")

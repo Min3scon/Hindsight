@@ -126,12 +126,12 @@ def test_first_edit_visit_is_a_step():
     for how in ("edit steps off", "big mesh"):
         L.fresh_scene()
         L.track_all()
-        orig_max = runtime.EDIT_STEPS_MAX
+        orig_max = runtime.SETTINGS.edit_steps_max
         if how == "edit steps off":
             from hindsight.bl import adapters
             datarec.FORCE_KINDS[0] = set(adapters.KINDS) - {"edit_steps"}
         else:
-            runtime.EDIT_STEPS_MAX = 10                 # stands in for a mesh over 300,000 vertices
+            runtime.SETTINGS.edit_steps_max = 10        # stands in for a mesh over 300,000 vertices
         try:
             a = bpy.data.objects["A"]
             before = O.read_mesh(a, O.mesh_state)
@@ -153,7 +153,7 @@ def test_first_edit_visit_is_a_step():
             runtime._goto_history(h, 1, True)
             assert O.read_mesh(a, O.mesh_state) == after, how
         finally:
-            runtime.EDIT_STEPS_MAX = orig_max
+            runtime.SETTINGS.edit_steps_max = orig_max
             datarec.FORCE_KINDS[0] = None
 
 

@@ -211,6 +211,7 @@ def run(d):
     # Save during a stroke (Ctrl+S above) and reopen: the history matches what was saved.
     ob = _activate(d, "Blob_10k")
     n_saved = len(rt.history_of(ob).entries)
+    saved_v = len(ob.data.vertices)
     with d.override():
         bpy.ops.wm.save_mainfile()
     yield 0.3
@@ -251,17 +252,32 @@ def run(d):
     d.shot("missing_history_folder")
     shutil.move(folder + "_moved", folder)
 
-    # damaged step inside the file
+    # damaged steps inside the file (D27, D98: steps before a damaged one are never kept; the intact run
+    # after the last damaged step before the saved position is)
     bad = bytearray(good)
-    bad[-200] ^= 0xFF
+    bad[-200] ^= 0xFF                           # the last step, where the file was saved
     open(hsr, "wb").write(bytes(bad))
     _open(d, blend)
     yield 1.0
     ob = _activate(d, "Blob_10k")
     ws = _warnings(d, ob)
     h = rt.history_of(ob)
-    d.check("damaged step: earlier steps load, clear message", h is not None and 0 < len(h.entries) < n_saved
-            and any("damaged step" in t for _, t in ws), (None if h is None else len(h.entries), ws))
+    d.check("damaged last step: none kept, the object as saved, clear message (D27)",
+            (h is None or not h.entries) and len(ob.data.vertices) == saved_v
+            and any("is damaged before the step it was saved at" in t for _, t in ws),
+            (None if h is None else len(h.entries), len(ob.data.vertices), saved_v, ws))
+    bad = bytearray(good)
+    bad[int(len(bad) * 0.35)] ^= 0xFF           # an early step
+    open(hsr, "wb").write(bytes(bad))
+    _open(d, blend)
+    yield 1.0
+    ob = _activate(d, "Blob_10k")
+    ws = _warnings(d, ob)
+    h = rt.history_of(ob)
+    d.check("damaged early step: the later steps load, clear message (D98)",
+            h is not None and 0 < len(h.entries) < n_saved and len(ob.data.vertices) == saved_v
+            and any("part of its history is damaged" in t for _, t in ws),
+            (None if h is None else len(h.entries), n_saved, ws))
     d.shot("damaged_history")
 
     # unreadable file

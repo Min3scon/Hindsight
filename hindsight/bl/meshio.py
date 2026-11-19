@@ -15,7 +15,7 @@ from ..core.types import (
 TOPO_KEYS = (EDGE_VERTS_KEY, CORNER_VERT_KEY, CORNER_EDGE_KEY, FACE_OFFSETS_KEY)
 SCULPT_NAMES = {".sculpt_mask", ".sculpt_face_set", ".hide_vert", ".hide_edge", ".hide_poly"}
 _SKIP_PREFIX = (".select", ".vs.", ".es.", ".pn.", ".uv_select", ".edge_verts", ".corner_vert",
-                ".corner_edge")
+                ".corner_edge", ".sculpt_dyntopo")      # D145: Dyntopo's node ids (5.3), not the sculpt
 
 _bufs: dict = {}
 

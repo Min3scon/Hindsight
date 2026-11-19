@@ -15,7 +15,7 @@ from mathutils import Matrix
 
 from ..core.history import MeshState, TOPO_MARK
 from ..core.step import SNAPSHOTS_KEY
-from ..core.types import JOIN, JOURNAL_CODEC, SETTINGS, Step, split_key
+from ..core.types import JOIN, JOURNAL_CODEC, Step, split_key
 from . import log, meshio, runtime
 
 MAP_ATTR = "_hs_src"
