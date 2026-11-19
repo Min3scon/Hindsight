@@ -1,0 +1,699 @@
+diff --git a/hindsight/core/native.py b/hindsight/core/native.py
+index a549e67..cd3860d 100644
+--- a/hindsight/core/native.py
++++ b/hindsight/core/native.py
+@@ -15,7 +15,7 @@ by nobody (CI sets it to "require", which is what happens anyway).
+ """
+ from __future__ import annotations
+ 
+-API = 8                     # the module's API number (native/src/lib.rs) this code is written for
++API = 9                     # the module's API number (native/src/lib.rs) this code is written for
+ # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
+ # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
+ # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
+@@ -23,10 +23,11 @@ API = 8                     # the module's API number (native/src/lib.rs) this c
+ # API 6: + crc32 (zlib.crc32 at 20 GB/s; registry, journal and Entry checksums).
+ # API 7: + Hasher128 (xxh3-128, incremental): mesh fingerprints.
+ # API 8: + same_values (strict equality of the data recorder's values, R070).
++# API 9: + StepReader (the steps of a history file or blob, read and checksummed, R078).
+ 
+ 
+ class EngineMissing(ImportError):
+-    """The Rust engine (hindsight_native, API 8) is missing, broken or the wrong version."""
++    """The Rust engine (hindsight_native, API 9) is missing, broken or the wrong version."""
+ 
+ 
+ def _load():
+diff --git a/hindsight/core/persist.py b/hindsight/core/persist.py
+index b13e1fe..060b2b4 100644
+--- a/hindsight/core/persist.py
++++ b/hindsight/core/persist.py
+@@ -204,6 +204,7 @@ class _FileBytes:
+     def __init__(self, fh):
+         self._fh = fh
+         self._n = os.fstat(fh.fileno()).st_size
++        self.path = fh.name           # R078: the engine reads the steps from the file itself
+         self._pos = None              # where the file is now (steps are read in order: no seeks)
+ 
+     def __len__(self) -> int:
+@@ -263,28 +264,24 @@ def registry_from_bytes(b):
+         reg.everything = set(doc.get("everything", []))
+     max_seq = 0
+     strings = {}                     # per load: label, mode, target and kind values shared between steps
+-    truncated = False
+-    size = len(mv)
++    # R078: the engine reads the steps (from the file itself for a history folder) and their CRC-32s, the
++    # GIL released for the reads and the checksums; a step it can't read whole (the run cut short) is None
++    # and so is every step after it. tests/reference/persist.py has the Python loop this replaces.
++    from .native import ENGINE        # here, not at import: the panel loads (and says so) without the engine
++    reader = ENGINE.StepReader(b.path if isinstance(b, _FileBytes) else b, pos, len(mv))
+     for hd in doc.get("histories", []):
+         h = History(hd["uid"], list(hd.get("members", [])))
+         metas = hd.get("metas", [])
+         crcs = hd.get("crcs")
+         want = int(hd.get("n_entries", 0))
++        got, got_crcs = reader.read(max(want, 0))
+         slots = []       # per stored step: its Entry, or None when it is damaged or missing
+         for i in range(want):
+-            if truncated or pos + 8 > size:
+-                truncated = True
++            blob = got[i]
++            if blob is None:
+                 slots.append(None)
+                 continue
+-            (n,) = _U64.unpack(mv[pos:pos + 8])
+-            pos += 8
+-            if pos + n > size:
+-                truncated = True
+-                slots.append(None)
+-                continue
+-            blob = bytes(mv[pos:pos + n])
+-            pos += n
+-            crc = crc32(blob) & 0xFFFFFFFF
++            crc = got_crcs[i]
+             if crcs is not None and i < len(crcs) and crc != int(crcs[i]):
+                 slots.append(None)
+                 continue
+diff --git a/native/Cargo.lock b/native/Cargo.lock
+index b85a511..2aa3fa4 100644
+--- a/native/Cargo.lock
++++ b/native/Cargo.lock
+@@ -88,7 +88,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
+ 
+ [[package]]
+ name = "hindsight_native"
+-version = "0.9.0"
++version = "0.10.0"
+ dependencies = [
+  "crc32fast",
+  "flate2",
+diff --git a/native/Cargo.toml b/native/Cargo.toml
+index c22ad7f..1c91e9b 100644
+--- a/native/Cargo.toml
++++ b/native/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "hindsight_native"
+-version = "0.9.0"
++version = "0.10.0"
+ edition = "2021"
+ description = "Hindsight's delta engine (bit-exact twin of hindsight/core/delta.py)"
+ license = "GPL-3.0-or-later"
+diff --git a/native/src/lib.rs b/native/src/lib.rs
+index 4c10400..0063f19 100644
+--- a/native/src/lib.rs
++++ b/native/src/lib.rs
+@@ -34,7 +34,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
+ use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
+ 
+ /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
+-const API: u32 = 8;
++const API: u32 = 9;
+ 
+ const TAG_RAW: u8 = 255;
+ const MAX_ORDER: u8 = 3;
+@@ -185,6 +185,7 @@ mod step;
+ mod crc;
+ mod hash;
+ mod same;
++mod regread;
+ 
+ // ------------------------------------------------------------------------------------ diff
+ fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut [u8]) {
+@@ -1443,5 +1444,6 @@ fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+     crc::register(m)?;
+     hash::register(m)?;
+     same::register(m)?;
++    regread::register(m)?;
+     Ok(())
+ }
+diff --git a/native/src/regread.rs b/native/src/regread.rs
+new file mode 100644
+index 0000000..37c5f81
+--- /dev/null
++++ b/native/src/regread.rs
+@@ -0,0 +1,255 @@
++//! R078: the steps of a history file (hindsight/core/persist.py `registry_from_bytes`) read by the engine.
++//!
++//! After the JSON header a registry holds, for every history in turn and every step of it, a u64 length
++//! and the step's bytes. `StepReader(src, pos, size)` walks that run from byte `pos` of `src` (a path: the
++//! history folder's file, opened here; or any bytes-like object: the copy in the .blend), and
++//! `read(count)` returns the next `count` steps as `(blobs, crcs)`: each blob a new bytes object, or None
++//! where the run is cut short (a length field that doesn't fit, or a step that would end past `size`;
++//! from there on every step is None, as in Python). `crcs` holds the CRC-32 of each blob (0 for None),
++//! computed with the GIL released. Python compares them with the saved ones and builds the entries,
++//! exactly as before; tests/reference/persist.py is the Python loop this replaces.
++//!
++//! Memory: each step is copied once into its own bytes object; the file goes through a 4 MB buffer
++//! (larger steps are read straight into their bytes object), so the whole file is never held. The new
++//! objects are filled (and checksummed) with the GIL released, on two threads for 1 MB or more.
++
++use pyo3::exceptions::PyValueError;
++use pyo3::ffi;
++use pyo3::prelude::*;
++use pyo3::types::{PyList, PyString};
++use std::fs::File;
++use std::io::{Read, Seek, SeekFrom};
++
++use crate::{guard, Buf};
++
++const CHUNK: usize = 4 << 20;
++/// Copies of at least this many bytes in one batch are split over two threads: filling new memory is
++/// bound by the kernel's page faults, and two threads took 0.7 of one thread's time on a shared 4-core
++/// VM (three or four were no better).
++const PAR_MIN: usize = 1 << 20;
++
++#[pyclass(module = "hindsight_native", unsendable)]
++pub struct StepReader {
++    file: Option<File>,
++    mem: Option<Py<PyAny>>,
++    pos: u64,       // the next byte to read
++    size: u64,      // the size the caller saw (the walk never reads past it)
++    cut: bool,      // the run was cut short: every later step is None
++    buf: Vec<u8>,   // file: bytes [buf_at, buf_at + buf.len()) of the file
++    buf_at: u64,
++    at: u64,        // where the file's own position is
++}
++
++fn changed() -> PyErr {
++    PyValueError::new_err("the history file changed while it was read")
++}
++
++fn io_err(e: std::io::Error) -> PyErr {
++    if e.kind() == std::io::ErrorKind::UnexpectedEof { changed() } else { e.into() }
++}
++
++/// One step to fill: n bytes from `src` (an address) into the new bytes object at `dst`, its CRC into slot.
++#[derive(Clone, Copy)]
++struct Job {
++    src: usize,
++    dst: usize,
++    n: usize,
++    slot: usize,
++}
++
++/// Copies and checksums the jobs (the GIL released by the caller), on two threads for big batches.
++fn run_jobs(jobs: &[Job], crcs: &mut [u32]) {
++    fn one(j: &Job) -> u32 {
++        // SAFETY: src points at n readable bytes (the caller's buffer or source object, alive and not
++        // written meanwhile); dst at the n bytes of a new bytes object nobody else holds yet.
++        let (s, d) = unsafe {
++            (std::slice::from_raw_parts(j.src as *const u8, j.n), std::slice::from_raw_parts_mut(j.dst as *mut u8, j.n))
++        };
++        d.copy_from_slice(s);
++        crc32fast::hash(d)
++    }
++    let total: usize = jobs.iter().map(|j| j.n).sum();
++    let two = total >= PAR_MIN && jobs.len() > 1 && std::thread::available_parallelism().map_or(1, |n| n.get()) > 1;
++    if !two {
++        for j in jobs {
++            crcs[j.slot] = one(j);
++        }
++        return;
++    }
++    // split where half the bytes are done
++    let mut acc = 0;
++    let cut = jobs.iter().position(|j| { acc += j.n; acc * 2 >= total }).unwrap_or(0) + 1;
++    let (a, b) = jobs.split_at(cut.min(jobs.len() - 1).max(1));
++    let rb: Vec<u32> = std::thread::scope(|sc| {
++        let h = sc.spawn(|| b.iter().map(one).collect::<Vec<u32>>());
++        for j in a {
++            crcs[j.slot] = one(j);
++        }
++        h.join().unwrap_or_else(|e| std::panic::resume_unwind(e))
++    });
++    for (j, c) in b.iter().zip(rb) {
++        crcs[j.slot] = c;
++    }
++}
++
++/// A new bytes object of n bytes, not filled yet, and the address of its bytes.
++fn new_bytes(py: Python<'_>, n: usize) -> PyResult<(Py<PyAny>, usize)> {
++    let len = isize::try_from(n).map_err(|_| PyValueError::new_err("step too large"))?;
++    // SAFETY: the GIL is held; a NULL source asks for an uninitialised buffer of `len` bytes, which the
++    // caller fills before anyone else can see the object.
++    unsafe {
++        let o = ffi::PyBytes_FromStringAndSize(std::ptr::null(), len);
++        if o.is_null() {
++            return Err(PyErr::fetch(py));
++        }
++        let p = ffi::PyBytes_AsString(o) as usize;
++        Ok((Py::from_owned_ptr(py, o), p))
++    }
++}
++
++impl StepReader {
++    /// Fills the buffer with the file's bytes from p on (up to CHUNK, never past size), GIL released.
++    fn fill(&mut self, py: Python<'_>, p: u64) -> PyResult<()> {
++        let want = (CHUNK as u64).min(self.size - p) as usize;
++        let (file, buf, at) = (self.file.as_mut().unwrap(), &mut self.buf, &mut self.at);
++        py.allow_threads(|| -> std::io::Result<()> {
++            if *at != p {
++                file.seek(SeekFrom::Start(p))?;
++            }
++            buf.resize(want, 0);
++            file.read_exact(buf)?;
++            *at = p + want as u64;
++            Ok(())
++        })
++        .map_err(io_err)?;
++        self.buf_at = p;
++        Ok(())
++    }
++
++    fn in_buf(&self, p: u64, n: u64) -> bool {
++        p >= self.buf_at && p + n <= self.buf_at + self.buf.len() as u64
++    }
++
++    /// Reads a big step (more than CHUNK bytes) straight into its new bytes object, GIL released.
++    fn read_big(&mut self, py: Python<'_>, dst: usize, n: usize) -> PyResult<()> {
++        let p = self.pos;
++        let (file, at) = (self.file.as_mut().unwrap(), &mut self.at);
++        py.allow_threads(|| -> std::io::Result<()> {
++            if *at != p {
++                file.seek(SeekFrom::Start(p))?;
++            }
++            // SAFETY: dst is the n bytes of a new bytes object nobody else holds yet
++            file.read_exact(unsafe { std::slice::from_raw_parts_mut(dst as *mut u8, n) })?;
++            *at = p + n as u64;
++            Ok(())
++        })
++        .map_err(io_err)
++    }
++}
++
++#[pymethods]
++impl StepReader {
++    /// StepReader(src, pos, size): src is the path of a history file (its size must be `size`) or a
++    /// bytes-like object of at least `size` bytes; the steps start at byte `pos`.
++    #[new]
++    fn new(src: &Bound<'_, PyAny>, pos: u64, size: u64) -> PyResult<Self> {
++        guard(|| {
++            let mut r = StepReader { file: None, mem: None, pos, size, cut: false, buf: Vec::new(), buf_at: 0, at: 0 };
++            if let Ok(path) = src.downcast::<PyString>() {
++                let f = File::open(path.to_str()?)?;
++                if f.metadata()?.len() != size {
++                    return Err(changed());
++                }
++                r.file = Some(f);
++            } else {
++                let b = Buf::new(src, false)?;
++                if (b.len() as u64) < size {
++                    return Err(PyValueError::new_err("StepReader: the buffer is smaller than size"));
++                }
++                r.mem = Some(src.clone().unbind());
++            }
++            Ok(r)
++        })
++    }
++
++    /// The next `count` steps: (list of bytes or None, list of their CRC-32s, 0 for None).
++    fn read<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<(Bound<'py, PyList>, Bound<'py, PyList>)> {
++        guard(|| {
++            let mem = match &self.mem {
++                Some(m) => Some(Buf::new(m.bind(py), false)?),
++                None => None,
++            };
++            let src = mem.as_ref().map(|b| b.bytes());
++            let none = py.None();
++            let mut out: Vec<Py<PyAny>> = Vec::with_capacity(count.min(1 << 20));
++            let mut crcs: Vec<u32> = Vec::with_capacity(count.min(1 << 20));
++            let mut jobs: Vec<Job> = Vec::new();
++            for _ in 0..count {
++                let slot = out.len();
++                if self.cut || self.pos.checked_add(8).map_or(true, |e| e > self.size) {
++                    self.cut = true;
++                    out.push(none.clone_ref(py));
++                    crcs.push(0);
++                    continue;
++                }
++                let lp = self.pos;
++                let n = match src {
++                    Some(m) => u64::from_le_bytes(m[lp as usize..lp as usize + 8].try_into().unwrap()),
++                    None => {
++                        if !self.in_buf(lp, 8) {
++                            // the buffer's steps are done before it is refilled
++                            py.allow_threads(|| run_jobs(&jobs, &mut crcs));
++                            jobs.clear();
++                            self.fill(py, lp)?;
++                        }
++                        let o = (lp - self.buf_at) as usize;
++                        u64::from_le_bytes(self.buf[o..o + 8].try_into().unwrap())
++                    }
++                };
++                self.pos += 8;
++                if (self.pos as u128) + (n as u128) > self.size as u128 {
++                    self.cut = true;
++                    out.push(none.clone_ref(py));
++                    crcs.push(0);
++                    continue;
++                }
++                let n = n as usize;
++                let (obj, dst) = new_bytes(py, n)?;
++                out.push(obj);
++                crcs.push(0);
++                match src {
++                    Some(m) => jobs.push(Job { src: m.as_ptr() as usize + self.pos as usize, dst, n, slot }),
++                    None if n > CHUNK => {
++                        // read straight into its bytes object (the buffer and the jobs on it are left as they are)
++                        self.read_big(py, dst, n)?;
++                        // SAFETY: the bytes just read into the new object, which `out` holds
++                        crcs[slot] = py.allow_threads(|| crc32fast::hash(unsafe { std::slice::from_raw_parts(dst as *const u8, n) }));
++                    }
++                    None => {
++                        if !self.in_buf(self.pos, n as u64) {
++                            py.allow_threads(|| run_jobs(&jobs, &mut crcs));
++                            jobs.clear();
++                            self.fill(py, self.pos)?;
++                        }
++                        let o = (self.pos - self.buf_at) as usize;
++                        jobs.push(Job { src: self.buf.as_ptr() as usize + o, dst, n, slot });
++                    }
++                }
++                self.pos += n as u64;
++            }
++            py.allow_threads(|| run_jobs(&jobs, &mut crcs));
++            Ok((PyList::new_bound(py, out), PyList::new_bound(py, crcs)))
++        })
++    }
++
++    /// Where the next step starts.
++    #[getter]
++    fn pos(&self) -> u64 {
++        self.pos
++    }
++}
++
++pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
++    m.add_class::<StepReader>()?;
++    Ok(())
++}
+diff --git a/tests/test_core_step_reader.py b/tests/test_core_step_reader.py
+new file mode 100644
+index 0000000..ff66565
+--- /dev/null
++++ b/tests/test_core_step_reader.py
+@@ -0,0 +1,303 @@
++import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
++"""R078: the steps of a history file are read by the engine (StepReader), not by a Python loop.
++
++persist.registry_from_bytes must give exactly what the Python loop gave (tests/reference/persist.py, the
++oracle): the same entries, cursors, morph targets, load_report, and the same error for a file it can't read,
++from a file (a history folder) and from bytes (Embed). test_core_framing_crc checks one registry cut at every
++byte and flipped at every byte; this file adds:
++
++  random      random registries (1 to 6 histories, 0 to 40 steps each, steps from 0 bytes to 6 MB, so the
++              file is read through the engine's 4 MB buffer, past it, and straight into a big step's bytes,
++              and the two-thread fill runs), from a file, bytes, a bytearray and a memoryview
++  damage      each of them cut at every step boundary and next to it plus random places, random bit flips,
++              length fields claiming too much, too little and 2^64 - 1, more steps claimed than stored
++  reader      StepReader alone: the run across histories, count 0, a file whose size changed, a short buffer
++  memory      a load holds each step once: the Python memory after it is the steps' bytes, and the peak while
++              loading is not the file plus the steps"""
++import json
++import random
++import struct
++import tempfile
++import traceback
++import tracemalloc
++import zlib
++
++import numpy as np
++
++sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference copies (Blender's --python adds no path)
++from reference import persist as rpersist             # noqa: E402
++from hindsight.core import persist                    # noqa: E402
++from hindsight.core.native import ENGINE              # noqa: E402
++from hindsight.core.history import History            # noqa: E402
++from hindsight.core.registry import Registry          # noqa: E402
++from hindsight.core.types import Entry                # noqa: E402
++
++RNG = random.Random(78)
++SCRATCH = tempfile.mkdtemp(prefix="hs_r078_")
++import atexit, shutil                                  # noqa: E402
++atexit.register(shutil.rmtree, SCRATCH, True)
++
++
++def canon(reg):
++    out = {"next_seq": reg.next_seq, "by_object": reg.by_object, "saved": reg.saved, "save_id": reg.save_id,
++           "report": reg.load_report, "h": []}
++    for uid, h in reg.histories.items():
++        out["h"].append((uid, list(h.members), h.cursor, h.enabled, h.morph_target,
++                         [(e.blob, e.meta, e.blob_crc()) for e in h.entries]))
++    return out
++
++
++def outcome(mod, src):
++    try:
++        if isinstance(src, str):
++            with open(src, "rb") as fh:
++                return ("ok", canon(mod.registry_from_bytes(mod._FileBytes(fh))))
++        return ("ok", canon(mod.registry_from_bytes(src)))
++    except Exception as exc:                  # the classes differ (each module has its own NewerFormatError)
++        return ("err", type(exc).__name__, str(exc))
++
++
++def to_file(data, name="r.hsr"):
++    p = os.path.join(SCRATCH, name)
++    with open(p, "wb") as fh:
++        fh.write(data)
++    return p
++
++
++def same(data, what, kinds=("file", "bytes")):
++    ref = outcome(rpersist, bytes(data))
++    for kind in kinds:
++        src = to_file(data) if kind == "file" else bytes(data) if kind == "bytes" else \
++            bytearray(data) if kind == "bytearray" else memoryview(bytes(data))
++        got = outcome(persist, src)
++        assert got == ref, (what, kind, got[:3] if got[0] == "err" else "live ok", ref[:3] if ref[0] == "err" else "ref ok")
++    return ref
++
++
++def blob(n):
++    """Step-like bytes of n bytes (their content doesn't matter to the registry; metas are in the JSON)."""
++    if n == 0:
++        return b""
++    return np.random.default_rng(n).integers(0, 256, n, dtype=np.uint8).tobytes()
++
++
++def random_registry(rng, big=True):
++    reg = Registry()
++    seq = 1
++    sizes = [0, 1, 7, 100, 4000, 9000, 70_000, 600_000, 1_500_000]
++    if big:
++        sizes += [(4 << 20) - 3, (4 << 20) + 5, 6 << 20]
++    for k in range(rng.randint(1, 6)):
++        uid = f"H{k}"
++        h = History(uid, [f"o{k}"])
++        for _ in range(rng.randint(0, 40 if k else 12)):
++            n = rng.choice(sizes) if rng.random() < 0.3 else rng.randint(0, 20_000)
++            h.entries.append(Entry(blob=blob(n), meta={"seq": seq, "label": rng.choice(["Draw", "Smooth"]),
++                                                       "mode": "SCULPT", "target": f"o{k}", "kind": "DELTA"}))
++            seq += 1
++        h.cursor = rng.randint(0, len(h.entries))
++        h.morph_target = rng.choice([None, 0, len(h.entries) // 2])
++        h.enabled = rng.random() < 0.8
++        reg.histories[uid] = h
++        reg.by_object[f"o{k}"] = uid
++    reg.next_seq = seq + rng.randint(0, 3)
++    return reg
++
++
++def layout(data):
++    (jl,) = struct.unpack("<I", data[4:8])
++    doc = json.loads(data[8:8 + jl])
++    pos, spans = 8 + jl, []
++    for hd in doc["histories"]:
++        for _ in range(hd["n_entries"]):
++            (n,) = struct.unpack("<Q", data[pos:pos + 8])
++            spans.append((pos, n))
++            pos += 8 + n
++    return jl, doc, spans
++
++
++def rebuild(doc, data, spans, lens=None, extra_steps=0):
++    js = json.dumps(doc, separators=(",", ":")).encode("utf-8")
++    out = [b"HSR1", struct.pack("<I", len(js)), js]
++    for i, (p, n) in enumerate(spans):
++        out += [struct.pack("<Q", n if not lens or i not in lens else lens[i]), data[p + 8:p + 8 + n]]
++    out += [b"HSRT", struct.pack("<I", zlib.crc32(js))]
++    return b"".join(out)
++
++
++def test_random_registries():
++    n = 0
++    for trial in range(10):
++        reg = random_registry(RNG, big=trial % 3 == 0)
++        data = persist.registry_to_bytes(reg, "none")
++        r = same(data, ("whole", trial), ("file", "bytes", "bytearray", "memoryview"))
++        assert r[0] == "ok" and not r[1]["report"]["damaged"], r[:3]
++        assert [len(h[5]) for h in r[1]["h"]] == [len(h.entries) for h in reg.histories.values()]
++        n += 1
++    print(f"PASS test_random_registries ({n} registries, four kinds of source)")
++
++
++def test_damaged_random_registries():
++    n = 0
++    for trial in range(8):
++        reg = random_registry(RNG, big=False)
++        data = persist.registry_to_bytes(reg, "none")
++        jl, doc, spans = layout(data)
++        cuts = {0, 4, 8, 8 + jl - 1, 8 + jl, len(data) - 1, len(data) - 8, len(data)}
++        for p, ln in spans:
++            cuts |= {p - 1, p, p + 1, p + 7, p + 8, p + 9, p + 8 + ln - 1, p + 8 + ln, p + 8 + ln + 1}
++        cuts |= {RNG.randrange(len(data)) for _ in range(30)}
++        for c in sorted(c for c in cuts if 0 <= c <= len(data)):
++            same(data[:c], ("cut", trial, c))
++            n += 1
++        for _ in range(40):
++            bad = bytearray(data)
++            i = RNG.randrange(8 + jl, len(data)) if RNG.random() < 0.8 else RNG.randrange(len(data))
++            bad[i] ^= 1 << RNG.randrange(8)
++            same(bytes(bad), ("flip", trial, i))
++            n += 1
++        if spans:
++            for k in {0, len(spans) // 2, len(spans) - 1}:
++                for claim in (2 ** 64 - 1, 2 ** 63, len(data), spans[k][1] + 1, max(0, spans[k][1] - 1), 0):
++                    same(rebuild(doc, data, spans, {k: claim}), ("length claim", trial, k, claim))
++                    n += 1
++        d2 = json.loads(json.dumps(doc))
++        d2["histories"][0]["n_entries"] += 3
++        same(rebuild(d2, data, spans), ("more steps claimed", trial))
++        d2 = json.loads(json.dumps(doc))
++        d2["histories"][-1]["n_entries"] = max(0, d2["histories"][-1]["n_entries"] - 1)
++        same(rebuild(d2, data, spans), ("fewer steps claimed", trial))
++        n += 2
++    print(f"PASS test_damaged_random_registries ({n} damaged registries read as the reference reads them)")
++
++
++def test_big_steps_damaged():
++    """Steps larger than the engine's 4 MB buffer are read straight into their bytes object: cut and
++    flipped around and inside them."""
++    reg = Registry()
++    h = History("H", ["o"])
++    h.entries = [Entry(blob=blob(n), meta={"seq": i + 1}) for i, n in enumerate((1000, 5 << 20, 3000, (4 << 20) + 1, 10))]
++    h.cursor = 3
++    reg.histories["H"] = h
++    data = persist.registry_to_bytes(reg, "none")
++    jl, doc, spans = layout(data)
++    n = 0
++    for p, ln in spans:
++        for c in (p, p + 8, p + 8 + ln // 2, p + 8 + ln - 1, p + 8 + ln):
++            same(data[:c], ("cut", c))
++            n += 1
++        bad = bytearray(data)
++        bad[p + 8 + ln // 3] ^= 0x10
++        same(bytes(bad), ("flip", p))
++        same(rebuild(doc, data, spans, {spans.index((p, ln)): ln + 1}), ("claim", p))
++        n += 2
++    print(f"PASS test_big_steps_damaged ({n} registries with steps over 4 MB)")
++
++
++def test_reader_alone():
++    steps = [blob(n) for n in (5, 0, 9000, 5 << 20, 30, (4 << 20) - 8, 1)]
++    data = b"head" + b"".join(struct.pack("<Q", len(s)) + s for s in steps) + b"tail"
++    path = to_file(data, "steps.bin")
++    for src in (path, data, bytearray(data), memoryview(data)):
++        r = ENGINE.StepReader(src, 4, len(data))
++        a = r.read(2)
++        b = r.read(0)
++        c = r.read(5)
++        d = r.read(3)                              # past the steps: "tail" is too short for a length
++        assert a[0] == steps[:2] and b == ([], []) and c[0] == steps[2:] and d[0] == [None] * 3, src.__class__
++        assert a[1] + c[1] == [zlib.crc32(s) for s in steps] and d[1] == [0, 0, 0]
++        assert r.pos == len(data) - 4
++    # a file that is not the size the caller saw (changed while it was read)
++    for size in (len(data) - 1, len(data) + 1):
++        try:
++            ENGINE.StepReader(path, 4, size)
++        except ValueError as e:
++            assert "changed" in str(e)
++        else:
++            raise AssertionError(size)
++    try:
++        ENGINE.StepReader(data, 4, len(data) + 1)
++    except ValueError:
++        pass
++    else:
++        raise AssertionError("a buffer shorter than size")
++    # a cut run: every later step is None, also in a later read
++    r = ENGINE.StepReader(data[:40], 4, 40)
++    got = r.read(3)[0] + r.read(2)[0]
++    assert got[0] == steps[0] and got[1] == steps[1] and got[2:] == [None] * 3, got
++    print("PASS test_reader_alone")
++
++
++def test_a_load_holds_each_step_once():
++    reg = Registry()
++    h = History("H", ["o"])
++    h.entries = [Entry(blob=blob(9000 + i), meta={"seq": i + 1}) for i in range(1500)]
++    h.cursor = len(h.entries)
++    reg.histories["H"] = h
++    data = persist.registry_to_bytes(reg, "none")
++    steps = sum(len(e.blob) for e in h.entries)
++    path = to_file(data, "mem.hsr")
++    del reg, h
++    for kind in ("file", "bytes"):
++        src = path if kind == "file" else data
++        tracemalloc.start()
++        if kind == "file":
++            with open(src, "rb") as fh:
++                got = persist.registry_from_bytes(persist._FileBytes(fh))
++        else:
++            got = persist.registry_from_bytes(src)
++        cur, peak = tracemalloc.get_traced_memory()
++        tracemalloc.stop()
++        held = sum(len(e.blob) for e in got.histories["H"].entries)
++        assert held == steps
++        assert cur < steps * 1.15 + (1 << 20), (kind, cur, steps)
++        assert peak < steps * 1.25 + (2 << 20), (kind, peak, steps)       # never the file plus the steps
++        del got
++    # the engine's own memory too (tracemalloc sees only Python's): in a fresh process (no memory freed
++    # earlier to reuse), the resident peak while a file of about 40 MB loads grows by the steps and the
++    # engine's 4 MB buffer, not by the file as well (Linux, where /proc tells)
++    if os.path.exists("/proc/self/clear_refs"):
++        import subprocess
++        h = History("H", ["o"])
++        h.entries = [Entry(blob=blob(13_000 + i % 50), meta={"seq": i + 1}) for i in range(3000)]
++        reg = Registry()
++        reg.histories["H"] = h
++        big = to_file(persist.registry_to_bytes(reg, "none"), "mem2.hsr")
++        steps2 = sum(len(e.blob) for e in h.entries)
++        del reg, h
++        probe = (
++            "import sys, gc; sys.path.insert(0, sys.argv[1])\n"
++            "from hindsight.core import persist\n"
++            "def kb(t):\n"
++            "    return next(int(l.split()[1]) for l in open('/proc/self/status') if l.startswith(t))\n"
++            "gc.collect(); open('/proc/self/clear_refs', 'w').write('5'); r0 = kb('VmRSS')\n"
++            "fh = open(sys.argv[2], 'rb'); reg = persist.registry_from_bytes(persist._FileBytes(fh))\n"
++            "print('GREW', (kb('VmHWM') - r0) * 1024, sum(len(e.blob) for e in reg.histories['H'].entries))\n")
++        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++        r = subprocess.run([sys.executable, "-c", probe, root, big], capture_output=True, text=True, timeout=300)
++        line = next((x for x in r.stdout.splitlines() if x.startswith("GREW")), None)
++        assert line is not None, (r.returncode, r.stdout[-500:], r.stderr[-2000:])
++        grew, held = (int(x) for x in line.split()[1:])
++        assert held == steps2 and grew < steps2 * 1.3 + (8 << 20), (grew / 2**20, steps2 / 2**20)
++        print(f"     resident peak of a fresh process grew {grew / 2**20:.1f} MB for {steps2 / 2**20:.1f} MB of steps")
++    print(f"PASS test_a_load_holds_each_step_once ({steps / 2**20:.1f} MB of steps)")
++
++
++def main():
++    tests = [test_reader_alone, test_random_registries, test_damaged_random_registries, test_big_steps_damaged,
++             test_a_load_holds_each_step_once]
++    failed = 0
++    for t in tests:
++        try:
++            t()
++        except Exception:
++            failed += 1
++            print(f"FAIL {t.__name__}")
++            traceback.print_exc()
++    shutil.rmtree(SCRATCH, ignore_errors=True)
++    print(f"{len(tests) - failed}/{len(tests)} passed")
++    sys.exit(1 if failed else 0)
++
++
++if __name__ == "__main__":
++    main()

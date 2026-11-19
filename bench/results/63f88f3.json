@@ -1,0 +1,635 @@
+{
+ "label": "63f88f3",
+ "root": "<this checkout>",
+ "quick": false,
+ "only": [],
+ "started": "2026-11-19 17:09:03",
+ "scenarios": {
+  "commit_100k": {
+   "min_ms": 0.5215,
+   "median_ms": 0.5826,
+   "n": 25,
+   "vertices": 99904,
+   "tracemalloc_mb": 0.045,
+   "hwm_mb": 0.223
+  },
+  "commit_1m": {
+   "min_ms": 2.7498,
+   "median_ms": 2.8442,
+   "n": 12,
+   "vertices": 999698,
+   "tracemalloc_mb": 0.407,
+   "hwm_mb": 0.0
+  },
+  "goto_bl_1_100k": {
+   "min_ms": 0.3523,
+   "median_ms": 0.4248,
+   "n": 12,
+   "vertices": 100000,
+   "steps": 400,
+   "jump": 1
+  },
+  "goto_bl_300_100k": {
+   "min_ms": 6.0547,
+   "median_ms": 6.1439,
+   "n": 12,
+   "vertices": 100000,
+   "steps": 400,
+   "jump": 200
+  },
+  "jump_1_fwd_100k": {
+   "min_ms": 0.0425,
+   "median_ms": 0.0437,
+   "n": 60,
+   "steps": 1,
+   "vertices": 100000,
+   "end_sha": "bd6132024f3c"
+  },
+  "jump_1_back_100k": {
+   "min_ms": 0.0411,
+   "median_ms": 0.0417,
+   "n": 60,
+   "steps": 1,
+   "vertices": 100000,
+   "end_sha": "f3e9340f11ab"
+  },
+  "jump_30_fwd_100k": {
+   "min_ms": 0.5771,
+   "median_ms": 0.6306,
+   "n": 8,
+   "steps": 30,
+   "vertices": 100000,
+   "end_sha": "b9351b9e6bd3"
+  },
+  "jump_30_back_100k": {
+   "min_ms": 0.6312,
+   "median_ms": 0.6956,
+   "n": 8,
+   "steps": 30,
+   "vertices": 100000,
+   "end_sha": "ae746b6b908d"
+  },
+  "jump_300_fwd_100k": {
+   "min_ms": 6.4277,
+   "median_ms": 8.7182,
+   "n": 8,
+   "steps": 300,
+   "vertices": 100000,
+   "end_sha": "d99cfb2ec0f4",
+   "tracemalloc_mb": 0.005,
+   "hwm_mb": 0.273
+  },
+  "jump_300_back_100k": {
+   "min_ms": 6.574,
+   "median_ms": 9.1194,
+   "n": 8,
+   "steps": 300,
+   "vertices": 100000,
+   "end_sha": "b16166567e3c"
+  },
+  "jump_3000_fwd_100k": {
+   "min_ms": 56.3645,
+   "median_ms": 63.229,
+   "n": 8,
+   "steps": 3000,
+   "vertices": 100000,
+   "end_sha": "3bd718cd00bc"
+  },
+  "jump_3000_back_100k": {
+   "min_ms": 49.197,
+   "median_ms": 63.2213,
+   "n": 8,
+   "steps": 3000,
+   "vertices": 100000,
+   "end_sha": "6c13683366d0",
+   "tracemalloc_mb": 0.05,
+   "hwm_mb": 0.0
+  },
+  "drag_5000_fwd_100k": {
+   "min_ms": 96.0144,
+   "median_ms": 117.0443,
+   "n": 4,
+   "events": 100,
+   "vertices": 100000
+  },
+  "drag_5000_back_100k": {
+   "min_ms": 97.7177,
+   "median_ms": 107.3727,
+   "n": 4,
+   "events": 100,
+   "vertices": 100000
+  },
+  "jump_1_fwd_1m": {
+   "min_ms": 0.1342,
+   "median_ms": 0.1397,
+   "n": 60,
+   "steps": 1,
+   "vertices": 1000000,
+   "end_sha": "9918ac0ad29b"
+  },
+  "jump_1_back_1m": {
+   "min_ms": 0.1376,
+   "median_ms": 0.1511,
+   "n": 60,
+   "steps": 1,
+   "vertices": 1000000,
+   "end_sha": "c0216309709e"
+  },
+  "jump_30_fwd_1m": {
+   "min_ms": 3.7905,
+   "median_ms": 4.7001,
+   "n": 8,
+   "steps": 30,
+   "vertices": 1000000,
+   "end_sha": "c42831ff2ef8"
+  },
+  "jump_30_back_1m": {
+   "min_ms": 3.6009,
+   "median_ms": 3.7179,
+   "n": 8,
+   "steps": 30,
+   "vertices": 1000000,
+   "end_sha": "8fc35c975867"
+  },
+  "jump_300_fwd_1m": {
+   "min_ms": 29.6714,
+   "median_ms": 38.0342,
+   "n": 8,
+   "steps": 300,
+   "vertices": 1000000,
+   "end_sha": "4a03d72c4140",
+   "tracemalloc_mb": 0.005,
+   "hwm_mb": 0.0
+  },
+  "jump_300_back_1m": {
+   "min_ms": 25.2833,
+   "median_ms": 26.8495,
+   "n": 8,
+   "steps": 300,
+   "vertices": 1000000,
+   "end_sha": "e5c017e4df3a"
+  },
+  "jump_3000_fwd_1m": {
+   "min_ms": 314.7935,
+   "median_ms": 346.1855,
+   "n": 5,
+   "steps": 3000,
+   "vertices": 1000000,
+   "end_sha": "2a9a009eb9fc"
+  },
+  "jump_3000_back_1m": {
+   "min_ms": 278.0446,
+   "median_ms": 351.9742,
+   "n": 5,
+   "steps": 3000,
+   "vertices": 1000000,
+   "end_sha": "c29912511079",
+   "tracemalloc_mb": 0.05,
+   "hwm_mb": 0.0
+  },
+  "drag_5000_fwd_1m": {
+   "min_ms": 823.3722,
+   "median_ms": 904.8014,
+   "n": 3,
+   "events": 100,
+   "vertices": 1000000
+  },
+  "drag_5000_back_1m": {
+   "min_ms": 810.8283,
+   "median_ms": 822.3591,
+   "n": 3,
+   "events": 100,
+   "vertices": 1000000
+  },
+  "save_folder_100k_1000": {
+   "min_ms": 76.7,
+   "median_ms": 85.7,
+   "n": 3,
+   "tracemalloc_mb": 3.42,
+   "hwm_mb": 7.25,
+   "steps": 1001,
+   "history_mb": 10.27,
+   "vertices": 100000
+  },
+  "open_folder_100k_1000": {
+   "min_ms": 91.3,
+   "median_ms": 91.4,
+   "n": 3,
+   "tracemalloc_mb": 18.82,
+   "hwm_mb": 2.13,
+   "steps": 1001,
+   "history_mb": 10.27,
+   "vertices": 100000
+  },
+  "save_embed_100k_1000": {
+   "min_ms": 66.8,
+   "median_ms": 82.7,
+   "n": 3,
+   "tracemalloc_mb": 9.31,
+   "hwm_mb": 9.42,
+   "steps": 1001,
+   "history_mb": 10.27,
+   "vertices": 100000
+  },
+  "open_embed_100k_1000": {
+   "min_ms": 92.0,
+   "median_ms": 110.2,
+   "n": 3,
+   "tracemalloc_mb": 18.82,
+   "hwm_mb": 11.07,
+   "steps": 1001,
+   "history_mb": 10.27,
+   "vertices": 100000
+  },
+  "save_folder_100k_6000": {
+   "min_ms": 234.2,
+   "median_ms": 256.1,
+   "n": 3,
+   "tracemalloc_mb": 4.02,
+   "hwm_mb": 5.88,
+   "steps": 6001,
+   "history_mb": 54.43,
+   "vertices": 100000
+  },
+  "open_folder_100k_6000": {
+   "min_ms": 291.0,
+   "median_ms": 294.7,
+   "n": 3,
+   "tracemalloc_mb": 65.15,
+   "hwm_mb": 2.1,
+   "steps": 6001,
+   "history_mb": 54.43,
+   "vertices": 100000
+  },
+  "save_embed_100k_6000": {
+   "min_ms": 235.3,
+   "median_ms": 251.3,
+   "n": 3,
+   "tracemalloc_mb": 55.31,
+   "hwm_mb": 60.46,
+   "steps": 6001,
+   "history_mb": 54.43,
+   "vertices": 100000
+  },
+  "open_embed_100k_6000": {
+   "min_ms": 452.3,
+   "median_ms": 476.4,
+   "n": 3,
+   "tracemalloc_mb": 109.15,
+   "hwm_mb": 107.84,
+   "steps": 6001,
+   "history_mb": 54.43,
+   "vertices": 100000
+  },
+  "edit_step_100k": {
+   "min_ms": 9.2922,
+   "median_ms": 9.7555,
+   "n": 7,
+   "vertices": 99542,
+   "commit_ms": 0.385,
+   "edit_step_ms": 9.653,
+   "steps": 10,
+   "tracemalloc_mb": 1.912,
+   "hwm_mb": 1.371
+  },
+  "edit_step_300k": {
+   "min_ms": 33.3013,
+   "median_ms": 35.7344,
+   "n": 7,
+   "vertices": 299210,
+   "commit_ms": 0.472,
+   "edit_step_ms": 35.116,
+   "steps": 10,
+   "tracemalloc_mb": 5.722,
+   "hwm_mb": 0.004
+  },
+  "dr_tick_idle_500": {
+   "min_ms": 0.0051,
+   "median_ms": 0.0054,
+   "n": 9,
+   "objects": 500
+  },
+  "dr_finish_nochange_500": {
+   "min_ms": 40.4653,
+   "median_ms": 41.1047,
+   "n": 9,
+   "objects": 500
+  },
+  "dr_on_update_500": {
+   "min_ms": 0.1429,
+   "median_ms": 0.1638,
+   "n": 11,
+   "objects": 500,
+   "calls": 11
+  },
+  "dr_finish_move_500": {
+   "min_ms": 40.8806,
+   "median_ms": 43.8359,
+   "n": 9,
+   "objects": 500,
+   "tracemalloc_mb": 0.47,
+   "hwm_mb": 0.426
+  },
+  "dr_prime_500": {
+   "min_ms": 146.3076,
+   "median_ms": 149.6223,
+   "n": 5,
+   "objects": 500,
+   "held_bytes_per_tracked": 11113,
+   "tracemalloc_mb": 5.54
+  },
+  "redraw_viewport_1obj_object": {
+   "min_ms": 0.0354,
+   "median_ms": 0.0373,
+   "n": 9,
+   "python_calls": 309.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_1obj_object": {
+   "min_ms": 0.053,
+   "median_ms": 0.0542,
+   "n": 9,
+   "python_calls": 370.1
+  },
+  "redraw_viewport_1obj_global": {
+   "min_ms": 0.0414,
+   "median_ms": 0.0443,
+   "n": 9,
+   "python_calls": 294.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 2.0,
+    "blf.disable": 1.0,
+    "blf.draw": 2.0,
+    "blf.enable": 1.0,
+    "blf.position": 2.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_1obj_global": {
+   "min_ms": 0.0597,
+   "median_ms": 0.0629,
+   "n": 9,
+   "python_calls": 346.1
+  },
+  "redraw_viewport_50obj_object": {
+   "min_ms": 0.0326,
+   "median_ms": 0.034,
+   "n": 9,
+   "python_calls": 309.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_object": {
+   "min_ms": 0.0568,
+   "median_ms": 0.0585,
+   "n": 9,
+   "python_calls": 370.1
+  },
+  "redraw_viewport_50obj_global": {
+   "min_ms": 0.0628,
+   "median_ms": 0.0651,
+   "n": 9,
+   "python_calls": 588.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 2.0,
+    "blf.disable": 1.0,
+    "blf.draw": 2.0,
+    "blf.enable": 1.0,
+    "blf.position": 2.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_global": {
+   "min_ms": 0.0806,
+   "median_ms": 0.0836,
+   "n": 9,
+   "python_calls": 640.1
+  },
+  "redraw_viewport_50obj_object_filtered": {
+   "min_ms": 0.053,
+   "median_ms": 0.0544,
+   "n": 9,
+   "python_calls": 369.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_object_filtered": {
+   "min_ms": 0.0759,
+   "median_ms": 0.0781,
+   "n": 9,
+   "python_calls": 450.1
+  },
+  "redraw_viewport_50obj_global_filtered": {
+   "min_ms": 0.0677,
+   "median_ms": 0.068,
+   "n": 9,
+   "python_calls": 606.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 2.0,
+    "blf.disable": 1.0,
+    "blf.draw": 2.0,
+    "blf.enable": 1.0,
+    "blf.position": 2.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_global_filtered": {
+   "min_ms": 0.0928,
+   "median_ms": 0.0971,
+   "n": 9,
+   "python_calls": 678.1
+  },
+  "drag_5000": {
+   "min_ms": 0.0952,
+   "median_ms": 0.0974,
+   "n": 9,
+   "python_calls": 420.4,
+   "gpu": {
+    "batch.draw": 11.0,
+    "batch_for_shader": 5.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "movie_addon_ms_per_frame_100k": {
+   "min_ms": 0.3416,
+   "median_ms": 0.3735,
+   "n": 5,
+   "frames": 301,
+   "goto_calls": 151,
+   "vertices": 100000,
+   "steps": 150,
+   "tracemalloc_mb": 0.088,
+   "hwm_mb": 6.293
+  },
+  "movie_frame_set_ms_per_frame_100k": {
+   "min_ms": 5.1551,
+   "median_ms": 5.354,
+   "n": 5,
+   "frames": 301,
+   "goto_calls": 151,
+   "vertices": 100000,
+   "steps": 150
+  },
+  "addon_import": {
+   "min_ms": 12.6487,
+   "median_ms": 15.0638,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_register_cold": {
+   "min_ms": 2.8348,
+   "median_ms": 3.0159,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_unregister_cold": {
+   "min_ms": 0.5092,
+   "median_ms": 0.5658,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_register_warm": {
+   "min_ms": 1.6776,
+   "median_ms": 1.7901,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_unregister_warm": {
+   "min_ms": 0.3924,
+   "median_ms": 0.428,
+   "n": 7,
+   "module_errors": []
+  },
+  "idle_60s_1obj": {
+   "min_ms": 8.0169,
+   "median_ms": 8.3158,
+   "n": 7,
+   "timer_calls": 894,
+   "recorded_objects": 1,
+   "simulated_s": 60
+  },
+  "depsgraph_handler_1obj": {
+   "min_ms": 5.4174,
+   "median_ms": 5.4708,
+   "n": 7,
+   "calls_per_sample": 1000,
+   "recorded_objects": 1
+  },
+  "idle_60s_50obj": {
+   "min_ms": 9.4465,
+   "median_ms": 9.9918,
+   "n": 7,
+   "timer_calls": 894,
+   "recorded_objects": 50,
+   "simulated_s": 60
+  },
+  "depsgraph_handler_50obj": {
+   "min_ms": 5.8875,
+   "median_ms": 6.4067,
+   "n": 7,
+   "calls_per_sample": 1000,
+   "recorded_objects": 50
+  }
+ },
+ "group_seconds": {
+  "commit": 3.7,
+  "jumps": 25.1,
+  "saveload": 10.6,
+  "editmode": 49.5,
+  "datarec": 12.3,
+  "draw": 7.9,
+  "movie": 12.9,
+  "addon": 3.5,
+  "idle": 1.2
+ },
+ "machine": {
+  "cores": 4,
+  "load_average_start": [
+   0.18,
+   0.61,
+   1.0
+  ],
+  "load_average_end": [
+   1.59,
+   0.92,
+   1.05
+  ],
+  "host_python": "3.13.18",
+  "platform": "Linux-6.18.44-fc-v653-x86_64-with-glibc2.39",
+  "python": "3.13.18",
+  "executable": "<bpy53 python>",
+  "blender": "5.3.0",
+  "engine_version": "1.0.0-beta.2",
+  "rust_engine_loaded": true,
+  "native_api_expected": 8,
+  "native_module": "/tmp/hs_bench_native/hindsight_native-0.9.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64/hindsight_native/__init__.py",
+  "native_api": 8,
+  "native_version": null,
+  "hindsight_native_env": ""
+ }
+}

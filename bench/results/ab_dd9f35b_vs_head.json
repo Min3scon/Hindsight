@@ -1,0 +1,647 @@
+{
+ "a": {
+  "label": "dd9f35b",
+  "root": "<checkout of dd9f35b>",
+  "facts": {
+   "python": "3.13.18",
+   "executable": "<bpy53 python>",
+   "blender": "5.3.0",
+   "engine_version": "1.0.0-beta.2",
+   "rust_engine_loaded": true,
+   "native_api_expected": 2,
+   "native_module": "/tmp/hs_bench_native/hindsight_native-0.2.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64/hindsight_native/__init__.py",
+   "native_api": 2,
+   "native_version": null,
+   "hindsight_native_env": ""
+  }
+ },
+ "b": {
+  "label": "head",
+  "root": "<this checkout>",
+  "facts": {
+   "python": "3.13.18",
+   "executable": "<bpy53 python>",
+   "blender": "5.3.0",
+   "engine_version": "1.0.0-beta.2",
+   "rust_engine_loaded": true,
+   "native_api_expected": 8,
+   "native_module": "/tmp/hs_bench_native/hindsight_native-0.9.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64/hindsight_native/__init__.py",
+   "native_api": 8,
+   "native_version": null,
+   "hindsight_native_env": ""
+  }
+ },
+ "rounds": 3,
+ "quick": false,
+ "only": [
+  "jump_3000",
+  "drag_5000_fwd_1m",
+  "jump_300_fwd_1m",
+  "idle_60s_1obj",
+  "jump_30_fwd_1m"
+ ],
+ "started": "2026-11-19 17:11:31",
+ "cores": 4,
+ "load_average_per_round": [
+  {
+   "round": 1,
+   "start": [
+    1.13,
+    0.86,
+    1.03
+   ],
+   "end": [
+    1.36,
+    0.95,
+    1.05
+   ]
+  },
+  {
+   "round": 2,
+   "start": [
+    1.36,
+    0.95,
+    1.05
+   ],
+   "end": [
+    1.54,
+    1.05,
+    1.08
+   ]
+  },
+  {
+   "round": 3,
+   "start": [
+    1.54,
+    1.05,
+    1.08
+   ],
+   "end": [
+    1.46,
+    1.09,
+    1.09
+   ]
+  }
+ ],
+ "elapsed_s_after_round": [
+  37,
+  72,
+  106
+ ],
+ "summary": {
+  "A": {
+   "jump_300_fwd_100k": {
+    "error": "AssertionError: start state differs",
+    "rounds": 3
+   },
+   "jump_30_fwd_1m": {
+    "min": 3.6733,
+    "median": 4.5692,
+    "spread": 0.38402309913378246,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "jump_300_fwd_1m": {
+    "min": 25.7038,
+    "median": 30.4751,
+    "spread": 0.21028233505877725,
+    "rounds": 3,
+    "unit": "ms",
+    "tracemalloc_mb": 0.005,
+    "hwm_mb": 0.0
+   },
+   "jump_3000_fwd_1m": {
+    "min": 256.8639,
+    "median": 311.0142,
+    "spread": 0.08034388072296703,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "jump_3000_back_1m": {
+    "min": 259.7133,
+    "median": 342.9156,
+    "spread": 0.04909892350416347,
+    "rounds": 3,
+    "unit": "ms",
+    "tracemalloc_mb": 0.05,
+    "hwm_mb": 0.098
+   },
+   "drag_5000_fwd_1m": {
+    "min": 793.5108,
+    "median": 848.9118,
+    "spread": 0.04241923363677001,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "drag_5000_back_1m": {
+    "min": 789.4279,
+    "median": 809.0018,
+    "spread": 0.053632202312327404,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "jump_3000_fwd_100k": {
+    "error": "no result reported",
+    "rounds": 3
+   },
+   "jump_3000_back_100k": {
+    "error": "no result reported",
+    "rounds": 3
+   },
+   "idle_60s_1obj": {
+    "min": 6.0915,
+    "median": 6.4888,
+    "spread": 0.08686365254538973,
+    "rounds": 3,
+    "unit": "ms"
+   }
+  },
+  "B": {
+   "jump_300_fwd_100k": {
+    "error": "AssertionError: start state differs",
+    "rounds": 3
+   },
+   "jump_30_fwd_1m": {
+    "min": 3.6236,
+    "median": 4.4286,
+    "spread": 0.20974160343821285,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "jump_300_fwd_1m": {
+    "min": 24.5472,
+    "median": 32.5211,
+    "spread": 0.26384853152562837,
+    "rounds": 3,
+    "unit": "ms",
+    "tracemalloc_mb": 0.005,
+    "hwm_mb": 0.0
+   },
+   "jump_3000_fwd_1m": {
+    "min": 256.4016,
+    "median": 328.2803,
+    "spread": 0.09703922698414158,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "jump_3000_back_1m": {
+    "min": 277.8275,
+    "median": 319.1073,
+    "spread": 0.04197679488515127,
+    "rounds": 3,
+    "unit": "ms",
+    "tracemalloc_mb": 0.05,
+    "hwm_mb": 0.0
+   },
+   "drag_5000_fwd_1m": {
+    "min": 719.5017,
+    "median": 797.0258,
+    "spread": 0.028621570899633353,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "drag_5000_back_1m": {
+    "min": 712.7464,
+    "median": 822.5335,
+    "spread": 0.1482182872324665,
+    "rounds": 3,
+    "unit": "ms"
+   },
+   "jump_3000_fwd_100k": {
+    "error": "no result reported",
+    "rounds": 3
+   },
+   "jump_3000_back_100k": {
+    "error": "no result reported",
+    "rounds": 3
+   },
+   "idle_60s_1obj": {
+    "min": 6.5603,
+    "median": 8.7687,
+    "spread": 0.35233729144746734,
+    "rounds": 3,
+    "unit": "ms"
+   }
+  }
+ },
+ "per_round": {
+  "A": [
+   {
+    "jump_300_fwd_100k": {
+     "error": "AssertionError: start state differs"
+    },
+    "jump_30_fwd_1m": {
+     "min_ms": 4.7501,
+     "median_ms": 5.1768,
+     "n": 8,
+     "steps": 30,
+     "vertices": 1000000,
+     "end_sha": "c42831ff2ef8"
+    },
+    "jump_300_fwd_1m": {
+     "min_ms": 26.1431,
+     "median_ms": 30.4751,
+     "n": 8,
+     "steps": 300,
+     "vertices": 1000000,
+     "end_sha": "4a03d72c4140",
+     "tracemalloc_mb": 0.005,
+     "hwm_mb": 0.0
+    },
+    "jump_3000_fwd_1m": {
+     "min_ms": 275.1423,
+     "median_ms": 303.361,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "2a9a009eb9fc"
+    },
+    "jump_3000_back_1m": {
+     "min_ms": 260.7809,
+     "median_ms": 342.9156,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "c29912511079",
+     "tracemalloc_mb": 0.05,
+     "hwm_mb": 0.188
+    },
+    "drag_5000_fwd_1m": {
+     "min_ms": 794.1591,
+     "median_ms": 849.2479,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "drag_5000_back_1m": {
+     "min_ms": 797.3146,
+     "median_ms": 805.5347,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "jump_3000_fwd_100k": {
+     "error": "no result reported"
+    },
+    "jump_3000_back_100k": {
+     "error": "no result reported"
+    },
+    "idle_60s_1obj": {
+     "min_ms": 6.4212,
+     "median_ms": 6.4888,
+     "n": 7,
+     "timer_calls": 894,
+     "recorded_objects": 1,
+     "simulated_s": 60
+    }
+   },
+   {
+    "jump_300_fwd_100k": {
+     "error": "AssertionError: start state differs"
+    },
+    "jump_30_fwd_1m": {
+     "min_ms": 4.4755,
+     "median_ms": 4.5692,
+     "n": 8,
+     "steps": 30,
+     "vertices": 1000000,
+     "end_sha": "c42831ff2ef8"
+    },
+    "jump_300_fwd_1m": {
+     "min_ms": 30.6136,
+     "median_ms": 32.0087,
+     "n": 8,
+     "steps": 300,
+     "vertices": 1000000,
+     "end_sha": "4a03d72c4140",
+     "tracemalloc_mb": 0.005,
+     "hwm_mb": 0.0
+    },
+    "jump_3000_fwd_1m": {
+     "min_ms": 315.7696,
+     "median_ms": 327.7342,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "2a9a009eb9fc"
+    },
+    "jump_3000_back_1m": {
+     "min_ms": 259.7133,
+     "median_ms": 351.7443,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "c29912511079",
+     "tracemalloc_mb": 0.05,
+     "hwm_mb": 0.34
+    },
+    "drag_5000_fwd_1m": {
+     "min_ms": 793.5108,
+     "median_ms": 814.6894,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "drag_5000_back_1m": {
+     "min_ms": 811.8671,
+     "median_ms": 848.7373,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "jump_3000_fwd_100k": {
+     "error": "no result reported"
+    },
+    "jump_3000_back_100k": {
+     "error": "no result reported"
+    },
+    "idle_60s_1obj": {
+     "min_ms": 6.0915,
+     "median_ms": 6.1798,
+     "n": 7,
+     "timer_calls": 894,
+     "recorded_objects": 1,
+     "simulated_s": 60
+    }
+   },
+   {
+    "jump_300_fwd_100k": {
+     "error": "AssertionError: start state differs"
+    },
+    "jump_30_fwd_1m": {
+     "min_ms": 3.6733,
+     "median_ms": 3.7404,
+     "n": 8,
+     "steps": 30,
+     "vertices": 1000000,
+     "end_sha": "c42831ff2ef8"
+    },
+    "jump_300_fwd_1m": {
+     "min_ms": 25.7038,
+     "median_ms": 26.4473,
+     "n": 8,
+     "steps": 300,
+     "vertices": 1000000,
+     "end_sha": "4a03d72c4140",
+     "tracemalloc_mb": 0.005,
+     "hwm_mb": 0.0
+    },
+    "jump_3000_fwd_1m": {
+     "min_ms": 256.8639,
+     "median_ms": 311.0142,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "2a9a009eb9fc"
+    },
+    "jump_3000_back_1m": {
+     "min_ms": 319.4984,
+     "median_ms": 335.2823,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "c29912511079",
+     "tracemalloc_mb": 0.05,
+     "hwm_mb": 0.098
+    },
+    "drag_5000_fwd_1m": {
+     "min_ms": 819.8798,
+     "median_ms": 848.9118,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "drag_5000_back_1m": {
+     "min_ms": 789.4279,
+     "median_ms": 809.0018,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "jump_3000_fwd_100k": {
+     "error": "no result reported"
+    },
+    "jump_3000_back_100k": {
+     "error": "no result reported"
+    },
+    "idle_60s_1obj": {
+     "min_ms": 6.6343,
+     "median_ms": 6.7166,
+     "n": 7,
+     "timer_calls": 894,
+     "recorded_objects": 1,
+     "simulated_s": 60
+    }
+   }
+  ],
+  "B": [
+   {
+    "jump_300_fwd_100k": {
+     "error": "AssertionError: start state differs"
+    },
+    "jump_30_fwd_1m": {
+     "min_ms": 3.6236,
+     "median_ms": 3.7694,
+     "n": 8,
+     "steps": 30,
+     "vertices": 1000000,
+     "end_sha": "c42831ff2ef8"
+    },
+    "jump_300_fwd_1m": {
+     "min_ms": 31.4329,
+     "median_ms": 36.8403,
+     "n": 8,
+     "steps": 300,
+     "vertices": 1000000,
+     "end_sha": "4a03d72c4140",
+     "tracemalloc_mb": 0.005,
+     "hwm_mb": 0.0
+    },
+    "jump_3000_fwd_1m": {
+     "min_ms": 319.3977,
+     "median_ms": 328.2803,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "2a9a009eb9fc"
+    },
+    "jump_3000_back_1m": {
+     "min_ms": 277.8275,
+     "median_ms": 319.1073,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "c29912511079",
+     "tracemalloc_mb": 0.05,
+     "hwm_mb": 0.0
+    },
+    "drag_5000_fwd_1m": {
+     "min_ms": 779.2458,
+     "median_ms": 806.9636,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "drag_5000_back_1m": {
+     "min_ms": 712.7464,
+     "median_ms": 730.3478,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "jump_3000_fwd_100k": {
+     "error": "no result reported"
+    },
+    "jump_3000_back_100k": {
+     "error": "no result reported"
+    },
+    "idle_60s_1obj": {
+     "min_ms": 8.7622,
+     "median_ms": 8.9971,
+     "n": 7,
+     "timer_calls": 894,
+     "recorded_objects": 1,
+     "simulated_s": 60
+    }
+   },
+   {
+    "jump_300_fwd_100k": {
+     "error": "AssertionError: start state differs"
+    },
+    "jump_30_fwd_1m": {
+     "min_ms": 4.3764,
+     "median_ms": 4.4286,
+     "n": 8,
+     "steps": 30,
+     "vertices": 1000000,
+     "end_sha": "c42831ff2ef8"
+    },
+    "jump_300_fwd_1m": {
+     "min_ms": 30.3981,
+     "median_ms": 32.5211,
+     "n": 8,
+     "steps": 300,
+     "vertices": 1000000,
+     "end_sha": "4a03d72c4140",
+     "tracemalloc_mb": 0.005,
+     "hwm_mb": 0.0
+    },
+    "jump_3000_fwd_1m": {
+     "min_ms": 256.4016,
+     "median_ms": 345.9477,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "2a9a009eb9fc"
+    },
+    "jump_3000_back_1m": {
+     "min_ms": 292.4083,
+     "median_ms": 311.0004,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "c29912511079",
+     "tracemalloc_mb": 0.05,
+     "hwm_mb": 0.0
+    },
+    "drag_5000_fwd_1m": {
+     "min_ms": 719.5017,
+     "median_ms": 797.0258,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "drag_5000_back_1m": {
+     "min_ms": 732.6459,
+     "median_ms": 822.5335,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "jump_3000_fwd_100k": {
+     "error": "no result reported"
+    },
+    "jump_3000_back_100k": {
+     "error": "no result reported"
+    },
+    "idle_60s_1obj": {
+     "min_ms": 6.5603,
+     "median_ms": 6.653,
+     "n": 7,
+     "timer_calls": 894,
+     "recorded_objects": 1,
+     "simulated_s": 60
+    }
+   },
+   {
+    "jump_300_fwd_100k": {
+     "error": "AssertionError: start state differs"
+    },
+    "jump_30_fwd_1m": {
+     "min_ms": 4.4653,
+     "median_ms": 4.56,
+     "n": 8,
+     "steps": 30,
+     "vertices": 1000000,
+     "end_sha": "c42831ff2ef8"
+    },
+    "jump_300_fwd_1m": {
+     "min_ms": 24.5472,
+     "median_ms": 29.1493,
+     "n": 8,
+     "steps": 300,
+     "vertices": 1000000,
+     "end_sha": "4a03d72c4140",
+     "tracemalloc_mb": 0.005,
+     "hwm_mb": 0.0
+    },
+    "jump_3000_fwd_1m": {
+     "min_ms": 297.0126,
+     "median_ms": 315.3467,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "2a9a009eb9fc"
+    },
+    "jump_3000_back_1m": {
+     "min_ms": 304.7023,
+     "median_ms": 324.0552,
+     "n": 5,
+     "steps": 3000,
+     "vertices": 1000000,
+     "end_sha": "c29912511079",
+     "tracemalloc_mb": 0.05,
+     "hwm_mb": 0.004
+    },
+    "drag_5000_fwd_1m": {
+     "min_ms": 742.041,
+     "median_ms": 784.5097,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "drag_5000_back_1m": {
+     "min_ms": 797.1491,
+     "median_ms": 838.5987,
+     "n": 3,
+     "events": 100,
+     "vertices": 1000000
+    },
+    "jump_3000_fwd_100k": {
+     "error": "no result reported"
+    },
+    "jump_3000_back_100k": {
+     "error": "no result reported"
+    },
+    "idle_60s_1obj": {
+     "min_ms": 8.5318,
+     "median_ms": 8.7687,
+     "n": 7,
+     "timer_calls": 894,
+     "recorded_objects": 1,
+     "simulated_s": 60
+    }
+   }
+  ]
+ }
+}

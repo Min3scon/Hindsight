@@ -71,13 +71,11 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 - Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default and the
   Pages source. No pull requests: work is merged into this branch after its tests pass.
-- Main line (2026-11-19): everything up to D118 and the Rust engine M1 (merge `7dc4853`, CI dependency
-  fix `847bcdd`). Work since then is on the main session's local branches `main-session-3` and
-  `main-session-4` (worktrees `.claude/worktrees/ms-p8` and `ms-eng`): D119 to D134 (poses, animation,
-  curves and other shapes, node groups and zones, collection and view layer settings, bones, Grease
-  Pencil, hair and points, Bring back, whole-file switch). It is merged after its full suite on 5.3 and
-  4.2. The Rust agent works on `worktree-agent-a388cd589ccb15b22` (M2, custom normals D-d, Weight Paint
-  D-f).
+- Main line (2026-11-19, evening): `f95fc2f`, everything up to R080 with engine 0.9.0 (API 8), full suites on 5.3 and
+  4.2 before the push. The main session works in the worktree `.claude/worktrees/main-session` (detached; merged
+  into the branch through a temporary worktree with a `[skip ci]` merge commit). No agent is running: the Rust
+  agent was stopped on 2026-11-19 at about 17:00 after an hour waiting on a permission prompt; its R078 was
+  measured by the main session and reverted (OPTIMISATION_LOG).
 - Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and `docs/download/hindsight.zip`
   is the beta.2 zip. `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
 - The site (`site/`, `docs/`) is not edited outside a release (owner: "don't edit site, just get the add-on
@@ -353,7 +351,7 @@ Other limits of the verification:
 - Since 2026-11-19 (owner): the main session does the engineering itself and stays busy without pause,
   with about one agent beside it (two running at once at most). The agents use the middle tier
   ("sonnet"). Every agent reads `.claude/skills/ultracave/SKILL.md` and answers in that style.
-- RUST (`a388cd589ccb15b22`, branch `worktree-agent-a388cd589ccb15b22`): M1 and the M2 part merged; D-d
+- RUST (`a388cd589ccb15b22`, branch `worktree-agent-a388cd589ccb15b22`, stopped 2026-11-19; its R070 to R072 merged, R078 reverted): M1 and the M2 part merged; D-d
   custom normals (D139), D-f Weight Paint (D140), texture painting (D141) and the subnormal-time engine
   fix (0.5.1) merged into `main-session-3` on 2026-11-19. Next for it: Multires, one exact step per
   Sculpt Mode visit (a datablock snapshot step kind), then M3 (native `History`).
@@ -418,13 +416,16 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Pushed: R060 (engine 0.8.0) as 3e9195f, R069 and R073 as b402875 (full suites before each). Merged on main-session-3, to push after full suites with engine 0.9.0: R070 to R072 (engine 0.9.0, API 8: the recorder's strict compare, the diff on two threads, idle recompression of strokes at level 15), R075 (shape keys through ShapeKey.points), R076, R077 (face offsets from the triangles); then both workflows.
+1. Pushed: everything up to R080 as f95fc2f (engine 0.9.0; full suites on 5.3 and 4.2: only the two sandbox-only failures,
+   after the R080 test fix 8f14dc1). Both workflows were started on it (Blender tests on 4.2 to 5.3 with the window job, and
+   Native engine). Since then on main-session: R081 (Morph History dab 38 to 14 ms at 1M), R082 and R078 measured and
+   reverted; to push after the next full suites.
 2. The recorder's remaining overhead at 500 objects (about 40 to 48 ms per operation): capture 31 ms spread over many small parts (none over 1 ms per 500 objects in the object adapter), `_same_values` 7.5 ms (two marshal dumps per object). Reading plain rows at once (R062) and keying values in C (R063) were measured and reverted. The strict value comparison in the engine is R070 (7.4 to 3.2 ms inside the check).
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
    (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (79 logged: 68 kept, 11 reverted; R078 on the agent's branch). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; a native parse of the step table is the next step there). Memory over a long session (5,000 strokes at 100k with jumps and saves): the add-on's heap grows by the history and about 0.65 KB of objects per step, nothing else (tracemalloc); the process grows a little more, as it does with the same strokes unrecorded (bench/results/soak_2026-11-19.txt).
+6. More optimisation rounds toward the owner's 100 (82 logged: 69 kept, 13 reverted). Next candidates: R6 in Rust (Movie Mode's framing walk, 186 ms at 1,000 steps of 100k, half of it the projection math in `framing.extents`; the Morph History dab's box test, falloff and blend in one pass, about 9 of its 14 ms at 1M). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; the native parse of the step table was R078, reverted: within the spread). Also left (2026-11-19): a stroke at 1M (2.7 ms: the diff and the read, 1 ms each), a Dyntopo step at 100k triangles after R079 (about 55 ms, 45 to 50 of them Blender's `ed.flush_edits`), long histories (a commit 0.14 ms at 1,000 steps and 0.17 ms at 50,000; every redraw path the same at 1,000 and 50,000 steps), Morph History's start of a stroke (22 to 31 ms at 1M, 3 to 33 steps from the target), Embed save at 6,000 steps (Hindsight 103 of 206 ms: building the 55 MB copy and Blender's own copy of it, both page faults), jumps and drags unchanged since dd9f35b (bench/results/ab_dd9f35b_vs_head.md). Memory over a long session (5,000 strokes at 100k with jumps and saves): the add-on's heap grows by the history and about 0.65 KB of objects per step, nothing else (tracemalloc); the process grows a little more, as it does with the same strokes unrecorded (bench/results/soak_2026-11-19.txt).
 8. Next measured candidates (2026-11-19): (a) done as R069 (a baseline's topology packed while idle); (b) done as R070 and R071 (engine 0.9.0): the recorder's strict compare (7.4 to 3.2 ms per operation at 500 objects) and the diff on two threads (a 2K texture stroke's diff 8.3 to 5.0 ms); R072 lowered idle recompression of strokes to zstd level 15 (packer CPU per step 0.53 to 0.61); (c) opening a history folder parses about 6 us per step in Python (1,000 steps: 16 ms of the 30 ms open).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.

@@ -1,0 +1,30 @@
+R078 (reverted): the steps of a history file read by the engine (StepReader, engine 0.10.0, API 9; patch in
+bench/results/r078_step_reader.diff). A = 7bd78d6 with engine 0.9.0, B = R078 with engine 0.10.0 (Linux wheel built from it).
+bench/scenarios/oneoff/regload_ab.py: registry_from_bytes of real 100k strokes from the history file (load_sidecar) and
+from bytes (the Embed copy), min and median of 15 loads per process, alternating processes. Core only.
+
+=== 6000 steps, bpy53 python
+1 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 42.8, "file_med": 44.3, "bytes_min": 34.6, "bytes_med": 36.56}
+1 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 40.98, "file_med": 45.61, "bytes_min": 31.91, "bytes_med": 34.07}
+2 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 36.72, "file_med": 43.35, "bytes_min": 29.13, "bytes_med": 29.53}
+2 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 41.54, "file_med": 43.93, "bytes_min": 31.5, "bytes_med": 32.96}
+3 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 42.13, "file_med": 43.41, "bytes_min": 34.56, "bytes_med": 37.08}
+3 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 41.18, "file_med": 44.58, "bytes_min": 28.08, "bytes_med": 33.54}
+4 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 36.41, "file_med": 37.92, "bytes_min": 29.56, "bytes_med": 34.66}
+4 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 41.28, "file_med": 43.76, "bytes_min": 27.3, "bytes_med": 38.64}
+5 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 42.34, "file_med": 43.8, "bytes_min": 34.21, "bytes_med": 36.28}
+5 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 40.69, "file_med": 42.5, "bytes_min": 31.52, "bytes_med": 38.43}
+=== 1000 steps
+1 A AB {"engine": "eng090", "steps": 1000, "mb": 8.9, "file_min": 8.18, "file_med": 8.58, "bytes_min": 6.18, "bytes_med": 6.42}
+1 B AB {"engine": "eng", "steps": 1000, "mb": 8.9, "file_min": 8.2, "file_med": 8.62, "bytes_min": 2.45, "bytes_med": 2.58}
+2 A AB {"engine": "eng090", "steps": 1000, "mb": 8.9, "file_min": 7.66, "file_med": 8.11, "bytes_min": 4.9, "bytes_med": 5.18}
+2 B AB {"engine": "eng", "steps": 1000, "mb": 8.9, "file_min": 7.03, "file_med": 8.15, "bytes_min": 2.83, "bytes_med": 3.06}
+3 A AB {"engine": "eng090", "steps": 1000, "mb": 8.9, "file_min": 6.48, "file_med": 6.67, "bytes_min": 4.84, "bytes_med": 5.17}
+3 B AB {"engine": "eng", "steps": 1000, "mb": 8.9, "file_min": 8.22, "file_med": 8.62, "bytes_min": 2.55, "bytes_med": 2.68}
+=== 6000 steps, bpy42 python
+1 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 45.61, "file_med": 46.87, "bytes_min": 35.42, "bytes_med": 35.96}
+1 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 45.0, "file_med": 49.86, "bytes_min": 31.63, "bytes_med": 36.59}
+2 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 43.34, "file_med": 48.78, "bytes_min": 36.25, "bytes_med": 38.08}
+2 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 43.87, "file_med": 48.65, "bytes_min": 33.64, "bytes_med": 35.79}
+3 A AB {"engine": "eng090", "steps": 6000, "mb": 53.1, "file_min": 46.64, "file_med": 48.65, "bytes_min": 37.71, "bytes_med": 38.33}
+3 B AB {"engine": "eng", "steps": 6000, "mb": 53.1, "file_min": 46.98, "file_med": 48.21, "bytes_min": 33.53, "bytes_med": 37.03}
