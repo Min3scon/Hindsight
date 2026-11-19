@@ -37,6 +37,65 @@ def texture_on() -> bool:
         return False
 
 
+FORCE_DYNTOPO = [None]     # tests: True or False when the preferences aren't registered
+DYNTOPO_TRIS_MAX = 200_000  # D145: a Dyntopo stroke's step holds the whole mesh (LIMITS-A 1.5: about 250 ms
+                            # per stroke at 100k triangles, 1.4 s and 32 to 64 MB at 1M)
+
+
+def dyntopo_on() -> bool:
+    """Record Dyntopo (preference, off by default)."""
+    if FORCE_DYNTOPO[0] is not None:
+        return FORCE_DYNTOPO[0]
+    try:
+        from .prefs import get_prefs
+        p = get_prefs()
+        return p is not None and bool(getattr(p, "record_dyntopo", False))
+    except Exception:
+        return False
+
+
+def dyntopo_active(obj) -> bool:
+    """obj is in Sculpt Mode with Dyntopo on (the flag reads False outside Sculpt Mode)."""
+    return getattr(obj, "mode", None) == "SCULPT" and bool(getattr(obj, "use_dynamic_topology_sculpting", False))
+
+
+def dyntopo_recorded(obj) -> bool:
+    """D145: Dyntopo strokes are steps: Record Dyntopo is on and the mesh (as last written back) has at
+    most DYNTOPO_TRIS_MAX faces. Otherwise Dyntopo pauses recording, as before."""
+    return (dyntopo_active(obj) and dyntopo_on() and obj.data is not None
+            and len(obj.data.polygons) <= DYNTOPO_TRIS_MAX)
+
+
+_DYN_LAST: dict = {}     # uid -> Dyntopo was on when the object's state was last read or committed
+_DYN_WANT: dict = {}     # uid -> Dyntopo on or off after the jump being written (_dyn_at)
+
+
+def _dyn_at(h, pos: int) -> bool:
+    """Whether Dyntopo was on at history position pos: each step committed with Dyntopo on (or just
+    turned off) holds extra["dyn"] = [before, after] (D145); no record means off."""
+    try:
+        if pos > 0:
+            d = (h.entries[pos - 1].meta.get("extra") or {}).get("dyn")
+            return bool(d and d[1])
+        if h.entries:
+            d = (h.entries[0].meta.get("extra") or {}).get("dyn")
+            return bool(d and d[0])
+    except Exception:
+        pass
+    return False
+
+
+def _flush_dyntopo(obj) -> bool:
+    """Write Dyntopo's own mesh (a BMesh while sculpting) back to obj.data, so it can be read."""
+    try:
+        with suspended():
+            bpy.ops.ed.flush_edits()
+        return True
+    except Exception as e:
+        log.error_once(("dyntopo_flush", str(e)), f"could not read the Dyntopo mesh: {e}", e)
+        return False
+
+
 def _mode_recorded(mode) -> bool:
     return mode in RECORD_MODES and (mode != "TEXTURE_PAINT" or texture_on())
 
@@ -480,9 +539,12 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
     if obj.mode == "EDIT" and st is not None and st.counts:
         return st  # mesh arrays are not readable in Edit Mode; keep the pre-edit baseline
     if st is None or refresh or not st.counts:
+        if dyntopo_active(obj) and not stroke_running():
+            _flush_dyntopo(obj)          # D145: the mesh as Dyntopo has it, not as it was last written back
         snap = read_mesh_snapshot(obj)
         st = MeshState(snap.counts, snap.arrays, st.values if st is not None else None)
         _STATES[uid] = st
+        _DYN_LAST[uid] = dyntopo_active(obj)
     return st
 
 
@@ -670,8 +732,17 @@ def _clamp_state_weights(obj, st: MeshState) -> None:
 def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
     mark_written(obj)
     me = obj.data
+    uid = obj_uid(obj)
+    dyn_now = dyntopo_active(obj)
+    want = _DYN_WANT.pop(uid, None) if uid is not None else None
+    want = dyn_now if want is None else (want and obj.mode == "SCULPT")
+    dyn = dyn_now or want
     with suspended():
-        if "__TOPO__" in keys:
+        if "__TOPO__" in keys or dyn:
+            # D145: while Dyntopo is on the mesh is a BMesh that the next write-back would overwrite:
+            # leave Sculpt Mode, write, come back and turn Dyntopo on again (4.2 doesn't by itself)
+            if dyn and "__TOPO__" not in keys:
+                keys = set(keys) | {"__TOPO__"}
             mode = obj.mode
             is_active = bpy.context.view_layer.objects.active == obj
             if mode != "OBJECT" and is_active and IN_HANDLER[0]:
@@ -697,6 +768,14 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
                 meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode=mode)
+                d = obj.data
+                if (want and obj.mode == "SCULPT" and not obj.use_dynamic_topology_sculpting
+                        and len(d.loops) == 3 * len(d.polygons)):
+                    # Dyntopo was on at this position (and its meshes are all triangles, so turning
+                    # it on changes nothing in the mesh); 4.2 and a rewritten mesh don't by themselves
+                    bpy.ops.sculpt.dynamic_topology_toggle()
+                if uid is not None:
+                    _DYN_LAST[uid] = dyntopo_active(obj)
             if obj.mode == "SCULPT" and multires.active(obj):
                 multires.begin_visit(obj)
         else:
@@ -864,6 +943,14 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
                 label = ops[-1].bl_label or label
         except Exception:
             pass
+    dyn = dyntopo_active(obj)
+    if dyn:
+        if stroke_running():
+            _DIRTY[uid] = time.time()        # never in the middle of a stroke: when it ends
+            return None
+        if not _flush_dyntopo(obj):
+            return None
+        full = True                          # Dyntopo changes the topology: compare all of it
     src = None
     if _edit and obj.mode == "EDIT":
         # In Edit Mode the mesh's attributes are the edit-mode layers ("position" isn't one of them):
@@ -880,6 +967,11 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     _NATIVE_PENDING.discard(uid)
     if step is None:
         return None
+    was = bool(_DYN_LAST.get(uid))
+    if dyn or was:                           # D145: going back and forward puts Dyntopo on or off with it
+        step.extra = dict(step.extra or {})
+        step.extra["dyn"] = [int(was), int(dyn)]
+    _DYN_LAST[uid] = dyn
     if h is not None and native:
         # Native undo / redo / F9 redo moved the mesh onto a neighbouring recorded state. The
         # direction Blender went is tried first: after a step that returned to an earlier state,
@@ -1413,6 +1505,8 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         fp = pushing and ob.mode == "OBJECT" and ob.type == "MESH" and target in datarec.tracked_uids()
         if fp and target not in meshes:
             meshes[target] = [mesh_fingerprint(ob), None]
+        if ob.type == "MESH":
+            _DYN_WANT[target] = _dyn_at(h, pos)
         _write_state(ob, st, mesh_keys, final)
         _after_mesh_write(ob)
         if fp:

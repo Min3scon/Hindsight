@@ -183,6 +183,12 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
                      "Off by default. "
                      "Off: recording pauses on a Multires object"),
         default=False)
+    record_dyntopo: BoolProperty(
+        name="Record Dyntopo",
+        description=("Record each Dyntopo stroke as a step, on meshes up to 200,000 faces. Each step holds the "
+                     "whole mesh: about a quarter of a second per stroke at 100,000 faces. Off by default. "
+                     "Off: recording pauses while Dyntopo is on"),
+        default=False)
     edit_steps_max: IntProperty(
         name="Edit Mode steps up to",
         description=("With Record everything, Edit Mode changes are recorded one operation at a time on meshes "
@@ -212,6 +218,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         col.prop(self, "record_scope")
         col.prop(self, "record_texture_painting")
         col.prop(self, "record_multires")
+        col.prop(self, "record_dyntopo")
         col.prop(self, "edit_steps_max")
         col.prop(self, "max_steps")
         col.prop(self, "truncation_threshold")

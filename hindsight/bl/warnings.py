@@ -16,6 +16,7 @@ WARNING = "WARNING"
 INFO = "INFO"
 
 TXT_DYNTOPO = "Dyntopo is on, so recording is paused on this object"
+TXT_DYNTOPO_BIG = "Dyntopo is on and this mesh has more than {n:,} faces, so recording is paused on it"
 TXT_MULTIRES = "Multires modifier: recording is paused on this object"
 TXT_GLOBAL_UNDO = "Global Undo is off. Turn it on in Preferences > System"
 TXT_LINKED = ("This mesh is shared with other objects (a linked duplicate), so they share one history. "
@@ -56,7 +57,11 @@ def _global_undo_on(context):
 
 
 def _has_dyntopo(obj):
-    return getattr(obj, "mode", None) == 'SCULPT' and bool(getattr(obj, "use_dynamic_topology_sculpting", False))
+    """Dyntopo is on and pauses recording (not while Record Dyntopo records its strokes, D145)."""
+    if not (getattr(obj, "mode", None) == 'SCULPT' and bool(getattr(obj, "use_dynamic_topology_sculpting", False))):
+        return False
+    from . import runtime
+    return not runtime.dyntopo_recorded(obj)
 
 
 def _has_multires(obj):
@@ -95,7 +100,9 @@ def _errors(context, obj) -> list:
     """The ERROR entries of collect(), in the same order (no other check gives an ERROR)."""
     out = []
     if _has_dyntopo(obj):
-        out.append((ERROR, TXT_DYNTOPO))
+        from . import runtime
+        out.append((ERROR, TXT_DYNTOPO_BIG.format(n=runtime.DYNTOPO_TRIS_MAX) if runtime.dyntopo_on()
+                    else TXT_DYNTOPO))
     if _has_multires(obj):
         out.append((ERROR, TXT_MULTIRES))
     if not _global_undo_on(context):
