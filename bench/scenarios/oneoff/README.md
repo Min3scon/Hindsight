@@ -24,3 +24,6 @@ with PYTHONPATH (no `-I`): `PYTHONPATH=<engine folder> <bpy python> bench/scenar
 `topo_mem.py CODE_ROOT grid1m|remesh` (R069): a recorded mesh's baseline before and after its topology is packed.
 `edit_packed.py CODE_ROOT` (R069): an Edit Mode operator with Record everything at 300k vertices, with the baseline's
 topology packed and unpacked.
+
+`groups_ab.py CODE_ROOT` (R073): the global timeline's groups built for 10,000 and 100,000 steps, the earlier
+function (kept in tests/test_core_global_position.py) against the current one in one process.

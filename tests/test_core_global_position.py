@@ -250,7 +250,7 @@ def main():
     failed = 0
     for t in (test_index_equals_the_walk, test_cost_does_not_grow_with_the_steps,
               test_collapsed_moves_keep_every_ordering_that_matters, test_interleaved_strokes_are_one_move_per_history,
-              test_plan_index_equals_the_walk):
+              test_plan_index_equals_the_walk, test_groups_equal_the_earlier_build):
         try:
             t()
         except Exception:
@@ -258,6 +258,42 @@ def main():
             print("FAIL %s" % t.__name__)
             traceback.print_exc()
     sys.exit(1 if failed else 0)
+
+
+def groups_before_r073(reg, visible=None):
+    """global_groups as it was before R073 (a key function and the Entry.seq property per step)."""
+    def key(e):
+        extra = e.meta.get("extra") if isinstance(e.meta, dict) else None
+        op = extra.get("op") if isinstance(extra, dict) else None
+        return int(op) if op is not None else e.seq
+    by = {}
+    for h in globaltl._visible_histories(reg, visible):
+        for i, e in enumerate(h.entries):
+            by.setdefault(key(e), []).append((e.seq, h.uid, i))
+    groups = [sorted(g) for g in by.values()]
+    groups.sort(key=lambda g: g[0][0])
+    return groups
+
+
+def test_groups_equal_the_earlier_build():
+    """R073: global_groups reads the step metadata directly; the groups are exactly the ones built before,
+    for random timelines (operations over several histories, steps joining an earlier operation, an
+    "op" given as a string, extras that aren't dicts) and every visible subset tried."""
+    rng = random.Random(73)
+    n = 0
+    for _ in range(300):
+        reg, hs = timeline(rng)
+        for h in hs:
+            for e in h.entries[::7]:
+                if rng.random() < 0.3:
+                    e.meta["extra"] = rng.choice([None, [], "x", {"op": str(e.meta["seq"])}, {}])
+        for visible in (None, {h.members[0] for h in hs[::2]}):
+            want = groups_before_r073(reg, visible)
+            got = globaltl.global_groups(reg, visible)
+            assert got == want, (got[:5], want[:5])
+            n += sum(len(g) for g in got)
+    assert n > 10_000, n
+    print("PASS test_groups_equal_the_earlier_build (%d steps grouped)" % n)
 
 
 if __name__ == "__main__":
