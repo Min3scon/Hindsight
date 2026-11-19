@@ -21,11 +21,18 @@ def _report_failures():
     if bpy.app.background or not _errors:
         return None
     names = ", ".join(n for n, _, _ in _errors)
+    engine = next((e for _n, e, _t in _errors if e.startswith("EngineMissing")), None)
 
     def draw(menu, context):
         col = menu.layout.column()
-        col.label(text=f"These parts did not start: {names}.")
-        col.label(text="The rest of Hindsight works. Details are in the system console.")
+        if engine:
+            # without its engine nothing can be recorded: say that, not a list of parts
+            col.label(text="Hindsight can't record: its engine didn't load.")
+            col.label(text=engine.split(": ", 1)[-1][:160])
+            col.label(text="Reinstall the add-on. Details are in the system console.")
+        else:
+            col.label(text=f"These parts did not start: {names}.")
+            col.label(text="The rest of Hindsight works. Details are in the system console.")
         col.operator("hindsight.copy_diagnostics", text="Copy diagnostics", icon='COPYDOWN')
         col.operator("wm.url_open", text="Report a bug", icon='URL').url = \
             "https://github.com/Min3scon/Hindsight/issues/new/choose"

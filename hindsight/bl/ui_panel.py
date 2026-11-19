@@ -181,8 +181,34 @@ def _draw_problems(layout, context, units=None):
     _operator(col, "hindsight.copy_diagnostics", "Copy diagnostics", 'COPYDOWN')
 
 
+ENGINE_TEXT = "Hindsight can't record: its engine didn't load. Nothing is recorded until it does."
+_ENGINE = [None]          # None: not checked yet; "": loaded; text: why it didn't load
+
+
+def engine_error() -> str:
+    """Why the Rust engine didn't load, or "" (checked once: it can't load later in this session)."""
+    if _ENGINE[0] is None:
+        try:
+            from ..core import native  # noqa: F401
+            _ENGINE[0] = ""
+        except Exception as e:
+            _ENGINE[0] = str(e) or type(e).__name__
+    return _ENGINE[0]
+
+
+def _draw_engine_missing(layout, context, err, units=None) -> None:
+    box = layout.box()
+    wrap(box, context, ENGINE_TEXT, 'ERROR', units)
+    wrap(box, context, err, 'BLANK1', units)
+    _operator(box, "hindsight.copy_diagnostics", "Copy diagnostics", 'COPYDOWN')
+
+
 def draw_main(layout, context, units=None):
     """Status, slider, step counter, back and forward. Shared by the sidebar and the popover."""
+    err = engine_error()
+    if err:
+        _draw_engine_missing(layout, context, err, units)
+        return
     _draw_problems(layout, context, units)
     obj = _ctx_active(context)
     everything = _everything_on()
