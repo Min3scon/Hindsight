@@ -32,6 +32,7 @@ Faster and lighter:
 
 Fixed:
 
+- An animated object deleted and brought back by the global history keeps its animation.
 - If one part of what an object records can't be read, only that part is left out; the rest of the object, and every other object, is still recorded.
 - With Record everything, a keyed or driven shape key no longer makes a step every time the frame changes.
 - If Hindsight's engine can't load (a damaged install, an unsupported platform), the sidebar now says so, with the reason, instead of listing parts that didn't start.

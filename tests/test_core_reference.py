@@ -111,13 +111,28 @@ def corpus_data():
             RNG.integers(0, 3, 200000, dtype=np.uint8).tobytes(), RNG.bytes(70000) + bytes(70000)]
 
 
+# libzstd the engine is built with (native/Cargo.lock: zstd-sys 2.1.3+zstd.1.5.7). zstd's output bytes
+# are only the same with the same libzstd: where python-zstandard has another one (CI pins 0.23.0 with
+# 1.5.6, Blender 4.2 bundles an older one), zstd is compared by what decompresses, not by bytes.
+ENGINE_ZSTD = (1, 5, 7)
+try:
+    import zstandard as _zs
+    PY_ZSTD = tuple(_zs.ZSTD_VERSION)
+except Exception:
+    PY_ZSTD = (0, 0, 0)
+
+
+def bytes_comparable(name) -> bool:
+    return name != "zstd" or PY_ZSTD == ENGINE_ZSTD
+
+
 def test_codec_bytes_equal_the_libraries():
     differ = []
     for name in NAMES:
         for strong in (False, True):
             for d in corpus_data():
                 a, b = rcodec.compress(d, name, strong), codec.compress(d, name, strong)
-                if a != b:
+                if a != b and bytes_comparable(name):
                     differ.append((name, strong, len(d)))
                 assert codec.decompress(a) == d and rcodec.decompress(b) == d
                 assert codec.decompress(a, len(d)) == d and codec.decompress(b, len(d)) == d
@@ -126,7 +141,9 @@ def test_codec_bytes_equal_the_libraries():
     for name in ("auto", "ZSTD", "bogus", "", None, "Lz4"):
         assert codec.resolve(name) == rcodec.resolve(name) or name in ("bogus", "", None), name
     assert codec.resolve("bogus") == "zlib" and codec.resolve("auto") == "zstd"
-    print(f"PASS test_codec_bytes_equal_the_libraries (zstd {codec.compress(b'x')[0]}, all bytes equal)")
+    note = "all bytes equal" if PY_ZSTD == ENGINE_ZSTD else \
+        f"zstd compared by content: python-zstandard has libzstd {PY_ZSTD}, the engine {ENGINE_ZSTD}"
+    print(f"PASS test_codec_bytes_equal_the_libraries ({note})")
 
 
 def outcome(fn, *a):
@@ -202,7 +219,7 @@ def test_codec_hostile_sizes():
 def check_pair(st, name, effort, strong):
     rb = ref_write(st, name, effort, strong)
     eb = stepmod.step_to_bytes(st, name, effort, strong)
-    assert rb == eb, (st.seq, st.kind, name, effort, strong, len(rb), len(eb))
+    assert rb == eb or not bytes_comparable(name), (st.seq, st.kind, name, effort, strong, len(rb), len(eb))
     e_step, r_step = stepmod.step_from_bytes(rb), ref_read(eb)
     assert stepmod.same_step(st, e_step) and stepmod.same_step(st, r_step) and stepmod.same_step(e_step, r_step)
     assert stepmod.same_step(e_step, stepmod.step_from_bytes(eb))
@@ -211,7 +228,12 @@ def check_pair(st, name, effort, strong):
     assert ha == hb, (ha, hb)
     assert stepmod.version_of(eb) == rstep.version_of(rb)
     ra, rc = ref_recompress(rb), stepmod.recompress(eb)
-    assert ra == rc, (st.seq, name, effort, strong, None if ra is None else len(ra), None if rc is None else len(rc))
+    if bytes_comparable(name):
+        assert ra == rc, (st.seq, name, effort, strong, None if ra is None else len(ra), None if rc is None else len(rc))
+    else:                                   # the same decision, and the same step inside
+        assert (ra is None) == (rc is None), (st.seq, name, effort, strong)
+        if rc is not None:
+            assert stepmod.same_step(stepmod.step_from_bytes(ra), stepmod.step_from_bytes(rc))
     return len(eb)
 
 
