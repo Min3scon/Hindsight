@@ -145,9 +145,9 @@ changelog page change with the version.
   both and neither; Movie Mode (camera and lamps, Use this view, put back after Delete but not during a
   stroke, a drag, playback or a render, Workbench and EEVEE timelapse renders); Weight, Vertex, Texture Paint
   and Image Editor painting; Multires and Dyntopo; Rounds A to D on 5.3 (Round C all passed). They found
-  D142 and D144 (texture painting) and out-of-date scenarios, all fixed. Not checked: the Movie Mode panel's
-  rows by eye (no panel-open API; drawn headless in test_bl_panels), real 5.0.1/5.1/5.2 binaries (download
-  blocked here; the GitHub window job runs 5.3 and 4.2). COVERAGE.md is unchanged.
+  D142 and D144 (texture painting) and out-of-date scenarios, all fixed. The Movie Mode panel's rows were looked at
+  in a screenshot (s_movie_panel; two cut labels fixed, D148). Not checked here: real 5.0.1/5.1/5.2
+  binaries (download blocked here; the GitHub window job now runs them). COVERAGE.md is unchanged.
 - Known and not ours to fix here: on Blender 4.2 tests/test_bl_t1_gate.py::test_gate_parenting fails
   (parent_type at one position; it fails on beta.2 code too; handed to DATAREC to find the cause).
 - tools/mutation_bl.py compiles again; mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.

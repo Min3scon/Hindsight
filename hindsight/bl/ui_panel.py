@@ -562,11 +562,13 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
             return
         if not sh.use_global:
             wrap(layout, context, "Movie Mode plays the global history. Turn on global history first.", 'INFO')
-        col = layout.column()
+        col = layout.column(align=True)
         col.active = bool(sh.movie_mode)
-        col.use_property_split = True
-        col.use_property_decorate = True
-        col.prop(sh, "movie_step", text="Step")
+        # labels inside the fields: split rows cut "Frames per step" at the sidebar's usual width.
+        # Step keeps its keyframe dot (Quick auto key keys it)
+        row = col.row(align=True)
+        row.prop(sh, "movie_step", text="Step")
+        row.prop_decorator(sh, "movie_step")
         col.prop(sh, "frames_per_step", text="Frames per step")
         col.prop(sh, "movie_steps_per_frame", text="Steps per frame")
         length = _movie_length(context)
