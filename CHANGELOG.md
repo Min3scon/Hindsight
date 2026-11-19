@@ -32,6 +32,7 @@ Faster and lighter:
 
 Fixed:
 
+- If Hindsight's engine can't load (a damaged install, an unsupported platform), the sidebar now says so, with the reason, instead of listing parts that didn't start.
 - On an object Record everything is on for, the sidebar no longer says modifiers, vertex groups, shape keys and materials aren't part of the history.
 - The on-screen slider hung to the right of the viewport. The whole slider is centred now.
 - Recovery after a crash (On open: Interrupted session) could bring back a history that didn't match the mesh in the file, so scrubbing showed shapes that never existed. It happened after the step cap or the memory limit dropped old steps, after going back past the last save and sculpting there, and after a join.
@@ -52,7 +53,8 @@ Fixed:
 - After a long session a repeating error could fill the system console.
 - Steps per object can be raised to 100,000 in Preferences (the default stays 10,000). With global history on, recording a step no longer rebuilds the whole timeline: at 50,000 steps that took 25 to 90 ms after every stroke, now 0.3 ms.
 - Record everything records modifiers: adding, removing, reordering and their settings, Geometry Nodes inputs included. Going back over Apply Modifier gives the modifier back.
-- Record everything records material slots (adding and removing them, which material each holds, linked to the object or the mesh, the active slot) and materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
+- Record everything records material slots: adding and removing them, which material each holds, linked to the object or the mesh, and the active slot.
+- Record everything records materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
 - Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
 - Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, the active camera, and the world with its node tree.
 - Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers and light probes, and a mesh's remesh settings.
