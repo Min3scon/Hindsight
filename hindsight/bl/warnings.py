@@ -162,7 +162,7 @@ TXT_EV_ANIMATED = "Animated or driven, so not recorded (they follow the animatio
 TXT_EV_LISTS = "Lists in constraint settings (such as Armature constraint targets) aren't recorded"
 TXT_EV_EDIT_BIG = "Over 300,000 vertices: Edit Mode is recorded as one step per visit on this mesh"
 TXT_EV_COMEBACK = ("A deleted {kind} comes back only while its data is still in this session "
-                   "(meshes and empties always come back)")
+                   "(meshes, empties, lights, cameras, curves, text, lattices and metaballs always come back)")
 TXT_EV_NEW_COLLECTIONS = ("Collections you make or delete are undone only when the scene is recorded "
                           "(Record > Objects added and deleted)")
 TXT_EV_SHARED_MESH = ("Shares its mesh with {owner} (a linked duplicate): changes to the mesh are recorded "
@@ -203,7 +203,8 @@ def everything_notes(context, obj) -> list:
     scene_on = datarec.is_tracked(context.scene)
     if scene_on and not tracked:
         out.append((INFO, TXT_EV_NOT_ON))
-    if scene_on and getattr(obj, "type", "MESH") not in ("MESH", "EMPTY"):
+    if scene_on and getattr(obj, "type", "MESH") not in adapters.OBJECT_TYPES_REMADE:
+        # D122: these come back even after their data left the file; the others only while it's there
         out.append((INFO, TXT_EV_COMEBACK.format(kind=obj.type.lower().replace("_", " "))))
     if not tracked:
         return out

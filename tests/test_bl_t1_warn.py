@@ -141,10 +141,14 @@ def test_objects_not_switched_on_and_other_types():
     datarec.set_tracked(bpy.data.objects["B"], False)
     assert shows("B", W.TXT_EV_NOT_ON), "switched off: only adding and deleting it is recorded"
     assert not shows("A", W.TXT_EV_NOT_ON)
+    bpy.ops.object.armature_add()
+    _commit()
+    rig = C.active_object.name
+    assert shows(rig, W.TXT_EV_COMEBACK) and "armature" in sidebar_text(rig)
     bpy.ops.object.light_add(type="POINT")
     _commit()
     light = C.active_object.name
-    assert shows(light, W.TXT_EV_COMEBACK) and "light" in sidebar_text(light)
+    assert not shows(light, W.TXT_EV_COMEBACK), "D122: a light comes back even when its data is gone"
     assert not shows("A", W.TXT_EV_COMEBACK) and not shows("Pivot", W.TXT_EV_COMEBACK)
     setup(scene_on=False)
     T.add_primitive("cube", (0, -5, 0)).run()

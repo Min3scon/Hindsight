@@ -2279,7 +2279,51 @@ def object_body(ob) -> dict:
         "hidden": _hidden(ob),
         "custom": _group_json(ob),              # D114: nested groups and their pointers too
         "sys": _group_json(_sys_group(ob)),     # D114: Blender 5 keeps add-ons' data apart
+        **_data_body(data),                     # D122: other data, to make it again when it's gone
     }
+
+
+# data types a deleted object's data can be made again from (D122): bl_rna type -> how to make it
+_REMAKE = {"Camera": lambda n, v: bpy.data.cameras.new(n),
+           "Speaker": lambda n, v: bpy.data.speakers.new(n),
+           "Lattice": lambda n, v: bpy.data.lattices.new(n),
+           "MetaBall": lambda n, v: bpy.data.metaballs.new(n),
+           "Curve": lambda n, v: bpy.data.curves.new(n, type="CURVE"),
+           "SurfaceCurve": lambda n, v: bpy.data.curves.new(n, type="SURFACE"),
+           "TextCurve": lambda n, v: bpy.data.curves.new(n, type="FONT")}
+for _lt in ("PointLight", "SunLight", "SpotLight", "AreaLight"):
+    _REMAKE[_lt] = (lambda t: lambda n, v: bpy.data.lights.new(n, type=t))(_lt[:-5].upper())
+OBJECT_TYPES_REMADE = frozenset({"MESH", "EMPTY", "CAMERA", "SPEAKER", "LATTICE", "META", "CURVE", "SURFACE",
+                                 "FONT", "LIGHT"})
+
+
+def _data_body(d) -> dict:
+    if d is None or d.library is not None or d.bl_rna.identifier not in _REMAKE:
+        return {}
+    t = d.bl_rna.identifier
+    out = {"data_type": t, "data_values": settings_of(d, _DATA_SKIP, DATA_STRUCTS.get(t) or ()),
+           "data_props": id_props(d)}
+    geo = geometry_of(d)
+    if geo is not None:
+        out["data_geom"] = geo
+    return out
+
+
+def _remake_data(body):
+    t = body.get("data_type")
+    make = _REMAKE.get(t)
+    if make is None:
+        return None
+    vals = body.get("data_values") or {}
+    d = make(body.get("data_name") or body.get("name") or "Data", vals)
+    if body.get("data"):
+        d[idmap.UID_PROP] = body["data"]
+        idmap.note(d, body["data"])
+    write_settings(d, vals, DATA_STRUCTS.get(t) or ())
+    write_id_props(d, body.get("data_props") or {})
+    if body.get("data_geom"):
+        write_geometry(d, body["data_geom"])
+    return d
 
 
 class SceneAdapter(Adapter):
@@ -2504,6 +2548,12 @@ def _recreate_object(scene, uid, body, snap):
         if body.get("data"):
             data[idmap.UID_PROP] = body["data"]
             idmap.note(data, body["data"])
+    if data is None and body.get("data_type"):
+        try:
+            data = _remake_data(body)                # D122: its data left the file: made again
+        except Exception as e:
+            log.error_once(("remake", str(e)), f"could not make {body.get('name')}'s data again: {e}", e)
+            data = None
     if data is None and body.get("type") not in ("EMPTY",):
         log.warn(f"{body.get('name')} can't be brought back: its data is gone")
         return None
