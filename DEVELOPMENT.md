@@ -249,39 +249,30 @@ DEFECTS.md).
 
 ## e. Test matrix
 
-Headless runs use Blender as a Python module (`pip install bpy`), in the container, not a Blender
-binary and not a window. Three levels exist; only the first has run for the work of 2026-11-18.
+Latest runs (2026-11-19):
 
-| Level | Blender versions | State |
+| Level | Code | Result |
 |---|---|---|
-| Python module in the container | 4.2.23, 5.0.1 (Python 3.11.18); 5.1.2, 5.2.2, 5.3.0 (Python 3.13.18) | The beta 3 work (HANDOFF "Beta 3 job") was tested on all five. The agents ran their areas on 5.3.0 and 4.2.23 (the NATIVE twin-history tests with the engine required, on, and off). The RECORD agent re-ran the 12 files in section d on 5.3.0 only. No single full-suite result across the five versions after the last merge (`04af744`) is recorded in any source; the DATAREC report gives 48 of 50 files on 5.3.0 before the later merges. |
-| Real Blender binaries | 5.3.0 and 4.2.23, headless, whole suite, `HINDSIGHT_NATIVE=require` | Run here on 2026-11-18 (`tools/ci/run_suite.py`, `dev/reports/REAL_BLENDER.md`) and on GitHub (blender.yml run 44408088741, commit 8090ffa). Here: 5.3 63/66 files, 4.2 60/66. GitHub: 5.3 65/68, 4.2 61/68 (68 files: it has the two new recovery fault tests and `test_core_journal_faults`). Failures are listed below. The beta 2 gate (October 2026) ran real 5.0.1, 5.1.1 and 5.1.2 with a window on the owner's Windows PC (`tests_ui/hs_ui.py`, `TEST_ROUNDS.md`). |
-| bpy module on GitHub runners | Windows and macOS, same run | Both green (whole suite, native engine required). |
-| A real window (UI gate) | Blender 5.1.2 and 5.3 under Xvfb plus Mesa llvmpipe (OpenGL 4.5), here (5.3) and on GitHub (both) | `regress_slider_visible` passes 3 of 3 on both GitHub jobs. Earlier it failed 1 of 3 on 5.3 here: not the product. Blender's own screenshot reads the front buffer, which is all black under Xvfb. The slider is drawn (orange track, 2/2, above the shelf). Fix, CI side: `tests_ui/bl_driver.py` grabs the X root window when `HS_UI_XSHOT=1`, the Xvfb screen is 1600x900 like the window, ImageMagick installed. Not yet run in a window: the Movie Mode panel rows, "Use this view", camera and lamps put back, a real timelapse render with EEVEE and Workbench, 4.2 in a window. |
-| native.yml | GitHub, run 44408094816 | Green. |
+| bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine required | main line 7dc4853 (D111 to D118, Rust M1) | 84/86 each; the two failures are the known ones below |
+| same | main-session-4 4d856db (adds D119 to D134) | 5.3: 94/96; 4.2: the known two failures in the part that ran before the code moved on (a final run is pending) |
+| Real Blender binaries on GitHub (Blender tests, run 44439641564) | 7dc4853 | 5.3.0: 84/86; 4.2.23: 84/86. Besides `test_bl_t1_migrate`, only `test_core_reference` failed: libzstd version (fixed in 099815c) and one engine divergence in `test_hostile_blobs` (with the Rust agent) |
+| bpy module on GitHub, Windows and macOS (same run) | 7dc4853 | macOS: green. Windows: 83/86, `test_core_reference` as above plus the two known |
+| Window probe under Xvfb, 5.1.2 and 5.3 (same run) | 7dc4853 | green |
+| Native engine on GitHub, 12 jobs (Windows, macOS, Linux; x64 and ARM64; Python 3.11 and 3.13) | 7dc4853, 847bcdd, 099815c | 7dc4853: test_core_reference failed for a missing lz4 (CI dependencies fixed in 847bcdd); 847bcdd: 2 libzstd byte comparisons (fixed in 099815c); 099815c: rerun pending |
 
 Known failing tests:
 
 | Test | Where | Why |
 |---|---|---|
-| `test_bl_metadata::test_opens_without_hindsight` | everywhere in the container | needs a Blender binary |
-| `test_bl_t1_migrate` | everywhere in the container | needs `.tmp/old/b1.zip`, which is not in the repository |
-| `test_bl_t1_gate::test_gate_parenting` | Blender 4.2 | Blender 4.2 Clear Parent keeps a hidden vertex parent type; RNA reads `''` and refuses to set it without a parent. Fails on beta 2 code too. The fix belongs in `tests/oracle.py` (patch in `dev/reports/DATAREC.md` section 6), not applied |
-| `test_bl_t1_reload` (6 to 7 of 7) | Blender 4.2 | not investigated |
-| test files that use `collection_uid` | Blender 4.2 | fixed on the main line by `6b3d012` (`tests/t1_ops.py`); the agents' worktrees still had the old helper |
-| `test_bl_t0_gate`, `test_bl_t0_reload` | real Blender 4.2.23 | Blender crashes (SIGSEGV, rc -11), on GitHub and here. Pass on 5.3. Not investigated |
-| `test_core_native_steps::test_damaged_blobs` | real Blender 4.2.23 | native engine returns ok on a damaged blob (`damaged 50`) where Python raises `CorruptStep`. Passes on 5.3. Open |
-| `test_core_native_steps::test_mixed_histories` | real Blender 5.3 on GitHub (not here, not on 4.2) | native and Python both raise `TypeError` but the text differs in operand order (`'str' and 'tuple'` against `'tuple' and 'str'`, seed 4). Expected red product test |
-| `test_bl_adapters::test_awkward_values_round_trip` | real Blender 5.3 | Blender runs with flush-to-zero: the denormal does not survive. Passes on 4.2 and in the bpy module. Open |
-| `test_bl_t1_prop` | real Blender, locally | was red: Hypothesis refuses subnormal floats under flush-to-zero. Fixed in the test (`allow_subnormal=False`); 2000 sequences pass on real 5.3 |
-| `test_bl_t1_corrupt::test_damage_before_the_saved_step`, `test_bl_t1_migrate::test_format3_file` | Blender 4.2 | same parent_type quirk as `test_gate_parenting` |
+| `test_bl_metadata::test_opens_without_hindsight` | bpy module | needs a Blender binary |
+| `test_bl_t1_migrate` | everywhere | needs `.tmp/old/b1.zip` (the beta 1 release zip), which is not in the repository |
+| `test_core_reference::test_hostile_blobs` | real Blender 5.3, Windows module (random draws) | engine and reference both accept a damaged step but the engine's recompress keeps a header byte the reference writes as 0; with the Rust agent |
 
 Other limits of the verification:
 
 - Optional `lz4` is installed in the venvs but not in the owner's Blender; it exposed D73.
-- Real Blender bundles its own numpy (for example 1.26 in 5.0); only the planned CI binary jobs would test
-  that. The venvs use whatever pip resolved.
-- The macOS and Windows 0.2.0 wheels were cross-built and never run; the 0.1.0 wheels were run by CI.
+- The venvs' python-zstandard has libzstd 1.5.7 like the engine; CI pins 0.23.0 (1.5.6) and Blender 4.2
+  bundles an older one, so zstd bytes are compared only where the versions match.
 - Timings in the container come from a shared 4-core VM with load average often 5 to 14.
 
 ## f. Benchmarks
