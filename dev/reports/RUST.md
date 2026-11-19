@@ -43,7 +43,7 @@ Command: `python3 bench/ab.py --a <5a909c5 checkout> --rounds 5 --only commit_10
 
 Container alone (`bench_native.py --container --rounds 9`, reference against engine, one 2% stroke step, min ms, old / new): 100k write 0.066 / 0.065, read 0.035 / 0.030, recompress quick 2.24 / 2.09. 1M write 0.730 / 0.785 (median 0.814 / 0.812), read 0.197 / 0.196, recompress 21.97 / 21.42. Python peak: read 0.06 to 0.03 MB (100k), 0.60 to 0.32 MB (1M); recompress 0.12 to 0.01 MB, 1.16 to 0.04 MB. VmHWM not readable here (reads 0).
 
-Jumps 300 and 3000: JUMPS_PLACEHOLDER
+Jumps (`ab.py --rounds 4 --only _100k,_1m`, min ms, old / new): 100k jump_300 fwd 5.62 / 5.08, back 5.08 / 5.06; jump_3000 fwd 49.3 / 50.6, back 49.0 / 50.0; drag_5000 fwd 101 / 87.9, back 100.8 / 90.2. 1M jump_300 fwd 25.8 / 27.4, back 26.8 / 27.2; jump_3000 fwd 250 / 283 (spread 36%), back 248 / 246; drag_5000 fwd 719 / 747, back 654 / 701. All inside run spread (7 to 56%) except 100k drag, 10% faster. Jumps run through `apply_steps`, unchanged by M1: no gain or loss expected, none shown. First A/B (commit, save, open) ran before a container restart; jumps were rerun after it.
 
 Reading: no loss anywhere; gain is small because stroke steps are small (6 KB at 100k) and the cost sits in the record transforms, already native. Migration is the point of M1, not speed.
 
