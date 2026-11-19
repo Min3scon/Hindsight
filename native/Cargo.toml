@@ -1,6 +1,6 @@
 [package]
 name = "hindsight_native"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "Hindsight's delta engine (bit-exact twin of hindsight/core/delta.py)"
 license = "GPL-3.0-or-later"
