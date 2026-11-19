@@ -102,7 +102,70 @@ def test_animated_bone_left_out():
     assert _r(root.location) == at15, (_r(root.location), at15)
 
 
+def bone_state(ob):
+    # by name: a bone made again is listed after the others (Blender's order of making them)
+    return tuple(sorted((b.name, b.parent.name if b.parent else None, _r(b.head_local), _r(b.tail_local),
+                  _r([x for r in b.matrix_local for x in r]), b.use_connect, b.use_deform,
+                  tuple(sorted(c.name for c in b.collections))) for b in ob.data.bones))
+
+
+def edit(ob, fn):
+    C.view_layer.objects.active = ob
+    bpy.ops.object.mode_set(mode="EDIT")
+    fn(ob.data.edit_bones)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def test_bones_come_back():
+    """D129: Edit Mode changes to bones (adding, moving, rolling, parenting, removing) are recorded
+    when Edit Mode ends, and going back puts the bones back, in Object or Pose Mode."""
+    L.fresh_scene()
+    ob = make_rig()
+    bpy.ops.object.mode_set(mode="OBJECT")
+    L.track_all()
+    L.tick_like("baseline")
+    states = [bone_state(ob)]
+
+    def add(eb):
+        b = eb.new("Extra")
+        b.head, b.tail = (1, 0, 0), (1, 0, 1)
+        b.parent = eb["Root"]
+
+    def move(eb):
+        eb["Tip"].tail = (0.5, 0, 2.5)
+
+    def roll(eb):
+        eb["Extra"].roll = 0.7
+
+    def remove(eb):
+        eb.remove(eb["Tip"])
+    for label, fn in (("add bone", lambda: edit(ob, add)), ("move tail", lambda: edit(ob, move)),
+                      ("roll", lambda: edit(ob, roll)),
+                      ("deform", lambda: setattr(ob.data.bones["Extra"], "use_deform", False)),
+                      ("collection", lambda: ob.data.collections.new("Face").assign(ob.data.bones["Extra"])),
+                      ("remove", lambda: edit(ob, remove))):
+        fn()
+        L.tick_like(label)
+        states.append(bone_state(ob))
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(ob)
+    assert len(h.entries) == len(states) - 1, (len(h.entries), [e.meta.get("label") for e in h.entries])
+    for pos in list(range(len(h.entries), -1, -1)) + list(range(len(h.entries) + 1)):
+        runtime._goto_history(h, pos, True)
+        assert bone_state(ob) in states, (pos, bone_state(ob), states[pos] if pos < len(states) else None)
+        assert ob.mode == "OBJECT"
+    runtime._goto_history(h, 0, True)
+    assert bone_state(ob) == states[0], (bone_state(ob), states[0])
+    runtime._goto_history(h, len(h.entries), True)
+    assert bone_state(ob) == states[-1], (bone_state(ob), states[-1])
+    C.view_layer.objects.active = ob
+    bpy.ops.object.mode_set(mode="POSE")
+    runtime._goto_history(h, 1, True)
+    assert bone_state(ob) == states[1] and ob.mode == "POSE", (ob.mode, bone_state(ob))
+
+
 if __name__ == "__main__":
     H.run(test_pose_comes_back)
     H.run(test_animated_bone_left_out)
+    H.run(test_bones_come_back)
     H.finish()

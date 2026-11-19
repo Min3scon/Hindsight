@@ -62,6 +62,7 @@ Fixed:
 - Record everything records collection settings: hiding a collection, making it unselectable, its colour tag, and Exclude, Holdout and Indirect Only in each view layer.
 - Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers and light probes, and a mesh's remesh settings.
 - Record everything records posing: each bone's location, rotation, scale, constraints and custom properties, and the armature's Pose or Rest Position.
+- Record everything records Edit Mode changes to bones: adding, removing, moving, rolling and parenting them, their settings and bone collections.
 - Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks, and keyframes on lights, cameras, shape keys and material nodes.
 - Record everything records the shape of curves, surfaces, lattices and metaballs: points, handles, splines and elements.
 - A deleted light, camera, curve, text, lattice or metaball comes back with its settings and shape even after saving and opening the file.

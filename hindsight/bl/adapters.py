@@ -488,6 +488,8 @@ class ObjectAdapter(Adapter):
         out[SETTINGS_KEY] = settings_of(idb, _OBJ_SETTINGS_SKIP)          # D117
         if idb.type == "ARMATURE":
             out[POSE_KEY] = pose_values(idb)                                 # D119
+            if idb.data is not None and idb.data.library is None and _owns_data(idb, idb.data):
+                out[DATA_PREFIX + BONES] = bones_of(idb.data)                # D129
         out[ANIM_KEY] = anim_values(idb)                                     # D120
         if idb.animation_data is not None:
             out.update(owned_action(idb))
@@ -584,6 +586,9 @@ class ObjectAdapter(Adapter):
                 m = idmap.find(mu)
                 if m is not None and getattr(m, "node_tree", None) is not None and k == ANIM_KEY:
                     write_anim(m.node_tree, v)
+        b = values.get(DATA_PREFIX + BONES, MISSING)
+        if b is not MISSING and idb.type == "ARMATURE":
+            write_bones(idb, b)                 # D129: the bones before their pose
         if POSE_KEY in values and values[POSE_KEY] is not MISSING and idb.type == "ARMATURE":
             write_pose(idb, values[POSE_KEY])
 
@@ -625,6 +630,7 @@ def material_changed(idb) -> str | None:
 
 
 def forget_materials() -> None:
+    _BONES_CACHE.clear()
     _MAT_GROUPS.clear()
     _VAL_CACHE.clear()
     _GEOM_CACHE.clear()
@@ -1435,6 +1441,112 @@ def _write_constraints(ob, want: list, holder=None, base: str = "") -> None:
         set_struct_values(c, w.get("values") or {}, ob, f'{base}constraints["{c.name}"].')
 
 
+# ----------------------------------------------------------------------------- bones (D129)
+BONES = "bones"
+_BONE_SKIP = frozenset(_UI_PROPS | {"name", "hide", "hide_select", "select", "select_head", "select_tail"})
+_BONES_CACHE: dict = {}        # armature session_uid -> recorded bones
+
+
+def bones_of(arm) -> dict:
+    """An armature's bones as Edit Mode makes them: name, parent, head, tail, orientation (roll),
+    connected or not, their settings and bone collections. Read from the armature's bones (Edit Mode
+    changes reach them when Edit Mode ends)."""
+    k = arm.session_uid
+    rec = _BONES_CACHE.get(k)
+    if rec is not None:
+        return rec
+    rows = []
+    for b in arm.bones:
+        rows.append({"name": b.name, "parent": b.parent.name if b.parent is not None else "",
+                     "head": list(b.head_local), "tail": list(b.tail_local),
+                     "matrix": [list(r) for r in b.matrix_local], "connect": bool(b.use_connect),
+                     "values": struct_values(b, _BONE_SKIP),
+                     "colls": sorted(c.name for c in getattr(b, "collections", ()))})
+    colls = [[c.name, bool(getattr(c, "is_visible", True))] for c in getattr(arm, "collections_all", ())]
+    rec = _BONES_CACHE[k] = {"bones": rows, "collections": colls}
+    return rec
+
+
+def _bone_shape(arm) -> list:
+    return [(b.name, b.parent.name if b.parent is not None else "", [round(x, 6) for x in b.head_local],
+             [round(x, 6) for x in b.tail_local], [round(x, 6) for r in b.matrix_local for x in r],
+             bool(b.use_connect)) for b in arm.bones]
+
+
+def write_bones(ob, rec) -> None:
+    arm = ob.data
+    if not isinstance(rec, dict) or arm is None:
+        return
+    _BONES_CACHE.pop(arm.session_uid, None)
+    want = rec.get("bones") or []
+    shape = [(w["name"], w["parent"], [round(x, 6) for x in w["head"]], [round(x, 6) for x in w["tail"]],
+              [round(x, 6) for r in w["matrix"] for x in r], w["connect"]) for w in want]
+    try:
+        for name, vis in rec.get("collections") or ():       # bone collections first (by name)
+            if arm.collections_all.get(name) is None:
+                arm.collections.new(name)
+        for c in list(getattr(arm, "collections_all", ())):
+            if c.name not in {n for n, _v in rec.get("collections") or ()}:
+                arm.collections.remove(c)
+        for name, vis in rec.get("collections") or ():
+            c = arm.collections_all.get(name)
+            if c is not None and c.is_visible != vis:
+                c.is_visible = vis
+        if _bone_shape(arm) != shape:
+            _edit_bones(ob, want)
+        for w in want:
+            b = arm.bones.get(w["name"])
+            if b is None:
+                continue
+            set_struct_values(b, w.get("values") or {})
+            have = {c.name for c in b.collections}
+            for cn in set(w.get("colls") or ()) - have:
+                c = arm.collections_all.get(cn)
+                if c is not None:
+                    c.assign(b)
+            for cn in have - set(w.get("colls") or ()):
+                c = arm.collections_all.get(cn)
+                if c is not None:
+                    c.unassign(b)
+    except Exception as e:
+        log.error_once(("bones", str(e)), f"could not restore the bones of {ob.name}: {e}", e)
+    _BONES_CACHE.pop(arm.session_uid, None)
+
+
+def _edit_bones(ob, want) -> None:
+    """Put the bones back through a short Edit Mode visit (bones can only be made, moved and parented
+    there), then back to the mode the object was in."""
+    from mathutils import Matrix
+    ctx = bpy.context
+    vl = ctx.view_layer
+    prev_active = vl.objects.active
+    prev_mode = ob.mode
+    with ctx.temp_override(active_object=ob, object=ob, selected_objects=[ob], selected_editable_objects=[ob]):
+        vl.objects.active = ob
+        if prev_mode != "EDIT":
+            bpy.ops.object.mode_set(mode="EDIT")
+        try:
+            eb = ob.data.edit_bones
+            names = {w["name"] for w in want}
+            for b in [b for b in eb if b.name not in names]:
+                eb.remove(b)
+            for w in want:
+                b = eb.get(w["name"]) or eb.new(w["name"])
+                b.use_connect = False
+                b.head, b.tail = w["head"], w["tail"]
+                b.matrix = Matrix(w["matrix"])
+                b.tail = w["tail"]
+            for w in want:
+                b = eb.get(w["name"])
+                b.parent = eb.get(w["parent"]) if w["parent"] else None
+                b.use_connect = w["connect"]
+        finally:
+            if prev_mode != "EDIT":
+                bpy.ops.object.mode_set(mode=prev_mode if prev_mode in ("OBJECT", "POSE") else "OBJECT")
+    if prev_active is not None and prev_active != ob:
+        vl.objects.active = prev_active
+
+
 # ----------------------------------------------------------------------------- pose (D119)
 POSE_KEY = "pose"
 _POSE_FIELDS = (("location", 3), ("rotation_quaternion", 4), ("rotation_euler", 3),
@@ -1594,6 +1706,7 @@ def forget_selected_values() -> None:
             if o.data is not None:
                 _VAL_CACHE.pop(o.data.session_uid, None)
                 _GEOM_CACHE.pop(o.data.session_uid, None)
+                _BONES_CACHE.pop(o.data.session_uid, None)
             ad = o.animation_data
             if ad is not None and ad.action is not None:
                 _ACT_CACHE.pop(ad.action.session_uid, None)
@@ -1606,6 +1719,7 @@ def value_changed(idb) -> None:
         _VAL_CACHE.pop(idb.session_uid, None)
         _ACT_CACHE.pop(idb.session_uid, None)
         _GEOM_CACHE.pop(idb.session_uid, None)
+        _BONES_CACHE.pop(idb.session_uid, None)
     except Exception:
         pass
 
