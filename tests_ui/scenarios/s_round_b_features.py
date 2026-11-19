@@ -111,9 +111,13 @@ def run(d):
     yield 0.2
 
     # ---------------------------------------------------------------- Join, then scrub back past it
+    # Movie Mode playback ("Follow object and mode") leaves A in Sculpt Mode, where Add does nothing:
+    # the active object would still be A, and naming it "B" broke every check after this one
+    activate(d, a, "OBJECT")
     with d.override():
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=0.8, location=(2.6, 0, 0))
+        res = bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=0.8, location=(2.6, 0, 0))
         b = bpy.context.active_object
+        assert res == {"FINISHED"} and b != a, (res, b.name)
         b.name = "B"
         bpy.ops.view3d.view_all()
     activate(d, b, "SCULPT")
