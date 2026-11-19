@@ -16,7 +16,7 @@ Where a fact has no source, this page says "not measured" or "no report".
 1. Clone `Min3scon/Hindsight` and stay on the default branch `claude/lucid-brahmagupta-9gsdsn`. Read this
    file, then `dev/AGENT_RULES.md`.
 2. Environment. Run `bash tools/dev_env.sh` (add `--all` for Blender 5.0, 5.1 and 5.2): it builds one
-   virtual environment per Blender version under `/home/user/venvs` with `bpy` as a Python module
+   virtual environment per Blender version under `venvs/` next to the repository checkout with `bpy` as a Python module
    (`bpy42` 4.2.23 and `bpy50` 5.0.1 on Python 3.11; `bpy51` 5.1.2, `bpy52` 5.2.2 and `bpy53` 5.3.0 on
    Python 3.13), the test dependencies, the committed engine wheel, and a `tools` venv with maturin and
    zig. The claude.ai cloud environment named "Hindsight" (personal, saved for this repository) runs
@@ -24,7 +24,7 @@ Where a fact has no source, this page says "not measured" or "no report".
    is unproven until a fresh session has started on it. `bash tools/build_native.sh` rebuilds the six
    engine wheels into `hindsight/wheels/`.
    - No GPU in the container. Since 2026-11-18 the "Hindsight" environment allows `download.blender.org`:
-     Blender 4.2 and 5.3 Linux binaries are unpacked in `/home/user/blender/` and
+     Blender 4.2 and 5.3 Linux binaries are unpacked in `blender/` next to the repository checkout and
      `python3 tools/ci/run_suite.py --blender <binary>` runs the suite in them. Real Blender also runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
      hand with inputs `versions`, `filter`, `run_module`, `run_ui`) runs the suite in Blender binaries
      4.2 to 5.3, on Windows and macOS as a module, and a windowed probe under Xvfb. Workflow
@@ -38,7 +38,7 @@ Where a fact has no source, this page says "not measured" or "no report".
      Python versions are in `tests/reference/`). The runner sets `HINDSIGHT_VERIFY=1` (every written step
      is read back and compared).
    - Sculpt brush operators crash headless; tests simulate strokes with `tests/harness.py`.
-   - Real windows here (Xvfb, Mesa llvmpipe, the binaries in `/home/user/blender/`): put a `blender` shim
+   - Real windows here (Xvfb, Mesa llvmpipe, the binaries in `blender/` next to the repository checkout): put a `blender` shim
      first on PATH that runs the binary with `--gpu-backend opengl` (keep `--command` first, as in
      `.github/workflows/blender.yml`), set `LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
      MESA_GL_VERSION_OVERRIDE=4.5 MESA_GLSL_VERSION_OVERRIDE=450 HS_UI_XSHOT=1`, then
@@ -279,6 +279,8 @@ Latest runs (2026-11-19):
 | same, `run modifier_keys` | main-session-3 8ff10f9 | 5/5 on 5.3.0 and 4.2.23: Ctrl+1, Ctrl+3, Ctrl+0 are one step each; the global slider puts the modifier stack and its levels back both ways |
 | same, `run pose_keys` | main-session-3 694622d | 5/5 on 5.3.0 and 4.2.23: in Pose Mode R and G (mouse, click) and I are one step each; the global slider puts the pose and the keyframes back both ways |
 | same, `run grease_pencil` and the add-on panel drag (`run addon`) | main-session-3 a9e9a2c | Grease Pencil 5/5 (v3 on 5.3.0, legacy on 4.2.23: three strokes drawn with the mouse, three steps, the global slider takes them away and brings them back with their points); addon 9/9 on both (D147: a drag on the add-on's panel slider is one step) |
+| same, `run dyntopo` with Blender's own undo | main-session-3 6d6191d | 11/11 on 5.3.0 and 4.2.23: Ctrl+Z after a Dyntopo stroke moves the history one position back (no new step, the stroke's triangles gone), Ctrl+Shift+Z forward again, and the slider still puts step 2 back exactly |
+| same, `run select_ops` (R048) | main-session-3, R048 working tree | 5/5 on 5.3.0 and 4.2.23: Blender lists a click as `VIEW3D_OT_select` and A in Edit Mode as `MESH_OT_select_all`; the click reads 2 of 34 recorded datablocks and records nothing, G after it reads all and is one step; A and a click in Edit Mode read no mesh, G after them is one Edit Mode step |
 | same, Rounds A to D (`tests_ui/rounds.py --pass 90 --blender 5.3 --rounds ABCD`) | e4165f2 | 9/16 runs in 76 min; Round C all passed (10k, 10k with 1,000 steps, 100k, 500k, stroke split, file load, native undo); the failures were scenarios out of date (round_b_features, round_d, fail_inject: fixed and passing since), round_b redraw times under software GL, and these findings: a stale hindsight_native 0.2.0 in the Blender binaries' own site-packages here shadowed the add-on's wheel on Install from Disk (moved aside; container only), round_b redraw times are software GL under load, rounds.py's window offset breaks the Xvfb screenshot crop |
 | Native engine on GitHub, 12 jobs (Windows, macOS, Linux; x64 and ARM64; Python 3.11 and 3.13) | 7dc4853, 847bcdd, 099815c | 7dc4853: test_core_reference failed for a missing lz4 (CI dependencies fixed in 847bcdd); 847bcdd: 2 libzstd byte comparisons (fixed in 099815c); 099815c: rerun pending |
 | same | 9280a71, 3a58015 | 9280a71 (run 44466199267): every platform failed one test, the libzstd byte comparison in test_record_equals_diff_and_encode (Windows' earlier `resource` failure was gone); fixed in cd046ab; 3a58015 (run 44466670259): all 12 jobs green |
@@ -379,7 +381,7 @@ physics and bake caches), Blender's preferences and window layout.
 
 Blockers:
 
-- No GPU in the container. Blender 4.2.23 and 5.3.0 binaries are there (`/home/user/blender`), so
+- No GPU in the container. Blender 4.2.23 and 5.3.0 binaries are there (`blender/` next to the repository checkout), so
   windowed scenarios run locally under Xvfb and Mesa llvmpipe (`tests_ui/hs_ui.py`, a `blender` shim on
   PATH adding `--gpu-backend opengl`, as in `.github/workflows/blender.yml`); the GitHub job runs the same.
 - The environment is not reproducible yet: `tools/dev_env.sh` and a personal cloud environment "Hindsight"

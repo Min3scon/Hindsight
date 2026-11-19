@@ -549,6 +549,75 @@ def _ops_marker():
         return None
 
 
+# R048: Blender's own operators that change only which objects or elements are selected (and which is
+# active). The recorder doesn't record selection, so when one of these ends, the objects it can have
+# touched (selected, active, updated) are read instead of every recorded object, and Edit Mode reads
+# no mesh (Blender's Edit Mode mesh is converted for that, 44 ms at 300,000 vertices). Each name is
+# a built-in selection operator; one that can also change data (Select Mode changes the tool
+# settings, Shortest Path can mark seams) is not here.
+_SELECT_ONLY = frozenset({
+    "VIEW3D_OT_select", "VIEW3D_OT_select_box", "VIEW3D_OT_select_circle", "VIEW3D_OT_select_lasso",
+    "OBJECT_OT_select_all", "OBJECT_OT_select_random", "OBJECT_OT_select_by_type", "OBJECT_OT_select_grouped",
+    "OBJECT_OT_select_linked", "OBJECT_OT_select_mirror", "OBJECT_OT_select_more", "OBJECT_OT_select_less",
+    "OBJECT_OT_select_pattern", "OBJECT_OT_select_camera", "OBJECT_OT_select_hierarchy",
+    "MESH_OT_select_all", "MESH_OT_select_more", "MESH_OT_select_less", "MESH_OT_select_linked",
+    "MESH_OT_select_linked_pick", "MESH_OT_select_random", "MESH_OT_loop_select", "MESH_OT_edgering_select",
+    "MESH_OT_select_similar", "MESH_OT_select_similar_region", "MESH_OT_select_nth",
+    "MESH_OT_select_non_manifold", "MESH_OT_select_loose", "MESH_OT_select_interior_faces",
+    "MESH_OT_select_face_by_sides", "MESH_OT_select_axis", "MESH_OT_select_mirror", "MESH_OT_region_to_loop",
+    "MESH_OT_loop_to_region", "MESH_OT_select_ungrouped", "MESH_OT_loop_multi_select",
+    "MESH_OT_select_by_attribute", "MESH_OT_select_by_pole_count",
+})
+
+
+def _select_only(prev) -> bool:
+    """R048: exactly one operator ended since the marker `prev`, and it only changes the selection.
+    Two or more (or a list that can't be told apart) read everything, as any operator does."""
+    if prev is None:
+        return False
+    info = _last_ops_info()
+    if info is None:
+        return False
+    idname, before_last, n = info
+    if idname not in _SELECT_ONLY:
+        return False
+    if prev[0] == 0:
+        return n == 1
+    return bool(before_last) and before_last == prev[1]
+
+
+def _selected_uids() -> set:
+    """The recorded objects that are selected or active (all recorded ones if that can't be read)."""
+    tracked = tracked_uids()
+    try:
+        vl = bpy.context.view_layer
+        obs = [o for o in vl.objects if o.select_get()]
+        act = vl.objects.active
+        if act is not None:
+            obs.append(act)
+    except Exception:
+        return tracked
+    out = set()
+    for o in obs:
+        u = idmap.uid_of(o)
+        if u in tracked:
+            out.add(u)
+    return out
+
+
+def _last_ops_info():
+    """(idname of the operator that ended last, pointer of the one before it or 0, how many are
+    listed), or None."""
+    try:
+        ops = bpy.context.window_manager.operators
+        n = len(ops)
+        if not n:
+            return None
+        return (ops[-1].bl_idname, ops[-2].as_pointer() if n > 1 else 0, n)
+    except Exception:
+        return None
+
+
 def _last_label(default: str = "Change") -> str:
     try:
         ops = bpy.context.window_manager.operators
@@ -581,6 +650,7 @@ def tick() -> None:
         return
     settled = bool(_DIRTY) and _now() - max(_DIRTY.values()) >= _settle_time()
     if finished or settled:
+        prev = _OPS["marker"]
         _OPS["marker"] = marker
         if idle:
             # nothing is recorded: what finish_operation or commit would leave behind, without
@@ -590,16 +660,21 @@ def tick() -> None:
             _MESH_USERS.clear()
             return
         if finished:
-            finish_operation(_last_label())
+            finish_operation(_last_label(), select_only=_select_only(prev))
         else:
             refresh_mesh_users()
             commit(label="Change", uids=None, mesh=True, settled=True)
 
 
-def finish_operation(label: str) -> list:
+def finish_operation(label: str, select_only: bool = False) -> list:
     """What happens when an operator has finished: everything it changed is recorded as one
     operation (the scene, object data, meshes, every object in Edit Mode: one position on the
-    global timeline, D52 and D58). Tests call this for what the timer does."""
+    global timeline, D52 and D58). Tests call this for what the timer does.
+
+    select_only (R048, _select_only): the operator only changed the selection. The selected, active
+    and updated datablocks are compared (a setting that doesn't tell the depsgraph is read again on
+    the selected and active objects, as for any operator, D117); the rest, and Edit Mode's mesh, wait
+    for the next operator, which reads everything."""
     rt = _rt()
     check_exclusion()
     refresh_mesh_users()
@@ -613,8 +688,10 @@ def finish_operation(label: str) -> list:
         pass
     rt.OP_GROUP[0] = [None]
     try:
-        steps = commit(label=label, uids=tracked_uids() | set(_DIRTY), mesh=True)
-        _edit_step(label)
+        uids = (_selected_uids() if select_only else tracked_uids()) | set(_DIRTY)
+        steps = commit(label=label, uids=uids, mesh=True)
+        if not select_only:
+            _edit_step(label)
     finally:
         rt.OP_GROUP[0] = None
     return steps
