@@ -1,0 +1,31 @@
+R082 (reverted): Morph History dab, the first axis compared in float32 against widened bounds first, then the float64 test on that
+axis's candidates. A = 7bd78d6 (R081), B = R082. bench/scenarios/oneoff/morph_dab.py, alternating processes.
+
+=== 1M, bpy 5.3
+1 A AB {"n": 1000000, "dab_med_ms": 14.33, "dab_min_ms": 10.98, "begin_med_ms": 27.23, "moved": 1079068}
+1 B AB {"n": 1000000, "dab_med_ms": 16.45, "dab_min_ms": 12.14, "begin_med_ms": 23.55, "moved": 1079068}
+2 A AB {"n": 1000000, "dab_med_ms": 14.08, "dab_min_ms": 10.8, "begin_med_ms": 26.43, "moved": 1079068}
+2 B AB {"n": 1000000, "dab_med_ms": 13.85, "dab_min_ms": 12.09, "begin_med_ms": 23.45, "moved": 1079068}
+3 A AB {"n": 1000000, "dab_med_ms": 14.15, "dab_min_ms": 12.66, "begin_med_ms": 24.73, "moved": 1079068}
+3 B AB {"n": 1000000, "dab_med_ms": 16.24, "dab_min_ms": 12.1, "begin_med_ms": 28.88, "moved": 1079068}
+4 A AB {"n": 1000000, "dab_med_ms": 13.39, "dab_min_ms": 10.72, "begin_med_ms": 24.39, "moved": 1079068}
+4 B AB {"n": 1000000, "dab_med_ms": 15.34, "dab_min_ms": 12.18, "begin_med_ms": 24.18, "moved": 1079068}
+5 A AB {"n": 1000000, "dab_med_ms": 14.21, "dab_min_ms": 12.78, "begin_med_ms": 25.1, "moved": 1079068}
+5 B AB {"n": 1000000, "dab_med_ms": 16.1, "dab_min_ms": 14.02, "begin_med_ms": 24.34, "moved": 1079068}
+=== 100k, bpy 5.3
+1 A AB {"n": 99856, "dab_med_ms": 1.54, "dab_min_ms": 1.25, "begin_med_ms": 2.66, "moved": 109754}
+1 B AB {"n": 99856, "dab_med_ms": 1.22, "dab_min_ms": 1.03, "begin_med_ms": 2.26, "moved": 109754}
+2 A AB {"n": 99856, "dab_med_ms": 1.73, "dab_min_ms": 1.03, "begin_med_ms": 2.59, "moved": 109754}
+2 B AB {"n": 99856, "dab_med_ms": 1.12, "dab_min_ms": 0.98, "begin_med_ms": 2.3, "moved": 109754}
+3 A AB {"n": 99856, "dab_med_ms": 1.51, "dab_min_ms": 1.35, "begin_med_ms": 2.68, "moved": 109754}
+3 B AB {"n": 99856, "dab_med_ms": 1.5, "dab_min_ms": 1.32, "begin_med_ms": 2.58, "moved": 109754}
+=== 1M, bpy 4.2
+1 A AB {"n": 1000000, "dab_med_ms": 13.73, "dab_min_ms": 10.98, "begin_med_ms": 24.26, "moved": 1079068}
+1 B AB {"n": 1000000, "dab_med_ms": 16.74, "dab_min_ms": 14.8, "begin_med_ms": 25.3, "moved": 1079068}
+2 A AB {"n": 1000000, "dab_med_ms": 13.51, "dab_min_ms": 12.36, "begin_med_ms": 24.74, "moved": 1079068}
+2 B AB {"n": 1000000, "dab_med_ms": 14.86, "dab_min_ms": 11.77, "begin_med_ms": 23.27, "moved": 1079068}
+3 A AB {"n": 1000000, "dab_med_ms": 13.7, "dab_min_ms": 12.2, "begin_med_ms": 24.78, "moved": 1079068}
+3 B AB {"n": 1000000, "dab_med_ms": 15.8, "dab_min_ms": 12.12, "begin_med_ms": 25.02, "moved": 1079068}
+
+numpy alone, 1M float32 vertices, one axis, median of 30 (ms): float64 test as R081 3.77 (numpy 2.5.5) / 2.90 (2.4.6);
+float32 bounds 3.57 / 2.37; on a contiguous copy 2.56 / 2.09; float32 difference in place 2.58 / 2.00 (the float64 test of the candidates not included).
