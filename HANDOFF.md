@@ -140,8 +140,14 @@ changelog page change with the version.
   engine is required (0.5.1, API 5; Python copies in tests/reference); both lists of the limitations
   page were checked line by line and almost every line is fixed or recorded now (DEVELOPMENT.md
   section d, DEFECTS.md D77 to D141). The current state, branches, test matrix and next actions are in
-  DEVELOPMENT.md. 1.0.0-beta.3 is still not released: the real-window checks above have not been done
-  (the CI window probe covers only the slider scenario), and COVERAGE.md is unchanged.
+  DEVELOPMENT.md. 1.0.0-beta.3 is still not released. Real-window checks (2026-11-19, in this container: Xvfb,
+  Mesa llvmpipe, Blender binaries 5.3.0 and 4.2.23, `tests_ui/hs_ui.py`): the slider with toolbar, sidebar,
+  both and neither; Movie Mode (camera and lamps, Use this view, put back after Delete but not during a
+  stroke, a drag, playback or a render, Workbench and EEVEE timelapse renders); Weight, Vertex, Texture Paint
+  and Image Editor painting; Multires and Dyntopo; Rounds A to D on 5.3 (Round C all passed). They found
+  D142 and D144 (texture painting) and out-of-date scenarios, all fixed. Not checked: the Movie Mode panel's
+  rows by eye (no panel-open API; drawn headless in test_bl_panels), real 5.0.1/5.1/5.2 binaries (download
+  blocked here; the GitHub window job runs 5.3 and 4.2). COVERAGE.md is unchanged.
 - Known and not ours to fix here: on Blender 4.2 tests/test_bl_t1_gate.py::test_gate_parenting fails
   (parent_type at one position; it fails on beta.2 code too; handed to DATAREC to find the cause).
 - tools/mutation_bl.py compiles again; mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
