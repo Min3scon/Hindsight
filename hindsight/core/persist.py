@@ -34,7 +34,7 @@ import json
 import os
 import struct
 import time
-from .native import crc32
+from .crc import crc32
 
 import numpy as np
 

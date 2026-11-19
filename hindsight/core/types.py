@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .native import crc32
+from .crc import crc32
 
 import numpy as np
 
