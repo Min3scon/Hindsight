@@ -284,6 +284,9 @@ def _without_animated(a, b) -> bool:
     return not same(a, b)
 
 
+_SIMPLE_PATH: dict = {}      # RNA path -> True when it is one attribute name (no dot, no index)
+
+
 class RNAAdapter(Adapter):
     """Properties from ALLOWLIST, read and written by RNA path."""
     id = "rna"
@@ -304,11 +307,17 @@ class RNAAdapter(Adapter):
     def capture(self, idb) -> dict:
         out = {}
         anim = animated_slots(idb)
+        on = ENABLED_KINDS[0]
         for path, _kind, cat in self.rows(idb):
-            if not kind_on(cat):
+            if on is not None and cat not in on:
                 continue
             try:
-                v = normalise(idb.path_resolve(path))
+                s = _SIMPLE_PATH.get(path)
+                if s is None:
+                    s = _SIMPLE_PATH[path] = "." not in path and "[" not in path
+                v = getattr(idb, path) if s else idb.path_resolve(path)    # a plain name needs no path parsing
+                if type(v) not in _PLAIN:
+                    v = normalise(v)
             except Exception:
                 continue
             idx = anim.get(path)
