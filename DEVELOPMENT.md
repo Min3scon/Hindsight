@@ -114,9 +114,8 @@ gates it; `bench/suite.py` A/B proves the gain; then the Python copy leaves `hin
 Rust runs: every suite runs with the engine required; a test fails if anything under `hindsight/` imports
 a reference module; Copy diagnostics names the engine and its API; CI loads the wheel on Windows, macOS
 and Linux (x64 and ARM64) and in real Blender binaries. One agent owns `native/` at a time. The
-interface design (module layout, buffer ownership, error mapping, threading) is the first deliverable of
-the Rust lead agent and must be reviewed before code is written: the design agent was interrupted
-before it reported, so none exists.
+interface design (module layout, buffer ownership, error mapping, threading, milestones M1 to M6) is
+`dev/RUST_DESIGN.md`; the agents' reports are in `dev/reports/RUST.md`.
 
 | Step | Content | Status |
 |---|---|---|
