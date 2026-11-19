@@ -1,0 +1,23 @@
+R064 A/B: a saved file (100k vertices), 3,000 unsaved strokes in the crash journal, the file opened again with Crash Recovery Interrupted.
+A = f9b4ab3 (replay decodes every journaled step and keeps it decoded), B = R064 (the step bytes as they are, meta from the header).
+Columns: round side {open_ms, rss_growth_mb (VmRSS over the open), history_mb (Entry.nbytes), raw_steps (decoded), steps}. Alternating processes.
+
+bpy 5.3.0 module:
+1 A AB {"open_ms": 228.3, "rss_growth_mb": 28.7, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+1 B AB {"open_ms": 155.4, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+2 A AB {"open_ms": 213.4, "rss_growth_mb": 28.7, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+2 B AB {"open_ms": 151.1, "rss_growth_mb": 0.9, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+3 A AB {"open_ms": 240.6, "rss_growth_mb": 29.7, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+3 B AB {"open_ms": 152.7, "rss_growth_mb": 0.8, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+4 A AB {"open_ms": 241.7, "rss_growth_mb": 28.7, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+4 B AB {"open_ms": 198.2, "rss_growth_mb": 0.9, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+5 A AB {"open_ms": 233.4, "rss_growth_mb": 29.8, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+5 B AB {"open_ms": 168.1, "rss_growth_mb": 0.9, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+
+bpy 4.2.23 module:
+1 A AB {"open_ms": 265.2, "rss_growth_mb": 29.5, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+1 B AB {"open_ms": 142.8, "rss_growth_mb": 0.2, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+2 A AB {"open_ms": 205.2, "rss_growth_mb": 17.7, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+2 B AB {"open_ms": 155.5, "rss_growth_mb": -12.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+3 A AB {"open_ms": 216.3, "rss_growth_mb": 29.5, "history_mb": 91.9, "raw_steps": 3000, "steps": 3001}
+3 B AB {"open_ms": 144.3, "rss_growth_mb": 0.2, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
