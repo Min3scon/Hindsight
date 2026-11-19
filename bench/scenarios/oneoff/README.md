@@ -24,3 +24,7 @@ with PYTHONPATH (no `-I`): `PYTHONPATH=<engine folder> <bpy python> bench/scenar
 `same_values_ab.py CODE_ROOT [ROUNDS]` (R070): the recorder's "nothing changed" check at 500 recorded objects, the
 function before R070 (copied into the probe) against the current one, alternating in one process; prints one `AB {...}`
 line with an operation that changes nothing, a move, and the time inside `_same_values`.
+
+`diff_threads_ab.py CODE_ROOT [ROUNDS] [--inproc]` (R071): a texture paint stroke on a 2K float image and a sculpt stroke
+on a 1M mesh, committed, with the time inside the engine's diff; `--inproc` alternates one thread against the engine's
+own rule in one process. Put the root's engine first with PYTHONPATH.

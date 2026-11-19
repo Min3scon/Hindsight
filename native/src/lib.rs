@@ -266,9 +266,9 @@ fn diff_parts(a: &[u8], b: &[u8], isz: usize, w: usize, threads: usize) -> Vec<(
 }
 
 /// R071: threads in all (the calling one included). Measured on a shared 4-core VM (one array of
-/// float32 rows, unchanged or with 2% of it changed): from 4 MB two threads take 0.53 to 0.77 of one
-/// thread's time; three and four were slower than two at every size (the compare is bound by memory),
-/// and below 4 MB a second thread didn't pay. `threads` can ask for up to four (tests use that).
+/// float32 rows, unchanged or with 2% of it changed): from 4 MB two threads took 0.46 to 0.77 of one
+/// thread's time in 18 of 20 samples, below 4 MB 0.83 to 1.65; three or four beat two only in 4 of
+/// 20 samples, by 1 to 11% (the compare is bound by memory). `threads` can ask for up to four (tests).
 const DIFF_MAX_THREADS: usize = 4;
 const DIFF_AUTO_THREADS: usize = 2;
 const DIFF_MIN_BYTES: usize = 4 << 20;

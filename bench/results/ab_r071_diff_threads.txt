@@ -1,0 +1,54 @@
+R071: the engine's diff on two threads for arrays of 4 MB and more (GIL released).
+Probe: bench/scenarios/oneoff/diff_threads_ab.py. A texture paint stroke (a 160 x 160 dab) on a 2048 x 2048 float
+image (67 MB of RGBA pixels, as tests/test_bl_texture_paint.py with side 2048) and a sculpt stroke (bench_bl.Stroker,
+2% of the vertices) on a 1M-vertex mesh (12 MB of positions), each committed with runtime.commit; *_diff is the time
+inside the engine's diff during that commit. Medians of the rounds, ms.
+
+Thread scaling first (one process, engine 0.9.0 of R071, diff of float32 rows, unchanged or 2% changed, median of 21
+calls, two runs; shared 4-core VM, load 2.5 to 3.4). From 4 MB, two threads took 0.46 to 0.77 of one thread's time in
+18 of 20 samples (once 0.94, once 1.95: a 24 MB sample where three threads were as slow, load); below 4 MB they took
+0.83 to 1.65. Three or four threads beat two in 4 of the 20 samples, by 1 to 11% (and in that 24 MB outlier); the
+compare is bound by memory. Hence the rule: two threads from 4 MB, at most the cores.
+  12 MB unchanged: 1 thread 0.98 to 1.01 ms, 2 threads 0.57 to 0.59, 3: 0.78, 4: 0.73 to 0.90
+  67 MB unchanged: 1 thread 5.60 to 6.66 ms, 2 threads 2.97 to 3.04, 3: 3.89 to 4.22, 4: 4.05 to 4.12
+
+1) In-process toggle (--inproc, 20 rounds, A = one thread, B = the engine's rule, order alternating; engine 0.9.0):
+bpy53 AB {"engine_api": 8, "rounds": 20, "A_tex2k_commit": 21.094, "A_tex2k_diff": 8.826, "A_m1_commit": 4.261, "A_m1_diff": 1.714, "B_tex2k_commit": 17.186, "B_tex2k_diff": 4.922, "B_m1_commit": 3.919, "B_m1_diff": 1.339, "load": ["3.55", "3.43", "3.11"]}
+bpy53 AB {"engine_api": 8, "rounds": 20, "A_tex2k_commit": 21.163, "A_tex2k_diff": 8.845, "A_m1_commit": 4.513, "A_m1_diff": 1.814, "B_tex2k_commit": 17.978, "B_tex2k_diff": 5.031, "B_m1_commit": 4.078, "B_m1_diff": 1.44, "load": ["3.77", "3.48", "3.14"]}
+bpy53 AB {"engine_api": 8, "rounds": 20, "A_tex2k_commit": 24.297, "A_tex2k_diff": 10.005, "A_m1_commit": 4.992, "A_m1_diff": 1.919, "B_tex2k_commit": 18.562, "B_tex2k_diff": 5.294, "B_m1_commit": 4.008, "B_m1_diff": 1.317, "load": ["4.11", "3.57", "3.17"]}
+bpy42 AB {"engine_api": 8, "rounds": 20, "A_tex2k_commit": 20.792, "A_tex2k_diff": 8.506, "A_m1_commit": 4.718, "A_m1_diff": 1.778, "B_tex2k_commit": 17.481, "B_tex2k_diff": 5.358, "B_m1_commit": 4.401, "B_m1_diff": 1.339, "load": ["4.33", "3.73", "3.25"]}
+bpy42 AB {"engine_api": 8, "rounds": 20, "A_tex2k_commit": 20.351, "A_tex2k_diff": 8.359, "A_m1_commit": 4.367, "A_m1_diff": 1.666, "B_tex2k_commit": 17.373, "B_tex2k_diff": 5.256, "B_m1_commit": 3.949, "B_m1_diff": 1.362, "load": ["4.19", "3.77", "3.29"]}
+
+2) Separate processes alternating, 5 rounds of 8 strokes each: A = R070 (c88c3ab) with its engine (diff on one thread),
+   B = R071 (c33d6fc) with its engine:
+== bpy53 load 3.77 3.69 3.27
+1 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 20.384, "tex2k_diff": 8.329, "m1_commit": 4.301, "m1_diff": 1.797, "load": ["3.87", "3.72", "3.28"]}
+1 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 16.756, "tex2k_diff": 4.713, "m1_commit": 4.015, "m1_diff": 1.385, "load": ["3.96", "3.74", "3.29"]}
+2 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 20.339, "tex2k_diff": 8.258, "m1_commit": 4.105, "m1_diff": 1.737, "load": ["4.05", "3.76", "3.29"]}
+2 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 16.192, "tex2k_diff": 4.84, "m1_commit": 3.772, "m1_diff": 1.323, "load": ["3.96", "3.75", "3.29"]}
+3 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 21.007, "tex2k_diff": 8.845, "m1_commit": 4.466, "m1_diff": 1.924, "load": ["3.81", "3.72", "3.29"]}
+3 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 17.466, "tex2k_diff": 5.027, "m1_commit": 4.458, "m1_diff": 1.59, "load": ["4.14", "3.79", "3.31"]}
+4 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 20.287, "tex2k_diff": 8.284, "m1_commit": 4.43, "m1_diff": 1.781, "load": ["3.97", "3.76", "3.30"]}
+4 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 17.393, "tex2k_diff": 4.952, "m1_commit": 3.913, "m1_diff": 1.327, "load": ["3.81", "3.73", "3.30"]}
+5 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 22.279, "tex2k_diff": 9.887, "m1_commit": 4.827, "m1_diff": 2.037, "load": ["3.67", "3.70", "3.29"]}
+5 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 17.334, "tex2k_diff": 5.267, "m1_commit": 3.64, "m1_diff": 1.278, "load": ["3.53", "3.67", "3.28"]}
+== bpy42 load 3.53 3.67 3.28
+1 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 19.964, "tex2k_diff": 8.219, "m1_commit": 4.578, "m1_diff": 1.751, "load": ["3.54", "3.67", "3.28"]}
+1 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 16.279, "tex2k_diff": 4.851, "m1_commit": 4.013, "m1_diff": 1.256, "load": ["3.30", "3.61", "3.27"]}
+2 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 18.85, "tex2k_diff": 7.885, "m1_commit": 4.375, "m1_diff": 1.628, "load": ["3.23", "3.58", "3.27"]}
+2 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 16.333, "tex2k_diff": 5.047, "m1_commit": 4.146, "m1_diff": 1.289, "load": ["3.12", "3.55", "3.26"]}
+3 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 20.584, "tex2k_diff": 7.971, "m1_commit": 4.448, "m1_diff": 1.673, "load": ["2.94", "3.49", "3.24"]}
+3 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 17.114, "tex2k_diff": 5.365, "m1_commit": 4.249, "m1_diff": 1.423, "load": ["2.95", "3.47", "3.24"]}
+4 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 19.118, "tex2k_diff": 7.935, "m1_commit": 4.447, "m1_diff": 1.655, "load": ["2.89", "3.44", "3.23"]}
+4 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 16.311, "tex2k_diff": 4.626, "m1_commit": 4.056, "m1_diff": 1.319, "load": ["2.77", "3.38", "3.22"]}
+5 A AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 19.516, "tex2k_diff": 8.006, "m1_commit": 4.174, "m1_diff": 1.68, "load": ["2.65", "3.34", "3.20"]}
+5 B AB {"engine_api": 8, "rounds": 8, "tex2k_commit": 15.759, "tex2k_diff": 4.49, "m1_commit": 4.047, "m1_diff": 1.285, "load": ["2.77", "3.34", "3.20"]}
+   Medians of the 5 run medians, A / B (ratio):
+   bpy 5.3.0: tex2k_commit 20.38 / 17.33 (0.85); tex2k_diff 8.33 / 4.95 (0.59); m1_commit 4.43 / 3.91 (0.88); m1_diff 1.80 / 1.33 (0.74)
+   bpy 4.2.23: tex2k_commit 19.52 / 16.31 (0.84); tex2k_diff 7.97 / 4.85 (0.61); m1_commit 4.45 / 4.06 (0.91); m1_diff 1.67 / 1.29 (0.77)
+
+3) bench/ab.py --only commit_1m, 5 rounds, bpy 5.3.0 (A = R070 with its engine, B = R071 with its engine; table also
+   in ab_r071_diff_threads.md, raw rounds in ab_r071_diff_threads.json):
+| scenario | r071_A min | r071_A med | r071_B min | r071_B med | r071_B/r071_A min | r071_B/r071_A med | spread r071_A | spread r071_B | mem r071_A tm/hwm MB | mem r071_B tm/hwm MB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| commit_1m | 2.773 | 3.031 | 2.348 | 2.684 | 0.8469 | 0.8855 | 22% | 5% | 0.407 / 0.285 | 0.407 / 0.223 |

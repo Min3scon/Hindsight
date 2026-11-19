@@ -1,0 +1,245 @@
+{
+ "a": {
+  "label": "r071_A",
+  "root": "<A root a_r070>",
+  "facts": {
+   "python": "3.13.18",
+   "executable": "<bpy53 python>",
+   "blender": "5.3.0",
+   "engine_version": "1.0.0-beta.2",
+   "rust_engine_loaded": true,
+   "native_api_expected": 8,
+   "native_module": "<bench engine cache>/hindsight_native-0.9.0a070-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64/hindsight_native/__init__.py",
+   "native_api": 8,
+   "native_version": null,
+   "hindsight_native_env": ""
+  }
+ },
+ "b": {
+  "label": "r071_B",
+  "root": "<B root>",
+  "facts": {
+   "python": "3.13.18",
+   "executable": "<bpy53 python>",
+   "blender": "5.3.0",
+   "engine_version": "1.0.0-beta.2",
+   "rust_engine_loaded": true,
+   "native_api_expected": 8,
+   "native_module": "<bench engine cache>/hindsight_native-0.9.0b071-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64/hindsight_native/__init__.py",
+   "native_api": 8,
+   "native_version": null,
+   "hindsight_native_env": ""
+  }
+ },
+ "rounds": 5,
+ "quick": false,
+ "only": [
+  "commit_1m"
+ ],
+ "started": "2026-11-19 14:40:50",
+ "cores": 4,
+ "load_average_per_round": [
+  {
+   "round": 1,
+   "start": [
+    2.5,
+    3.26,
+    3.18
+   ],
+   "end": [
+    2.7,
+    3.29,
+    3.19
+   ]
+  },
+  {
+   "round": 2,
+   "start": [
+    2.7,
+    3.29,
+    3.19
+   ],
+   "end": [
+    2.7,
+    3.29,
+    3.19
+   ]
+  },
+  {
+   "round": 3,
+   "start": [
+    2.7,
+    3.29,
+    3.19
+   ],
+   "end": [
+    2.64,
+    3.27,
+    3.18
+   ]
+  },
+  {
+   "round": 4,
+   "start": [
+    2.64,
+    3.27,
+    3.18
+   ],
+   "end": [
+    2.64,
+    3.27,
+    3.18
+   ]
+  },
+  {
+   "round": 5,
+   "start": [
+    2.64,
+    3.27,
+    3.18
+   ],
+   "end": [
+    2.59,
+    3.25,
+    3.18
+   ]
+  }
+ ],
+ "elapsed_s_after_round": [
+  4,
+  7,
+  10,
+  13,
+  17
+ ],
+ "summary": {
+  "A": {
+   "commit_1m": {
+    "min": 2.7726,
+    "median": 3.0312,
+    "spread": 0.22480673900232254,
+    "rounds": 5,
+    "unit": "ms",
+    "tracemalloc_mb": 0.407,
+    "hwm_mb": 0.285
+   }
+  },
+  "B": {
+   "commit_1m": {
+    "min": 2.3481,
+    "median": 2.6841,
+    "spread": 0.0482659723008415,
+    "rounds": 5,
+    "unit": "ms",
+    "tracemalloc_mb": 0.407,
+    "hwm_mb": 0.223
+   }
+  }
+ },
+ "per_round": {
+  "A": [
+   {
+    "commit_1m": {
+     "min_ms": 2.9209,
+     "median_ms": 3.0312,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.285
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 2.8154,
+     "median_ms": 2.8847,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.285
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 2.818,
+     "median_ms": 2.9055,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.285
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 2.7726,
+     "median_ms": 3.5332,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.285
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 3.2536,
+     "median_ms": 3.411,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.457
+    }
+   }
+  ],
+  "B": [
+   {
+    "commit_1m": {
+     "min_ms": 2.4704,
+     "median_ms": 2.7249,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.223
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 2.4649,
+     "median_ms": 2.6841,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.223
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 2.4932,
+     "median_ms": 2.6768,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.223
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 2.5543,
+     "median_ms": 2.7778,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.223
+    }
+   },
+   {
+    "commit_1m": {
+     "min_ms": 2.3481,
+     "median_ms": 2.6499,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.407,
+     "hwm_mb": 0.223
+    }
+   }
+  ]
+ }
+}
