@@ -230,10 +230,44 @@ def test_steps_are_counted_by_the_caps():
     print(f"PASS test_steps_are_counted_by_the_caps (mesh blob {raw} bytes, steps {sizes})")
 
 
+def test_stroke_before_the_baseline_settles_stays_in_the_step():
+    """D143: Sculpt Mode adds its own layers after its first update, so a visit's baseline is read again
+    SETTLE seconds in. A stroke made before that must stay in the visit's step, not become part of the
+    baseline (going back would not undo it)."""
+    ob = setup()
+    before = (top_hash(ob), mesh_hash(ob))
+    multires.SETTLE[0] = 30.0                  # the re-read isn't due yet when the stroke is made
+    H.enter(ob, "SCULPT")
+    runtime._tick_once()
+    with runtime.suspended():
+        bpy.ops.object.mode_set(mode="OBJECT")
+        reshape(ob, 7)
+        bpy.ops.object.mode_set(mode="SCULPT")
+    uid = runtime.obj_uid(ob)
+    runtime._STROKE_SEEN.add(uid)              # what the depsgraph handler notes during a stroke
+    multires.SETTLE[0] = 0.0                   # now the re-read is due
+    try:
+        runtime._tick_once()
+        H.enter(ob, "OBJECT")
+        runtime._tick_once()
+    finally:
+        runtime._STROKE_SEEN.discard(uid)
+    after = (top_hash(ob), mesh_hash(ob))
+    assert after != before, "the reshape changed nothing"
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == 1, "the stroke made before the baseline settled was lost"
+    runtime.goto(C, 0)
+    assert (top_hash(ob), mesh_hash(ob)) == before
+    runtime.goto(C, 1)
+    assert (top_hash(ob), mesh_hash(ob)) == after
+    print("PASS test_stroke_before_the_baseline_settles_stays_in_the_step")
+
+
 if __name__ == "__main__":
     for t in (test_off_by_default_pauses_as_before, test_one_step_per_visit_and_exact,
               test_a_visit_that_changes_nothing_is_no_step, test_level_change_takes_the_step, test_save_and_reload,
-              test_crash_recovery_replays_the_visits, test_steps_are_counted_by_the_caps):
+              test_crash_recovery_replays_the_visits, test_steps_are_counted_by_the_caps,
+              test_stroke_before_the_baseline_settles_stays_in_the_step):
         H.run(t)
     multires.FORCE[0] = None
     H.finish()

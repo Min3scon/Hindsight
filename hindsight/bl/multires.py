@@ -193,7 +193,11 @@ def tick(obj) -> None:
     m = modifier(obj)
     if uid is None or m is None or uid not in _LEVEL:
         return
-    if uid in _PENDING and __import__("time").time() - _PENDING[uid] >= SETTLE[0] and not runtime.stroke_running():
+    if uid in _PENDING and uid in runtime._STROKE_SEEN:
+        # D143: a stroke came before the re-read: it belongs to the visit, so the baseline read on
+        # entering Sculpt Mode stays (Sculpt Mode's own layers are in the step then, which is harmless)
+        del _PENDING[uid]
+    elif uid in _PENDING and __import__("time").time() - _PENDING[uid] >= SETTLE[0] and not runtime.stroke_running():
         del _PENDING[uid]
         raw = snapshot_bytes(obj.data)
         _BASE[uid] = (hash_of(raw), pack(raw))
