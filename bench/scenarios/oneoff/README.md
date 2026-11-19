@@ -34,3 +34,5 @@ strokes without recording them.
 
 `shapekeys.py CODE_ROOT K` (R075): Record everything on a 40k-vertex mesh with K shape keys; a slider moved and the
 operator's end timed (`AB {...}` line).
+
+`stretch_ab.py CODE_ROOT` (R076): Movie Mode's stretch estimate (`camrig._stretch`) for a 1M grid with Simple Deform.

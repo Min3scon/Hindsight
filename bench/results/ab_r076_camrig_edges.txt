@@ -1,0 +1,17 @@
+R076 A/B: camrig._stretch (Movie Mode framing of an object with a deforming modifier; here a 1M grid with Simple
+Deform), 7 calls per process, alternating processes. A = 97df9fc (me.edges.foreach_get), B = R076 (the .edge_verts attribute).
+
+1 A AB {"stretch": 1.0, "min_ms": 324.8, "med_ms": 398.3}
+1 B AB {"stretch": 1.0, "min_ms": 276.3, "med_ms": 291.0}
+2 A AB {"stretch": 1.0, "min_ms": 364.4, "med_ms": 396.3}
+2 B AB {"stretch": 1.0, "min_ms": 240.7, "med_ms": 274.8}
+3 A AB {"stretch": 1.0, "min_ms": 328.8, "med_ms": 366.6}
+3 B AB {"stretch": 1.0, "min_ms": 246.0, "med_ms": 261.0}
+=== 4.2
+1 A AB {"stretch": 1.0, "min_ms": 352.8, "med_ms": 363.5}
+1 B AB {"stretch": 1.0, "min_ms": 280.9, "med_ms": 295.2}
+2 A AB {"stretch": 1.0, "min_ms": 341.0, "med_ms": 383.8}
+2 B AB {"stretch": 1.0, "min_ms": 277.0, "med_ms": 310.8}
+
+The edge read alone at 1M faces (legacy_reads probe): me.edges.foreach_get('vertices') 69.4 ms (4.2.23), 86.3 ms (5.3.0);
+the .edge_verts attribute 1.4 ms on both, the same values.
