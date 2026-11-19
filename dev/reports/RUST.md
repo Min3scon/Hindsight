@@ -382,3 +382,5 @@ Sharing is by identity for consecutive TOPO steps and memory drops; 12 jumps acr
 
 * Delta-coded `after` (a TOPO step storing only what differs from its `before`): would take the chain to a few hundred KB per step for local edits; needs a format bump and a rule for edits that renumber everything (Dyntopo reindexing).
 * Caps accounting by unique arrays.
+
+Tests: test_core_* (all, including the new test_core_topo_chain) on bpy53 and bpy42 with the 0.6.0 wheel; whole test_bl_ (t1_prop included) on both: 86 of 89 files, the failures are test_bl_metadata and test_bl_t1_migrate (known) and test_bl_datarec_fast_paths test_changes_while_off_then_on, which fails the same way on the unchanged main-session-3 tip b5bea4a (not from this round; looks like the D147 marker change).
