@@ -66,6 +66,7 @@ Faster and lighter:
 - With Record everything, selecting (a click, box select, Select All and the other Select menu items) reads only the selected and active objects: with 500 recorded objects, Hindsight's work after a click went from 47 ms to 3 ms. The next operation that can change anything reads everything, as before.
 - In Edit Mode, selecting no longer reads the mesh (36 ms at 300,000 vertices).
 - Opening a file checks each recorded mesh once instead of twice (about 12 ms less per 100k-vertex mesh), and saving no longer reads every packed step again for its checksum (18 ms less per save with 6,000 steps of a 100k mesh).
+- Saving and opening a file with big recorded meshes takes less time: the check of each mesh runs in the Rust engine. With three recorded 1M-vertex meshes, that check went from 0.36 s to 0.11 s per save, and opening the file from 0.79 s to 0.55 s. Older files open as before.
 - The engine that finds what a stroke changed and applies steps is now written in Rust, for Windows, macOS and Linux. Finding the changes of a stroke at 1M vertices takes 1.2 ms instead of 5.0 ms, and a 300-step jump about half the time. If it can't load, the Python version takes over.
 
 Fixed:
