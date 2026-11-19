@@ -22,7 +22,7 @@ def target_positions(h, state: MeshState, target_uid: str):
     mt = getattr(h, "morph_target", None)
     if mt is None or state is None:
         return None
-    pos = state.arrays.get(POSITION_KEY)
+    pos = state.light.get(POSITION_KEY)
     if pos is None:
         return None
     n = len(h.entries)

@@ -1524,7 +1524,7 @@ def _fill_made(ob, made) -> None:
     n = len(me.vertices)
     for kind, name in made:
         if kind == "vg":
-            arr = st.arrays.get(meshio.vg_key(name))
+            arr = st.light.get(meshio.vg_key(name))
             g = ob.vertex_groups.get(name)
             if arr is not None and g is not None and arr.size == n:
                 meshio._write_vgroup(g, n, arr)
@@ -1533,7 +1533,7 @@ def _fill_made(ob, made) -> None:
             kb = key.key_blocks.get(name) if key is not None else None
             if kb is None:
                 continue
-            for k, arr in st.arrays.items():
+            for k, arr in st.light.items():
                 if k.startswith(meshio.SK_PREFIX) and meshio._sk_name(k) == name and arr.size == n * 3:
                     kb.data.foreach_set("co", arr)
                     break

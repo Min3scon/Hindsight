@@ -510,7 +510,7 @@ def history_vertex_reach(h, state, target_uid: str):
     over the history like `history_extents_multi`, on private copies; a direction stops where
     that one stops."""
     try:
-        pos0 = state.arrays.get(POSITION_KEY) if state is not None else None
+        pos0 = state.light.get(POSITION_KEY) if state is not None else None
         n = len(h.entries)
         cur = int(h.cursor)
         if pos0 is None or cur < 0 or cur > n:
@@ -565,7 +565,7 @@ def history_extents_multi(h, state, target_uid: str, bases, tans, batch: int = 6
     """`history_extents` for k bases at once ((k,3,3) bases, k (tan_x, tan_y) pairs): (k, 6) or None.
     The moved vertices of many steps are measured together (up to `batch` of them at a time)."""
     try:
-        pos0 = state.arrays.get(POSITION_KEY) if state is not None else None
+        pos0 = state.light.get(POSITION_KEY) if state is not None else None
         n = len(h.entries)
         cur = int(h.cursor)
         if pos0 is None or cur < 0 or cur > n:

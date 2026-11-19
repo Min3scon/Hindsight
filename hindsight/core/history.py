@@ -29,14 +29,76 @@ class MeshState:
     """Current recorded state of ONE datablock (the baseline shown at the cursor): mesh channels
     for meshes, plus the values data adapters record ((adapter, path) -> value)."""
 
-    __slots__ = ("counts", "arrays", "removed", "values", "snaps")
+    __slots__ = ("counts", "_arrays", "removed", "values", "snaps", "_topo")
 
     def __init__(self, counts: dict, arrays: dict, values: dict | None = None):
         self.counts = dict(counts)
-        self.arrays = arrays          # key -> flat native array (owned, not copied)
+        self._arrays = arrays         # key -> flat native array (owned, not copied)
+        self._topo = None             # R069: {topology key: topopack.pack_array(...)} while packed
         self.removed = set()          # keys whose attribute must be deleted from the mesh
         self.values = dict(values or {})   # (adapter, path) -> value; absent = MISSING
         self.snaps = {}               # uid -> Snapshot carried by crossed data steps (objects to recreate)
+
+    # ------------------------------------------------------------------ arrays (R069)
+    @property
+    def arrays(self) -> dict:
+        """Every array of the baseline, the topology unpacked if it was packed (it stays unpacked until
+        the next idle packing)."""
+        if self._topo is not None:
+            self._unpack_topo()
+        return self._arrays
+
+    @arrays.setter
+    def arrays(self, value: dict) -> None:
+        self._arrays = value
+        self._topo = None
+
+    @property
+    def light(self) -> dict:
+        """The arrays without unpacking: every channel; the topology keys only while not packed."""
+        return self._arrays
+
+    def is_packed(self) -> bool:
+        return self._topo is not None
+
+    def topo_hashes(self) -> dict | None:
+        """{topology key: xxh3-128 checksum} while packed, else None."""
+        t = self._topo
+        return None if t is None else {k: p[3] for k, p in t.items()}
+
+    def all_keys(self) -> set:
+        return set(self._arrays) | set(self._topo or ())
+
+    def pack_job(self) -> dict | None:
+        """The topology arrays to pack now ({key: array}), or None (packed already, or none)."""
+        if self._topo is not None:
+            return None
+        from .topopack import TOPO_KEYS
+        job = {k: self._arrays[k] for k in TOPO_KEYS if k in self._arrays}
+        return job or None
+
+    def finish_pack(self, job: dict, packed: dict) -> bool:
+        """Put the packed form in place of the arrays packed, unless any of them was replaced
+        meanwhile (then the job is dropped). Main thread only."""
+        if self._topo is not None or set(job) != set(packed):
+            return False
+        for k, a in job.items():
+            if self._arrays.get(k) is not a:
+                return False
+        for k in job:
+            del self._arrays[k]
+        self._topo = packed
+        return True
+
+    def _unpack_topo(self) -> None:
+        from .topopack import unpack_array
+        t, self._topo = self._topo, None
+        for k, p in t.items():
+            self._arrays[k] = unpack_array(p)
+
+    def nbytes(self) -> int:
+        from .topopack import packed_bytes
+        return int(sum(a.nbytes for a in self._arrays.values())) + (packed_bytes(self._topo) if self._topo else 0)
 
     # ------------------------------------------------------------------ data records
     def apply_record(self, rec: DataChange, forward: bool) -> set:
@@ -55,14 +117,15 @@ class MeshState:
 
     # ------------------------------------------------------------------ deltas
     def _ensure(self, key: str) -> np.ndarray:
-        arr = self.arrays.get(key)
+        arrays = self._arrays            # channels only: a delta never targets the topology
+        arr = arrays.get(key)
         if arr is None:
             domain = split_key(key)[1]
             arr = np.zeros(int(self.counts[domain]) * key_width(key), dtype=key_dtype(key))
-            self.arrays[key] = arr
+            arrays[key] = arr
         elif not arr.flags.c_contiguous:
             arr = np.ascontiguousarray(arr)
-            self.arrays[key] = arr
+            arrays[key] = arr
         return arr
 
     def apply_delta(self, d: ChannelDelta, forward: bool) -> None:
@@ -75,15 +138,15 @@ class MeshState:
         if exists:
             self.removed.discard(key)
         else:
-            self.arrays.pop(key, None)
+            self._arrays.pop(key, None)
             self.removed.add(key)
 
     # --------------------------------------------------------------- snapshots
     def set_snapshot(self, snap: Snapshot) -> None:
-        old_keys = set(self.arrays)
+        old_keys = self.all_keys()        # no unpacking only to be replaced
         self.counts = dict(snap.counts)
         self.arrays = {k: np.array(v, copy=True) for k, v in snap.arrays.items()}
-        new_keys = set(self.arrays)
+        new_keys = set(self._arrays)
         self.removed |= old_keys - new_keys
         self.removed -= new_keys
 
@@ -209,7 +272,7 @@ class History:
                 j += 1
             if blobs:
                 st = states[target]
-                done, keys = run(blobs, st.arrays, forward)
+                done, keys = run(blobs, st.light, forward)      # deltas: channels only (R069)
                 if keys:
                     changed.setdefault(target, set()).update(keys)
                     st.removed.difference_update(keys)

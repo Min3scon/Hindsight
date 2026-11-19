@@ -20,3 +20,7 @@ of its steps are decoded.
 recorded 1M meshes, and opening that file (`check_outside_changes` alone and the whole open); prints one `AB {...}` line
 with the engine's version. A venv holds one engine version, so put each side's own engine (its wheel unpacked) first
 with PYTHONPATH (no `-I`): `PYTHONPATH=<engine folder> <bpy python> bench/scenarios/oneoff/fingerprint_ab.py CODE_ROOT`.
+
+`topo_mem.py CODE_ROOT grid1m|remesh` (R069): a recorded mesh's baseline before and after its topology is packed.
+`edit_packed.py CODE_ROOT` (R069): an Edit Mode operator with Record everything at 300k vertices, with the baseline's
+topology packed and unpacked.
