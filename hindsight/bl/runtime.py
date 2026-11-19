@@ -19,9 +19,26 @@ from . import warnings as _warn
 from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
-RECORD_MODES = ("SCULPT", "VERTEX_PAINT")
-TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "EDIT")
+RECORD_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT")
+TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT", "EDIT")
 DEBOUNCE = 0.15
+FORCE_TEXTURE = [None]      # tests: True or False when the preferences aren't registered
+
+
+def texture_on() -> bool:
+    """Record texture painting (preference, off by default)."""
+    if FORCE_TEXTURE[0] is not None:
+        return FORCE_TEXTURE[0]
+    try:
+        from .prefs import get_prefs
+        p = get_prefs()
+        return p is not None and bool(getattr(p, "record_texture_painting", False))
+    except Exception:
+        return False
+
+
+def _mode_recorded(mode) -> bool:
+    return mode in RECORD_MODES and (mode != "TEXTURE_PAINT" or texture_on())
 
 _REG = Registry()
 _STATES: dict = {}          # object uid -> MeshState (what the mesh shows at the cursor)
@@ -321,11 +338,23 @@ def refresh_extras(obj, st=None, me=None, shapes_only: bool = False) -> None:
         drop = [k for k in st.arrays if k.startswith(meshio.SK_PREFIX)]
     else:
         vals = meshio.read_extras(obj, me)
-        drop = [k for k in st.arrays if meshio.is_extra(k)]
+        drop = [k for k in st.arrays if meshio.is_extra(k) and not k.startswith(meshio.IMG_PREFIX)]
     for k in drop:
         del st.arrays[k]
     st.arrays.update(vals)
     _SHAPES_STALE.discard(obj_uid(obj))
+
+
+def refresh_images(obj, st=None) -> None:
+    """The state's image baselines (the pixels of the images a texture stroke can change), read now.
+    No step: strokes are compared with this."""
+    st = st or _STATES.get(obj_uid(obj))
+    if st is None or not st.counts:
+        return
+    for k in [k for k in st.arrays if k.startswith(meshio.IMG_PREFIX)]:
+        del st.arrays[k]
+    for k, a in meshio.read_images(obj).items():
+        st.arrays[k] = a.copy()
 
 
 def read_mesh_snapshot(obj):
@@ -477,7 +506,13 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
             before = {k: v for k, v in before.items() if not k.startswith(meshio.SK_PREFIX)}
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
                     kind=TOPO, before=Snapshot(dict(st.counts), before), after=after)
-    extra_vals = meshio.read_extras(obj, me) if ext else {}
+    # D-f: a Weight Paint stroke is a step of the vertex group weights (every group, NaN where a
+    # vertex is not a member); objects recorded with Record everything read them with the rest
+    wp = not ext and mode == "WEIGHT_PAINT" and len(getattr(obj, "vertex_groups", ())) > 0
+    extra_vals = meshio.read_extras(obj, me) if ext else (meshio.read_weights(obj, me) if wp else {})
+    if mode == "TEXTURE_PAINT" and texture_on():
+        extra_vals = dict(extra_vals)
+        extra_vals.update(meshio.read_images(obj))
     keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
     for k in list(st.arrays):
@@ -491,6 +526,11 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
         new = extra_vals.get(key) if meshio.is_extra(key) else meshio.read_channel(me, key, reuse=True)
         old = st.arrays.get(key)
         if new is None and old is None:
+            continue
+        if key.startswith(meshio.IMG_PREFIX) and (old is None or new is None or old.size != new.size):
+            # no baseline for this image yet, or it was resized: take it as it is, no step
+            if new is not None:
+                st.arrays[key] = new.copy()
             continue
         name, domain, dtn = split_key(key)
         n = st.counts[domain] * CHANNEL_TYPES[dtn][1]
@@ -694,6 +734,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
             return commit(o, label=label, mode=mode or obj.mode, full=full)
     if obj.mode == "EDIT" and not _edit:
         return None  # Edit Mode changes are grouped and recorded when leaving Edit Mode
+    if (mode or obj.mode) == "TEXTURE_PAINT" and not texture_on():
+        return None
     if uid in _REG.disabled or is_excluded(obj):
         return None
     mode = mode or obj.mode
@@ -714,7 +756,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         ensure_state(obj, refresh=True)
         return None
     if label is None:
-        label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "EDIT": "Edit Mode"}.get(mode, "Change")
+        label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "WEIGHT_PAINT": "Weight Paint", "TEXTURE_PAINT": "Texture Paint",
+                 "EDIT": "Edit Mode"}.get(mode, "Change")
         try:
             ops = bpy.context.window_manager.operators
             if len(ops):
@@ -788,6 +831,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     at = h.cursor
     removed = h.push(step)
     _apply_to_state(st, step)
+    if step.kind != DELTA and obj.mode == "TEXTURE_PAINT" and texture_on():
+        refresh_images(obj, st)      # a rebuilt mesh dropped the image baselines
     if step.kind == DELTA and getattr(obj.data, "shape_keys", None) is not None:
         _SHAPES_STALE.add(uid)   # D106: a stroke can change a shape key; read again when leaving
     if removed:
@@ -960,12 +1005,19 @@ def _enter(obj) -> None:
             # so the first Edit Mode step holds only that operation.
             commit(obj, label="Changes Outside History", mode="OBJECT", full=True, _edit=True)
         return
+    if (obj.mode == "WEIGHT_PAINT" and st is not None and st.counts and topo_extras_on(obj)
+            and not any(k.startswith(meshio.VG_PREFIX) for k in st.arrays)):
+        # D-f: a state read without weights (a file just loaded) takes them as they are now: the
+        # weights of strokes are compared with this baseline, nothing outside a stroke is a step
+        refresh_extras(obj, st)
     if h is not None and st is not None and h.enabled and uid not in _REG.disabled:
         # Anything changed while the object was not being tracked becomes one step.
         commit(obj, label="Changes Outside History", mode=obj.mode, full=True)
     else:
         ensure_state(obj, refresh=True)
     refresh_extras(obj)          # D106: weights and shapes as they are now (Weight Paint isn't a step)
+    if obj.mode == "TEXTURE_PAINT" and texture_on():
+        refresh_images(obj)
 
 
 def check_mode_transition() -> None:
@@ -988,7 +1040,8 @@ def check_mode_transition() -> None:
         commit(prev, mode=pmode)
     if prev is not None and pmode in RECORD_MODES and prev.mode != pmode and obj_uid(prev) in _SHAPES_STALE:
         refresh_extras(prev, shapes_only=True)
-    if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and not is_excluded(obj):
+    if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and (mode != "TEXTURE_PAINT" or texture_on()) \
+            and not is_excluded(obj):
         if mode == "VERTEX_PAINT" and not len(obj.data.color_attributes):
             # Blender adds a colour layer on entering Vertex Paint; 5.3 does it after the mode's first
             # update. The mesh is read once it is there, so that layer is never taken for a change.
@@ -1021,12 +1074,13 @@ def _on_depsgraph(scene, depsgraph=None) -> None:
     if obj is None or obj.type != "MESH":
         check_mode_transition()
         return
-    if obj.mode in RECORD_MODES:
+    if _mode_recorded(obj.mode):
         data = obj.data
+        paint = {i.name for i in meshio.paint_images(obj)} if obj.mode == "TEXTURE_PAINT" else ()
         for u in depsgraph.updates:
             idv = u.id
             orig = getattr(idv, "original", idv)
-            if orig == obj or orig == data:
+            if orig == obj or orig == data or (paint and isinstance(orig, bpy.types.Image) and orig.name in paint):
                 uid = obj_uid(obj)
                 if uid is not None:
                     _DIRTY[uid] = time.time()
@@ -1048,7 +1102,7 @@ def _tick_once() -> None:
         # updates to settle.
         if uid in _STROKE_SEEN or now - t >= DEBOUNCE:
             ob = find_object(uid)
-            if ob is None or ob.mode not in RECORD_MODES:
+            if ob is None or not _mode_recorded(ob.mode):
                 _DIRTY.pop(uid, None)
                 _STROKE_SEEN.discard(uid)
                 continue
@@ -1496,7 +1550,7 @@ def _switch_to(context, ob, mode: str) -> None:
                     o.select_set(False)
                 vl.objects.active = ob
                 ob.select_set(True)
-            if mode in ("SCULPT", "VERTEX_PAINT", "EDIT") and ob.mode != mode:
+            if mode in ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT", "EDIT") and ob.mode != mode:
                 bpy.ops.object.mode_set(mode=mode)
         except Exception as e:
             log.error_once(("preserve", str(e)), f"Follow object and mode could not switch objects: {e}", e)

@@ -338,6 +338,18 @@ def mutate(rng, b, patch):
     return b
 
 
+def _time_bits(b):
+    return bytes(b[22:30]) if bytes(b[:4]) == b"HSS3" and len(b) >= 30 else None
+
+
+def _subnormal_time(b):
+    t = _time_bits(b)
+    if t is None:
+        return False
+    x = struct.unpack("<d", t)[0]
+    return x != 0.0 and abs(x) < 2.2250738585072014e-308
+
+
 def judge(b, stats):
     ra = outcome(ref_read, b)
     ea = outcome(stepmod.step_from_bytes, b)
@@ -353,7 +365,14 @@ def judge(b, stats):
         if ra[1] in ("CorruptStep",):
             assert ea[1] == "CorruptStep", (ra, ea)
     r1, e1 = outcome(ref_recompress, b), outcome(stepmod.recompress, b)
-    if r1[0] == "ok":
+    if r1[0] == "ok" and e1 != r1 and _subnormal_time(b):
+        # The reference writes `float(time or 0.0)`: where the process flushes subnormals to zero
+        # (Blender does, with DAZ) a subnormal time is falsy and goes out as 0.0. The engine keeps
+        # the bits as they are on every platform. Everything else must still be equal.
+        assert r1[1] is not None and e1[0] == "ok" and e1[1] is not None, (e1[:2], r1[:2])
+        assert len(e1[1]) == len(r1[1]) and _time_bits(e1[1]) == _time_bits(b)       # (subnormal: never zero)
+        stats["subnormal time kept"] = stats.get("subnormal time kept", 0) + 1
+    elif r1[0] == "ok":
         assert e1 == r1, (b[:40], e1[:2], r1[:2])
     elif e1[0] == "ok" and e1[1] is not None:
         # The engine does not parse the JSON of extras and data records (they stay Python's): a
@@ -384,6 +403,30 @@ def test_hostile_blobs():
             judge(mutate(rng, b, patch=bool(rng.integers(2))), stats)
             n += 1
     print(f"PASS test_hostile_blobs ({n} damaged blobs: {stats})")
+
+
+def test_subnormal_time_is_kept():
+    """CI case: a header byte of the time changed to 0xff (checksum patched) makes a subnormal or
+    tiny time. The engine's recompress keeps the time bits exactly, on every platform (the Python
+    reference does too unless the process flushes subnormals, as Blender's does)."""
+    st = [s for s in captured_steps(11, n_steps=30, n=120) if s.deltas and s.kind == DELTA][0]
+    base = stepmod.step_to_bytes(st, "zstd", delta.QUICK)
+    n = 0
+    for off in range(22, 30):
+        for v in (0xFF, 0x01, 0x80, 0x7F):
+            m = bytearray(base)
+            m[off] = v
+            m = bytes(m[:4]) + struct.pack("<I", zlib.crc32(bytes(m[8:]))) + bytes(m[8:])
+            out = stepmod.recompress(m)
+            want = _time_bits(m)
+            if struct.unpack("<d", want)[0] == 0.0:
+                want = bytes(8)                  # a zero time of either sign is written as +0.0, as the reference does
+            assert out is not None and _time_bits(out) == want, (off, v)
+            ref = ref_recompress(m)
+            if ref is not None and not _subnormal_time(m):
+                assert ref == out
+            n += 1
+    print(f"PASS test_subnormal_time_is_kept ({n} mutations)")
 
 
 def test_hostile_headers():
@@ -519,11 +562,64 @@ def test_gil_released():
     print(f"PASS test_gil_released ({ticks[0]} ticks of another thread during a {elapsed:.2f} s compress)")
 
 
+def test_record_equals_diff_and_encode():
+    """record(): the whole stroke in one engine call gives the bytes of diff per channel, a Step and
+    the Python reference writing it (every channel type, runs and scatters, channels that appear or
+    go, a changed empty channel, sizes that differ, nothing changed)."""
+    from hindsight.core.types import ADD, CHANNEL_TYPES, ChannelDelta, make_key
+    keys = [make_key(f"c_{t.lower()}", "POINT", t) for t in CHANNEL_TYPES]
+    rng = np.random.default_rng(21)
+    n = 0
+    for trial in range(60):
+        nv = int(rng.integers(1, 400))
+        chans, deltas = [], []
+        for key in keys:
+            if rng.random() < 0.3:
+                continue
+            dt = np.dtype(ns.key_dtype(key))
+            w = ns.key_width(key)
+            old = ns.values(rng, key, nv)
+            how = ["run", "scatter", "nudge", "all", "same"][int(rng.integers(5))]
+            new = old if how == "same" else ns.stroke(rng, key, old, how)
+            e = (True, True)
+            r = rng.random()
+            if r < 0.1:
+                old_a, new_a, e = None, new, (False, True)
+                d = delta.diff(key, np.zeros_like(new), new, e)
+            elif r < 0.2:
+                old_a, new_a, e = old, None, (True, False)
+                d = delta.diff(key, old, np.zeros_like(old), e)
+            elif r < 0.25:
+                old_a, new_a = old, np.concatenate([new, new[:w]])          # sizes differ: left out
+                d = None
+            else:
+                old_a, new_a = old, new
+                d = delta.diff(key, old, new, e)
+            chans.append((key, old_a, new_a, e[0], e[1]))
+            if d is not None:
+                deltas.append(d)
+        for name in NAMES:
+            for quick in (False, True):
+                for strong in (False, True):
+                    eff = delta.QUICK if quick else delta.NORMAL
+                    got = stepmod.record_step("DELTA", 5, 1.5, "Stroke", "SCULPT", "obj", chans,
+                                              {"op": 1} if trial % 3 == 0 else None, name, eff, strong)
+                    if not deltas:
+                        assert got is None
+                        continue
+                    st = Step(5, "Stroke", "SCULPT", "obj", 1.5, DELTA, deltas,
+                              extra={"op": 1} if trial % 3 == 0 else {})
+                    assert got == ref_write(st, name, eff, strong), (trial, name, quick, strong)
+                    assert got == stepmod.step_to_bytes(st, name, eff, strong)
+                    n += 1
+    print(f"PASS test_record_equals_diff_and_encode ({n} strokes, bytes equal the reference)")
+
+
 def main():
-    tests = [test_nothing_in_hindsight_imports_the_reference, test_engine_runs_the_container,
+    tests = [test_record_equals_diff_and_encode, test_nothing_in_hindsight_imports_the_reference, test_engine_runs_the_container,
              test_codec_bytes_equal_the_libraries, test_codec_reads_like_the_reference, test_codec_hostile_sizes,
              test_steps_equal_the_reference, test_property, test_corpus, test_legacy_files, test_hostile_blobs,
-             test_hostile_headers, test_no_unbounded_allocation, test_errors_and_exceptions, test_input_types,
+             test_subnormal_time_is_kept, test_hostile_headers, test_no_unbounded_allocation, test_errors_and_exceptions, test_input_types,
              test_decoded_arrays_are_owned_and_writable, test_gil_released]
     failed = 0
     for t in tests:

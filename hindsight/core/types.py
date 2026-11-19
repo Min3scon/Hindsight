@@ -25,6 +25,7 @@ CHANNEL_TYPES = {
     "FLOAT_VECTOR": (np.float32, 3, "vector"),
     "FLOAT2": (np.float32, 2, "vector"),
     "INT32_2D": (np.int32, 2, "value"),
+    "INT16_2D": (np.int16, 2, "value"),      # custom_normal, Blender 5.0+
     "FLOAT_COLOR": (np.float32, 4, "color"),
     "BYTE_COLOR": (np.float32, 4, "color_srgb"),
     "QUATERNION": (np.float32, 4, "value"),

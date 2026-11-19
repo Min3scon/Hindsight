@@ -18,14 +18,16 @@ from __future__ import annotations
 
 import os
 
-API = 3                     # the module's API number (native/src/lib.rs) this code is written for
+API = 5                     # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
-# recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.
+# recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
+# packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
+# API 5: + pack_record, unpack_record; apply takes any indices (the numpy fallbacks of delta.py are gone).
 MODE = os.environ.get("HINDSIGHT_NATIVE", "").strip().lower()
 
 
 class EngineMissing(ImportError):
-    """The Rust engine (hindsight_native, API 3) is missing, broken or the wrong version."""
+    """The Rust engine (hindsight_native, API 5) is missing, broken or the wrong version."""
 
 
 def _load():

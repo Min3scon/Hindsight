@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 
+import bpy
+
 import numpy as np
 
 from ..core.types import (
@@ -185,10 +187,63 @@ def read_snapshot(me, sculpt_only: bool = False, ob=None, extras: bool = False) 
 # a weight outside that (Blender's bevel and inset can leave tiny negative ones) comes back clamped.
 VG_PREFIX = "vg:"
 SK_PREFIX = "sk:"
+IMG_PREFIX = "img:"       # texture painting: the pixels of one image (float RGBA), see read_images
+TEXTURE_MAX_PIXELS = 2048 * 2048    # larger images are not recorded: at 4K one stroke reads 268 MB (60 to 90 ms)
 
 
 def is_extra(key: str) -> bool:
-    return key.startswith(VG_PREFIX) or key.startswith(SK_PREFIX)
+    return key.startswith(VG_PREFIX) or key.startswith(SK_PREFIX) or key.startswith(IMG_PREFIX)
+
+
+def img_key(name: str) -> str:
+    return make_key(IMG_PREFIX + name, "POINT", "FLOAT_COLOR")
+
+
+def paint_images(ob) -> list:
+    """The images a texture painting stroke on `ob` can change: those of its materials' texture nodes
+    and the canvas of the image paint tool, as far as Hindsight can record them (up to
+    TEXTURE_MAX_PIXELS, with pixel data)."""
+    seen, out = set(), []
+
+    def take(img):
+        if img is None or img.name in seen:
+            return
+        seen.add(img.name)
+        w, h = img.size
+        if w * h and w * h <= TEXTURE_MAX_PIXELS and img.source in ("FILE", "GENERATED") and img.has_data:
+            out.append(img)
+
+    for slot in getattr(ob, "material_slots", ()):
+        mat = slot.material
+        if mat is not None:
+            for img in getattr(mat, "texture_paint_images", ()) or ():
+                take(img)
+    try:
+        take(bpy.context.scene.tool_settings.image_paint.canvas)
+    except Exception:
+        pass
+    return out
+
+
+def read_images(ob) -> dict:
+    """{key: float32 RGBA pixels, flat} per paintable image (reused buffers, never handed out as a baseline)."""
+    out = {}
+    for img in paint_images(ob):
+        key = img_key(img.name)
+        n = img.size[0] * img.size[1] * 4
+        buf = _buf(key, n, np.float32)
+        img.pixels.foreach_get(buf)
+        out[key] = buf
+    return out
+
+
+def _write_image(name: str, arr) -> None:
+    img = bpy.data.images.get(name)
+    if img is None or arr is None or img.size[0] * img.size[1] * 4 != arr.size:
+        return
+    img.pixels.foreach_set(arr)
+    img.update()
+    img.update_tag()
 
 
 def vg_key(name: str) -> str:
@@ -203,21 +258,29 @@ def _sk_name(key: str) -> str:
     return split_key(key)[0][len(SK_PREFIX) + 4:]
 
 
-def read_extras(ob, me) -> dict:
+def read_weights(ob, me) -> dict:
+    """One channel per vertex group: the weight, NaN where a vertex is not in the group (so a member
+    at weight 0 differs from a non-member). Blender has no bulk read for weights: this loop over the
+    vertices is the fastest exact one measured (a third quicker than reading `v.index` and the
+    group list per vertex; bmesh is no quicker on 4.2 and 5.3)."""
     out = {}
     names = [g.name for g in getattr(ob, "vertex_groups", ())]
     n = len(me.vertices)
     if names:
         w = np.full((len(names), n), np.nan, np.float32)
-        for v in me.vertices:
-            gs = v.groups
-            if len(gs):
-                i = v.index
-                for g in gs:
-                    if g.group < len(names):
-                        w[g.group, i] = g.weight
+        ng = len(names)
+        for i, v in enumerate(me.vertices):
+            for g in v.groups:
+                gi = g.group
+                if gi < ng:
+                    w[gi, i] = g.weight
         for gi, name in enumerate(names):
             out[vg_key(name)] = w[gi].copy()
+    return out
+
+
+def read_extras(ob, me) -> dict:
+    out = read_weights(ob, me)
     sk = getattr(me, "shape_keys", None)
     if sk is not None:
         for i, kb in enumerate(sk.key_blocks):
@@ -252,6 +315,9 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
     n = len(me.vertices)
     for key, arr in arrays.items():
         name = split_key(key)[0]
+        if name.startswith(IMG_PREFIX):
+            _write_image(name[len(IMG_PREFIX):], arr)
+            continue
         if name.startswith(VG_PREFIX):
             g = ob.vertex_groups.get(name[len(VG_PREFIX):])
             if g is not None and arr is not None and arr.size == n:

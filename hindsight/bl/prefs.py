@@ -172,6 +172,11 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         default=_KIND_DEFAULT,
         update=_update_kinds,
     )
+    record_texture_painting: BoolProperty(
+        name="Record texture painting",
+        description=("Record each texture painting stroke as a step. Off by default. It reads the whole image "
+                     "after every stroke and has not been tried in a real window yet. Images over 2K are left out"),
+        default=False)
     welcomed: BoolProperty(default=False, options={'HIDDEN'})
 
     def draw(self, context):
@@ -193,6 +198,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
 
         col = section("History", 'RECOVER_LAST')
         col.prop(self, "record_scope")
+        col.prop(self, "record_texture_painting")
         col.prop(self, "max_steps")
         col.prop(self, "truncation_threshold")
 
