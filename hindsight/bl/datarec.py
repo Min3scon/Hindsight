@@ -780,6 +780,13 @@ def _commit(label: str, uids, mesh: bool) -> list:
             _owner_moves(st, changes)
         if changes:
             adapters.drop_changed_refs(uid, changes)
+        if changes and uid in _BODIES and isinstance(idb, bpy.types.Object):
+            # D149: what changed is also what brings the object back if it's deleted later. Some changes
+            # (hiding) send no depsgraph update, so the kept body is read again here, while it exists
+            try:
+                _BODIES[uid] = _pack_body(adapters.object_body(idb))
+            except Exception as e:
+                log.error_once(("body", str(e)), f"could not read an object's details: {e}", e)
         if not changes and mesh_step is None:
             if is_scene:
                 _BODY_DIRTY.clear()
