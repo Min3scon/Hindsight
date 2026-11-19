@@ -14,10 +14,11 @@ import threading
 import time
 import weakref
 
-from .codec import is_strong
+from .codec import NONE, ZLIB_MAX, ZSTD_MAX
 from .step import QUICK_FLAG, STEP_MAGIC, recompress, step_to_bytes
 
 _STOP = object()
+_STRONG = frozenset((ZSTD_MAX, ZLIB_MAX, NONE))   # codec.is_strong's codes
 _NUDGE = object()      # wakes the worker to look at its idle work again
 
 
@@ -35,17 +36,17 @@ def _can_gain(blob) -> bool:
     """False for a blob step.recompress() would leave as it is without trying (a format 3 step stored
     with the strong setting or uncompressed, not written quickly), told from its first bytes alone.
     Those are skipped without spending an idle turn on them (a file saved after recompression is
-    otherwise read and checked again step by step, one per idle second, after every load)."""
-    mv = memoryview(blob)
-    if len(mv) < 13:
+    otherwise read and checked again step by step, one per idle second, after every load).
+    R047: read by index from the bytes (no memoryviews: it runs for every step after each load)."""
+    n = len(blob)
+    if n < 13:
         return True             # recompress decides (and reports the damage)
-    if mv[:4] != STEP_MAGIC:
+    if blob[:4] != STEP_MAGIC:
         return True             # formats 1 and 2 are re-packed in full; anything else is refused there
-    hl = mv[8] | (mv[9] << 8)
-    if len(mv) <= 10 + hl:
+    hl = blob[8] | (blob[9] << 8)
+    if n <= 10 + hl:
         return True
-    quick = bool(mv[12] & QUICK_FLAG)
-    return quick or not is_strong(mv[10 + hl:])
+    return bool(blob[12] & QUICK_FLAG) or blob[10 + hl] not in _STRONG
 
 
 class Packer:
@@ -81,9 +82,11 @@ class Packer:
         if not self._recompress:
             return
         had = bool(self._strong)
+        strong, ref, can_gain = self._strong, weakref.ref, _can_gain
         for e in entries:
-            if e.blob is not None and _can_gain(e.blob):
-                self._strong.append(weakref.ref(e))
+            b = e.blob
+            if b is not None and can_gain(b):
+                strong.append(ref(e))
         if self._strong and not had and not self._stopped:
             self._q.put(_NUDGE)      # the worker may be waiting for new work only
 

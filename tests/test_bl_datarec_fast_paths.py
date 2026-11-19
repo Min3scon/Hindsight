@@ -453,10 +453,20 @@ def test_change_right_after_an_operator_that_changed_nothing():
     assert _n("A") == n + 3
 
 
+_FAKE_OP = [0]
+
+
 def _finished_tick():
-    """What the timer does when an operator has finished (headless: no registered operators)."""
-    datarec._OPS["marker"] = (-1, -1)
-    datarec.tick()
+    """What the timer does when an operator has finished. Headless no operator is ever registered, so
+    Blender's operator list gains one here: an emptied list is no operation ending (D147)."""
+    _FAKE_OP[0] += 1
+    real = datarec._ops_marker
+    datarec._OPS["marker"] = (0, 0)
+    datarec._ops_marker = lambda: (1, _FAKE_OP[0])
+    try:
+        datarec.tick()
+    finally:
+        datarec._ops_marker = real
 
 
 def _tick_state():

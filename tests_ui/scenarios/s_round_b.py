@@ -40,6 +40,34 @@ def _redraw_ms(d, n=5):
     return (time.perf_counter() - t) * 1000 / n
 
 
+def _software_gl():
+    try:
+        import gpu
+        r = gpu.platform.renderer_get().lower()
+        return "llvmpipe" in r or "softpipe" in r
+    except Exception:
+        return False
+
+
+def _hindsight_draw_ms(d, n=5):
+    """Time per redraw spent in Hindsight's own Python code (its panels, header and slider): what the add-on
+    adds, whatever draws the rest. Under software GL the whole-window time is mostly the viewport drawn
+    on the CPU (a 1M-vertex mesh), which says nothing about the add-on."""
+    import cProfile
+    import pstats
+    pr = cProfile.Profile()
+    pr.enable()
+    for _ in range(n):
+        d.redraw()
+    pr.disable()
+    ours = lambda fn: "/hindsight/" in fn.replace("\\", "/")
+    total = 0.0
+    for (fn, _line, _name), (_cc, _nc, _tt, ct, callers) in pstats.Stats(pr).stats.items():
+        if ours(fn) and not any(ours(c[0]) for c in callers):      # entry points only: no double count
+            total += ct
+    return total * 1000 / n
+
+
 def run(d):
     yield 1.0
     C.dismiss_splash(d)
@@ -56,6 +84,7 @@ def run(d):
             yield 0.6
             ms = _redraw_ms(d)
             d.note(f"{tag}_{mode}_redraw_ms", round(ms, 1))
+            d.note(f"{tag}_{mode}_hindsight_draw", round(_hindsight_draw_ms(d), 2))
             d.shot(f"{tag}_{mode.lower()}")
             if mode == "SCULPT":
                 with d.override():
@@ -68,8 +97,11 @@ def run(d):
         yield 0.3
         log = d.console_since(mark)
         d.check(f"{tag}: no Python errors while drawing", "Traceback" not in log, log[-1200:])
-        d.check(f"{tag}: sidebar redraw under 60 ms", max(v for k, v in d.notes.items()
-                                                          if k.startswith(tag) and k.endswith("_ms")) < 60,
+        # on a real GPU the whole redraw; under software GL (CI, this container) Hindsight's own drawing code
+        suffix = "_hindsight_draw" if _software_gl() else "_redraw_ms"
+        d.check(f"{tag}: sidebar redraw under 60 ms" + (" (Hindsight's own drawing, software GL)" if _software_gl()
+                                                         else ""),
+                max(v for k, v in d.notes.items() if k.startswith(tag) and k.endswith(suffix)) < 60,
                 {k: v for k, v in d.notes.items() if k.startswith(tag)})
 
     # per-object histories in the multi-object scene

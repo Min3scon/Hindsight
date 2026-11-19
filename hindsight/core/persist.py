@@ -111,9 +111,12 @@ def registry_parts(reg, codec: str = "auto") -> list:
         metas = []
         crcs = []
         for e in h.entries:
-            b = e.to_bytes(codec, 0)            # raw steps: the quick form (main thread)
+            b, crc = e.blob_crc()               # R046: packed steps carry their CRC-32
+            if b is None:
+                b = e.to_bytes(codec, 0)        # raw steps: the quick form (main thread)
+                crc = zlib.crc32(b) & 0xFFFFFFFF
             blobs.append(b)
-            crcs.append(zlib.crc32(b) & 0xFFFFFFFF)
+            crcs.append(crc)
             metas.append(_meta_for_json(e.meta))
         mt = h.morph_target
         hjson.append({
@@ -276,7 +279,8 @@ def registry_from_bytes(b):
                 continue
             blob = bytes(mv[pos:pos + n])
             pos += n
-            if crcs is not None and i < len(crcs) and (zlib.crc32(blob) & 0xFFFFFFFF) != int(crcs[i]):
+            crc = zlib.crc32(blob) & 0xFFFFFFFF
+            if crcs is not None and i < len(crcs) and crc != int(crcs[i]):
                 slots.append(None)
                 continue
             meta = metas[i] if i < len(metas) else None
@@ -287,7 +291,7 @@ def registry_from_bytes(b):
                 except Exception:
                     slots.append(None)
                     continue
-            slots.append(Entry(blob=blob, meta=meta))
+            slots.append(Entry(blob=blob, meta=meta, crc=crc))
             try:
                 max_seq = max(max_seq, int(meta.get("seq", 0)))
             except (TypeError, ValueError):

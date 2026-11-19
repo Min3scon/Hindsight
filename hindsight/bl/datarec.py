@@ -15,10 +15,33 @@ import time
 import bpy
 
 from ..core.history import DATA_MARK, MeshState
-from ..core.types import DATA, JOURNAL_CODEC, MISSING, DataChange, Step
+from ..core.types import DATA, JOURNAL_CODEC, MISSING, DataChange, Entry, Step
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
+CONTINUE = 1.5               # a "Change" step is continued, not followed by another, if the next update comes this soon
+_CLOCK = {"last": None, "gap": 0.0, "batch": None}    # time of the last update that made something dirty, the
+                                                      # gap before it, and when the changes now waiting began
+_RECENT: dict = {}           # uid -> (seq, time) of its newest settle-committed "Change" step
+
+
+def _now() -> float:
+    return time.time()
+
+
+def _note_update(now: float) -> None:
+    """D147: a UI drag (a slider in a panel) sends an update per redraw, slow redraws far apart. The gap
+    between the last two updates (only gaps under CONTINUE count) is how long the next one is awaited."""
+    last = _CLOCK["last"]
+    if _CLOCK["batch"] is None:
+        _CLOCK["batch"] = now
+    if last is not None and now > last:
+        _CLOCK["gap"] = now - last if now - last < CONTINUE else 0.0
+    _CLOCK["last"] = now
+
+
+def _settle_time() -> float:
+    return max(SETTLE, 1.5 * _CLOCK["gap"])
 # Modal operators that don't change data: navigation and UI. Anything else running means an
 # operation is still in progress (transform, knife, a sculpt stroke, ...).
 _PASSIVE_PREFIXES = ("VIEW3D_OT_rotate", "VIEW3D_OT_move", "VIEW3D_OT_zoom", "VIEW3D_OT_navigate",
@@ -395,7 +418,7 @@ def on_update(depsgraph) -> None:
             return            # playback changes animated values every frame; nothing to record
     except Exception:
         pass
-    now = time.time()
+    now = _now()
     scenes = _scene_uids_in(uids)
     mats = (bpy.types.Material, bpy.types.NodeTree, bpy.types.World)
     for u in depsgraph.updates:
@@ -420,6 +443,8 @@ def on_update(depsgraph) -> None:
                 _DIRTY[su] = now
             if isinstance(orig, bpy.types.Object) and uid is not None:
                 _BODY_DIRTY.add(uid)
+    if _DIRTY and max(_DIRTY.values()) == now:
+        _note_update(now)
 
 
 _SCENE_UIDS: set = set()
@@ -546,12 +571,15 @@ def tick() -> None:
     if not idle:
         check_exclusion()
     marker = _ops_marker()
-    finished = marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
+    # an operator ending adds itself to the list; a list that only got emptied is the undo step a UI
+    # drag or click pushed (Blender clears the list then): no operation ended, the settle path records it
+    finished = (marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
+                and marker[0] > 0)
     if marker is not None and _OPS["marker"] is None:
         _OPS["marker"] = marker
     if not _DIRTY and not finished:
         return
-    settled = bool(_DIRTY) and time.time() - max(_DIRTY.values()) >= SETTLE
+    settled = bool(_DIRTY) and _now() - max(_DIRTY.values()) >= _settle_time()
     if finished or settled:
         _OPS["marker"] = marker
         if idle:
@@ -565,7 +593,7 @@ def tick() -> None:
             finish_operation(_last_label())
         else:
             refresh_mesh_users()
-            commit(label="Change", uids=None, mesh=True)
+            commit(label="Change", uids=None, mesh=True, settled=True)
 
 
 def finish_operation(label: str) -> list:
@@ -722,19 +750,21 @@ def _mesh_step(ob, uid: str, label: str):
 
 
 @guard.guarded("datarec")
-def commit(label: str = "Change", uids=None, mesh: bool = True) -> list:
+def commit(label: str = "Change", uids=None, mesh: bool = True, settled: bool = False) -> list:
     """Record what changed on the dirty (or given) datablocks as one step per history. With mesh,
     a tracked mesh object in Object Mode whose mesh got an update is compared too, and what changed
     goes into the same step."""
     with idmap.frame():
-        return _commit(label, uids, mesh)
+        return _commit(label, uids, mesh, settled)
 
 
-def _commit(label: str, uids, mesh: bool) -> list:
+def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
     rt = _rt()
     targets = list(uids) if uids is not None else list(_DIRTY)
     for u in targets:
         _DIRTY.pop(u, None)
+    began = _CLOCK["batch"]          # when the changes recorded now began (D147)
+    _CLOCK["batch"] = None
     # the scene first: a collection or object it brings back gets the lower step number, so it
     # exists before an object's own step from the same operation is replayed (and is removed last)
     scenes = set(_scene_uids_in(targets))
@@ -780,6 +810,13 @@ def _commit(label: str, uids, mesh: bool) -> list:
             _owner_moves(st, changes)
         if changes:
             adapters.drop_changed_refs(uid, changes)
+        if changes and uid in _BODIES and isinstance(idb, bpy.types.Object):
+            # D149: what changed is also what brings the object back if it's deleted later. Some changes
+            # (hiding) send no depsgraph update, so the kept body is read again here, while it exists
+            try:
+                _BODIES[uid] = _pack_body(adapters.object_body(idb))
+            except Exception as e:
+                log.error_once(("body", str(e)), f"could not read an object's details: {e}", e)
         if not changes and mesh_step is None:
             if is_scene:
                 _BODY_DIRTY.clear()
@@ -825,8 +862,16 @@ def _commit(label: str, uids, mesh: bool) -> list:
                 step.extra = dict(step.extra or {}, **extra)
         else:
             mode = getattr(idb, "mode", "OBJECT") or "OBJECT"
-            step = Step(seq=rt.reg().new_seq(), label=label, mode=mode, target=uid, time=time.time(),
+            if settled and label == "Change" and not extra and group is None:
+                cont = _continue(h, uid, records, began)
+                if cont is not None:
+                    _apply_continued(h, st, uid, cont, records)
+                    steps.append(cont)
+                    continue
+            step = Step(seq=rt.reg().new_seq(), label=label, mode=mode, target=uid, time=_now(),
                         kind=DATA, records=records, extra=extra)
+            if settled and label == "Change" and not extra and group is None:
+                _RECENT[uid] = (step.seq, _now())
         if op_first is None:
             op_first = step.seq
             if group is not None:
@@ -850,6 +895,71 @@ def _commit(label: str, uids, mesh: bool) -> list:
         drop_undone_jumps()   # a new step: Blender can no longer redo the jumps it undid
         rt.tag_redraw_all()
     return steps
+
+
+def _same_value(a, b) -> bool:
+    if a is b:
+        return True
+    if a is MISSING or b is MISSING:
+        return False
+    try:
+        return marshal.dumps(a, 2) == marshal.dumps(b, 2)
+    except Exception:
+        return False
+
+
+def _continue(h, uid, records, began=None):
+    """D147: the step this change continues, merged with it: a "Change" step committed by the settle
+    timer less than CONTINUE seconds ago, still the newest step of the history (a UI drag whose redraws
+    were slow enough for the timer to commit in the middle of it). The merged step goes from the older
+    step's old values to the new values; None when this change is not a continuation."""
+    rec = _RECENT.get(uid)
+    if rec is None or (began if began is not None else _now()) - rec[1] > CONTINUE or not h.entries \
+            or h.cursor != len(h.entries):
+        return None
+    if h.entries[-1].seq != rec[0]:
+        return None
+    try:
+        prev = h.entries[-1].load()
+    except Exception:
+        return None
+    if prev.kind != DATA or prev.label != "Change" or prev.extra or prev.target != uid:
+        return None
+    by = {}
+    for r in prev.records:
+        by.setdefault(r.adapter, {}).update(r.changes)
+    if any(path not in by.get(r.adapter, ()) for r in records for path in r.changes):
+        return None          # it changes something the step before did not: a separate edit, a step of its own
+    for r in records:
+        d = by.setdefault(r.adapter, {})
+        for path, (old, new) in r.changes.items():
+            d[path] = (d[path][0], new) if path in d else (old, new)
+    out = []
+    for a, d in sorted(by.items()):
+        d = {p: (o, n) for p, (o, n) in d.items() if not _same_value(o, n)}
+        if d:
+            out.append(DataChange(a, uid, d))
+    return Step(seq=prev.seq, label="Change", mode=prev.mode, target=uid, time=_now(), kind=DATA, records=out)
+
+
+def _apply_continued(h, st, uid, step, records) -> None:
+    """Put the merged step where the step it continues was (or take it away: nothing changed in the end)."""
+    rt = _rt()
+    at = len(h.entries) - 1
+    for r in records:
+        st.apply_record(r, True)
+    rt._journal("TRUNC", {"hist": h.uid, "keep": at})
+    if step.records:
+        h.entries[-1] = Entry(step)
+        entry = h.entries[-1]
+        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
+        _RECENT[uid] = (step.seq, _now())
+        rt._enforce(h)
+    else:
+        h.entries.pop()
+        h.cursor = len(h.entries)
+        _RECENT.pop(uid, None)
+    rt.tag_redraw_all()
 
 
 # ----------------------------------------------------------------------------- playback
@@ -1264,6 +1374,8 @@ def prime() -> None:
 
 def forget() -> None:
     _DIRTY.clear()
+    _RECENT.clear()
+    _CLOCK.update(last=None, gap=0.0, batch=None)
     adapters.forget_materials()
     _BODIES.clear()
     _BODY_DIRTY.clear()

@@ -311,3 +311,36 @@ Also for "Tried": `record_step` in commit: not built, upper bound 0.01 to 0.04 m
 
 * `diff` (0.064 ms at 100k for 2.4 MB read, 1.01 ms at 1M for 24 MB): about 24 to 37 GB/s, already near memory bandwidth for a block-wise compare. Only more threads could help, which compete with Blender's own sculpt threads on the 2 to 4 core machines this is for. Not tried.
 * `foreach_get` (about 0.1 ms per 1.2 MB position channel): Blender's call, no bulk alternative that reads less; a partial read would need to know which vertices a stroke touched, which Python does not get.
+
+---
+
+# Ninth job: data recorder overhead, round 1; D146 (node group animation)
+
+Merged main-session-3 (b3aa2e8, then 9a78ce5).
+
+## Profile (`drprof.py`, bpy53, 500 cubes, a third with a constraint, `finish_operation` with nothing changed, load 6 to 7)
+
+51 ms per operator (min 50.9, median 51.4). cProfile, 5 operators: `datarec.capture` 2,500 calls, 0.41 s cumulative of 0.55 s: `RNAAdapter.capture` 0.173 s (own 0.055), `ObjectAdapter.capture` 0.158 s, `normalise` 76,000 calls 0.08 s, `_same_values` 0.047 s (marshal compare), `idmap.claim` 7,500 calls 0.038 s, `idmap.find` 5,010 calls 0.032 s, `id_props` 5,010 calls 0.027 s, `struct_values` (constraints) 905 calls 0.022 s, `path_resolve` 50,000 calls 0.026 s. So 100 us per object per operator: about 20 RNA rows read by `path_resolve` plus `normalise` per row, then the object adapter's parts, then the compare.
+
+## Round 1, one hypothesis: RNA rows through `getattr` and plain values past `normalise`
+
+`RNAAdapter.capture` read every row with `idb.path_resolve(path)` and called `normalise` on the result. A path that is one name (no dot, no index; nearly all rows) needs no path parsing (`getattr` 0.09 to 0.27 us against `path_resolve` 0.33 to 0.53 us), and float, int, bool and str results are returned as they are by `normalise`'s first line, so the call is skipped. Same values, same exceptions (an AttributeError is caught like the ResolveError was); `kind_on` inlined (`ENABLED_KINDS[0]` read once per datablock).
+
+* In-process A/B (`h1.py`, old and new `RNAAdapter.capture` over the 500 objects, alternating, 15 rounds, results compared equal on 50 objects first): 9.91 / 10.59 ms (min / median) old, 7.68 / 8.55 ms new: x0.78 / x0.81. That is 2.2 ms of the 50 ms operator: 4 to 5%.
+* `bench/ab.py --only dr_finish,dr_prime,dr_on_update`, 7 rounds against main-session-3 b3aa2e8, bpy53, load 4 to 6 during the run: dr_finish_nochange_500 min 39.2 / 40.7 ms (x1.04), median 49.7 / 47.6 (x0.96); dr_finish_move_500 41.6 / 46.1 (x1.11), median 52.2 / 52.1 (x1.00); dr_prime_500 118.7 / 111.6 (x0.94), median 137.1 / 130.8 (x0.95); dr_on_update_500 x1.03 / x1.07 (0.12 ms, noise). Spread 8 to 58%: the 4 to 5% expected is below it, so `ab.py` can neither confirm nor refute; the in-process A/B is the evidence.
+* Kept: exact (values, key order checked equal), test_bl_adapters*, test_bl_datarec*, every test_bl_t1_* (t1_prop separately) on bpy53 and bpy42 pass. Row for OPTIMISATION_LOG: "RNA adapter rows read with getattr and plain values past normalise: RNAAdapter.capture over 500 objects 9.91 to 7.68 ms min (10.59 to 8.55 median), in-process alternating 15 rounds; ab.py inconclusive (spread 8 to 58%, load 4 to 6); kept".
+* Next candidates seen in the profile, not tried: `id_props` per object and per data (5,010 calls) and `idmap.claim` (7,500 calls) are the two largest remaining fixed costs; constraints (`struct_values`, 905 calls) are read every operator. Any cache of them must be validated by the depsgraph or a fingerprint (custom properties and constraint values change without a tag; R041's hair_points case).
+
+## D146: keys and drivers on node group inputs
+
+`group_record` had no animation. Now the group's own animation (`anim_of(group)`: how it plays, and its action when the group is its only user) is recorded as `@nga:<group id>` next to the group's `@ng:` record, by the same owner rule as D126 (the object that records the group; the scene for groups no object uses, D133), always present (None without animation) so the first key is a change. Written back after the group (`write_anim_of`); the object's kept parts (R041) depend on the groups' actions as well as the groups. `owned_path` and `kind_of` know the new prefix. Test `test_group_animation_comes_back` in `tests/test_bl_t1_node_groups.py`: a key on a Set Position offset, a second key, a driver on a Math input, an edited driver expression; every position back and forward exact; fails before the change (two steps instead of four), passes on bpy53 and bpy42. DEFECTS row D146 added.
+
+## D147: a UI drag became two "Change" steps
+
+Two parts, both in `datarec.py`, tests in `tests/test_bl_datarec_settle.py` (5, fake clock `datarec._now`, both venvs):
+
+* Adaptive wait: `on_update` notes the time of every update that made something dirty (`_note_update`); the gap between the last two updates (only gaps under 1.5 s count) sets the wait: `max(SETTLE, 1.5 x gap)` (`_settle_time`). Isolated changes keep 0.3 s. By itself this cannot fix the reported case: the first gap (0.44 s) is longer than 0.3 s, so the timer has committed before the second update is seen.
+* Continuation: a "Change" step committed by the settle timer (new `settled=True` flag, passed only by `tick`) is remembered per history (`_RECENT`). If the next batch of changes begins within 1.5 s of it (measured from the batch's first update, `_CLOCK["batch"]`), changes only values that step changed, and the step is still the newest of its history with the cursor at the end, the two become one step (same seq, old values of the older step, new values of the newer), replacing the entry; the journal gets a TRUNC and a STEP at the same position (replay reads that already); if the merged step changes nothing (the drag ended where it began) the step is removed. Operator-end commits, direct `commit()` calls (scripts, tests) and changes to other values are never merged: a first version merged any two quick Change commits and broke test_bl_tier1 and test_bl_adapters (two quick scripted edits are two steps), so it is limited to the timer and to the same paths.
+* Tests: the 0.44, 0.24, 0.23, 0.25, 0.23, 0.24 s drag is ONE step and back goes to the start in one jump (it was two); a single change still commits after 0.3 s (not at 0.25 s); the wait follows the gap (0.31 s after an update that followed a 0.24 s gap: no step yet, 0.41 s: step); a drag back to where it began leaves no step (with a stored value: an unset property reads as the default, which is not the same record as an explicit default); a change after another step is not merged and a change 5 s later is separate.
+* Not covered headless: the real-window probe (panel slider dragged 8 x 6 px) for you to rerun; journal replay of a merged step was reasoned from the existing replay semantics (STEP at an earlier position truncates) but not driven end to end.
+* DEFECTS row D147 added.

@@ -7,6 +7,8 @@ A registration and lifecycle       B UI in every mode, small/large/multi-object 
 C real recording, bit-exact jumps  D awkward models and abuse
 E the owner's files (copies)       F old versus new builds
 G headless suite in every Blender (the real-UI rounds above already run on every Blender)
+H beta 3 in real windows: paint modes, Image Editor, Multires, Dyntopo, Movie Mode, slider layout, an add-on's
+  data, Grease Pencil, posing and keys, modifiers, material/render/light settings
 
 --big adds the 10,000-step session on the 100k model to Round C.
 Writes .tmp/rounds/pass<N>/summary.json and summary.md; copies a few screenshots of generated
@@ -40,6 +42,10 @@ ROUNDS = {
           ("regress_stroke_split", {}, ""), ("regress_file_load", {}, ""), ("regress_native_undo", {}, "")],
     "D": [("round_d", {}, ""), ("fail_inject", {}, "")],
     "E": [("round_e", {"manifest": str(hs_ui.TMP / "own" / "manifest.json")}, "")],
+    # beta 3: what Record everything, the paint modes, Multires, Dyntopo and Movie Mode do in a real window
+    "H": [(s, {}, "fresh") for s in ("paint_modes", "image_paint", "multires", "dyntopo", "movie_mode", "movie_panel",
+                                     "slider_layout", "addon", "grease_pencil", "pose_keys", "modifier_keys",
+                                     "settings_keys")],
 }
 # Screenshots worth keeping per scenario (generated test models only).
 KEEP = {"ui_tour": ["C_sculpt_before_stroke", "D_sculpt_three_steps", "G_popover", "I_f3_search", "K_edit_mode",
@@ -77,7 +83,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pass", dest="pass_no", type=int, required=True)
     ap.add_argument("--blender", default="all")
-    ap.add_argument("--rounds", default="ABCDEFG")
+    ap.add_argument("--rounds", default="ABCDEFGH")
     ap.add_argument("--big", action="store_true")
     a = ap.parse_args()
     blenders = hs_ui.select(hs_ui.find_blenders(), a.blender)

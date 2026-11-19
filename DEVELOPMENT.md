@@ -34,10 +34,20 @@ Where a fact has no source, this page says "not measured" or "no report".
    - all: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py`
    - some: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py recovery` (a substring of the file name)
    - one file: `<venv>/bin/python tests/test_bl_recovery.py`; each test prints `PASS test_name` or `FAIL test_name`
-   - `HINDSIGHT_NATIVE=require` forces the Rust engine, `HINDSIGHT_NATIVE=0` forces Python. Run both
-     where the code touches the engine. The runner sets `HINDSIGHT_VERIFY=1` (every written step is read
-     back and compared).
+   - The engine is always used (no Python path ships; `HINDSIGHT_NATIVE` selects nothing any more, the
+     Python versions are in `tests/reference/`). The runner sets `HINDSIGHT_VERIFY=1` (every written step
+     is read back and compared).
    - Sculpt brush operators crash headless; tests simulate strokes with `tests/harness.py`.
+   - Real windows here (Xvfb, Mesa llvmpipe, the binaries in `/home/user/blender/`): put a `blender` shim
+     first on PATH that runs the binary with `--gpu-backend opengl` (keep `--command` first, as in
+     `.github/workflows/blender.yml`), set `LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+     MESA_GL_VERSION_OVERRIDE=4.5 MESA_GLSL_VERSION_OVERRIDE=450 HS_UI_XSHOT=1`, then
+     `xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" python3 tests_ui/hs_ui.py run <scenario>
+     --blender 5.3 --fresh --geometry 0,0,1600,900` (a window at 0,0 so screenshots crop right). Each run
+     uses the worktree's `.tmp/profiles`: never two at once in one worktree. `tests_ui/rounds.py --pass N
+     --blender 5.3 --rounds ABCD` runs the rounds with the right flags (`hs_ui.py models` first). Never
+     install `hindsight_native` into a Blender binary's own Python here: a stale copy shadowed the add-on's
+     wheel on Install from Disk (moved aside 2026-11-19).
    - User-facing text: `python3 tools/check_copy.py`.
 4. Benchmarks: see section f.
 5. Commits: small, subject ends with ` [skip ci]` so no Pages deploy runs. A commit without it deploys the
@@ -265,8 +275,13 @@ Latest runs (2026-11-19):
 | same, `run image_paint` and `run slider_layout` | main-session-3 245df4e | Image Editor painting 5/5 (D144) and the slider with toolbar, sidebar, both and neither 15/15 (clear of the panels, visible, drags to the right position, placed as D62 says), on 5.3.0 and 4.2.23 |
 | same, older scenarios on 4.2.23 | main-session-3 de59263 and later | tier1 17/17, adapters 15/15, fail_inject 13/13, regress_stroke_split 3/3, regress_native_undo 7/7, regress_file_load 3/3, movie_mode 16/16, paint_modes 12/12, round_b_features 19/19 (after its 4.2 tool id fix), t1_gate 47/48 (the simulated knife clicks make no cut on 4.2: no change, so no step) |
 | same, `run addon`, `run dyntopo` | main-session-3 45924a0 | a third-party add-on's data (stand-in tests/addons/hs_fake_addon.py: settings on objects and the scene, a list) 6/6 and Dyntopo 8/8 on 5.3.0 and 4.2.23: the add-on's operator run from the window and a menu-style setting change are one step each, the global slider puts every value back |
+| same, `run settings_keys` | main-session-3 7129d5a | 5/5 on 5.3.0 and 4.2.23: a material's node input, the render resolution and a light's power changed by operators run from keys are one step each; the global slider puts them back both ways |
+| same, `run modifier_keys` | main-session-3 8ff10f9 | 5/5 on 5.3.0 and 4.2.23: Ctrl+1, Ctrl+3, Ctrl+0 are one step each; the global slider puts the modifier stack and its levels back both ways |
+| same, `run pose_keys` | main-session-3 694622d | 5/5 on 5.3.0 and 4.2.23: in Pose Mode R and G (mouse, click) and I are one step each; the global slider puts the pose and the keyframes back both ways |
+| same, `run grease_pencil` and the add-on panel drag (`run addon`) | main-session-3 a9e9a2c | Grease Pencil 5/5 (v3 on 5.3.0, legacy on 4.2.23: three strokes drawn with the mouse, three steps, the global slider takes them away and brings them back with their points); addon 9/9 on both (D147: a drag on the add-on's panel slider is one step) |
 | same, Rounds A to D (`tests_ui/rounds.py --pass 90 --blender 5.3 --rounds ABCD`) | e4165f2 | 9/16 runs in 76 min; Round C all passed (10k, 10k with 1,000 steps, 100k, 500k, stroke split, file load, native undo); the failures were scenarios out of date (round_b_features, round_d, fail_inject: fixed and passing since), round_b redraw times under software GL, and these findings: a stale hindsight_native 0.2.0 in the Blender binaries' own site-packages here shadowed the add-on's wheel on Install from Disk (moved aside; container only), round_b redraw times are software GL under load, rounds.py's window offset breaks the Xvfb screenshot crop |
 | Native engine on GitHub, 12 jobs (Windows, macOS, Linux; x64 and ARM64; Python 3.11 and 3.13) | 7dc4853, 847bcdd, 099815c | 7dc4853: test_core_reference failed for a missing lz4 (CI dependencies fixed in 847bcdd); 847bcdd: 2 libzstd byte comparisons (fixed in 099815c); 099815c: rerun pending |
+| same | 9280a71, 3a58015 | 9280a71 (run 44466199267): every platform failed one test, the libzstd byte comparison in test_record_equals_diff_and_encode (Windows' earlier `resource` failure was gone); fixed in cd046ab; 3a58015 (run 44466670259): all 12 jobs green |
 
 Known failing tests:
 
@@ -379,12 +394,12 @@ Blockers:
 1. Merge `main-session-3` into the working branch once its full suite passes on 5.3 and 4.2; push; run
    `Blender tests` (binaries 4.2 to 5.3, the window job now on 4.2, 5.0.1, 5.1.2, 5.2, 5.3 with eight
    scenarios) and `Native engine` on GitHub; fix what they find.
-2. The agent's queue: the recorder's remaining overhead (rounds), D146 (node group animation), D147 (a UI
-   drag split on slow redraws).
+2. The recorder's remaining overhead at 500 objects: `id_props`, `idmap.claim` and constraints are the next fixed
+   costs (R044 profile); each needs a depsgraph or fingerprint check before any cache.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
    (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds (t1_gate made version-aware; Round B and C on 4.2).
-6. More optimisation rounds toward the owner's 100 (43 logged: 38 kept, 5 reverted).
+6. More optimisation rounds toward the owner's 100 (44 logged: 39 kept, 5 reverted).
 7. Dyntopo memory (LIMITS-A 1.6): a TOPO step holds the whole mesh before and after, and each before is the previous step's after; sharing it halves packed Dyntopo steps (about 5.8 to 2.9 MB each at 100k faces). Needs a step format bump in the engine: an agent job, measured as a round.

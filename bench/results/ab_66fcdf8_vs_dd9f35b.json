@@ -1,10 +1,10 @@
 {
  "a": {
   "label": "66fcdf8",
-  "root": "/tmp/claude-0/-home-user-Hindsight/4a339202-445d-5357-a8ee-013fb190a1d0/scratchpad/baseline",
+  "root": "<baseline checkout>",
   "facts": {
    "python": "3.13.18",
-   "executable": "/home/user/venvs/bpy53/bin/python",
+   "executable": "<bpy 5.3 venv python>",
    "blender": "5.3.0",
    "engine_version": "1.0.0-beta.2",
    "rust_engine_loaded": true,
@@ -17,10 +17,10 @@
  },
  "b": {
   "label": "dd9f35b",
-  "root": "/home/user/Hindsight/.claude/worktrees/agent-a41ca143ce762675d",
+  "root": "<work checkout>",
   "facts": {
    "python": "3.13.18",
-   "executable": "/home/user/venvs/bpy53/bin/python",
+   "executable": "<bpy 5.3 venv python>",
    "blender": "5.3.0",
    "engine_version": "1.0.0-beta.2",
    "rust_engine_loaded": true,

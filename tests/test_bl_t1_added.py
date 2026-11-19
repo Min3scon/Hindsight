@@ -344,6 +344,21 @@ def test_deleted_objects_come_back_complete():
     L.check_global(r, full=True)
 
 
+@covers("obj.addremove", "EXACT", "ORACLE")
+def test_deleted_object_comes_back_as_last_seen():
+    """D149 (found by test_bl_t1_prop in the Blender 5.3 binary on CI): hidden, shown again, then deleted, an
+    object came back hidden: its kept body (what brings it back) was read again only when the depsgraph
+    reported the object, and hiding sends nothing. The body is read again whenever a step changes it."""
+    def hide(name, state):
+        def run():
+            T.select(name)
+            bpy.data.objects[name].hide_set(state)
+            return {"FINISHED"}
+        return T.Op(f"hide {name} {state}", run, [name])
+    r = L.Run([hide("E", True), hide("E", False), T.delete(["E"])], setup=L.fresh_scene)
+    L.check_global(r, full=True)
+
+
 @covers("obj.editsteps", "STEPS", "EXACT")
 def test_several_objects_in_edit_mode():
     """D52: with A and B in Edit Mode together, each operation is one step in each of them and one
@@ -616,6 +631,7 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload,
            test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
            test_references_to_linked_objects, test_deleted_objects_come_back_complete,
+           test_deleted_object_comes_back_as_last_seen,
            test_several_objects_in_edit_mode, test_separate_is_one_operation,
            test_a_deleted_collection_comes_back, test_the_next_operation_while_a_reference_waits,
            test_a_reference_that_waits_after_a_reload):

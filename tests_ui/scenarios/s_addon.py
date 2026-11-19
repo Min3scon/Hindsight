@@ -16,6 +16,17 @@ import common as C
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+class HSFAKE_PT_panel(bpy.types.Panel):
+    """The add-on's own panel in the sidebar, as add-ons have."""
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "HSFake"
+    bl_label = "Fake"
+
+    def draw(self, context):
+        self.layout.prop(context.scene.hsfake, "strength")
+
+
 def _fake():
     path = os.path.join(HERE, "..", "..", "tests", "addons", "hs_fake_addon.py")
     spec = importlib.util.spec_from_file_location("hs_fake_addon", path)
@@ -74,3 +85,37 @@ def run(d):
         got = _read(ob, sc)
         d.check(f"slider to {pos}: the add-on's values of that step", C.info(d)["pos"] == pos and got == states[want],
                 (pos, C.info(d)["pos"], got, states[want]))
+
+    # ---------------------------------------------------------------- a drag on the add-on's panel slider
+    # D147: no modal operator runs during a UI drag, and slow redraws (software GL) leave gaps longer than
+    # the recorder's settle time between updates: it must still be one step
+    bpy.utils.register_class(HSFAKE_PT_panel)
+    try:
+        yield from C.show_sidebar_tab(d, "HSFake")
+        yield 0.5
+        win, area, reg, ui, space = d.view3d()
+        n1 = C.info(d)["len"]
+        v0 = round(sc.hsfake.strength, 4)
+        x0, y0 = ui.x + ui.width // 2, ui.y + ui.height - 40        # the first row under the panel header
+        d.ev("MOUSEMOVE", x=x0, y=y0)
+        yield 0.1
+        d.ev("LEFTMOUSE", "PRESS", x=x0, y=y0)
+        yield 0.05
+        for k in range(8):
+            d.ev("MOUSEMOVE", x=x0 + 6 * (k + 1), y=y0)
+            yield 0.03
+        d.ev("LEFTMOUSE", "RELEASE", x=x0 + 48, y=y0)
+        yield 2.0
+        v1 = round(sc.hsfake.strength, 4)
+        i = C.info(d)
+        d.check("a drag on the add-on's panel slider is one step", v1 != v0 and i["len"] == n1 + 1, (n1, i, v0, v1))
+        with d.override():
+            C.mod("runtime").goto(bpy.context, n1)
+        yield 0.3
+        d.check("going back undoes the whole drag", round(sc.hsfake.strength, 4) == v0, (sc.hsfake.strength, v0))
+        with d.override():
+            C.mod("runtime").goto(bpy.context, n1 + 1)
+        yield 0.3
+        d.check("going forward gives the end of the drag", round(sc.hsfake.strength, 4) == v1, (sc.hsfake.strength, v1))
+    finally:
+        bpy.utils.unregister_class(HSFAKE_PT_panel)
