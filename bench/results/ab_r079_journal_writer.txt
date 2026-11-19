@@ -1,0 +1,23 @@
+R079 A/B: a saved 1M grid, a topology change made in Object Mode (40 edges subdivided), then Sculpt Mode entered
+(the topology step is recorded there) and a commit: the main thread's time, and the time until the journal
+record is written (drain). A = 2768821 (journal encoded and written on the main thread), B = R079.
+
+1 A AB {"steps": [1, 2], "main_thread_ms": 773, "until_journaled_ms": 773}
+1 B AB {"steps": [1, 2], "main_thread_ms": 333, "until_journaled_ms": 747}
+2 A AB {"steps": [1, 2], "main_thread_ms": 845, "until_journaled_ms": 845}
+2 B AB {"steps": [1, 2], "main_thread_ms": 305, "until_journaled_ms": 688}
+3 A AB {"steps": [1, 2], "main_thread_ms": 504, "until_journaled_ms": 504}
+3 B AB {"steps": [1, 2], "main_thread_ms": 356, "until_journaled_ms": 773}
+4 A AB {"steps": [1, 2], "main_thread_ms": 762, "until_journaled_ms": 762}
+4 B AB {"steps": [1, 2], "main_thread_ms": 343, "until_journaled_ms": 759}
+5 A AB {"steps": [1, 2], "main_thread_ms": 754, "until_journaled_ms": 754}
+5 B AB {"steps": [1, 2], "main_thread_ms": 348, "until_journaled_ms": 764}
+=== 4.2
+1 A AB {"steps": [1, 2], "main_thread_ms": 1122, "until_journaled_ms": 1122}
+1 B AB {"steps": [1, 2], "main_thread_ms": 732, "until_journaled_ms": 1161}
+2 A AB {"steps": [1, 2], "main_thread_ms": 755, "until_journaled_ms": 755}
+2 B AB {"steps": [1, 2], "main_thread_ms": 763, "until_journaled_ms": 1164}
+3 A AB {"steps": [1, 2], "main_thread_ms": 1207, "until_journaled_ms": 1207}
+3 B AB {"steps": [1, 2], "main_thread_ms": 733, "until_journaled_ms": 1184}
+
+Profile before R079 (5.3, unsaved file): 532 ms, of it step_encode 264 ms and the journal writes 80 ms.

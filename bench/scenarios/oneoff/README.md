@@ -51,3 +51,6 @@ own rule in one process. Put the root's engine first with PYTHONPATH.
 switch) on cached 100k stroke steps, 1M strokes and 100k topology steps: CPU per step, bytes, read time.
 `packer_level_ab.py CODE_ROOT` (R072): a store.Packer recompressing those stroke steps as after an open (its 1 s wait
 between steps cut to 1 ms); the packer thread's CPU per step and the bytes. No Blender needed; alternate the engines.
+
+`topo1m.py CODE_ROOT` (R079): a topology change on a saved 1M grid recorded on entering Sculpt Mode; the main thread's
+time and the time until its journal record is written.
