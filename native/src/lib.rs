@@ -12,6 +12,8 @@
 //! on bad data: every slice is bounds-checked, and a panic (a bug) is still caught and turned into a
 //! RuntimeError instead of crossing into Python.
 
+#![allow(unexpected_cfgs)]
+
 #[cfg(target_endian = "big")]
 compile_error!("hindsight_native assumes a little-endian target");
 
@@ -21,10 +23,18 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::ffi;
 use pyo3::prelude::*;
+
+
+use lz4_sys as _; // links the C library the codec module calls
+
+pyo3::create_exception!(hindsight_native, CorruptStep, PyValueError, "A step blob is damaged or not a step at all.");
+pyo3::create_exception!(hindsight_native, CorruptBlob, PyValueError, "Compressed data is damaged.");
+pyo3::create_exception!(hindsight_native, CorruptDelta, PyValueError, "A packed delta is damaged or not a delta at all.");
+pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A file format newer than this build reads.");
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 2;
+const API: u32 = 3;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -169,6 +179,9 @@ macro_rules! by_size {
         }
     };
 }
+
+mod codec;
+mod step;
 
 // ------------------------------------------------------------------------------------ diff
 fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut [u8]) {
@@ -458,6 +471,40 @@ fn pack_vals<const N: usize>(v: &[u8], k: usize, w: usize, predict: bool, o: &mu
     }
 }
 
+/// Index coding of a record (k >= 1): None if the indices aren't sorted and unique, else
+/// (coding, bytes): one run when contiguous, else first index and gaps.
+fn pack_index(iv: &[u8], k: usize) -> Option<(u8, Vec<u8>)> {
+    let mut gmax: u64 = 0;
+    for j in 1..k {
+        let (a, b) = (idx_at(iv, j - 1), idx_at(iv, j));
+        if b <= a {
+            return None;
+        }
+        gmax = gmax.max((b - a - 1) as u64);
+    }
+    let first = idx_at(iv, 0) as u64;
+    let last = idx_at(iv, k - 1) as u64;
+    let mut ibytes = Vec::new();
+    let code = if k > 1 && last - first + 1 == k as u64 {
+        let lw = width_code(k as u64 - 1);
+        ibytes.push((1 | (lw << 4)) as u8);
+        push_le(&mut ibytes, 1, 4);
+        push_le(&mut ibytes, first, 4);
+        push_le(&mut ibytes, k as u64 - 1, lw);
+        IDX_RUNS
+    } else {
+        let wc = width_code(gmax);
+        ibytes.reserve(5 + (k - 1) * wc);
+        ibytes.push(wc as u8);
+        push_le(&mut ibytes, first, 4);
+        let at = ibytes.len();
+        ibytes.resize(at + (k - 1) * wc, 0);
+        by_size!(wc, put_gaps(iv, &mut ibytes[at..]));
+        IDX_GAPS
+    };
+    Some((code, ibytes))
+}
+
 /// pack(indices, values, itemsize, width, predict) -> None if the indices aren't sorted and
 /// unique, else (index coding, index bytes, predictor tags + byte planes): the parts of a format 3
 /// record after its header and key, as delta.pack_delta writes them (k >= 1).
@@ -478,33 +525,9 @@ fn pack<'py>(
         if iv.len() % 4 != 0 || k == 0 || k.checked_mul(row) != Some(vb.len()) {
             return Err(bad("hindsight_native.pack: sizes don't match"));
         }
-        let mut gmax: u64 = 0;
-        for j in 1..k {
-            let (a, b) = (idx_at(iv, j - 1), idx_at(iv, j));
-            if b <= a {
-                return Ok(None);
-            }
-            gmax = gmax.max((b - a - 1) as u64);
-        }
-        let first = idx_at(iv, 0) as u64;
-        let last = idx_at(iv, k - 1) as u64;
-        let mut ibytes = Vec::new();
-        let code = if k > 1 && last - first + 1 == k as u64 {
-            let lw = width_code(k as u64 - 1);
-            ibytes.push((1 | (lw << 4)) as u8);
-            push_le(&mut ibytes, 1, 4);
-            push_le(&mut ibytes, first, 4);
-            push_le(&mut ibytes, k as u64 - 1, lw);
-            IDX_RUNS
-        } else {
-            let wc = width_code(gmax);
-            ibytes.reserve(5 + (k - 1) * wc);
-            ibytes.push(wc as u8);
-            push_le(&mut ibytes, first, 4);
-            let at = ibytes.len();
-            ibytes.resize(at + (k - 1) * wc, 0);
-            by_size!(wc, put_gaps(iv, &mut ibytes[at..]));
-            IDX_GAPS
+        let (code, ibytes) = match pack_index(iv, k) {
+            Some(r) => r,
+            None => return Ok(None),
         };
         let v = vb.bytes();
         let tv = PyBytes::new_bound_with(py, w + k * row, |o| {
@@ -1286,5 +1309,6 @@ fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(apply, m)?)?;
     m.add_function(wrap_pyfunction!(pack, m)?)?;
     m.add_function(wrap_pyfunction!(unpack, m)?)?;
+    step::register(m)?;
     Ok(())
 }

@@ -20,9 +20,19 @@ module's API 1 functions only, which is how goto ran before apply_steps) and "py
 Every engine must end on the same bytes. The history is built once and kept in --fixtures (default:
 a folder in the system temp directory). Prints min and median ms per case, and the peak memory of
 a 300 and a 3,000-step jump (tracemalloc, and VmHWM over VmRSS).
+
+    ... bench/bench_native.py --container [--nv 100000] [--rounds 7]
+
+The step container and codecs (API 3): one stroke step of about 2% of the vertices, written, read
+and recompressed with the engine against the Python reference (tests/reference: the container and
+codecs as they were before the Rust migration, python-zstandard, delta transforms through the
+engine as they were). Alternating rounds in one process; min and median ms, then the peak memory
+of one write and one read (tracemalloc, and VmHWM over VmRSS). Needs the zstandard and lz4 Python
+packages for the reference side.
 """
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests"))
 import json
 import platform
 import statistics
@@ -267,7 +277,67 @@ def jumps(nv, rounds, folder):
     return res
 
 
+def container(nv, rounds):
+    """Step container and codecs: reference (Python) against the engine, alternating rounds."""
+    from reference import step as rstep
+    side = int(round(nv ** 0.5))
+    nv = side * side
+    yy, xx = np.divmod(np.arange(nv), side)
+    pos = np.stack([xx / side, yy / side, np.zeros(nv)], 1).astype(np.float32).reshape(-1)
+    d = delta.diff(POSITION_KEY, pos, grid_stroke(nv, pos))
+    st = Step(1, "Draw", "SCULPT", "obj", 1.0, DELTA, [d])
+    blob = stepmod.step_to_bytes(st, "zstd")
+    assert rstep.step_to_bytes(st, "zstd") == blob, "bytes differ"
+    quick = stepmod.step_to_bytes(st, "zstd", delta.QUICK)
+    ops = {
+        "write zstd": (lambda: rstep.step_to_bytes(st, "zstd"), lambda: stepmod.step_to_bytes(st, "zstd")),
+        "write quick (journal)": (lambda: rstep.step_to_bytes(st, "zstd", delta.QUICK),
+                                  lambda: stepmod.step_to_bytes(st, "zstd", delta.QUICK)),
+        "read": (lambda: rstep.step_from_bytes(blob), lambda: stepmod.step_from_bytes(blob)),
+        "read quick": (lambda: rstep.step_from_bytes(quick), lambda: stepmod.step_from_bytes(quick)),
+        "recompress quick": (lambda: rstep.recompress(quick), lambda: stepmod.recompress(quick)),
+    }
+    res = {"vertices": nv, "changed": int(d.idx.size), "step_bytes": len(blob), "ops": {}}
+    for name, (a, b) in ops.items():
+        a(), b()
+        ta, tb = [], []
+        for _ in range(rounds):
+            for fn, ts in ((a, ta), (b, tb)):
+                t0 = time.perf_counter()
+                fn()
+                ts.append((time.perf_counter() - t0) * 1000)
+        mem = []
+        for fn in (a, b):
+            tracemalloc.start()
+            tracemalloc.reset_peak()
+            fn()
+            py = tracemalloc.get_traced_memory()[1]
+            tracemalloc.stop()
+            hwm = None
+            if reset_hwm():
+                rss0 = proc("VmRSS")
+                fn()
+                hwm = max(0, proc("VmHWM") - rss0)
+            mem.append((py, hwm))
+        res["ops"][name] = {"old_min_ms": round(min(ta), 3), "old_median_ms": round(statistics.median(ta), 3),
+                            "new_min_ms": round(min(tb), 3), "new_median_ms": round(statistics.median(tb), 3),
+                            "old_peak_py_bytes": mem[0][0], "new_peak_py_bytes": mem[1][0],
+                            "old_peak_rss_bytes": mem[0][1], "new_peak_rss_bytes": mem[1][1]}
+        r = res["ops"][name]
+        print(f"  {nv:>9,} {name:24s} old {r['old_min_ms']:8.3f} / {r['old_median_ms']:8.3f} ms   "
+              f"new {r['new_min_ms']:8.3f} / {r['new_median_ms']:8.3f} ms (min / median)   "
+              f"peak py {mem[0][0] / 1e6:6.2f} -> {mem[1][0] / 1e6:6.2f} MB   "
+              f"rss {(mem[0][1] or 0) / 1e6:6.2f} -> {(mem[1][1] or 0) / 1e6:6.2f} MB", flush=True)
+    return res
+
+
 def main():
+    if "--container" in sys.argv:
+        arg = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d     # noqa: E731
+        out = [container(nv, int(arg("--rounds", 7)))
+               for nv in ([int(arg("--nv", 0))] if "--nv" in sys.argv else (100_000, 1_000_000))]
+        print(json.dumps({"python": sys.version.split()[0], "cpus": os.cpu_count(), "container": out}))
+        return
     if "--jumps" in sys.argv:
         import tempfile
         arg = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d     # noqa: E731

@@ -295,20 +295,14 @@ def test_codec_fallback():
         assert codec.decompress(blob) == data, name
         exp = codec.resolve(name)
         assert codec.codec_of(blob) == exp, (name, codec.codec_of(blob), exp)
-    # unavailable codec simulated
-    saved = codec._zstd, codec._lz4f
-    try:
-        codec._zstd = None
-        codec._lz4f = None
-        assert codec.available() == ["zlib", "none"]
-        assert codec.resolve("zstd") == "zlib" and codec.resolve("lz4") == "zlib"
-        assert codec.resolve("auto") == "zlib"
-        b = codec.compress(data, "zstd")
-        assert b[0] == 1 and codec.decompress(b) == data
-        st = make_delta_step()
-        assert steps_equal(st, stepmod.step_from_bytes(stepmod.step_to_bytes(st, "zstd")))
-    finally:
-        codec._zstd, codec._lz4f = saved
+    # the engine has every codec built in: nothing to simulate as missing, an unknown name is zlib
+    assert codec.available() == ["zstd", "lz4", "zlib", "none"]
+    assert codec.resolve("auto") == "zstd" and codec.resolve("bogus") == "zlib" and codec.resolve(None) == "zstd"
+    b = codec.compress(data, "bogus")
+    assert b[0] == 1 and codec.decompress(b) == data
+    st = make_delta_step()
+    for name in ("zstd", "lz4", "zlib", "none", "bogus"):
+        assert steps_equal(st, stepmod.step_from_bytes(stepmod.step_to_bytes(st, name))), name
     print(f"PASS test_codec_fallback (available={codec.available()})")
 
 

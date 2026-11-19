@@ -585,8 +585,9 @@ def test_property():
 
 
 def test_old_module_and_loader():
-    """A module from an older release (API 1, no apply_steps) is used function by function;
-    require mode asks for the current one; a newer API is refused."""
+    """The engine must be API 3: a module from an older release (API 1 or 2, no codecs or step
+    container) or a newer one (or none at all) is refused with EngineMissing, in every mode. The
+    module without apply_steps (OldModule above) is still a valid delta.py engine in-process."""
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
     def fake(api):
@@ -601,14 +602,12 @@ def test_old_module_and_loader():
             env["HINDSIGHT_NATIVE"] = mode
         return subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True)
 
-    r = run(fake(1) + probe, None)
+    for api in (0, 1, 2, native.API + 1):
+        for mode in (None, "require"):
+            r = run(fake(api) + probe, mode)
+            assert r.returncode != 0 and "EngineMissing" in r.stderr and f"found API {api}" in r.stderr, (api, mode, r)
+    r = run(probe, None)
     assert r.returncode == 0 and r.stdout.startswith("True None"), r
-    r = run(fake(1) + probe, "require")
-    assert r.returncode != 0 and "API 1" in r.stderr, r
-    r = run(fake(native.API + 1) + probe, None)
-    assert r.returncode == 0 and r.stdout.startswith("False") and f"API {native.API + 1}" in r.stdout, r
-    r = run(fake(0) + probe, None)
-    assert r.returncode == 0 and r.stdout.startswith("False"), r
     print("PASS test_old_module_and_loader")
 
 
