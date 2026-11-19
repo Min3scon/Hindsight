@@ -685,6 +685,8 @@ def _groups_in_tree(nt, out: list, seen: set) -> None:
 
 def groups_of(ob) -> list:
     """Node groups this object's Geometry Nodes modifiers and its materials use (nested ones too)."""
+    if not len(bpy.data.node_groups):
+        return []
     out, seen = [], set()
     for m in getattr(ob, "modifiers", ()):
         g = getattr(m, "node_group", None)
@@ -1825,13 +1827,16 @@ def forget_loose_groups() -> None:
     """D133: node groups nothing evaluates aren't in the depsgraph, so it never says they changed:
     their kept records are read again when an operator ends."""
     try:
-        used = group_owner_map()
-        for g in bpy.data.node_groups:
-            if g.as_pointer() not in used:
-                _MAT_CACHE.pop(g.session_uid, None)
         nt = getattr(bpy.context.scene, "node_tree", None)
         if nt is not None:
             _MAT_CACHE.pop(nt.session_uid, None)
+        if not len(bpy.data.node_groups):
+            return                      # (most files: no walk over the objects)
+        with idmap.frame():
+            used = group_owner_map()
+            for g in bpy.data.node_groups:
+                if g.as_pointer() not in used:
+                    _MAT_CACHE.pop(g.session_uid, None)
     except Exception:
         pass
 
@@ -3250,7 +3255,7 @@ def scene_groups(sc) -> dict:
     nt = getattr(sc, "node_tree", None)          # Blender 4: the compositor's own tree
     if nt is not None:
         out[COMP_TREE] = capture_tree(nt)
-    if scenes and scenes[0] != sc.name:
+    if (scenes and scenes[0] != sc.name) or not len(bpy.data.node_groups):
         return out
     used = group_owner_map()
     uid = idmap.uid_of(sc)
