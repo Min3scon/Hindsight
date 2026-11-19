@@ -88,6 +88,18 @@ fn zstd_compress(data: &[u8], strong: bool) -> Result<Vec<u8>, Err> {
         }
         let (n, s) = g.as_mut().unwrap();
         let ctx = if strong { s } else { n };
+        // A body over 1 MB gets a window as large as itself (up to 128 MB, zstd's default decoder limit) and long
+        // distance matching:
+        // the two meshes of a TOPO step are alike, and the default window (2 MB at level 3) never sees the
+        // first one while it writes the second. Smaller bodies keep the level's own window (0).
+        let wl = if data.len() > (1 << 20) { (64 - (data.len() as u64 - 1).leading_zeros()).clamp(10, 27) } else { 0 };
+        // long distance matching finds them: the level's small hash table forgets what is 6 MB behind
+        let big = wl > 0;
+        ctx.set_parameter(zstd_safe::CParameter::WindowLog(wl)).map_err(|_| blob("zstd: bad window"))?;
+        ctx.set_parameter(zstd_safe::CParameter::EnableLongDistanceMatching(big)).map_err(|_| blob("zstd: bad ldm"))?;
+        if big {
+            ctx.set_parameter(zstd_safe::CParameter::LdmHashLog(20)).map_err(|_| blob("zstd: bad ldm"))?;
+        }
         let bound = zstd_safe::compress_bound(data.len());
         let mut out = vec_with(1 + bound)?;
         out.resize(1 + bound, 0);

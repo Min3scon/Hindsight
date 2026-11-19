@@ -16,7 +16,7 @@ import numpy as np
 from . import delta as _delta
 from . import native as _native
 from .types import (
-    DATA, DELTA, JOIN, MISSING,
+    DATA, DELTA, JOIN, MISSING, TOPO,
     ChannelDelta, DataChange, Entry, Snapshot, Step,
     key_dtype, key_width, split_key,
 )
@@ -91,6 +91,23 @@ class MeshState:
         return Snapshot(dict(self.counts), {k: v.copy() for k, v in self.arrays.items()})
 
 
+def _share_chain(prev: Entry, step: Step) -> None:
+    """A TOPO step's `before` is the mesh the TOPO step before it left (its `after`): where the two
+    are bit for bit the same, the new step holds the older step's arrays, not a second copy of them.
+    Nothing writes into a step's arrays (the state takes copies, set_snapshot), so sharing is safe;
+    only raw neighbours share (a packed one has no arrays)."""
+    ps = prev.step
+    if (ps is None or ps.kind != TOPO or step.kind != TOPO or ps.after is None or step.before is None
+            or ps.target != step.target):
+        return
+    for key, a in list(step.before.arrays.items()):
+        b = ps.after.arrays.get(key)
+        if b is None or b is a or b.dtype != a.dtype or b.shape != a.shape:
+            continue
+        if np.array_equal(_delta.view_bits(a), _delta.view_bits(b)):
+            step.before.arrays[key] = b
+
+
 class History:
     """Undo timeline of one object (or of several after a join)."""
 
@@ -121,6 +138,8 @@ class History:
 
     def push(self, step: Step) -> list:
         dropped = self.truncate_future()
+        if isinstance(step, Step) and self.entries:
+            _share_chain(self.entries[-1], step)
         self.entries.append(step if isinstance(step, Entry) else Entry(step))
         self.cursor = len(self.entries)
         return dropped
