@@ -242,8 +242,8 @@ def run(d):
     select("C")
     before = counts()
     with d.override():                            # what M > + New Collection runs
-        bpy.ops.object.move_to_collection(collection_uid=bpy.context.scene.collection.session_uid,
-                                          is_new=True, new_collection_name="Extra")
+        bpy.ops.object.move_to_collection(**T._coll_arg(None), is_new=True,   # by uid on 4.3+, by index before
+                                          new_collection_name="Extra")
     yield from step("M, New Collection", ROWS["coll"], ["C", "scene"])
 
     select("B")

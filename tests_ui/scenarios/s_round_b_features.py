@@ -63,9 +63,14 @@ def run(d):
     d.check("Morph History stroke changes the mesh and records one step", after != before and C.info(d)["len"] == 5,
             C.info(d))
     with d.override():
-        bpy.ops.wm.tool_set_by_id(name="builtin.brush", space_type='VIEW_3D')
+        # back to the sculpt brush: "builtin.brush" since 4.3 (brush assets), "builtin_brush.Draw" before
+        bpy.ops.wm.tool_set_by_id(name="builtin.brush" if bpy.app.version >= (4, 3, 0) else "builtin_brush.Draw",
+                                  space_type='VIEW_3D')
         rt.goto(bpy.context, 4)
     d.check("going back before the morph stroke is exact", mesh_hash(a) == states[4])
+    tool = bpy.context.workspace.tools.from_space_view3d_mode("SCULPT", create=False)
+    d.check("the sculpt brush is the active tool again", tool is not None and tool.idname != "hindsight.morph_history",
+            getattr(tool, "idname", None))
     with d.override():
         rt.goto(bpy.context, 5)
 
