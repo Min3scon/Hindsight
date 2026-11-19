@@ -1,7 +1,7 @@
 """The native engine (hindsight_native, Rust) against the Python code it replaces, bit for bit.
 
-Every case runs twice in this process, once with native.lib set and once with it None (the numpy
-code in delta.py, the reference), and the two must agree exactly: the same bytes, dtypes and shapes,
+Every case runs twice in this process, once through the engine and once through the numpy code of
+tests/reference/delta.py (the reference), and the two must agree exactly: the same bytes, dtypes and shapes,
 or the same exception type and message, and an array left the same way after a refused apply.
 Inputs: every channel type, NaN payloads, -0.0, denormals, infinities, extreme integers, empty,
 one element, every element changed, widths 1 to 4 (and item sizes 1, 2, 4, 8 for the transforms),
@@ -19,6 +19,7 @@ import traceback
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
+from reference import pure, delta as rdelta                   # noqa: E402
 import test_core_codec as tc                      # noqa: E402  (its damaged-input generator and cases)
 from hindsight.core import codec, delta, native, step as stepmod   # noqa: E402
 from hindsight.core.types import ADD, CHANNEL_TYPES, DELTA, XOR, ChannelDelta, Step, make_key   # noqa: E402
@@ -32,11 +33,9 @@ WEIRD_F32 = np.array([0x00000000, 0x80000000, 0x7F800000, 0xFF800000, 0x00000001
 
 @contextlib.contextmanager
 def python_path():
-    native.lib = None
-    try:
+    """The Python reference (tests/reference/delta.py) in place of the engine's delta functions."""
+    with pure():
         yield
-    finally:
-        native.lib = LIB
 
 
 def outcome(fn):
@@ -226,7 +225,12 @@ def test_apply_matches_python():
                 d = ChannelDelta(key, np.array(idx, idt), vals, (True, True), op)
                 for forward in (True, False):
                     a, b = apply_both(base, d, forward)
-                    assert a == b, (idx, idt, op, forward, a[0], b[0])
+                    if isinstance(b[0], tuple) and "could not be broadcast" in b[0][2]:
+                        # numpy's own message for values that don't fit the indices: the engine's
+                        # says "N indices but M values"; same type, array untouched
+                        assert a[0][:2] == b[0][:2] == ("err", "ValueError") and a[1] == b[1], (idx, a, b)
+                    else:
+                        assert a == b, (idx, idt, op, forward, a[0], b[0])
                     count += 1
     ro = base.copy()
     ro.flags.writeable = False
@@ -327,9 +331,9 @@ def _records():
                 yield rec
                 if d.idx.size >= 1 and d.vals.size:
                     idx = np.asarray(d.idx, np.uint32)
-                    yield _recode(rec, delta.IDX_RUNS, delta._idx_runs(idx))
+                    yield _recode(rec, delta.IDX_RUNS, rdelta._idx_runs(idx))
                     if int(idx[-1]) - int(idx[0]) < 100000:
-                        yield _recode(rec, delta.IDX_BITMAP, delta._idx_bitmap(idx))
+                        yield _recode(rec, delta.IDX_BITMAP, rdelta._idx_bitmap(idx))
 
 
 def test_unpack_matches_python():

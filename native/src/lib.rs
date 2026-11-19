@@ -34,7 +34,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 4;
+const API: u32 = 5;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -256,6 +256,29 @@ fn diff<'py>(
 }
 
 // ----------------------------------------------------------------------------------- apply
+/// The general case of apply: any indices (all in range). Rows are gathered first, so a repeated
+/// index is applied once to the original row, and the last occurrence wins, as numpy's
+/// `b[ii] = combine(b.take(ii), v)`.
+fn apply_scatter<const N: usize>(dst: &mut [u8], iv: &[u8], v: &[u8], w: usize, xor: bool, forward: bool) {
+    let row = N * w;
+    let k = iv.len() / 4;
+    let mut tmp: Vec<u64> = Vec::with_capacity(k * w);
+    for j in 0..k {
+        let at = idx_at(iv, j) as usize * row;
+        for c in 0..w {
+            let x = rd::<N>(dst, at / N + c);
+            let d = rd::<N>(v, j * w + c);
+            tmp.push(if xor { x ^ d } else if forward { x.wrapping_add(d) & mask::<N>() } else { x.wrapping_sub(d) & mask::<N>() });
+        }
+    }
+    for j in 0..k {
+        let at = idx_at(iv, j) as usize * row;
+        for c in 0..w {
+            wr::<N>(dst, at / N + c, tmp[j * w + c]);
+        }
+    }
+}
+
 /// OP 0: x ^ d, 1: x + d, 2: x - d (wrapping), on each value of the rows named by the indices.
 fn apply_op<const N: usize, const OP: u8>(dst: &mut [u8], iv: &[u8], v: &[u8], w: usize) {
     let row = N * w;
@@ -347,25 +370,40 @@ fn apply(
             Err(_) => return Ok(false), // read-only or not contiguous: Python decides
         };
         let (ib, vb) = (Buf::new(idx, false)?, Buf::new(vals, false)?);
-        if ab.overlaps(&ib) || ab.overlaps(&vb) {
-            return Ok(false);
-        }
-        let iv = ib.bytes();
+        // an index or value buffer that shares memory with the target is read from a copy
+        let (ic, vc);
+        let (iv, v): (&[u8], &[u8]) = if ab.overlaps(&ib) || ab.overlaps(&vb) {
+            ic = ib.bytes().to_vec();
+            vc = vb.bytes().to_vec();
+            (&ic, &vc)
+        } else {
+            (ib.bytes(), vb.bytes())
+        };
         let k = iv.len() / 4;
         if iv.len() % 4 != 0 || k.checked_mul(row) != Some(vb.len()) || ab.len() % row != 0 {
             return Ok(false);
         }
         let n = ab.len() / row;
         let mut prev: i64 = -1;
+        let mut sorted = true;
         for j in 0..k {
             let i = idx_at(iv, j) as i64;
-            if i <= prev || i as usize >= n {
-                return Ok(false);
+            if i as usize >= n {
+                // names the last index when it is out of range too (what delta.apply reported)
+                let at = idx_at(iv, k - 1) as usize;
+                let shown = if at >= n { at } else { i as usize };
+                return Err(bad(&format!("index {shown} out of range ({n})")));
             }
+            sorted &= i > prev;
             prev = i;
         }
-        let v = vb.bytes();
         let dst = ab.bytes_mut();
+        if !sorted {
+            // unsorted or repeated indices: gather the rows, combine, scatter in order (a repeated
+            // index keeps the last write, computed from the rows as they were before the call)
+            by_size!(isz, apply_scatter(dst, iv, v, w, xor, forward));
+            return Ok(true);
+        }
         let op = if xor { 0 } else if forward { 1 } else { 2 };
         let typed = match isz {
             1 => apply_lane::<u8>(dst, iv, v, w, op),

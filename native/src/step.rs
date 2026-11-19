@@ -171,7 +171,7 @@ fn plan_record(body: &[u8], off: usize) -> Result<(Plan<'_>, usize), String> {
     Ok((p, stop))
 }
 
-fn decode_plan(p: &Plan<'_>) -> Result<DDelta, StepErr> {
+fn decode_plan(p: &Plan<'_>) -> Result<DDelta, DErr> {
     let (k, isz, w) = (p.k, p.isz, p.w);
     let mut d = DDelta { key: p.key.clone(), exists: p.exists, add: p.add, isz, w, k, idx: Vec::new(), vals: Vec::new() };
     if k == 0 {
@@ -179,13 +179,11 @@ fn decode_plan(p: &Plan<'_>) -> Result<DDelta, StepErr> {
     }
     let nvals = (k as u128 * isz as u128 * w as u128).min(u64::MAX as u128) as u64;
     if (k as u64 * 4).saturating_add(nvals) > MAX_OUT {
-        return corrupt("step blob: damaged (delta: implausible size)");
+        return Err(DErr::Msg("delta: implausible size".into()));
     }
-    d.idx = try_vec(k * 4)?;
-    d.idx.resize(k * 4, 0);
-    d.vals = try_vec(k * w * isz)?;
-    d.vals.resize(k * w * isz, 0);
-    let dam = |e: &str| StepErr::Corrupt(format!("step blob: damaged ({e})"));
+    d.idx = vec_zeroed(k * 4)?;
+    d.vals = vec_zeroed(k * w * isz)?;
+    let dam = |e: &str| DErr::Msg(e.to_string());
     if let Some((dsz, first, gaps, planes)) = p.v1 {
         put_idx(&mut d.idx, 0, first as u32);
         if k > 1 {
@@ -211,6 +209,27 @@ fn decode_plan(p: &Plan<'_>) -> Result<DDelta, StepErr> {
     decode_idx(p.code, p.ibytes, k, &mut d.idx).map_err(dam)?;
     by_size!(isz, decode_vals(p.vin, k, w, p.add, &mut d.vals)).map_err(dam)?;
     Ok(d)
+}
+
+/// A record that could not be decoded: damaged (message as delta.py's) or out of memory.
+pub enum DErr {
+    Msg(String),
+    Mem,
+}
+
+fn vec_zeroed(n: usize) -> Result<Vec<u8>, DErr> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(n).map_err(|_| DErr::Mem)?;
+    v.resize(n, 0);
+    Ok(v)
+}
+
+/// A damaged record seen from inside a step.
+fn in_step(e: DErr) -> StepErr {
+    match e {
+        DErr::Msg(m) => StepErr::Corrupt(format!("step blob: damaged ({m})")),
+        DErr::Mem => StepErr::Mem,
+    }
 }
 
 // ---------------------------------------------------------------------------------- snapshots
@@ -395,7 +414,7 @@ fn decode_v3(b: &[u8]) -> Result<Dec, StepErr> {
     let mut out_bytes = 0u64;
     for _ in 0..h.n_deltas {
         let (p, next) = plan_record(&body, off).map_err(|e| StepErr::Corrupt(format!("step blob: damaged ({e})")))?;
-        let d = decode_plan(&p)?;
+        let d = decode_plan(&p).map_err(in_step)?;
         out_bytes += (d.idx.len() + d.vals.len()) as u64;
         if out_bytes > MAX_OUT {
             return corrupt("step blob: damaged (delta: implausible size)");
@@ -480,7 +499,7 @@ fn decode_v1(b: &[u8]) -> Result<Dec, StepErr> {
         // the record is read from the start of its slice; bytes of the slice after it are ignored
         let end = (off as u128 + dh.n as u128).min(body.len() as u128) as usize;
         let (p, _next) = plan_record(&body[..end], off).map_err(dam)?;
-        let d = decode_plan(&p)?;
+        let d = decode_plan(&p).map_err(in_step)?;
         out_bytes += (d.idx.len() + d.vals.len()) as u64;
         if out_bytes > MAX_OUT {
             return corrupt("step blob: damaged (delta: implausible size)");
@@ -1221,7 +1240,72 @@ fn recompress<'py>(py: Python<'py>, blob: &Bound<'py, PyAny>) -> PyResult<Option
     })
 }
 
+/// pack_record(key, idx, vals, itemsize, width, exists before, exists after, add, predict) -> the
+/// format 3 record of delta.pack_delta (bytes). Indices must be sorted and unique.
+#[pyfunction]
+#[pyo3(name = "pack_record")]
+#[allow(clippy::too_many_arguments)]
+fn pack_record_py<'py>(
+    py: Python<'py>,
+    key: &str,
+    idx: &Bound<'py, PyAny>,
+    vals: &Bound<'py, PyAny>,
+    isz: usize,
+    w: usize,
+    e0: bool,
+    e1: bool,
+    add: bool,
+    predict: bool,
+) -> PyResult<Bound<'py, PyBytes>> {
+    guard(|| {
+        let row = check_size(isz, w)?;
+        if w > MAX_WIDTH {
+            return Err(PyValueError::new_err("hindsight_native: width too large"));
+        }
+        let (ib, vb) = (Buf::new(idx, false)?, Buf::new(vals, false)?);
+        if ib.len() % 4 != 0 || (ib.len() / 4).checked_mul(row) != Some(vb.len()) {
+            return Err(PyValueError::new_err(format!("pack_delta {key}: sizes don't match")));
+        }
+        let (iv, vv) = (ib.bytes(), vb.bytes());
+        let rec = RecRef { key, exists: (e0, e1), add, isz, w, k: iv.len() / 4, idx: iv, vals: vv };
+        let mut out = Vec::new();
+        py.allow_threads(|| pack_record(&rec, predict, &mut out)).map_err(err)?;
+        Ok(PyBytes::new_bound(py, &out))
+    })
+}
+
+/// unpack_record(buffer, offset) -> (key, add, exists before, exists after, k, width, itemsize,
+/// index bytearray or None, value bytearray or None, offset after the record): delta.unpack_at.
+/// Damage raises CorruptDelta with delta.py's messages.
+#[pyfunction]
+fn unpack_record(py: Python<'_>, buf: &Bound<'_, PyAny>, off: usize) -> PyResult<PyObject> {
+    guard(|| {
+        let inp = input(buf)?;
+        let body = inp.get();
+        if off > body.len() {
+            return Err(CorruptDelta::new_err("delta: too short"));
+        }
+        let r = py.allow_threads(|| -> Result<(DDelta, usize), DErr> {
+            let (p, next) = plan_record(body, off).map_err(DErr::Msg)?;
+            Ok((decode_plan(&p)?, next))
+        });
+        let (d, next) = match r {
+            Ok(x) => x,
+            Err(DErr::Msg(m)) => return Err(CorruptDelta::new_err(m)),
+            Err(DErr::Mem) => return Err(no_mem()),
+        };
+        let (ib, vb) = if d.k == 0 {
+            (py.None(), py.None())
+        } else {
+            (PyByteArray::new_bound(py, &d.idx).into_py(py), PyByteArray::new_bound(py, &d.vals).into_py(py))
+        };
+        Ok((d.key.as_str(), d.add as u8, d.exists.0, d.exists.1, d.k, d.w, d.isz, ib, vb, next).into_py(py))
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(unpack_record, m)?)?;
+    m.add_function(wrap_pyfunction!(pack_record_py, m)?)?;
     m.add_function(wrap_pyfunction!(codec_resolve, m)?)?;
     m.add_function(wrap_pyfunction!(codec_compress, m)?)?;
     m.add_function(wrap_pyfunction!(codec_decompress, m)?)?;
