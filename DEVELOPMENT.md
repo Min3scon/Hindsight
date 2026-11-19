@@ -415,7 +415,7 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Pushed: R061 to R067 and the crash window scenario (bda759e, full suites 109/111 on 5.3 and 4.2 before it). R060 (engine 0.8.0, xxh3-128 mesh fingerprints) is merged on main-session-3: full suites with the 0.8.0 engine, then push and run both workflows (the wheels need the Native engine run).
+1. Pushed: R060 (engine 0.8.0) as 3e9195f after full suites with 0.8.0 on 5.3 and 4.2 (111/113 each); Blender tests and Native engine run on it. Next to push: R069 (baseline topology packed while idle, window scenario topo_pack), R073 (global positions built faster) and the joinsep clean-up, after their full suites. The agent's branch holds R070 to R072 (engine 0.9.0: the recorder's strict compare, a threaded diff, the idle recompression level): review, merge, full suites, push, both workflows.
 2. The recorder's remaining overhead at 500 objects (about 40 to 48 ms per operation): capture 31 ms spread over many small parts (none over 1 ms per 500 objects in the object adapter), `_same_values` 7.5 ms (two marshal dumps per object). Reading plain rows at once (R062) and keying values in C (R063) were measured and reverted. Next idea: a strict value comparison in the engine (type-exact, floats by bits) instead of two marshal dumps, once native/ is free.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
    (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
