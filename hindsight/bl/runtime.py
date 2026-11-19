@@ -2089,14 +2089,15 @@ def check_outside_changes(saved: dict) -> None:
         h = _REG.history_for(u)
         fp = rec.get("mesh")
         if fp and isinstance(ob, bpy.types.Object) and ob.type == "MESH" and h is not None and h.entries:
-            if (mesh_fingerprint(ob) != fp and h.cursor == len(h.entries) and len(h.members) == 1
+            changed = mesh_fingerprint(ob) != fp     # R045: hashed once (it was twice when unchanged)
+            if (changed and h.cursor == len(h.entries) and len(h.members) == 1
                     and _bridge_from_backup(ob, u, h, fp)):
                 # D107 (only with nothing recovered ahead of the saved position, and for one object):
                 # the file's state is after the new step, for crash recovery as for D83
                 load_notes.append(("INFO", OUTSIDE_BRIDGED_TEXT.format(name=ob.name)))
                 ensure_state(ob, refresh=True)
                 outside.add(u)
-            elif mesh_fingerprint(ob) != fp:
+            elif changed:
                 h.reset()
                 # with the meshes as they are now: steps recorded from here on belong to them, and
                 # crash recovery must not take this history for a stale one again (D82)

@@ -4,7 +4,9 @@
     settle (no capture, no evaluation, no walk over the objects, no id lookups);
   - a depsgraph update with the scene recorded doesn't search for every recorded object's id;
   - one commit reads bpy.data.objects for its id lookups at most once;
-  - prime() (after loading a file) reads each recorded mesh once.
+  - prime() (after loading a file) reads each recorded mesh once;
+  - opening a file hashes each recorded mesh once to tell whether it changed without Hindsight (R045:
+    it was hashed twice when unchanged, the usual case).
 
 Timings for the same paths are in PERF_LOG.md ("Data recorder cost"); tests/test_bl_t1_perf.py holds
 the time budgets.
@@ -121,7 +123,29 @@ def test_prime_reads_each_mesh_once():
     assert n["read_mesh_snapshot"] == meshes, (n, meshes)
 
 
+def test_open_hashes_each_mesh_once():
+    import tempfile
+    H.fresh()
+    obs = []
+    for i in range(3):
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8, location=(i * 3, 0, 0))
+        ob = C.active_object
+        H.enter(ob, "SCULPT")
+        H.fake_stroke(ob, 1)
+        assert runtime.commit(ob) is not None
+        H.enter(ob, "OBJECT")
+        obs.append(ob.name)
+    path = os.path.join(tempfile.mkdtemp(prefix="hs_fp_"), "fp.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    with counting((runtime, "mesh_fingerprint")) as n:
+        bpy.ops.wm.open_mainfile(filepath=path)
+    assert all(runtime.history_of(bpy.data.objects[nm]) is not None for nm in obs)
+    assert not [x for x in runtime.load_notes if x[0] == "ERROR"], runtime.load_notes
+    assert n["mesh_fingerprint"] == 3, n
+
+
 for fn in (test_sculpting_only_timer_reads_nothing, test_depsgraph_update_does_not_search_every_id,
-           test_one_objects_read_per_commit, test_prime_reads_each_mesh_once):
+           test_one_objects_read_per_commit, test_prime_reads_each_mesh_once,
+           test_open_hashes_each_mesh_once):
     H.run(fn)
 H.finish()
