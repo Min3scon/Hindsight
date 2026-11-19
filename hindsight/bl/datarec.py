@@ -571,7 +571,10 @@ def tick() -> None:
     if not idle:
         check_exclusion()
     marker = _ops_marker()
-    finished = marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
+    # an operator ending adds itself to the list; a list that only got emptied is the undo step a UI
+    # drag or click pushed (Blender clears the list then): no operation ended, the settle path records it
+    finished = (marker is not None and marker != _OPS["marker"] and _OPS["marker"] is not None
+                and marker[0] > 0)
     if marker is not None and _OPS["marker"] is None:
         _OPS["marker"] = marker
     if not _DIRTY and not finished:

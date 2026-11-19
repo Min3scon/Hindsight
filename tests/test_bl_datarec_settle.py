@@ -210,10 +210,35 @@ def test_a_drag_back_to_the_start_leaves_no_step_after_a_crash():
     print("PASS test_a_drag_back_to_the_start_leaves_no_step_after_a_crash")
 
 
+def test_a_drag_after_an_operator_is_one_step():
+    """D147 in a real window (tests_ui/scenarios/s_addon.py): after any operator, the undo step a UI drag
+    pushes clears Blender's list of operators. That change of the list was taken for an operator ending,
+    so the end of the drag became a step of its own. A list that only got emptied is no operation."""
+    ob, uid = setup()
+    real = datarec._ops_marker
+    marker = [(1, 111)]                           # an operator ran before the drag (Bump, a menu item)
+    datarec._ops_marker = lambda: marker[0]
+    try:
+        datarec._OPS["marker"] = marker[0]
+        n0 = len(steps_of(ob))
+        update(ob, uid, 0.6)
+        for i, g in enumerate([0.44, 0.24, 0.23]):
+            advance(g)                            # the first gap: the timer commits in the middle
+            update(ob, uid, 0.65 + 0.05 * i)
+        marker[0] = (0, 0)                        # the drag's undo push cleared the operator list
+        advance(1.0)
+        e = steps_of(ob)
+        assert len(e) == n0 + 1, f"the drag made {len(e) - n0} steps: {[x.meta.get('label') for x in e]}"
+    finally:
+        datarec._ops_marker = real
+        teardown()
+    print("PASS test_a_drag_after_an_operator_is_one_step")
+
+
 if __name__ == "__main__":
     for t in (test_a_slow_drag_is_one_step, test_a_single_change_commits_after_the_settle_time,
               test_the_wait_follows_the_gap_between_updates, test_a_drag_back_to_where_it_started_leaves_no_step,
               test_only_the_newest_step_is_continued, test_a_merged_step_comes_back_after_a_crash,
-              test_a_drag_back_to_the_start_leaves_no_step_after_a_crash):
+              test_a_drag_back_to_the_start_leaves_no_step_after_a_crash, test_a_drag_after_an_operator_is_one_step):
         H.run(t)
     H.finish()
