@@ -1469,15 +1469,155 @@ _SLOT_TYPES = {"OB": "OBJECT", "ME": "MESH", "MA": "MATERIAL", "WO": "WORLD", "S
                "LA": "LIGHT", "KE": "KEY", "NT": "NODETREE", "CU": "CURVE", "AR": "ARMATURE"}
 
 
+_TARGET_SKIP = frozenset(_UI_PROPS | {"id_type"})
+_STRIP_SKIP = frozenset(_UI_PROPS | {"select", "frame_start_raw", "frame_end_raw", "frame_start_ui", "frame_end_ui",
+                                     "strip_time", "action_slot_handle", "last_slot_identifier", "action_slot",
+                                     "name"})
+
+
+def _keys_of(fc) -> dict:
+    kp = fc.keyframe_points
+    n = len(kp)
+    r = {}
+    for f in _KEY_2:
+        buf = [0.0] * (2 * n)
+        kp.foreach_get(f, buf)
+        r[f] = buf
+    for f in _KEY_INT:
+        buf = [0] * n
+        kp.foreach_get(f, buf)
+        r[f] = buf
+    for f in _KEY_1:
+        buf = [0.0] * n
+        kp.foreach_get(f, buf)
+        r[f] = buf
+    return r
+
+
+def _set_keys(fc, r) -> None:
+    kp = fc.keyframe_points
+    n = len(r.get("interpolation") or ())
+    if len(kp) != n:
+        kp.clear()
+        kp.add(n)
+    if n:
+        for f in _KEY_2 + _KEY_INT + _KEY_1:
+            kp.foreach_set(f, r[f])
+    fc.update()
+
+
+def _driver_values(fc) -> dict:
+    d = fc.driver
+    out = {"path": fc.data_path, "index": int(fc.array_index), "mute": bool(fc.mute),
+           "type": d.type, "expression": d.expression, "use_self": bool(d.use_self), "keys": _keys_of(fc)}
+    out["vars"] = [{"name": v.name, "type": v.type,
+                    "targets": [dict(struct_values(t, _TARGET_SKIP), id_type=t.id_type) for t in v.targets]}
+                   for v in d.variables]
+    return out
+
+
+def _nla_values(ad) -> list:
+    out = []
+    for t in ad.nla_tracks:
+        strips = []
+        for st in t.strips:
+            v = struct_values(st, _STRIP_SKIP)
+            slot = getattr(st, "action_slot", None)
+            v["slot"] = slot.identifier if slot is not None else None
+            strips.append([st.name, v])
+        out.append({"name": t.name, "mute": bool(t.mute), "is_solo": bool(t.is_solo), "lock": bool(t.lock),
+                    "strips": strips})
+    return out
+
+
 def anim_values(ob):
-    """How the object plays its action, or None when it has no animation data."""
+    """How the object plays its action, its drivers and its NLA tracks, or None when it has no
+    animation data."""
     ad = ob.animation_data
     if ad is None:
         return None
     v = struct_values(ad, _AD_SKIP)
     slot = getattr(ad, "action_slot", None)
     v["slot"] = slot.identifier if slot is not None else None
+    if len(ad.drivers):
+        v["drivers"] = [_driver_values(fc) for fc in ad.drivers]
+    if len(ad.nla_tracks):
+        v["nla"] = _nla_values(ad)
     return v
+
+
+def _write_drivers(ob, ad, want: list) -> None:
+    if [(_d["path"], _d["index"]) for _d in want] != [(f.data_path, f.array_index) for f in ad.drivers]:
+        for fc in list(ad.drivers):
+            ad.drivers.remove(fc)
+        for w in want:
+            try:
+                fc = ob.driver_add(w["path"], w["index"]) if w["index"] >= 0 else ob.driver_add(w["path"])
+            except Exception:
+                try:
+                    fc = ob.driver_add(w["path"])
+                except Exception as e:
+                    log.error_once(("driver_add", str(e)), f"could not restore a driver: {e}", e)
+                    continue
+            if isinstance(fc, list):
+                fc = fc[0]
+    by = {(f.data_path, f.array_index): f for f in ad.drivers}
+    for w in want:
+        fc = by.get((w["path"], w["index"]))
+        if fc is None:
+            continue
+        cur = _driver_values(fc)
+        if cur == w:
+            continue
+        d = fc.driver
+        fc.mute = w.get("mute", False)
+        d.type = w["type"]
+        d.expression = w.get("expression", "")
+        d.use_self = w.get("use_self", False)
+        while len(d.variables):
+            d.variables.remove(d.variables[0])
+        for vw in w.get("vars") or ():
+            v = d.variables.new()
+            v.name = vw["name"]
+            v.type = vw["type"]
+            for t, tw in zip(v.targets, vw.get("targets") or ()):
+                try:
+                    if t.id_type != tw.get("id_type", t.id_type):
+                        t.id_type = tw["id_type"]
+                except Exception:
+                    pass
+                set_struct_values(t, {k: x for k, x in tw.items() if k != "id_type"})
+        _set_keys(fc, w.get("keys") or {})
+
+
+def _write_nla(ad, want: list) -> None:
+    shape = [(t["name"], [n for n, _v in t["strips"]]) for t in want]
+    if shape != [(t.name, [s.name for s in t.strips]) for t in ad.nla_tracks]:
+        for t in list(ad.nla_tracks):
+            ad.nla_tracks.remove(t)
+        for tw in want:
+            t = ad.nla_tracks.new()
+            t.name = tw["name"]
+            for name, sv in tw["strips"]:
+                ref = (sv.get("action") or {}).get("ref")
+                act = idmap.find(ref) if ref else None
+                if act is None:
+                    continue
+                try:
+                    st = t.strips.new(name, int(sv.get("frame_start", 1)), act)
+                except Exception as e:
+                    log.error_once(("nla_strip", str(e)), f"could not restore an NLA strip: {e}", e)
+    for t, tw in zip(ad.nla_tracks, want):
+        t.mute, t.lock = tw.get("mute", False), tw.get("lock", False)
+        if t.is_solo != tw.get("is_solo", False):
+            t.is_solo = tw.get("is_solo", False)
+        for st, (name, sv) in zip(t.strips, tw["strips"]):
+            set_struct_values(st, {k: x for k, x in sv.items() if k != "slot"})
+            ident = sv.get("slot")
+            if ident and hasattr(st, "action_slot") and st.action is not None:
+                slot = _slot_of(st.action, ident)
+                if slot is not None and st.action_slot != slot:
+                    st.action_slot = slot
 
 
 def _slot_of(action, ident):
@@ -1492,23 +1632,10 @@ def action_record(action, ident) -> dict:
         return per[ident]
     rows = []
     for fc in _fcurves(action, _slot_of(action, ident)):
-        kp = fc.keyframe_points
-        n = len(kp)
         r = {"path": fc.data_path, "index": int(fc.array_index),
              "group": fc.group.name if fc.group is not None else "", "mute": bool(fc.mute),
              "extrapolation": fc.extrapolation, "lock": bool(fc.lock)}
-        for f in _KEY_2:
-            buf = [0.0] * (2 * n)
-            kp.foreach_get(f, buf)
-            r[f] = buf
-        for f in _KEY_INT:
-            buf = [0] * n
-            kp.foreach_get(f, buf)
-            r[f] = buf
-        for f in _KEY_1:
-            buf = [0.0] * n
-            kp.foreach_get(f, buf)
-            r[f] = buf
+        r.update(_keys_of(fc))
         rows.append(r)
     rec = {"name": action.name, "fcurves": rows}
     _ACT_CACHE.setdefault(action.session_uid, {})[ident] = rec
@@ -1596,18 +1723,11 @@ def write_action(key: str, rec) -> None:
                     if r.get("group"):
                         g = cb.groups.get(r["group"]) or cb.groups.new(r["group"])
                         fc.group = g
-            kp = fc.keyframe_points
-            n = len(r["interpolation"])
-            if len(kp) != n:
-                kp.clear()
-                kp.add(n)
-            for f in _KEY_2 + _KEY_INT + _KEY_1:
-                kp.foreach_set(f, r[f])
             fc.mute = r.get("mute", False)
             fc.lock = r.get("lock", False)
             if fc.extrapolation != r.get("extrapolation", fc.extrapolation):
                 fc.extrapolation = r["extrapolation"]
-            fc.update()
+            _set_keys(fc, r)
         _ACT_CACHE.pop(a.session_uid, None)
     except Exception as e:
         log.error_once(("action", str(e)), f"could not restore the animation {rec.get('name')}: {e}", e)
@@ -1616,8 +1736,14 @@ def write_action(key: str, rec) -> None:
 def write_anim(ob, want) -> None:
     try:
         if want is None:
-            if ob.animation_data is not None and ob.animation_data.action is not None:
-                ob.animation_data.action = None       # keyed later than this: not played (drivers stay)
+            ad = ob.animation_data
+            if ad is not None:                     # animated later than this: nothing plays then
+                if ad.action is not None:
+                    ad.action = None
+                for fc in list(ad.drivers):
+                    ad.drivers.remove(fc)
+                for t in list(ad.nla_tracks):
+                    ad.nla_tracks.remove(t)
             return
         ad = ob.animation_data or ob.animation_data_create()
         ref = (want.get("action") or {}).get("ref")
@@ -1629,7 +1755,11 @@ def write_anim(ob, want) -> None:
             slot = _slot_of(act, ident)
             if slot is not None and ad.action_slot != slot:
                 ad.action_slot = slot
-        set_struct_values(ad, {k: v for k, v in want.items() if k not in ("action", "slot")})
+        set_struct_values(ad, {k: v for k, v in want.items() if k not in ("action", "slot", "drivers", "nla")})
+        if want.get("drivers") or len(ad.drivers):
+            _write_drivers(ob, ad, want.get("drivers") or [])
+        if want.get("nla") or len(ad.nla_tracks):
+            _write_nla(ad, want.get("nla") or [])
     except Exception as e:
         log.error_once(("anim", str(e)), f"could not restore which animation {ob.name} plays: {e}", e)
 

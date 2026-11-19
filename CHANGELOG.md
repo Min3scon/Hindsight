@@ -59,7 +59,7 @@ Fixed:
 - Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, the active camera, and the world with its node tree.
 - Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers and light probes, and a mesh's remesh settings.
 - Record everything records posing: each bone's location, rotation, scale, constraints and custom properties, and the armature's Pose or Rest Position.
-- Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, and which action an object plays.
+- Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks.
 - Library overrides keep their history when the file is opened again.
 - Record everything: adding, removing, renaming and reordering vertex groups and shape keys, and switching the active UV map, now come back when you go back and forward.
 - A mesh changed while Hindsight wasn't running keeps its history when Blender's backup copy of the file (.blend1) still holds the mesh as Hindsight saved it: the change becomes one step.

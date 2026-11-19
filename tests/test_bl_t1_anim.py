@@ -101,7 +101,69 @@ def test_frame_change_is_not_a_step_and_gone_action_is_made_again():
     assert anim_state(a) == keyed, (anim_state(a), keyed)
 
 
+def drv_state(ob):
+    ad = ob.animation_data
+    if ad is None:
+        return ((), ())
+    drv = tuple((f.data_path, f.array_index, f.driver.type, f.driver.expression,
+                 tuple((v.name, v.type, tuple((t.id.name if t.id else None, t.data_path) for t in v.targets))
+                       for v in f.driver.variables)) for f in ad.drivers)
+    nla = tuple((t.name, t.mute, tuple((s.name, round(s.frame_start, 3), s.action.name if s.action else None)
+                                       for s in t.strips)) for t in ad.nla_tracks)
+    return (drv, nla)
+
+
+def test_drivers_and_nla():
+    L.fresh_scene()
+    a, b = bpy.data.objects["A"], bpy.data.objects["B"]
+    act = bpy.data.actions.new("Walk")
+    act.use_fake_user = True
+    L.track_all()
+    L.tick_like("baseline")
+    states = [drv_state(a)]
+
+    def op(label, fn):
+        fn()
+        L.tick_like(label)
+        states.append(drv_state(a))
+
+    def add_driver():
+        fc = a.driver_add("scale", 0)
+        v = fc.driver.variables.new()
+        v.name = "x"
+        v.targets[0].id = b
+        v.targets[0].data_path = "location.x"
+        fc.driver.expression = "x * 2"
+    op("driver", add_driver)
+    op("expression", lambda: setattr(a.animation_data.drivers[0].driver, "expression", "x + 1"))
+
+    def add_var():
+        v = a.animation_data.drivers[0].driver.variables.new()
+        v.name = "y"
+        v.targets[0].id = b
+        v.targets[0].data_path = "location.y"
+    op("variable", add_var)
+
+    def strip():
+        t = a.animation_data.nla_tracks.new()
+        t.name = "Base"
+        t.strips.new("Walk", 1, act)
+    op("strip", strip)
+    op("mute track", lambda: setattr(a.animation_data.nla_tracks[0], "mute", True))
+    op("remove driver", lambda: a.animation_data.drivers.remove(a.animation_data.drivers[0]))
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(a)
+    for pos in list(range(len(h.entries), -1, -1)) + list(range(len(h.entries) + 1)):
+        runtime._goto_history(h, pos, True)
+        assert drv_state(a) in states, (pos, drv_state(a))
+    runtime._goto_history(h, 0, True)
+    assert drv_state(a) == states[0], (drv_state(a), states[0])
+    runtime._goto_history(h, len(h.entries), True)
+    assert drv_state(a) == states[-1], (drv_state(a), states[-1])
+
+
 if __name__ == "__main__":
     H.run(test_keyframes_come_back)
     H.run(test_frame_change_is_not_a_step_and_gone_action_is_made_again)
+    H.run(test_drivers_and_nla)
     H.finish()
