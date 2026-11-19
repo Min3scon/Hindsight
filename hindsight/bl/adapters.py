@@ -485,6 +485,8 @@ class ObjectAdapter(Adapter):
                 out["slots"] = [int(idb.active_material_index)]   # what material_slots gives for none
         out.update(id_props(idb, animated_paths(idb) if idb.animation_data is not None else None))  # D114
         out[SETTINGS_KEY] = settings_of(idb, _OBJ_SETTINGS_SKIP)          # D117
+        if idb.type == "ARMATURE":
+            out[POSE_KEY] = pose_values(idb)                                 # D119
         d = idb.data
         if d is not None and d.library is None and _owns_data(idb, d):
             for k, v in id_props(d, animated_paths(d) if getattr(d, "animation_data", None) is not None
@@ -544,6 +546,8 @@ class ObjectAdapter(Adapter):
                 write_settings(idb.data, dv[DATA_VALUES], DATA_STRUCTS.get(idb.data.bl_rna.identifier) or ())
         if SETTINGS_KEY in values and values[SETTINGS_KEY] is not MISSING:
             write_settings(idb, values[SETTINGS_KEY])
+        if POSE_KEY in values and values[POSE_KEY] is not MISSING and idb.type == "ARMATURE":
+            write_pose(idb, values[POSE_KEY])
 
 
 # ----------------------------------------------------------------------------- materials (D112)
@@ -1192,19 +1196,21 @@ def _coll_from_ref(ref: str):
     return idmap.find(ref)
 
 
-def _write_constraints(ob, want: list) -> None:
-    have = [(c.type, c.name) for c in ob.constraints]
+def _write_constraints(ob, want: list, holder=None, base: str = "") -> None:
+    """Put a constraint stack back on ob (or on holder, a pose bone of ob, whose path is base)."""
+    st = holder if holder is not None else ob
+    have = [(c.type, c.name) for c in st.constraints]
     if have == [(w["type"], w["name"]) for w in want]:
-        pairs = list(zip(ob.constraints, want))
+        pairs = list(zip(st.constraints, want))
     else:
-        for c in list(ob.constraints):
-            ob.constraints.remove(c)
+        for c in list(st.constraints):
+            st.constraints.remove(c)
         # each constraint made gets its own recorded values: one that can't be made is left out
         # (zipping the stack with the recorded list gave every later one the wrong values)
         pairs = []
         for w in want:
             try:
-                c = ob.constraints.new(w["type"])
+                c = st.constraints.new(w["type"])
             except Exception as e:
                 log.error_once(("constraint_new", str(e)), f"could not restore a constraint: {e}", e)
                 continue
@@ -1214,7 +1220,76 @@ def _write_constraints(ob, want: list) -> None:
                 log.error_once(("constraint_name", str(e)), f"could not name a restored constraint: {e}", e)
             pairs.append((c, w))
     for c, w in pairs:
-        set_struct_values(c, w.get("values") or {}, ob, f'constraints["{c.name}"].')
+        set_struct_values(c, w.get("values") or {}, ob, f'{base}constraints["{c.name}"].')
+
+
+# ----------------------------------------------------------------------------- pose (D119)
+POSE_KEY = "pose"
+_POSE_FIELDS = (("location", 3), ("rotation_quaternion", 4), ("rotation_euler", 3),
+                ("rotation_axis_angle", 4), ("scale", 3))
+
+
+def pose_values(ob) -> dict:
+    """An armature object's pose: each pose bone's transform and rotation mode, its constraint stack
+    and its custom properties. What an animation or driver sets is ANIMATED."""
+    pose = ob.pose
+    if pose is None:
+        return {}
+    bones = pose.bones
+    n = len(bones)
+    flat = {}
+    for f, k in _POSE_FIELDS:
+        buf = [0.0] * (n * k)
+        bones.foreach_get(f, buf)
+        flat[f] = buf
+    anim = animated_slots(ob) if ob.animation_data is not None else {}
+    out = {}
+    for i, pb in enumerate(bones):
+        name = pb.name
+        row = {}
+        pre = f'pose.bones["{bpy.utils.escape_identifier(name)}"].' if anim else ""
+        for f, k in _POSE_FIELDS:
+            v = flat[f][i * k:(i + 1) * k]
+            idx = anim.get(pre + f) if anim else None
+            if idx:
+                v = [ANIMATED if j in idx else x for j, x in enumerate(v)]
+            row[f] = v
+        row["rotation_mode"] = pb.rotation_mode
+        if len(pb.constraints):
+            row["constraints"] = [{"type": c.type, "name": c.name,
+                                   "values": struct_values(c, anim=anim or None)} for c in pb.constraints]
+        props = _group_json(pb)
+        if props:
+            row["props"] = props
+        out[name] = row
+    return out
+
+
+def write_pose(ob, want: dict) -> None:
+    pose = ob.pose
+    if pose is None or not isinstance(want, dict):
+        return
+    for pb in pose.bones:
+        row = want.get(pb.name)
+        if row is None:
+            continue
+        try:
+            if pb.rotation_mode != row.get("rotation_mode", pb.rotation_mode):
+                pb.rotation_mode = row["rotation_mode"]
+            for f, _k in _POSE_FIELDS:
+                v = row.get(f)
+                if not v:
+                    continue
+                cur = list(getattr(pb, f))
+                new = [c if x == ANIMATED else x for x, c in zip(v, cur)]
+                if new != cur:
+                    setattr(pb, f, new)
+            if row.get("constraints") or len(pb.constraints):
+                _write_constraints(ob, row.get("constraints") or [], holder=pb,
+                                   base=f'pose.bones["{bpy.utils.escape_identifier(pb.name)}"].')
+            _write_group(pb, row.get("props") or {})
+        except Exception as e:
+            log.error_once(("pose", str(e)), f"could not restore the pose of {pb.name}: {e}", e)
 
 
 # Object settings a body leaves out: the name, data and parent are set on their own; matrices and
@@ -1281,7 +1356,7 @@ _DATA_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {
 # data types whose settings are recorded, with the settings structs they keep apart
 DATA_STRUCTS = {"Mesh": (), "Camera": ("dof", "stereo"), "SpotLight": (), "PointLight": (), "SunLight": (),
                 "AreaLight": (), "Curve": (), "TextCurve": (), "SurfaceCurve": (), "MetaBall": (),
-                "Speaker": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
+                "Speaker": (), "Armature": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
                 "LightProbeVolume": ()}
 SETTINGS_KEY = "settings"
 DATA_VALUES = "values"
