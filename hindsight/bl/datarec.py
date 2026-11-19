@@ -687,18 +687,25 @@ def _data_diff(old: dict, new: dict) -> dict:
     """_diff without the values that only come and go with ownership (see _owner_moves): after
     Blender's undo another object can own a shared mesh than when the history was made."""
     out = _diff(old, new)
-    for k in [k for k, (a, b) in out.items()
-              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+    for k in _moves_only(out):
         del out[k]
     return out
+
+
+def _moves_only(changes: dict) -> list:
+    """The keys of changes that only come and go with ownership. An action that appears or goes
+    while the object starts or stops playing one (the first keyframe, D120) is a change of its own."""
+    assigned = ("object", adapters.ANIM_KEY) in changes
+    return [k for k, (a, b) in changes.items()
+            if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])
+            and not (assigned and k[1].startswith(adapters.ACT_PREFIX))]
 
 
 def _owner_moves(st, changes: dict) -> None:
     """Values an object records for data it owns (its mesh's properties, the materials it records)
     come and go with the ownership: another user deleted, a material put in a slot. That isn't a change
     of the data, so it only becomes the new baseline (no step)."""
-    for k in [k for k, (a, b) in changes.items()
-              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+    for k in _moves_only(changes):
         _a, b = changes.pop(k)
         if b is MISSING:
             st.values.pop(k, None)

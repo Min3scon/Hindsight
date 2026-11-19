@@ -487,6 +487,9 @@ class ObjectAdapter(Adapter):
         out[SETTINGS_KEY] = settings_of(idb, _OBJ_SETTINGS_SKIP)          # D117
         if idb.type == "ARMATURE":
             out[POSE_KEY] = pose_values(idb)                                 # D119
+        out[ANIM_KEY] = anim_values(idb)                                     # D120
+        if idb.animation_data is not None:
+            out.update(owned_action(idb))
         d = idb.data
         if d is not None and d.library is None and _owns_data(idb, d):
             for k, v in id_props(d, animated_paths(d) if getattr(d, "animation_data", None) is not None
@@ -546,6 +549,11 @@ class ObjectAdapter(Adapter):
                 write_settings(idb.data, dv[DATA_VALUES], DATA_STRUCTS.get(idb.data.bl_rna.identifier) or ())
         if SETTINGS_KEY in values and values[SETTINGS_KEY] is not MISSING:
             write_settings(idb, values[SETTINGS_KEY])
+        for path, v in values.items():          # D120: the actions, then which one it plays
+            if path.startswith(ACT_PREFIX) and v is not MISSING:
+                write_action(path, v)
+        if ANIM_KEY in values and values[ANIM_KEY] is not MISSING:
+            write_anim(idb, values[ANIM_KEY])
         if POSE_KEY in values and values[POSE_KEY] is not MISSING and idb.type == "ARMATURE":
             write_pose(idb, values[POSE_KEY])
 
@@ -589,6 +597,7 @@ def material_changed(idb) -> str | None:
 
 def forget_materials() -> None:
     _VAL_CACHE.clear()
+    _ACT_CACHE.clear()
     _MAT_CACHE.clear()
     _MAT_OWNER_OF.clear()
     _TREE_MAT.clear()
@@ -1381,6 +1390,9 @@ def forget_selected_values() -> None:
             _VAL_CACHE.pop(o.session_uid, None)
             if o.data is not None:
                 _VAL_CACHE.pop(o.data.session_uid, None)
+            ad = o.animation_data
+            if ad is not None and ad.action is not None:
+                _ACT_CACHE.pop(ad.action.session_uid, None)
         except Exception:
             continue
 
@@ -1388,6 +1400,7 @@ def forget_selected_values() -> None:
 def value_changed(idb) -> None:
     try:
         _VAL_CACHE.pop(idb.session_uid, None)
+        _ACT_CACHE.pop(idb.session_uid, None)
     except Exception:
         pass
 
@@ -1438,11 +1451,194 @@ def write_settings(idb, v, nested=()) -> None:
         log.error_once(("settings", str(e)), f"could not restore the settings of {idb.name}: {e}", e)
 
 
+# ----------------------------------------------------------------------------- animation (D120)
+# Which action an object plays (and its slot on Blender 4.4+), how (blend, influence, extrapolation),
+# and the action itself: every F-curve of the object's slot with all its keyframes, read in bulk. An
+# action is recorded with the first recorded object by name that plays it with that slot, and kept
+# until the depsgraph says it changed (keyframe edits tell it) or an operator ends with a user of it
+# selected.
+ANIM_KEY = "anim"
+ACT_PREFIX = "@act:"
+_AD_SKIP = frozenset(_UI_PROPS | {"action_tweak_storage", "action_slot_handle_tweak_storage", "use_tweak_mode",
+                                  "use_pin", "action_slot_handle", "last_slot_identifier", "action_slot"})
+_KEY_2 = ("co", "handle_left", "handle_right")
+_KEY_INT = ("interpolation", "type", "handle_left_type", "handle_right_type", "easing")
+_KEY_1 = ("back", "amplitude", "period")
+_ACT_CACHE: dict = {}          # action session_uid -> {slot identifier: record}
+_SLOT_TYPES = {"OB": "OBJECT", "ME": "MESH", "MA": "MATERIAL", "WO": "WORLD", "SC": "SCENE", "CA": "CAMERA",
+               "LA": "LIGHT", "KE": "KEY", "NT": "NODETREE", "CU": "CURVE", "AR": "ARMATURE"}
+
+
+def anim_values(ob):
+    """How the object plays its action, or None when it has no animation data."""
+    ad = ob.animation_data
+    if ad is None:
+        return None
+    v = struct_values(ad, _AD_SKIP)
+    slot = getattr(ad, "action_slot", None)
+    v["slot"] = slot.identifier if slot is not None else None
+    return v
+
+
+def _slot_of(action, ident):
+    if not ident or not hasattr(action, "slots"):
+        return None
+    return next((x for x in action.slots if x.identifier == ident), None)
+
+
+def action_record(action, ident) -> dict:
+    per = _ACT_CACHE.get(action.session_uid)
+    if per is not None and ident in per:
+        return per[ident]
+    rows = []
+    for fc in _fcurves(action, _slot_of(action, ident)):
+        kp = fc.keyframe_points
+        n = len(kp)
+        r = {"path": fc.data_path, "index": int(fc.array_index),
+             "group": fc.group.name if fc.group is not None else "", "mute": bool(fc.mute),
+             "extrapolation": fc.extrapolation, "lock": bool(fc.lock)}
+        for f in _KEY_2:
+            buf = [0.0] * (2 * n)
+            kp.foreach_get(f, buf)
+            r[f] = buf
+        for f in _KEY_INT:
+            buf = [0] * n
+            kp.foreach_get(f, buf)
+            r[f] = buf
+        for f in _KEY_1:
+            buf = [0.0] * n
+            kp.foreach_get(f, buf)
+            r[f] = buf
+        rows.append(r)
+    rec = {"name": action.name, "fcurves": rows}
+    _ACT_CACHE.setdefault(action.session_uid, {})[ident] = rec
+    return rec
+
+
+def action_owner_map() -> dict:
+    """(action pointer, slot identifier) -> uid of the object that records that action (the first
+    recorded object by name that plays it). Kept for one recorder frame."""
+    fc = idmap.frame_cache()
+    if fc is not None and "act_owner" in fc:
+        return fc["act_owner"]
+    from . import datarec
+    users = []
+    for u in datarec.tracked_uids():
+        ob = idmap.find(u)
+        ad = getattr(ob, "animation_data", None) if isinstance(ob, bpy.types.Object) else None
+        if ad is not None and ad.action is not None and ad.action.library is None:
+            slot = getattr(ad, "action_slot", None)
+            users.append((ob.name, u, ad.action.as_pointer(), slot.identifier if slot is not None else None))
+    out = {}
+    for _n, u, ap, ident in sorted(users, key=lambda t: t[0]):
+        out.setdefault((ap, ident), u)
+    if fc is not None:
+        fc["act_owner"] = out
+    return out
+
+
+def owned_action(ob) -> dict:
+    ad = ob.animation_data
+    if ad is None or ad.action is None or ad.action.library is not None:
+        return {}
+    a = ad.action
+    slot = getattr(ad, "action_slot", None)
+    ident = slot.identifier if slot is not None else None
+    if a.users > 1 + bool(a.use_fake_user):
+        if action_owner_map().get((a.as_pointer(), ident)) != idmap.uid_of(ob):
+            return {}
+    au = idmap.claim(a)
+    if not au:
+        return {}
+    return {ACT_PREFIX + au + "|" + (ident or ""): action_record(a, ident)}
+
+
+def _fcurve_coll(action, ident, create: bool):
+    if hasattr(action, "slots"):                       # Blender 4.4+: layered actions, a slot's channels
+        from bpy_extras import anim_utils
+        slot = _slot_of(action, ident)
+        if slot is None:
+            if not create or not ident:
+                return None, None
+            slot = action.slots.new(id_type=_SLOT_TYPES.get(ident[:2], "OBJECT"), name=ident[2:])
+        cb = (anim_utils.action_ensure_channelbag_for_slot(action, slot) if create
+              else anim_utils.action_get_channelbag_for_slot(action, slot))
+        return (cb.fcurves if cb is not None else None), cb
+    return action.fcurves, None
+
+
+def write_action(key: str, rec) -> None:
+    if not isinstance(rec, dict):
+        return
+    au, _sep, ident = key[len(ACT_PREFIX):].partition("|")
+    ident = ident or None
+    a = idmap.find(au)
+    try:
+        if a is None:
+            # gone from the file (nothing used it when it was saved): made again under its id
+            a = bpy.data.actions.new(rec.get("name") or "Action")
+            a[idmap.UID_PROP] = au
+            idmap.note(a, au)
+        _ACT_CACHE.pop(a.session_uid, None)
+        coll, cb = _fcurve_coll(a, ident, create=True)
+        if coll is None:
+            return
+        want = {(r["path"], r["index"]): r for r in rec.get("fcurves") or ()}
+        for fc in [f for f in coll if (f.data_path, f.array_index) not in want]:
+            coll.remove(fc)
+        for r in rec.get("fcurves") or ():
+            fc = coll.find(r["path"], index=r["index"])
+            if fc is None:
+                if cb is None:
+                    fc = coll.new(r["path"], index=r["index"], action_group=r.get("group") or "")
+                else:
+                    fc = coll.new(r["path"], index=r["index"])
+                    if r.get("group"):
+                        g = cb.groups.get(r["group"]) or cb.groups.new(r["group"])
+                        fc.group = g
+            kp = fc.keyframe_points
+            n = len(r["interpolation"])
+            if len(kp) != n:
+                kp.clear()
+                kp.add(n)
+            for f in _KEY_2 + _KEY_INT + _KEY_1:
+                kp.foreach_set(f, r[f])
+            fc.mute = r.get("mute", False)
+            fc.lock = r.get("lock", False)
+            if fc.extrapolation != r.get("extrapolation", fc.extrapolation):
+                fc.extrapolation = r["extrapolation"]
+            fc.update()
+        _ACT_CACHE.pop(a.session_uid, None)
+    except Exception as e:
+        log.error_once(("action", str(e)), f"could not restore the animation {rec.get('name')}: {e}", e)
+
+
+def write_anim(ob, want) -> None:
+    try:
+        if want is None:
+            if ob.animation_data is not None and ob.animation_data.action is not None:
+                ob.animation_data.action = None       # keyed later than this: not played (drivers stay)
+            return
+        ad = ob.animation_data or ob.animation_data_create()
+        ref = (want.get("action") or {}).get("ref")
+        act = idmap.find(ref) if ref else None
+        if ad.action != act:
+            ad.action = act
+        ident = want.get("slot")
+        if act is not None and ident and hasattr(ad, "action_slot"):
+            slot = _slot_of(act, ident)
+            if slot is not None and ad.action_slot != slot:
+                ad.action_slot = slot
+        set_struct_values(ad, {k: v for k, v in want.items() if k not in ("action", "slot")})
+    except Exception as e:
+        log.error_once(("anim", str(e)), f"could not restore which animation {ob.name} plays: {e}", e)
+
+
 def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
         return path == "settings" or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
-    return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX))
+    return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX))
 
 
 def _owns_data(ob, d) -> bool:
