@@ -15,6 +15,7 @@ import time
 import bpy
 
 from ..core.history import DATA_MARK, MeshState
+from ..core.native import ENGINE as _ENGINE
 from ..core.types import DATA, JOURNAL_CODEC, MISSING, DataChange, Entry, Step
 from . import adapters, guard, idmap, log, rigmark
 
@@ -733,12 +734,21 @@ def _edit_step(label: str, deep: bool = True) -> None:
                 break
 
 
+_STRICT_SAME = _ENGINE.same_values    # R070: exact types, floats by bits, dicts in the same key order
+
+
 def _same_values(old: dict, new: dict) -> bool:
     """True only if the two value dicts are identical: same keys, same types, floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
     _diff finds nothing. False says nothing: _diff decides."""
     if len(old) != len(new):
         return False
     try:
+        # R070: the engine's strict comparison walks both dicts at once (a value that is the same
+        # object on both sides is equal at once). True means marshal would find them equal too;
+        # False (another key order, a type it doesn't know, a real change) says nothing, and the
+        # marshal compare below decides as before
+        if _STRICT_SAME(old, new):
+            return True
         if old.keys() != new.keys():
             return False
         # a value that is the same object on both sides (kept records: a material's until the
