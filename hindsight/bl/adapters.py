@@ -2741,7 +2741,9 @@ def assignment_path(path: str) -> bool:
 def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
-        return path in ("settings", COMP_TREE) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX, NGA_PREFIX))
+        # (the scene's loose node groups are not: they coming and going is a step, D152, like D151's data)
+        # (the inventories coming and going, as Movie Mode stops the capture of them, is no step either)
+        return path in ("settings", COMP_TREE, INV_LOOSE, INV_GROUPS) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
                                                        SK_PREFIX, MATA_PREFIX, NG_PREFIX, NGA_PREFIX, PART_PREFIX))
 
@@ -3289,6 +3291,7 @@ class SceneAdapter(Adapter):
                         write_anim_of(w, v["anim"])
                     if isinstance(v.get("tree_anim"), dict) and getattr(w, "node_tree", None) is not None:
                         write_anim_of(w.node_tree, v["tree_anim"])
+        _make_loose_again(values, recorded)       # D152: what was deleted since is made again first
         for path, v in values.items():          # D133: groups no object uses
             if path.startswith(NG_PREFIX) and isinstance(v, dict):
                 write_group(path[len(NG_PREFIX):], v)
@@ -3300,6 +3303,7 @@ class SceneAdapter(Adapter):
                 ng = idmap.find(path[len(NGA_PREFIX):])
                 if ng is not None:
                     write_anim_of(ng, v)
+        _queue_loose_removals(idb, values)        # D152: what was made since goes after the jump
         if COMP_TREE in values and isinstance(values[COMP_TREE], dict) and getattr(idb, "node_tree", None) is not None:
             try:
                 write_tree(idb.node_tree, values[COMP_TREE])
@@ -3455,10 +3459,14 @@ def scene_groups(sc) -> dict:
     nt = getattr(sc, "node_tree", None)          # Blender 4: the compositor's own tree
     if nt is not None:
         out[COMP_TREE] = capture_tree(nt)
-    if (scenes and scenes[0] != sc.name) or not len(bpy.data.node_groups):
+    if scenes and scenes[0] != sc.name:
+        return out
+    if not len(bpy.data.node_groups):
+        out[INV_GROUPS] = []                                  # D152: nothing there (not "no information")
         return out
     used = group_owner_map()
     uid = idmap.uid_of(sc)
+    inv = []
     for g in bpy.data.node_groups:
         if g.library is not None or g.as_pointer() in used:
             continue
@@ -3466,6 +3474,9 @@ def scene_groups(sc) -> dict:
         if gu:
             out[NG_PREFIX + gu] = group_record(g, uid)
             out[NGA_PREFIX + gu] = anim_of(g)                # D146
+            out[META_PREFIX + gu] = ["ng", g.name, bool(g.use_fake_user), g.bl_idname]
+            inv.append(gu)
+    out[INV_GROUPS] = sorted(inv)
     return out
 
 
@@ -3475,6 +3486,10 @@ LMAT_PREFIX = "@lm:"       # a material no object uses (kept with a fake user, a
 LWORLD_PREFIX = "@lw:"     # a world no scene uses: material_record
 LPROPS_PREFIX = "@lp:"     # custom properties and add-on data of a datablock nothing else records: id_props
 LOOSE_PREFIXES = (TEXT_PREFIX, LMAT_PREFIX, LWORLD_PREFIX, LPROPS_PREFIX)
+# D152: what it takes to make one of these (and the node groups of D133) again, and which of them there were
+META_PREFIX = "@lx:"       # [kind "tx" | "lm" | "lw" | "ng", name, fake user, node tree bl_idname]
+INV_LOOSE = "@inv:loose"   # the ids of the texts, unused materials and worlds there are (sorted); [] when none
+INV_GROUPS = "@inv:groups"  # the same for the node groups no object uses (D133)
 LOOSE_READ_MAX = 32        # unused materials and worlds read again per operation, in turn (see forget_loose_data)
 _TEXT_PROPS = ("filepath", "use_module", "indentation")
 # Datablocks whose custom properties and add-on data no object records: their own, file-level data.
@@ -3506,6 +3521,7 @@ def scene_loose(sc) -> dict:
         return {}
     out = {}
     suid = idmap.uid_of(sc)
+    inv = []
     for t in bpy.data.texts:
         if t.library is not None or t.name == TEXT_NAME:
             continue
@@ -3513,10 +3529,15 @@ def scene_loose(sc) -> dict:
         if tu:
             out[TEXT_PREFIX + tu] = {"body": t.as_string(),
                                      "props": {k: normalise(getattr(t, k)) for k in _TEXT_PROPS}}
+            out[META_PREFIX + tu] = ["tx", t.name, bool(t.use_fake_user), ""]
+            inv.append(tu)
     for m in _loose_mats():
         mu = idmap.claim(m)
         if mu:
-            out[(LWORLD_PREFIX if isinstance(m, bpy.types.World) else LMAT_PREFIX) + mu] = material_record(m, suid)
+            world = isinstance(m, bpy.types.World)
+            out[(LWORLD_PREFIX if world else LMAT_PREFIX) + mu] = material_record(m, suid)
+            out[META_PREFIX + mu] = ["lw" if world else "lm", m.name, bool(m.use_fake_user), ""]
+            inv.append(mu)
             p = id_props(m)
             if p is not _ID_EMPTY4 and p is not _ID_EMPTY5:
                 out[LPROPS_PREFIX + mu] = p
@@ -3530,6 +3551,7 @@ def scene_loose(sc) -> dict:
             u = idmap.claim(idb)
             if u:
                 out[LPROPS_PREFIX + u] = p
+    out[INV_LOOSE] = sorted(inv)
     return out
 
 
@@ -3560,6 +3582,114 @@ def write_loose(path: str, v) -> None:
             write_material(uid, v)
     except Exception as e:
         log.error_once(("loose", path, str(e)), f"could not put back {getattr(idb, 'name', uid)}: {e}", e)
+
+
+_LOOSE_COLL = {"tx": "texts", "lm": "materials", "lw": "worlds", "ng": "node_groups"}
+_LOOSE_REC = {"tx": TEXT_PREFIX, "lm": LMAT_PREFIX, "lw": LWORLD_PREFIX, "ng": NG_PREFIX}
+_LOOSE_GONE: dict = {}      # uid -> kind: made after the position a jump went to; removed when the jump is done
+
+
+def _loose_meta(uid, values, recorded):
+    m = values.get(META_PREFIX + uid, MISSING)
+    if m is MISSING and recorded is not None:
+        m = recorded(META_PREFIX + uid)
+    return m if isinstance(m, (list, tuple)) and len(m) >= 4 else None
+
+
+def _make_loose_again(values: dict, recorded=None) -> None:
+    """D152: a text, unused material or world, or node group that was deleted since (its record is in the
+    values and nothing has its id) is made again with its name, fake user and id; the record is written
+    into it by the writers that follow. A name another datablock holds gets Blender's .001."""
+    for kind, pre in _LOOSE_REC.items():
+        for path, v in values.items():
+            if not path.startswith(pre) or not isinstance(v, dict):
+                continue
+            uid = path[len(pre):]
+            if idmap.find(uid) is not None:
+                _LOOSE_GONE.pop(uid, None)
+                continue
+            meta = _loose_meta(uid, values, recorded)
+            if meta is None or meta[0] != kind:
+                log.warn(f"a {kind} datablock can't be made again: its details weren't recorded")
+                continue
+            try:
+                coll = getattr(bpy.data, _LOOSE_COLL[kind])
+                idb = coll.new(meta[1], meta[3]) if kind == "ng" else coll.new(meta[1])
+                idb[idmap.UID_PROP] = uid
+                idmap.note(idb, uid)
+                note_name(idb, meta[1])
+                if meta[2]:
+                    idb.use_fake_user = True
+            except Exception as e:
+                log.error_once(("loose_new", kind, str(e)), f"could not make {meta[1]} again: {e}", e)
+
+
+def _loose_owner(sc) -> bool:
+    from . import datarec
+    scenes = sorted(x.name for x in bpy.data.scenes if x.library is None and datarec.is_tracked(x))
+    return not scenes or scenes[0] == sc.name
+
+
+def _queue_loose_removals(sc, values: dict) -> None:
+    """D152: a text, unused material or world, or node group that exists but isn't in the inventory the
+    jump went to was made after that position: it is removed when the jump is done (flush_loose_removals),
+    and only if nothing uses it then (objects a later step of the same jump brings back may)."""
+    todo = []
+    if isinstance(values.get(INV_LOOSE), list):
+        todo.append((values[INV_LOOSE], ("tx", "lm", "lw")))
+    if isinstance(values.get(INV_GROUPS), list):
+        todo.append((values[INV_GROUPS], ("ng",)))
+    if not todo or not _loose_owner(sc):
+        return
+    from .persistence import TEXT_NAME
+    for want, kinds in todo:
+        want = set(want)
+        for kind in kinds:
+            for idb in list(getattr(bpy.data, _LOOSE_COLL[kind])):
+                if idb.library is not None or (kind == "tx" and idb.name == TEXT_NAME):
+                    continue
+                u = idmap.uid_of(idb)
+                if u and u not in want:
+                    _LOOSE_GONE[u] = "lw" if isinstance(idb, bpy.types.World) else kind
+
+
+def _kept_by_record(idb, kind) -> bool:
+    """Used by something Hindsight records (an object, a scene): not a datablock to say anything about,
+    its own history has it."""
+    try:
+        if kind == "lm":
+            return idb.as_pointer() in material_owner_map()
+        if kind == "ng":
+            return idb.as_pointer() in group_owner_map() or any(
+                getattr(sc, "compositing_node_group", None) == idb or getattr(sc, "node_tree", None) == idb
+                for sc in bpy.data.scenes)
+        if kind == "lw":
+            return any(sc.world == idb for sc in bpy.data.scenes)
+    except Exception:
+        pass
+    return False
+
+
+def flush_loose_removals() -> None:
+    """D152: end of a jump: remove the datablocks it went back (or forward) over the making of, unless
+    something uses them now (never a datablock an object or scene uses: it is said in a note)."""
+    if not _LOOSE_GONE:
+        return
+    todo = dict(_LOOSE_GONE)
+    _LOOSE_GONE.clear()
+    for uid, kind in todo.items():
+        idb = idmap.find(uid)
+        if idb is None:
+            continue
+        try:
+            if not _unused(idb):
+                if not _kept_by_record(idb, kind):
+                    log.warn(f"{idb.name} was made after this point but can't be taken away: something uses it now")
+                continue
+            idmap.unnote(idb)
+            getattr(bpy.data, _LOOSE_COLL[kind]).remove(idb)
+        except Exception as e:
+            log.error_once(("loose_rm", uid, str(e)), f"could not take away {getattr(idb, 'name', uid)}: {e}", e)
 
 
 def forget_loose_data() -> None:
