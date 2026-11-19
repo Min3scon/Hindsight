@@ -126,6 +126,19 @@ def bytes_comparable(name) -> bool:
     return name != "zstd" or PY_ZSTD == ENGINE_ZSTD
 
 
+def same_recompressed(ra, rc, src_a, src_b) -> bool:
+    """recompress of the reference (ra, from src_a) and of the engine (rc, from src_b): the same bytes
+    where both have the same libzstd. With another libzstd (Blender 4.2 to 5.2 bundle older
+    python-zstandard builds, 4.2: 0.16.0 with libzstd 1.5.0) the strong setting writes other bytes, and
+    whether that is smaller than what is stored, the only thing that makes recompress return None,
+    can come out either way: then the step inside must be the same (None: the step as it was)."""
+    if PY_ZSTD == ENGINE_ZSTD:
+        return ra == rc
+    a, b = outcome(stepmod.step_from_bytes, src_a if ra is None else ra), \
+        outcome(stepmod.step_from_bytes, src_b if rc is None else rc)
+    return a[0] == b[0] and (a[0] != "ok" or stepmod.same_step(a[1], b[1]))
+
+
 def test_codec_bytes_equal_the_libraries():
     differ = []
     for name in NAMES:
@@ -230,10 +243,9 @@ def check_pair(st, name, effort, strong):
     ra, rc = ref_recompress(rb), stepmod.recompress(eb)
     if bytes_comparable(name):
         assert ra == rc, (st.seq, name, effort, strong, None if ra is None else len(ra), None if rc is None else len(rc))
-    else:                                   # the same decision, and the same step inside
-        assert (ra is None) == (rc is None), (st.seq, name, effort, strong)
-        if rc is not None:
-            assert stepmod.same_step(stepmod.step_from_bytes(ra), stepmod.step_from_bytes(rc))
+    else:                                   # another libzstd: the same step inside (see same_recompressed)
+        assert same_recompressed(ra, rc, rb, eb), (st.seq, name, effort, strong)
+        assert rc is None or stepmod.same_step(st, stepmod.step_from_bytes(rc))
     return len(eb)
 
 
@@ -275,7 +287,7 @@ def test_corpus():
         assert stepmod.same_step(e_step, r_step), row["name"]
         assert stepmod.read_header(b) == rstep.read_header(b), row["name"]
         kinds.add(e_step.kind)
-        assert stepmod.recompress(b) == ref_recompress(b), row["name"]
+        assert same_recompressed(ref_recompress(b), stepmod.recompress(b), b, b), row["name"]
         if row.get("legacy"):
             assert stepmod.version_of(b) == 1
             continue
@@ -359,6 +371,13 @@ def judge(b, stats):
     if ra[0] == "ok":
         assert ea[0] == "ok" and stepmod.same_step(ra[1], ea[1]), (str(ea)[:200] if ea[0] == "err" else "different data", b[:60])
         stats["both ok"] += 1
+    elif ea[0] == "ok" and PY_ZSTD != ENGINE_ZSTD and "decompression error" in str(ra[2:]):
+        # Another libzstd in python-zstandard (Blender 4.2: 1.5.0): the checksum was made again over
+        # the damage, and the older library finds a corrupted block in a frame the engine's libzstd
+        # decodes. What it decoded is an ordinary step: written again, it reads back the same.
+        again = stepmod.step_from_bytes(stepmod.step_to_bytes(ea[1], "zstd"))
+        assert stepmod.same_step(again, ea[1]), b[:60]
+        stats["older libzstd refused"] = stats.get("older libzstd refused", 0) + 1
     else:
         assert ea[0] == "err", ("the engine accepted what the reference refused", ra, b[:60])
         stats["both refuse"] += 1
@@ -372,8 +391,11 @@ def judge(b, stats):
         assert r1[1] is not None and e1[0] == "ok" and e1[1] is not None, (e1[:2], r1[:2])
         assert len(e1[1]) == len(r1[1]) and _time_bits(e1[1]) == _time_bits(b)       # (subnormal: never zero)
         stats["subnormal time kept"] = stats.get("subnormal time kept", 0) + 1
-    elif r1[0] == "ok":
+    elif r1[0] == "ok" and PY_ZSTD == ENGINE_ZSTD:
         assert e1 == r1, (b[:40], e1[:2], r1[:2])
+    elif r1[0] == "ok":
+        # another libzstd in python-zstandard: both succeed, with the same step inside
+        assert e1[0] == "ok" and same_recompressed(r1[1], e1[1], b, b), (b[:40], e1[:2], r1[:2])
     elif e1[0] == "ok" and e1[1] is not None:
         # The engine does not parse the JSON of extras and data records (they stay Python's): a
         # step whose JSON is damaged is stored again as it was, and refused when read, as before.
