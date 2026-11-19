@@ -243,7 +243,7 @@ DEFECTS.md).
 - `dev/reports/ponytail_audit.md`: items 1, 2, 3, 4, 5, 6, 9, 10, 11 and 13 were done by earlier work in
   this job (see `DEFECTS.md` D63 to D69 and `OPTIMISATION_LOG.md`); item 7 (dead code, about 60 lines) and
   item 8 (duplicate helpers) are open except as noted; item 12 is replaced by the Rust `diff`.
-- `tools/mutation_bl.py` compiles again, but mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
+- `tools/mutation_bl.py`: the 12 mutants whose text no longer matched (6 to 10, 18, 26, 28, 36, 45, 57, 61) were re-targeted; the tool now runs an unchanged control first and gives the Blender runs this checkout's engine (an engine-less Blender had "killed" every mutant at import). 12/12 killed in Blender 5.3.0, by five different test files. The other 66 weren't re-run.
 - `tests/oracle.py`: the one-line fix for the Blender 4.2 `parent_type` test failure (in
   `dev/reports/DATAREC.md` section 6) is not applied.
 - Edit Mode step cost: re-measured after R014 (L6): 14 to 18 ms at 100k vertices, 60 to 83 ms at 300k
