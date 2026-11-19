@@ -380,10 +380,38 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
             kb.data.foreach_set("co", co)
 
 
-def fingerprint(me, ob=None) -> str:
+X3 = "x3:"      # R060: tag of a fingerprint made with xxh3-128 (the engine's Hasher128); one without a tag
+                # is blake2b-128, what builds before R060 wrote into files and crash journals
+
+
+def _hasher(algo: str):
+    if algo == "x3":
+        from ..core.native import ENGINE
+        return ENGINE.Hasher128()
+    if algo == "blake2b":
+        return hashlib.blake2b(digest_size=16)
+    raise ValueError(f"unknown fingerprint algorithm {algo!r}")
+
+
+def print_algo(stored) -> str | None:
+    """The algorithm a stored fingerprint was made with: "x3", "blake2b" (untagged: written before the
+    tag existed), or None for a tag this build doesn't know (a newer one)."""
+    if not isinstance(stored, str):
+        return None
+    if stored.startswith(X3):
+        return "x3"
+    if ":" in stored[:8]:
+        return None
+    return "blake2b"
+
+
+def fingerprint(me, ob=None, algo: str = "x3") -> str:
     """A digest of the whole mesh as Hindsight records it (counts, topology, every recorded
     channel; with ob, its weights and shape keys too). Used to tell which recorded state Blender's
-    undo put back after a Hindsight jump."""
+    undo put back after a Hindsight jump, and to tell a mesh changed without Hindsight. algo "x3"
+    (xxh3-128, written "x3:" + 32 hex digits) is what is written now; "blake2b" (32 hex digits, no
+    tag) gives the form builds before R060 stored, to compare with such a value. Both hash the same
+    bytes in the same order."""
     # the same digest as hashing read_snapshot(me, ob=ob, extras=ob is not None), but each array is
     # read, hashed and let go in turn, so the whole mesh is never copied at once
     c = counts(me)
@@ -392,7 +420,7 @@ def fingerprint(me, ob=None) -> str:
         readers[key] = lambda key=key: read_channel(me, key)
     if ob is not None:
         readers.update({k: (lambda a=a: a) for k, a in read_extras(ob, me).items()})
-    h = hashlib.blake2b(digest_size=16)
+    h = _hasher(algo)
     h.update(repr(sorted(c.items())).encode())
     for key in sorted(readers):
         a = readers[key]()
@@ -402,7 +430,7 @@ def fingerprint(me, ob=None) -> str:
         h.update(key.encode() + b"\0" + str(a.dtype).encode() + b"\0")
         h.update(a.view(np.uint8))
         a = None                   # let it go before the next one is read
-    return h.hexdigest()
+    return (X3 if algo == "x3" else "") + h.hexdigest()
 
 
 def topology_equal(me, snap_counts: dict, snap_arrays: dict, deep=False) -> bool:

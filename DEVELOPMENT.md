@@ -111,7 +111,7 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 ### What runs in Rust today
 
-Engine `hindsight_native` 0.7.0, API 6 (0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
+Engine `hindsight_native` 0.8.0, API 7 (0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
 diff, apply, pack and unpack, its numpy code is `tests/reference/delta.py`; `record_step` exists and is
 tested but `runtime.commit` doesn't use it, since the stroke is already diffed once). The engine is required: if it
 can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
@@ -124,6 +124,7 @@ fails if anything under `hindsight/` imports them.
 | `apply_steps` (runs of DELTA steps, GIL released, helper threads) | `History.goto` |
 | codecs zstd, lz4, zlib, none | `core/codec.py` (facade) |
 | `crc32` (crc32fast, same values as zlib.crc32, API 6) | `core/crc.py`: registry, journal, step checksums |
+| `Hasher128` (xxh3-128 by xxhash-rust, streaming, GIL released for bytes of 64 KB and more, API 7) | `bl/meshio.fingerprint`: mesh fingerprints, written "x3:" + 32 hex digits (saved prints, the RESET of a mesh changed without Hindsight, Blender's undo after a jump); a value without a tag (earlier builds) is compared by hashing with blake2b again, an unknown tag is never a change |
 | step container: formats 1 to 4 read, 3 and 4 written, all step kinds, recompress, CRC | `core/step.py` (facade) |
 | errors `CorruptStep`, `CorruptBlob`, `CorruptDelta`, `NewerFormatError`, `EngineMissing` | `core/native.py` |
 
@@ -145,13 +146,13 @@ interface design (module layout, buffer ownership, error mapping, threading, mil
 | Step | Content | Status |
 |---|---|---|
 | R1 | Merge `apply_steps` (API 2) | done: merged in `f092d7c`, `tests/test_core_native_steps.py` passes |
-| R2 | Formats in Rust: step container (header, CRC, codecs zstd/lz4/zlib via zstd-safe, lz4_flex, miniz_oxide; extras JSON as bytes), journal framing and crash-tolerant reader, registry stream writer and reader (formats 1 to 4 read, 4 written); removes python-zstandard from the hot path | done as far as it pays: step container, codecs, delta and crc32 are in the engine (0.7.0, API 6); M5 measured reading the registry's steps and scanning the journal in Rust and reverted both (R051, R053: the reads are the kernel's copy); the checksum moved (R052). python-zstandard and lz4 aren't used |
+| R2 | Formats in Rust: step container (header, CRC, codecs zstd/lz4/zlib via zstd-safe, lz4_flex, miniz_oxide; extras JSON as bytes), journal framing and crash-tolerant reader, registry stream writer and reader (formats 1 to 4 read, 4 written); removes python-zstandard from the hot path | done as far as it pays: step container, codecs, delta, crc32 and the fingerprint hash are in the engine (0.8.0, API 7); M5 measured reading the registry's steps and scanning the journal in Rust and reverted both (R051, R053: the reads are the kernel's copy); the checksum moved (R052). python-zstandard and lz4 aren't used |
 | R3 | History engine: a `History` pyclass owning entries, cursor, goto planning and application through borrowed numpy buffers, caps, eviction and tier accounting, drop, truncate and join bookkeeping; Python keeps a thin facade | done as far as it pays: measured first, Python glue is about 3% of a jump (OPTIMISATION_LOG "Tried"), so no pyclass; `History.goto` crosses packed steps only through the engine's `apply_steps`, the Python loop is `tests/reference/history.py` |
 | R4 | Recording pipeline: one native `record()` per stroke (diff, pack, compress, journal append, GIL released, reusing the `foreach_get` buffers); fingerprints from arrays already read | partial: `record_step` exists in the engine (API 4) but commit doesn't use it (it would diff twice; saving below 4%, see "Tried"); the journal blob is lz4 (R043) |
 | R5 | Background packer as a Rust thread (zstd 19 off the GIL, idle policy kept) | not started |
 | R6 | Global timeline (incremental groups, transition), `framing.history_extents`, morph blending | not started |
 | Rust required | Python copies to `tests/reference/`, clear error panel if the module cannot load, never record with a broken engine | done: no Python path ships (`tests/reference/`), `EngineMissing` and the panel's engine message (`test_bl_engine_missing`), HINDSIGHT_NATIVE selects nothing any more |
-| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.7.0 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
+| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.8.0 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
 
 Stays Python (needs `bpy`): `foreach_get` and `foreach_set`, RNA capture in datarec and adapters,
 vertex group weight reads, handlers, UI and drawing, operators. Their cost is attacked by doing less
@@ -321,7 +322,7 @@ Other limits of the verification:
 
 ## f. Benchmarks
 
-- Measured rounds: `OPTIMISATION_LOG.md` (67 rows: 57 kept, 10 reverted). The target is at
+- Measured rounds: `OPTIMISATION_LOG.md` (68 rows: 58 kept, 10 reverted). The target is at
   least 100 rounds; the log is the only count.
 - Earlier prose and tables: `PERF_LOG.md` (compression format 3, tier 1 budgets, memory and the Rust
   question, Movie Mode playback, Rust engine, redraw cost, saving and the re-packer).
@@ -413,13 +414,13 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. R061 (Embed stores the history as bytes in `hindsight_data_bin`; base64 `hindsight_data` still read) is pushed as 710797c after full suites on 5.3 and 4.2 (109/111 each, only the two sandbox-only files); a054125 before it is green (Blender tests 44517505569, Native engine 44517510460); Blender tests run again on 710797c. The RUST agent works on R060 (mesh fingerprints as xxh3-128 in the engine with tagged values); review and merge.
+1. Pushed: R061 to R067 and the crash window scenario (bda759e, full suites 109/111 on 5.3 and 4.2 before it). R060 (engine 0.8.0, xxh3-128 mesh fingerprints) is merged on main-session-3: full suites with the 0.8.0 engine, then push and run both workflows (the wheels need the Native engine run).
 2. The recorder's remaining overhead at 500 objects (about 40 to 48 ms per operation): capture 31 ms spread over many small parts (none over 1 ms per 500 objects in the object adapter), `_same_values` 7.5 ms (two marshal dumps per object). Reading plain rows at once (R062) and keying values in C (R063) were measured and reverted. Next idea: a strict value comparison in the engine (type-exact, floats by bits) instead of two marshal dumps, once native/ is free.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
    (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (67 logged: 57 kept, 10 reverted; R060 on a branch). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; a native parse of the step table is the next step there).
+6. More optimisation rounds toward the owner's 100 (68 logged: 58 kept, 10 reverted). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; a native parse of the step table is the next step there).
 8. Next measured candidates (2026-11-19): (a) every recorded mesh keeps its baseline for good, 61 MB at 1M vertices, 49.5 MB of it topology (edge and corner indices) read only on topology changes and Edit Mode compares: kept packed it would be a few MB; 46 places read `MeshState.arrays`, several copy or iterate all of it, so it needs an audit; (b) the engine: a strict value comparison for the recorder (type-exact, floats by bits) instead of two marshal dumps per object (7.5 ms of an operation at 500 objects); a multi-threaded diff (a 2K texture stroke diffs 67 MB in 9 ms); (c) opening a history folder parses about 6 us per step in Python (1,000 steps: 16 ms of the 30 ms open).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.

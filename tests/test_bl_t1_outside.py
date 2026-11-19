@@ -8,9 +8,15 @@ mesh changed outside Hindsight (which the history can't rebuild) has its history
 message instead of being played back onto the wrong mesh. Saving and reopening normally, in every
 mode, never raises that alarm.
 
+R060: the mesh fingerprints saved are xxh3-128 ("x3:" + 32 hex digits). A file saved by a build before
+R060 holds blake2b values without a tag: opened, it behaves exactly as it did (the mesh is hashed the
+way the value was made). A tag this build doesn't know is never taken as a change.
+
 Run: blender -b --factory-startup --python tests/test_bl_t1_outside.py (or tests/run_tests.py).
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import contextlib
+import re
 import tempfile
 
 import bpy
@@ -149,12 +155,47 @@ def test_hidden_in_another_view_layer():
         assert a.hide_get(view_layer=vl1) and not a.hide_get(view_layer=vl2)
 
 
-def save_and_change_outside(path, change, keep_backup=True):
+def blake2b_print(ob):
+    """The fingerprint a build before R060 saved: meshio.fingerprint(..., algo="blake2b"), no tag."""
+    return runtime.mesh_fingerprint(ob, "blake2b")
+
+
+@contextlib.contextmanager
+def saved_prints_as(make):
+    """Saves inside the block write make(ob) as each recorded mesh's fingerprint (the form another build
+    wrote) instead of this build's value."""
+    real = runtime.saved_prints
+
+    def other_build():
+        out = real()
+        for u, rec in out.items():
+            if isinstance(rec, dict) and "mesh" in rec:
+                rec["mesh"] = make(idmap.find(u) or runtime.find_object(u))
+        return out
+    runtime.saved_prints = other_build
+    try:
+        yield
+    finally:
+        runtime.saved_prints = real
+
+
+def loaded_prints(form):
+    """The fingerprints the opened file holds (runtime.reg().saved) all have this form."""
+    vals = [r["mesh"] for r in runtime.reg().saved.values() if isinstance(r, dict) and "mesh" in r]
+    assert vals and all(re.fullmatch(form, v) for v in vals), (form, vals)
+
+
+OLD_FORM, X3_FORM = r"[0-9a-f]{32}", r"x3:[0-9a-f]{32}"
+
+
+def save_and_change_outside(path, change, keep_backup=True, prints=None):
     """Save with Hindsight, then without it change the file and save again, then open it with
-    Hindsight. keep_backup=False: Blender's backup copy (.blend1, D107) is removed first."""
+    Hindsight. keep_backup=False: Blender's backup copy (.blend1, D107) is removed first. prints: the
+    first save writes prints(ob) as each mesh's fingerprint (see saved_prints_as)."""
     SETTINGS.save_mode = "SIDECAR"
     T.select()
-    bpy.ops.wm.save_as_mainfile(filepath=path)
+    with saved_prints_as(prints) if prints else contextlib.nullcontext():
+        bpy.ops.wm.save_as_mainfile(filepath=path)
     hindsight.unregister()
     H._registered[0] = False
     change()
@@ -265,9 +306,116 @@ def test_saving_normally_never_raises_the_alarm():
     SETTINGS.save_mode = "SIDECAR"
 
 
+def test_blake2b_prints_saved_normally_never_raise_the_alarm():
+    """R060: a file saved by a build before R060 (fingerprints blake2b, no tag) in Object, Sculpt and Edit
+    Mode, opened with this build: nothing is left out, no step is added. Saved again by this build, the
+    values are "x3:", and opening that is quiet too."""
+    for mode, save_mode in (("OBJECT", "SIDECAR"), ("SCULPT", "EMBED"), ("EDIT", "BOTH")):
+        setup()
+        op(T.translate("A", (1, 0, 0)))
+        sculpt = H.make_mesh(800, name="Clay")
+        H.enter(sculpt, "SCULPT")
+        H.fake_stroke(sculpt, 3)
+        H.commit(sculpt)
+        H.enter(sculpt, "OBJECT")
+        for o in T.edit_ops("E", 4)[:2]:
+            op(o)
+        T.select()
+        target = {"OBJECT": None, "SCULPT": "Clay", "EDIT": "E"}[mode]
+        if target:
+            T.select(target)
+            bpy.ops.object.mode_set(mode=mode)
+        before = {h.uid: len(h.entries) for h in runtime.reg().histories.values()}
+        SETTINGS.save_mode = save_mode
+        path = os.path.join(tempfile.mkdtemp(prefix="hs_oldprints_"), f"old_prints_{mode.lower()}.blend")
+        with saved_prints_as(blake2b_print):
+            bpy.ops.wm.save_as_mainfile(filepath=path)
+        for form in (OLD_FORM, X3_FORM):
+            bpy.ops.wm.open_mainfile(filepath=path)
+            datarec.FORCE_SCOPE[0] = "EVERYTHING"
+            loaded_prints(form)
+            after = {h.uid: len(h.entries) for h in runtime.reg().histories.values()}
+            assert after == before, (mode, form, before, after)
+            assert not any("wasn't running" in t for _s, t in runtime.load_notes), (mode, form, runtime.load_notes)
+            bpy.ops.wm.save_as_mainfile(filepath=path)        # this build's values from here on
+    SETTINGS.save_mode = "SIDECAR"
+
+
+def test_mesh_changed_without_hindsight_against_blake2b_prints():
+    """R060: as test_mesh_changed_without_hindsight, the file saved by a build before R060."""
+    setup()
+    for o in (T.translate("A", (1, 0, 0)), T.edit_ops("A", 2)[0], T.leave_edit("A")):
+        op(o)
+    path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), "outside_mesh_old.blend")
+
+    def change():
+        a = bpy.data.objects["A"]
+        a.data.vertices[0].co.x += 1.0
+        a.data.update()
+    outside = save_and_change_outside(path, change, keep_backup=False, prints=blake2b_print)
+    loaded_prints(OLD_FORM)
+    a = bpy.data.objects["A"]
+    assert runtime.history_of(a) is None, "a history that can't match the mesh is left out"
+    assert any(runtime.OUTSIDE_MESH_TEXT.format(name="A") == t for _s, t in runtime.load_notes), runtime.load_notes
+    assert state() == outside
+
+
+def test_bridged_by_the_backup_against_blake2b_prints():
+    """R060: as test_mesh_changed_without_hindsight_bridged_by_the_backup, the file saved by a build
+    before R060: the backup copy's mesh is hashed with blake2b too, matches, and the change is one step."""
+    setup()
+    for o in (T.translate("A", (1, 0, 0)), T.edit_ops("A", 2)[0], T.leave_edit("A")):
+        op(o)
+    states = [state()]
+    h = runtime.history_of(bpy.data.objects["A"])
+    for pos in range(len(h.entries) + 1):
+        runtime._goto_history(h, pos, True)
+        states.append(state())
+    runtime._goto_history(h, len(h.entries), True)
+    path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), "outside_bridged_old.blend")
+
+    def change():
+        a = bpy.data.objects["A"]
+        a.data.vertices[0].co.x += 1.0
+        a.data.update()
+    outside = save_and_change_outside(path, change, prints=blake2b_print)
+    loaded_prints(OLD_FORM)
+    a = bpy.data.objects["A"]
+    h = runtime.history_of(a)
+    assert h is not None and h.entries[-1].load().label == runtime.OUTSIDE_LABEL, "one step for the change"
+    assert any(runtime.OUTSIDE_BRIDGED_TEXT.format(name="A") == t for _s, t in runtime.load_notes), runtime.load_notes
+    assert state() == outside
+    every_position_existed("A", states + [outside])
+
+
+def test_an_unknown_tag_is_never_a_change():
+    """R060: a fingerprint with a tag this build doesn't know (written by a newer build) is taken as
+    unchanged: the history is kept and nothing is said, also when the mesh did change (it can't be told)."""
+    for changed in (False, True):
+        setup()
+        for o in (T.translate("A", (1, 0, 0)), T.edit_ops("A", 2)[0], T.leave_edit("A")):
+            op(o)
+        n = len(runtime.history_of(bpy.data.objects["A"]).entries)
+        path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), f"unknown_tag_{changed}.blend")
+
+        def change():
+            if changed:
+                a = bpy.data.objects["A"]
+                a.data.vertices[0].co.x += 1.0
+                a.data.update()
+        outside = save_and_change_outside(path, change, keep_backup=False, prints=lambda ob: "zz:" + "0" * 32)
+        loaded_prints(r"zz:0{32}")
+        h = runtime.history_of(bpy.data.objects["A"])
+        assert h is not None and len(h.entries) == n, (changed, h and [e.meta.get("label") for e in h.entries])
+        assert not any("wasn't running" in t for _s, t in runtime.load_notes), (changed, runtime.load_notes)
+        assert state() == outside
+
+
 for fn in (test_record_everything_switched_off_and_on, test_paused_and_resumed, test_values_changed_without_hindsight,
            test_mesh_changed_without_hindsight, test_mesh_changed_without_hindsight_bridged_by_the_backup,
            test_saving_normally_never_raises_the_alarm,
-           test_excluded_by_collection_filtering, test_hidden_in_another_view_layer):
+           test_excluded_by_collection_filtering, test_hidden_in_another_view_layer,
+           test_blake2b_prints_saved_normally_never_raise_the_alarm, test_mesh_changed_without_hindsight_against_blake2b_prints,
+           test_bridged_by_the_backup_against_blake2b_prints, test_an_unknown_tag_is_never_a_change):
     H.run(fn)
 H.finish()
