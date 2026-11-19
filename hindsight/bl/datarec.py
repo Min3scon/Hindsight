@@ -365,7 +365,7 @@ def on_update(depsgraph) -> None:
         pass
     now = time.time()
     scenes = _scene_uids_in(uids)
-    mats = (bpy.types.Material, bpy.types.NodeTree)
+    mats = (bpy.types.Material, bpy.types.NodeTree, bpy.types.World)
     for u in depsgraph.updates:
         idv = u.id
         orig = getattr(idv, "original", idv)

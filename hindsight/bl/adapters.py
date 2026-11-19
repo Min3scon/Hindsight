@@ -1253,6 +1253,8 @@ DATA_PREFIX = "data."
 
 def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
+    if adapter_id == "scene":
+        return path == "settings" or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX))
 
 
@@ -1666,10 +1668,24 @@ class SceneAdapter(Adapter):
             out["objects"] = sorted(u for u in (idmap.claim(o) for o in idb.objects
                                                 if o.library is None and not rigmark.is_rig(o)) if u)
         out.update(id_props(idb, animated_paths(idb) if idb.animation_data is not None else None))  # D114
+        if not _movie_on(idb):
+            # D116: while Movie Mode is on it sets the camera and the frame range itself; the
+            # settings aren't read then (their coming and going is no step, datarec._owner_moves)
+            out["settings"] = scene_settings(idb)
+            out.update(owned_world(idb))
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
         write_id_props(idb, values)             # D114: custom properties and add-on data
+        for path, v in values.items():          # D116: the world before the settings that point at it
+            if path.startswith(WORLD_PREFIX) and isinstance(v, dict):
+                write_material(path[len(WORLD_PREFIX):], v)
+            elif path.startswith(WORLDP_PREFIX) and isinstance(v, dict):
+                w = idmap.find(path[len(WORLDP_PREFIX):])
+                if w is not None:
+                    write_id_props(w, v)
+        if "settings" in values and values["settings"] is not MISSING and not _movie_playing():
+            write_scene_settings(idb, values["settings"])
         if "collections" in values and values["collections"] is not MISSING:
             _write_collection_tree(idb, values["collections"])
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
@@ -1689,6 +1705,93 @@ class SceneAdapter(Adapter):
                 if par is not None:
                     ob.parent = par
                     ob.matrix_parent_inverse = to_rna(body["parent_inverse"])
+
+
+# ----------------------------------------------------------------------------- scene settings (D116)
+WORLD_PREFIX = "world:"
+_SCENE_SKIP = frozenset(_UI_PROPS | {
+    "name", "use_fake_user", "use_extra_user", "is_runtime_data", "tag", "asset_data", "annotation",
+    "frame_current", "frame_subframe", "frame_float", "time_jump_unit", "time_jump_delta",
+    "lock_frame_selection_to_range", "use_preview_range", "frame_preview_start", "frame_preview_end",
+    "show_subframe", "show_keys_from_selected_only", "wrap_timeline_navigation", "use_nodes"})
+# the scene's settings structs that are part of the project (tool settings, the 3D cursor and the
+# timeline's view aren't: changing a brush or the current frame is never a step)
+SCENE_STRUCTS = ("render", "render.image_settings", "render.ffmpeg", "unit_settings", "display_settings",
+                 "view_settings", "eevee", "display", "grease_pencil_settings")
+
+
+def _scene_struct(sc, path):
+    st = sc
+    for part in path.split("."):
+        st = getattr(st, part, None)
+        if st is None:
+            return None
+    return st
+
+
+def _movie_playing() -> bool:
+    """Movie Mode is moving the history for a frame: render, output and frame range settings must
+    stay as they are while it renders."""
+    try:
+        from . import runtime
+        return bool(getattr(runtime.goto, "_movie", False))
+    except Exception:
+        return False
+
+
+def _movie_on(sc) -> bool:
+    p = getattr(sc, "hindsight", None)
+    return bool(p is not None and getattr(p, "movie_mode", False))
+
+
+def scene_settings(sc) -> dict:
+    """The scene's own settings and its settings structs (render, output, units, colour management,
+    EEVEE, Workbench), as {"scene": values, path: values, ...}."""
+    vals = struct_values(sc, _SCENE_SKIP)
+    anim = animated_paths(sc) if sc.animation_data is not None else ()
+    for p in anim:                      # (a Scene has no path_from_id: struct_values can't mark these)
+        if p in vals:
+            vals[p] = ANIMATED
+    out = {"scene": vals}
+    for path in SCENE_STRUCTS:
+        st = _scene_struct(sc, path)
+        if st is not None:
+            out[path] = struct_values(st, anim=anim or None)
+    return out
+
+
+def write_scene_settings(sc, rec) -> None:
+    if not isinstance(rec, dict):
+        return
+    try:
+        set_struct_values(sc, rec.get("scene") or {})
+        for path in SCENE_STRUCTS:
+            st = _scene_struct(sc, path)
+            if st is not None and path in rec:
+                set_struct_values(st, rec[path] or {})
+    except Exception as e:
+        log.error_once(("scene_settings", str(e)), f"could not restore the scene settings: {e}", e)
+
+
+def owned_world(sc) -> dict:
+    """{WORLD_PREFIX + id: record} for the scene's world when this scene records it (the first
+    recorded scene by name that uses it). Kept like a material's record (D112)."""
+    w = sc.world
+    if w is None or w.library is not None:
+        return {}
+    from . import datarec
+    users = sorted(x.name for x in bpy.data.scenes if x.world == w and datarec.is_tracked(x))
+    if users and users[0] != sc.name:
+        return {}
+    wu = idmap.claim(w)
+    if not wu:
+        return {}
+    out = {WORLD_PREFIX + wu: material_record(w, idmap.uid_of(sc))}
+    out[WORLDP_PREFIX + wu] = id_props(w, animated_paths(w) if w.animation_data is not None else None)
+    return out
+
+
+WORLDP_PREFIX = "worldp:"
 
 
 def collection_tree(scene) -> list:
@@ -1834,7 +1937,7 @@ _OBJECT_KINDS = {"collections": "collections", "hide": "visibility", "constraint
 def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
     if adapter_id == "scene":
-        if path in (IDPROPS_KEY, SYSPROPS_KEY):
+        if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings") or path.startswith((WORLD_PREFIX, WORLDP_PREFIX)):
             return None
         return "scene_collections" if path == "collections" else "objects"
     if adapter_id == "object":
