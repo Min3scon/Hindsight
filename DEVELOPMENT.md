@@ -97,7 +97,7 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 ### What runs in Rust today
 
-Engine `hindsight_native` 0.5.1, API 5 (M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
+Engine `hindsight_native` 0.6.0, API 5 (0.6.0, 2026-11-19: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
 diff, apply, pack and unpack, its numpy code is `tests/reference/delta.py`; `record_step` exists and is
 tested but `runtime.commit` doesn't use it, since the stroke is already diffed once). The engine is required: if it
 can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
@@ -136,7 +136,7 @@ interface design (module layout, buffer ownership, error mapping, threading, mil
 | R5 | Background packer as a Rust thread (zstd 19 off the GIL, idle policy kept) | not started |
 | R6 | Global timeline (incremental groups, transition), `framing.history_extents`, morph blending | not started |
 | Rust required | Python copies to `tests/reference/`, clear error panel if the module cannot load, never record with a broken engine | done: no Python path ships (`tests/reference/`), `EngineMissing` and the panel's engine message (`test_bl_engine_missing`), HINDSIGHT_NATIVE selects nothing any more |
-| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.5.1 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
+| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.6.0 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
 
 Stays Python (needs `bpy`): `foreach_get` and `foreach_set`, RNA capture in datarec and adapters,
 vertex group weight reads, handlers, UI and drawing, operators. Their cost is attacked by doing less
@@ -404,4 +404,4 @@ Blockers:
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds (t1_gate made version-aware; Round B and C on 4.2).
 6. More optimisation rounds toward the owner's 100 (44 logged: 39 kept, 5 reverted).
-7. Dyntopo memory (LIMITS-A 1.6): a TOPO step holds the whole mesh before and after, and each before is the previous step's after; sharing it halves packed Dyntopo steps (about 5.8 to 2.9 MB each at 100k faces). Needs a step format bump in the engine: an agent job, measured as a round.
+7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.
