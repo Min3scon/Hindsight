@@ -169,7 +169,7 @@ rule). Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbere
 
 | # | Line | Planned outcome (phase) | Status | Test that proves it |
 |---|---|---|---|---|
-| L1 | Vertex Paint not claimed (one check failed on 5.0.1) | check fixed (D74, D71); proven on a real 5.0.1 binary in CI, then claimed (Phase 0 CI) | partial: the check is fixed and passes in module runs; no real-binary run, COVERAGE row `sculpt.colors` stays "not covered" | `tests/test_bl_recorder.py` `test_restored_colour_layer_is_active`, `test_vertex_paint_layer_added_late`; `tests/test_bl_t0_gate.py` `test_gate_colors` |
+| L1 | Vertex Paint not claimed (one check failed on 5.0.1) | check fixed (D74, D71); proven on a real 5.0.1 binary in CI, then claimed (Phase 0 CI) | partial: the check is fixed and passes in module runs and in the real Blender 5.0.1 binary (`test_bl_recorder`, Blender tests run 44476010656); real Vertex Paint strokes pass in windows on 4.2, 5.0.1, 5.1.2, 5.2 and 5.3 (window job, `paint_modes`). COVERAGE row `sculpt.colors` stays "not covered" until `tools/make_evidence.py` takes it through the gate; claiming it on the site is a release step | `tests/test_bl_recorder.py` `test_restored_colour_layer_is_active`, `test_vertex_paint_layer_added_late`; `tests/test_bl_t0_gate.py` `test_gate_colors` |
 | L2 | Objects only once switched on | one whole-file switch; default decided at release (Phase 3) | partial: "Everything in this file" switches every object and the scene on in one click, objects added later follow (D36); the default scope is still the owner's release decision | `tests/test_bl_record_file.py` |
 | L3 | Multires and Dyntopo pause recording | Multires: one exact step per Sculpt Mode visit; Dyntopo: a step per stroke up to about 200k triangles, per visit above; strokes made while paused become a step (Phase 4, Phase 1) | done behind two preferences, off by default: Multires is one exact step per Sculpt Mode visit (Record Multires; real window 5/5 on 5.3.0 and 4.2.23, D143 fixed); Dyntopo strokes are steps on meshes up to 200,000 faces (Record Dyntopo, D145; real window 8/8 on 5.3.0 and 4.2.23), bigger ones still pause. Their defaults are the owner's call | `tests/test_bl_multires.py`, `tests/test_bl_dyntopo.py`, `tests_ui/scenarios/s_multires.py`, `tests_ui/scenarios/s_dyntopo.py` |
 | L4 | Animated or driven properties | the animation itself is recorded (P5); un-keyed axes and muted curves now (Phase 1, P5) | partial: un-keyed axes, per-index keys and muted curves are recorded (D103); an object's actions, keyframes, drivers and NLA are recorded (D120), and the animation of its data, its shape keys, its materials' node trees, the scene and the world (D125); not yet: a node group's own animation (keys on inputs inside a group) | `tests/test_bl_adapters.py` `test_partly_animated_and_muted` |
@@ -394,15 +394,13 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Merge `main-session-3` into the working branch once its full suite passes on 5.3 and 4.2; push; run
-   `Blender tests` (binaries 4.2 to 5.3, the window job now on 4.2, 5.0.1, 5.1.2, 5.2, 5.3 with eight
-   scenarios) and `Native engine` on GitHub; fix what they find.
+1. Check `Blender tests` and `Native engine` on 436d068 (pushed 2026-11-19 08:30: engine 0.6.0, R048 to R050, D150, the CI fixes for the 4.2 to 5.2 binaries, the window job with 13 scenarios) and fix what they find. The RUST agent works on M5 (registry stream and journal framing in Rust, shared metadata strings, maybe xxh3 fingerprints); review and merge its branch when it reports.
 2. The recorder's remaining overhead at 500 objects: `id_props`, `idmap.claim` and constraints are the next fixed
    costs (R044 profile); each needs a depsgraph or fingerprint check before any cache.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
    (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
-5. Window scenarios on 4.2 for the older rounds (t1_gate made version-aware; Round B and C on 4.2).
-6. More optimisation rounds toward the owner's 100 (44 logged: 39 kept, 5 reverted).
+5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
+6. More optimisation rounds toward the owner's 100 (50 logged: 45 kept, 5 reverted).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.
