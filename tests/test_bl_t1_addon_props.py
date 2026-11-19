@@ -275,6 +275,38 @@ def test_animated_custom_prop_left_out():
     assert (_r(a["k"]), _r(a.hsfake.strength)) == at15
 
 
+def test_custom_node_tree():
+    """An add-on's own node tree type (its tree, node and socket classes), kept with a fake user and
+    used by no object, is recorded in the scene's history: a node's settings, a socket's value, links,
+    nodes added and removed; going back and forward puts each state back."""
+    addon_on()
+    L.fresh_scene()
+    tree = bpy.data.node_groups.new("FakeTree", "HSFakeTree")
+    tree.use_fake_user = True
+    for name in ("A", "B"):
+        tree.nodes.new("HSFakeGain").name = name
+    L.track_all()
+    L.tick_like("baseline")
+
+    def read():
+        return (tuple(sorted((n.name, _r(n.gain), n.kind, _r(n.inputs[0].default_value)) for n in tree.nodes)),
+                tuple(sorted((lk.from_node.name, lk.to_node.name) for lk in tree.links)))
+    states = [read()]
+    for label, fn in (("gain", lambda: setattr(tree.nodes["A"], "gain", 2.5)),
+                      ("kind", lambda: setattr(tree.nodes["B"], "kind", "LOG")),
+                      ("socket", lambda: setattr(tree.nodes["B"].inputs[0], "default_value", 0.25)),
+                      ("link", lambda: tree.links.new(tree.nodes["A"].outputs[0], tree.nodes["B"].inputs[0])),
+                      ("add node", lambda: setattr(tree.nodes.new("HSFakeGain"), "name", "C")),
+                      ("remove node", lambda: tree.nodes.remove(tree.nodes["A"]))):
+        fn()
+        L.tick_like(label)
+        states.append(read())
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(C.scene)
+    assert h is not None and len(h.entries) >= 6, h and len(h.entries)
+    walk(h, states, read)
+
+
 if __name__ == "__main__":
     H.run(test_object_custom_and_addon_props)
     H.run(test_scene_and_material_props)
@@ -284,5 +316,6 @@ if __name__ == "__main__":
     H.run(test_addon_missing_when_going_back)
     H.run(test_deleted_object_keeps_them)
     H.run(test_animated_custom_prop_left_out)
+    H.run(test_custom_node_tree)
     addon_off()
     H.finish()
