@@ -264,7 +264,7 @@ def main(argv=None):
         build_ref(blenders, a.commit, Path(a.out))
         return 0
     if a.cmd == "models":
-        exe = blenders[-1][1]
+        exe = blenders[0][1]          # the oldest: newer Blenders open its files, older ones can't open newer files
         cmd = [str(exe), "-b", "--factory-startup", "--python-exit-code", "1", "--python",
                str(HERE / "make_test_models.py"), "--", str(ROOT / "test_models")] + list(a.what)
         return subprocess.run(cmd, env=sandbox_env("models")).returncode
