@@ -502,6 +502,14 @@ class ObjectAdapter(Adapter):
                     geo = geometry_of(d)                                            # D121
                     if geo is not None:
                         out[DATA_PREFIX + GEOM] = geo
+            # D125: always there (None without animation), so the first keyframe is a change
+            if hasattr(d, "animation_data"):
+                for k, v in anim_of(d).items():
+                    out[(DATA_PREFIX + k) if k == ANIM_KEY else k] = v
+            key = getattr(d, "shape_keys", None)
+            if key is not None:
+                for k, v in anim_of(key).items():
+                    out[(SK_PREFIX + k) if k == ANIM_KEY else k] = v
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -560,6 +568,18 @@ class ObjectAdapter(Adapter):
                 write_action(path, v)
         if ANIM_KEY in values and values[ANIM_KEY] is not MISSING:
             write_anim(idb, values[ANIM_KEY])
+        for path, v in values.items():          # D125: its data's, shape keys' and materials'
+            if v is MISSING:
+                continue
+            if path == DATA_PREFIX + ANIM_KEY and idb.data is not None:
+                write_anim(idb.data, v)
+            elif path == SK_PREFIX + ANIM_KEY and getattr(idb.data, "shape_keys", None) is not None:
+                write_anim(idb.data.shape_keys, v)
+            elif path.startswith(MATA_PREFIX):
+                mu, _sep, k = path[len(MATA_PREFIX):].partition("|")
+                m = idmap.find(mu)
+                if m is not None and getattr(m, "node_tree", None) is not None and k == ANIM_KEY:
+                    write_anim(m.node_tree, v)
         if POSE_KEY in values and values[POSE_KEY] is not MISSING and idb.type == "ARMATURE":
             write_pose(idb, values[POSE_KEY])
 
@@ -657,6 +677,10 @@ def owned_materials(ob) -> dict:
                 # D114: its custom properties and add-on data, read every time (setting one with
                 # m["name"] = value doesn't tell the depsgraph, so the kept record can't hold them)
                 out[MATP_PREFIX + mu] = id_props(m, animated_paths(m) if m.animation_data is not None else None)
+                nt = getattr(m, "node_tree", None)
+                if nt is not None:                                        # D125: keyed node values
+                    for k, v in anim_of(nt).items():
+                        out[(MATA_PREFIX + mu + "|" + k) if k == ANIM_KEY else k] = v
             except Exception:
                 continue
     return out
@@ -1889,11 +1913,46 @@ def write_geometry(d, g) -> None:
         log.error_once(("geometry", str(e)), f"could not restore the shape of {d.name}: {e}", e)
 
 
+SK_PREFIX = "sk."               # the shape keys' own (their animation)
+MATA_PREFIX = "@mata:"          # a recorded material's node tree animation: "@mata:<material id>|<key>"
+
+
+def anim_of(x) -> dict:
+    """{ANIM_KEY: how x plays its animation} and, when x is the only user of its action, the action
+    (D120 for data other than objects)."""
+    out = {ANIM_KEY: anim_values(x)}
+    ad = x.animation_data
+    if ad is not None and ad.action is not None and ad.action.library is None:
+        a = ad.action
+        if a.users <= 1 + bool(a.use_fake_user):
+            slot = getattr(ad, "action_slot", None)
+            ident = slot.identifier if slot is not None else None
+            au = idmap.claim(a)
+            if au:
+                out[ACT_PREFIX + au + "|" + (ident or "")] = action_record(a, ident)
+    return out
+
+
+def write_anim_of(x, vals: dict) -> None:
+    for path, v in vals.items():
+        if path.startswith(ACT_PREFIX) and v is not MISSING:
+            write_action(path, v)
+    if ANIM_KEY in vals and vals[ANIM_KEY] is not MISSING:
+        write_anim(x, vals[ANIM_KEY])
+
+
+def assignment_path(path: str) -> bool:
+    """A recorded "which animation it plays" value (an object's, its data's, its shape keys', a
+    material's node tree's)."""
+    return path == ANIM_KEY or path.endswith(("." + ANIM_KEY, "|" + ANIM_KEY))
+
+
 def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
         return path == "settings" or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
-    return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX))
+    return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
+                                                       SK_PREFIX, MATA_PREFIX))
 
 
 def _owns_data(ob, d) -> bool:

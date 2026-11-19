@@ -162,8 +162,52 @@ def test_drivers_and_nla():
     assert drv_state(a) == states[-1], (drv_state(a), states[-1])
 
 
+def _fc_count(x):
+    ad = getattr(x, "animation_data", None)
+    if ad is None or ad.action is None:
+        return 0
+    return sum(len(f.keyframe_points) for f in adapters._fcurves(ad.action, getattr(ad, "action_slot", None)))
+
+
+def test_data_shape_key_and_material_animation():
+    """D125: keyframes on a light's energy, a shape key's value and a material's node input are
+    recorded with the object, and going back takes them off again."""
+    L.fresh_scene()
+    a = bpy.data.objects["A"]
+    a.shape_key_add(name="Basis")
+    smile = a.shape_key_add(name="Smile")
+    m = bpy.data.materials.new("Keyed")
+    if bpy.app.version < (5, 0, 0):
+        m.use_nodes = True
+    a.data.materials.append(m)
+    bsdf = next(n for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
+    bpy.ops.object.light_add(type="POINT", location=(0, 0, 3))
+    lamp = C.active_object
+    L.track_all()
+    L.tick_like("baseline")
+    read = lambda: (_fc_count(lamp.data), _fc_count(a.data.shape_keys), _fc_count(m.node_tree))
+    states = [read()]
+    for label, fn in (("light key", lambda: lamp.data.keyframe_insert("energy", frame=1)),
+                      ("light key 2", lambda: lamp.data.keyframe_insert("energy", frame=10)),
+                      ("shape key", lambda: smile.keyframe_insert("value", frame=1)),
+                      ("node key", lambda: bsdf.inputs["Roughness"].keyframe_insert("default_value", frame=1))):
+        fn()
+        L.tick_like(label)
+        states.append(read())
+    assert states == [(0, 0, 0), (1, 0, 0), (2, 0, 0), (2, 1, 0), (2, 1, 1)], states
+    hists = [runtime.history_of(lamp), runtime.history_of(a)]
+    for h in hists:
+        while h.cursor > 0:
+            runtime._goto_history(h, h.cursor - 1, True)
+    assert read() == states[0], read()
+    for h in hists:
+        runtime._goto_history(h, len(h.entries), True)
+    assert read() == states[-1], read()
+
+
 if __name__ == "__main__":
     H.run(test_keyframes_come_back)
     H.run(test_frame_change_is_not_a_step_and_gone_action_is_made_again)
     H.run(test_drivers_and_nla)
+    H.run(test_data_shape_key_and_material_animation)
     H.finish()

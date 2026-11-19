@@ -695,7 +695,7 @@ def _data_diff(old: dict, new: dict) -> dict:
 def _moves_only(changes: dict) -> list:
     """The keys of changes that only come and go with ownership. An action that appears or goes
     while the object starts or stops playing one (the first keyframe, D120) is a change of its own."""
-    assigned = ("object", adapters.ANIM_KEY) in changes
+    assigned = any(k[0] == "object" and adapters.assignment_path(k[1]) for k in changes)
     return [k for k, (a, b) in changes.items()
             if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])
             and not (assigned and k[1].startswith(adapters.ACT_PREFIX))]
