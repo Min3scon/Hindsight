@@ -95,11 +95,41 @@ def global_position(reg, visible=None, groups=None, index=None) -> int:
     return n
 
 
-def plan_global_goto(reg, g: int, visible=None, groups=None) -> dict:
-    """History uid -> cursor that applies exactly the first g operations."""
+def plan_index(groups) -> dict:
+    """R059: for plan_global_goto without walking the first g operations. History uid -> (the group
+    index of each of its steps, sorted; the largest step index + 1 among the steps up to there): the
+    history's cursor after the first g operations is found by bisection."""
+    by = {}
+    for gi, grp in enumerate(groups):
+        for _seq, hid, i in grp:
+            by.setdefault(hid, []).append((gi, i))
+    out = {}
+    for hid, items in by.items():
+        items.sort()
+        gis, pref, m = [], [], 0
+        for gi, i in items:
+            if i + 1 > m:
+                m = i + 1
+            gis.append(gi)
+            pref.append(m)
+        out[hid] = (gis, pref)
+    return out
+
+
+def plan_global_goto(reg, g: int, visible=None, groups=None, index=None) -> dict:
+    """History uid -> cursor that applies exactly the first g operations. index: plan_index(groups),
+    kept with them (one bisection per history instead of a walk over the first g operations)."""
     if groups is None:
         groups = global_groups(reg, visible)
     g = max(0, min(int(g), len(groups)))
+    if index is not None:
+        from bisect import bisect_left
+        cur = {}
+        for h in _visible_histories(reg, visible):
+            e = index.get(h.uid)
+            k = bisect_left(e[0], g) if e is not None else 0
+            cur[h.uid] = e[1][k - 1] if k else 0
+        return cur
     cur = {h.uid: 0 for h in _visible_histories(reg, visible)}
     for grp in groups[:g]:
         for _seq, hid, i in grp:
@@ -107,13 +137,13 @@ def plan_global_goto(reg, g: int, visible=None, groups=None) -> dict:
     return cur
 
 
-def transition(reg, g: int, visible=None, groups=None) -> list:
+def transition(reg, g: int, visible=None, groups=None, index=None) -> list:
     """How to get every visible history to global position g, as moves [(history uid, cursor)] in
     step-number order: the steps to undo newest first, then the steps to redo oldest first, so a
     step is never applied before an earlier step of another history (an object brought back by the
     scene history exists before its own steps are replayed). Consecutive moves of one history are
     merged. Works from any starting point, also after histories were moved one by one."""
-    target = plan_global_goto(reg, g, visible, groups)
+    target = plan_global_goto(reg, g, visible, groups, index)
     undo, redo = [], []
     free = {}
     for h in _visible_histories(reg, visible):

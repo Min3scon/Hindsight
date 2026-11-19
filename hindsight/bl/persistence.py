@@ -267,6 +267,7 @@ def _bridge_paused(reg) -> int:
 @guard.guarded("saving")
 def on_save_pre(*args) -> None:
     runtime.multires.flush()          # a Multires visit that has just ended is a step before the save
+    runtime.end_paused(now=True)      # D153: and a Dyntopo visit that paused recording
     runtime.drop_unused_uids()
     drop_default_settings()
     _FALLBACK["sidecar"] = False

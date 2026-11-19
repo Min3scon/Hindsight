@@ -32,6 +32,7 @@ New:
 - Weight Paint strokes are steps, like sculpt and Vertex Paint strokes.
 - Custom normals (Blender 5) are recorded with the mesh, so going back over Set Custom Normals gives the old normals back.
 - Dyntopo strokes can be recorded (preference Record Dyntopo, off by default; meshes up to 200,000 faces): each stroke is a step, and going back turns Dyntopo on or off as it was.
+- Without Record Dyntopo (or on bigger meshes), a Sculpt Mode visit with Dyntopo on is one step when it ends, so going back over it gives the mesh from before it. Its changes used to be taken as they were, and the earlier steps could no longer be gone back to correctly.
 - Multires can be recorded (preference Record Multires, off by default): one step per Sculpt Mode visit.
 - Edit Mode steps up to (preferences): how big a mesh can be for Edit Mode to be recorded one operation at a time (300,000 vertices by default; bigger meshes are recorded once per visit).
 - Texture painting can be recorded too (preference Record texture painting, off by default; images up to 2K), in the 3D viewport and in the Image Editor's Paint mode (as a step of the active object).
@@ -46,7 +47,7 @@ New:
 Faster and lighter:
 
 - Playing or rendering a timelapse: Hindsight's own work per frame went from 22.6 ms to 2.7 ms at 5,000 steps on a 100k mesh. A frame that shows the same step as the one before costs about 0.1 ms.
-- Going back and forward on the global timeline over strokes made on several objects in turn writes each object once per jump instead of once per stroke: with two 100k-vertex objects and 600 strokes, jumping to the start went from about 200 ms to 30 ms, and each step of a drag from 9 ms to under 2 ms.
+- Going back and forward on the global timeline over strokes made on several objects in turn writes each object once per jump instead of once per stroke: with two 100k-vertex objects and 600 strokes, jumping to the start went from about 200 ms to 30 ms, and each step of a drag from 9 ms to under 2 ms. With 50,000 steps on 50 objects, a step of a global drag went from about 60 ms to 7 ms; with Record everything on 500 objects, from 9 ms to under 2 ms.
 - With global history on, the slider, the header and the sidebar no longer rebuild the whole timeline on every redraw. That took 18 ms each time at 10,000 steps.
 - Saving and loading history works step by step. Peak memory while saving a 6,000-step history of a 100k mesh went from 89 MB to 43 MB, and loading from 141 MB to 83 MB. Recording a remesh at 1M vertices needs 426 MB instead of 609 MB.
 - What Hindsight remembers about its own jumps for Blender's undo is kept only as far back as Blender can undo. It used to keep up to 512 copies of every recorded value.

@@ -226,10 +226,31 @@ def test_interleaved_strokes_are_one_move_per_history():
     print("PASS test_interleaved_strokes_are_one_move_per_history (3 moves instead of 600)")
 
 
+def test_plan_index_equals_the_walk():
+    """R059: plan_global_goto through plan_index gives the walk's cursors (random timelines with operations
+    across histories and out of order, every g), and transition the same moves."""
+    rng = random.Random(59)
+    n = 0
+    for _ in range(300):
+        reg, hs = mixed_timeline(rng) if rng.random() < 0.5 else timeline(rng)
+        visible = None if rng.random() < 0.7 else {h.members[0] for h in hs if rng.random() < 0.6}
+        groups = globaltl.global_groups(reg, visible)
+        idx = globaltl.plan_index(groups)
+        for g in range(-1, len(groups) + 2):
+            assert globaltl.plan_global_goto(reg, g, visible, groups, idx) == globaltl.plan_global_goto(reg, g, visible, groups), g
+            n += 1
+        for h in hs:
+            h.cursor = rng.randint(0, len(h.entries))
+        g = rng.randint(0, len(groups))
+        assert globaltl.transition(reg, g, visible, groups, idx) == globaltl.transition(reg, g, visible, groups)
+    print(f"PASS test_plan_index_equals_the_walk ({n} positions)")
+
+
 def main():
     failed = 0
     for t in (test_index_equals_the_walk, test_cost_does_not_grow_with_the_steps,
-              test_collapsed_moves_keep_every_ordering_that_matters, test_interleaved_strokes_are_one_move_per_history):
+              test_collapsed_moves_keep_every_ordering_that_matters, test_interleaved_strokes_are_one_move_per_history,
+              test_plan_index_equals_the_walk):
         try:
             t()
         except Exception:
