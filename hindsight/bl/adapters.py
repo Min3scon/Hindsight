@@ -2674,7 +2674,19 @@ def scene_settings(sc) -> dict:
         if st is not None:
             out[path] = struct_values(st, anim=anim or None)
     out["anim"] = anim_of(sc)           # D125: the scene's own animation (frame range keys, ...)
+    vls = {}
+    for vl in sc.view_layers:           # D128: passes, overrides, filters, add-ons' view layer data
+        r = {"values": struct_values(vl, _VL_SKIP)}
+        ee = getattr(vl, "eevee", None)
+        if ee is not None:
+            r["eevee"] = struct_values(ee)
+        r.update(id_props(vl))
+        vls[vl.name] = r
+    out["view_layers"] = vls
     return out
+
+
+_VL_SKIP = frozenset(_UI_PROPS | {"name", "active_aov_index", "active_lightgroup_index"})
 
 
 def write_scene_settings(sc, rec) -> None:
@@ -2688,6 +2700,14 @@ def write_scene_settings(sc, rec) -> None:
                 set_struct_values(st, rec[path] or {})
         if isinstance(rec.get("anim"), dict):
             write_anim_of(sc, rec["anim"])
+        for vl in sc.view_layers:
+            r = (rec.get("view_layers") or {}).get(vl.name)
+            if not isinstance(r, dict):
+                continue
+            set_struct_values(vl, r.get("values") or {})
+            if r.get("eevee") and getattr(vl, "eevee", None) is not None:
+                set_struct_values(vl.eevee, r["eevee"])
+            write_id_props(vl, r)
     except Exception as e:
         log.error_once(("scene_settings", str(e)), f"could not restore the scene settings: {e}", e)
 

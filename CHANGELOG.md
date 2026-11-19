@@ -58,7 +58,7 @@ Fixed:
 - Record everything records materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
 - Record everything records node groups: editing a Geometry Nodes group or a shader group inside a material is a step that comes back, inputs and outputs included.
 - Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
-- Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, the active camera, and the world with its node tree.
+- Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, view layer passes, the active camera, and the world with its node tree.
 - Record everything records collection settings: hiding a collection, making it unselectable, its colour tag, and Exclude, Holdout and Indirect Only in each view layer.
 - Record everything records an object's own settings (viewport display, ray visibility, instancing, empty display, locks) and the settings of lights, cameras, curves, text, metaballs, speakers and light probes, and a mesh's remesh settings.
 - Record everything records posing: each bone's location, rotation, scale, constraints and custom properties, and the armature's Pose or Rest Position.
