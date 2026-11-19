@@ -1,8 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-"""Embedded history (Save Mode Embed and Both): the stored text is exactly what earlier builds
-wrote (base64 of the history file), saving again replaces it, the packer is told when the user
+"""Embedded history (Save Mode Embed and Both): the stored bytes are exactly the history file (R061:
+earlier builds wrote its base64 as text), saving again replaces them, the packer is told when the user
 works, and an embedded history and a history folder written by the same save hold the same bytes."""
-import base64
 import shutil
 import tempfile
 
@@ -22,7 +21,7 @@ def _record(ob, seeds):
         assert H.commit(ob) is not None
 
 
-def test_embed_text_is_the_same_as_before():
+def test_embed_bytes_are_the_history_file():
     H.fresh()
     SETTINGS.save_mode = "BOTH"
     ob = H.make_mesh(1500, name=NAME)
@@ -30,16 +29,16 @@ def test_embed_text_is_the_same_as_before():
     _record(ob, range(20, 26))
     H.enter(ob, "OBJECT")
     path = os.path.join(TMP, "both.blend")
-    for round_ in range(2):                       # the second save replaces the stored text
+    for round_ in range(2):                       # the second save replaces the stored bytes
         bpy.ops.wm.save_as_mainfile(filepath=path)
         text = bpy.data.texts[persistence.TEXT_NAME]
-        stored = text[persistence.DATA_PROP]
-        assert isinstance(stored, str)
-        # what 1.0.0-beta.2 wrote: base64.b64encode(registry_to_bytes(...)).decode("ascii")
-        want = base64.b64encode(persist.registry_to_bytes(runtime.reg(), SETTINGS.compression)).decode("ascii")
+        stored = text[persistence.DATA_BIN_PROP]
+        assert isinstance(stored, bytes)
+        assert persistence.DATA_PROP not in text, "the base64 text of earlier builds is written again"
+        want = persist.registry_to_bytes(runtime.reg(), SETTINGS.compression)
         assert stored == want, round_
         with open(persist.sidecar_file(path), "rb") as fh:
-            assert fh.read() == base64.b64decode(stored), "history folder and embedded copy differ"
+            assert fh.read() == stored, "history folder and embedded copy differ"
         H.enter(ob, "SCULPT")
         _record(ob, [40 + round_])
         H.enter(ob, "OBJECT")
@@ -62,7 +61,7 @@ def test_strokes_tell_the_packer():
     assert p._last_activity > before, "a recorded step didn't hold back idle recompression"
 
 
-for f in [test_embed_text_is_the_same_as_before, test_strokes_tell_the_packer]:
+for f in [test_embed_bytes_are_the_history_file, test_strokes_tell_the_packer]:
     H.run(f)
 shutil.rmtree(TMP, ignore_errors=True)
 H.finish()

@@ -49,13 +49,18 @@ DESCRIBE = {
         "custom property (text: a random id of the save)", "in the .blend, on the Text above",
         "when a file that has history is saved: names the save of the history this file goes with, so crash "
         "recovery never uses steps from another save of the file", "Remove Hindsight data from this file"),
-    ".hindsight_history[hindsight_data]": (
-        "custom property (text: the whole history, and how each recorded object was when saved: a fingerprint "
+    ".hindsight_history[hindsight_data_bin]": (
+        "custom property (bytes: the whole history, and how each recorded object was when saved: a fingerprint "
         "of its mesh and its recorded values, to notice changes made without Hindsight)", "in the .blend, on the "
         "Text above",
         "when saving with Save mode set to Embed or Both", "saving with Save mode Sidecar; Remove Hindsight data"),
+    ".hindsight_history[hindsight_data]": (
+        "custom property (text: the same history as base64, written by 1.0.0-beta.2 and earlier)", "in the .blend, "
+        "on the Text above",
+        "never by this version: read when a file has it, and replaced by hindsight_data_bin at the next save",
+        "the next save; saving with Save mode Sidecar; Remove Hindsight data"),
     ".hindsight_history[hindsight_data_unreadable]": (
-        "custom property (text)", "in the .blend, on the Text above",
+        "custom property (bytes, or text from an earlier version)", "in the .blend, on the Text above",
         "only when an embedded history couldn't be read: it is kept, unchanged, in case it can be recovered",
         "Remove Hindsight data from this file"),
     "<file>_hindsight/": (
@@ -112,7 +117,7 @@ def found_names() -> dict:
         assert idmap.UID_PROP == runtime.UID_PROP
         out[idmap.UID_PROP] = "hindsight/bl/idmap.py UID_PROP"
         out[persistence.TEXT_NAME] = "hindsight/bl/persistence.py TEXT_NAME"
-        for const in ("SIDECAR_PROP", "DATA_PROP", "UNREADABLE_PROP", "SAVE_ID_PROP"):
+        for const in ("SIDECAR_PROP", "DATA_BIN_PROP", "DATA_PROP", "UNREADABLE_PROP", "SAVE_ID_PROP"):
             out[f"{persistence.TEXT_NAME}[{getattr(persistence, const)}]"] = f"persistence.{const}"
         folder = os.path.basename(persist.sidecar_dir("<file>.blend")) + "/"
         out[folder] = "persist.sidecar_dir"

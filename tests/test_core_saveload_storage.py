@@ -1,8 +1,6 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-"""Save, load and background storage work (pure Python, no bpy): the embedded text built piece by
-piece, the crash journal on a full or failing disk, and the packer's idle recompression (what it
+"""Save, load and background storage work (pure Python, no bpy): the embedded bytes, the crash journal on a full or failing disk, and the packer's idle recompression (what it
 skips, and that it waits while the user works)."""
-import base64
 import errno
 import shutil
 import tempfile
@@ -16,24 +14,18 @@ from hindsight.core import delta, journal as J, persist, step as stepmod, store
 from hindsight.core.types import DELTA, POSITION_KEY, Entry, Step
 
 
-# ---------------------------------------------------------------------------- embedded text
-def test_b64_text_is_exactly_b64encode():
+# ---------------------------------------------------------------------------- embedded bytes
+def test_embedded_bytes_are_the_parts_joined():
     rng = np.random.default_rng(3)
-    cases = [[], [b""], [b"a"], [b"ab"], [b"abc"], [b"a", b"b"], [b"ab", b"", b"c", b"defg"],
-             [bytes(persist._B64_CHUNK)], [bytes(persist._B64_CHUNK + 1), b"x"],
-             [b"q" * (persist._B64_CHUNK - 1), b"zz", b"w"]]
-    for _ in range(200):
-        n = int(rng.integers(0, 12))
-        cases.append([rng.bytes(int(rng.choice([0, 1, 2, 3, 4, 5, 8, 100, 9001, 200_003])))
-                      for _ in range(n)])
-    cases.append([bytearray(b"xyz12"), memoryview(b"hello world")])
+    cases = [[], [b""], [b"a"], [b"ab", b"", b"c", b"defg"], [bytearray(b"xyz12"), memoryview(b"hello world")]]
+    for _ in range(50):
+        cases.append([rng.bytes(int(rng.choice([0, 1, 2, 3, 100, 9001]))) for _ in range(int(rng.integers(0, 12)))])
     for parts in cases:
-        want = base64.b64encode(b"".join(bytes(p) for p in parts)).decode("ascii")
-        got = persist.parts_to_b64(parts)
-        assert type(got) is str and got == want, ([len(p) for p in parts], len(got), len(want))
+        got = persist.parts_to_bytes(parts)
+        assert type(got) is bytes and got == b"".join(bytes(p) for p in parts), [len(p) for p in parts]
 
 
-def test_b64_text_of_a_registry_reads_back():
+def test_embedded_bytes_of_a_registry_read_back():
     from hindsight.core.history import History
     from hindsight.core.registry import Registry
     reg = Registry()
@@ -42,26 +34,26 @@ def test_b64_text_of_a_registry_reads_back():
         h.push(_step(i + 1, 50 + i))
     reg.histories = {"H": h}
     reg.by_object = {"obj": "H"}
-    text = persist.parts_to_b64(persist.registry_parts(reg))
-    assert text == base64.b64encode(persist.registry_to_bytes(reg)).decode("ascii")
-    back = persist.registry_from_bytes(base64.b64decode(text))
+    data = persist.parts_to_bytes(persist.registry_parts(reg))
+    assert data == persist.registry_to_bytes(reg)
+    back = persist.registry_from_bytes(data)
     got = back.histories["H"].entries
     assert len(got) == 30 and all(stepmod.same_step(a.load(), b.load())
                                    for a, b in zip(got, h.entries))
 
 
-def test_b64_text_peak_memory():
-    """The text is built without the joined history or a second encoded copy: the peak is about the
-    encoded size twice (the buffer and the text), not the history plus the encoded size twice."""
+def test_embedded_bytes_peak_memory():
+    """The stored bytes are built once at their final size: the peak is the history's size once (base64
+    text, before R061, peaked at twice its encoded size, which is 4/3 of the history)."""
     rng = np.random.default_rng(5)
     parts = [rng.bytes(9000) for _ in range(1500)]          # 13.5 MB, like a 1,500-step history
-    enc = 4 * ((sum(map(len, parts)) + 2) // 3)
+    total = sum(map(len, parts))
     tracemalloc.start()
-    s = persist.parts_to_b64(parts)
+    s = persist.parts_to_bytes(parts)
     _cur, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    assert len(s) == enc
-    assert peak < 2 * enc + (2 << 20), (peak, enc)
+    assert len(s) == total
+    assert peak < total + (1 << 20), (peak, total)
 
 
 # ---------------------------------------------------------------------------- journal
@@ -384,7 +376,7 @@ def test_save_reuses_known_step_checksums():
     assert not back2.load_report["damaged"] and back2.histories["H"].entries[3].blob == new
 
 
-TESTS = [test_b64_text_is_exactly_b64encode, test_b64_text_of_a_registry_reads_back, test_b64_text_peak_memory,
+TESTS = [test_embedded_bytes_are_the_parts_joined, test_embedded_bytes_of_a_registry_read_back, test_embedded_bytes_peak_memory,
          test_journal_fsync_failure_is_reported, test_journal_full_disk_keeps_records_before_and_after,
          test_journal_failed_flush_is_reported_and_cut_back, test_can_gain_matches_recompress,
          test_can_gain_same_answer_as_before_r047,

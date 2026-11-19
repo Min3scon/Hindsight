@@ -3,7 +3,8 @@
 
 Save Mode (Add-on Preferences, ``SETTINGS.save_mode``):
   SIDECAR  history folder ``<stem>_hindsight`` beside the .blend (fastest saves)
-  EMBED    stored inside the .blend (Text ``.hindsight_history``, ID property ``hindsight_data``)
+  EMBED    stored inside the .blend (Text ``.hindsight_history``, bytes ID property ``hindsight_data_bin``;
+           files saved by 1.0.0-beta.2 and earlier hold base64 text in ``hindsight_data``, still read)
   BOTH     both of the above
 
 Crash Recovery (``SETTINGS.crash_recovery``):
@@ -28,7 +29,8 @@ from ..core.types import SETTINGS
 from . import guard, log, runtime
 
 TEXT_NAME = ".hindsight_history"
-DATA_PROP = "hindsight_data"
+DATA_PROP = "hindsight_data"            # base64 text: earlier builds (read; never written since R061)
+DATA_BIN_PROP = "hindsight_data_bin"    # R061: the registry's bytes as they are (no base64)
 SIDECAR_PROP = "sidecar"
 MISSING_TEXT = "History folder missing. Keep '{folder}' next to the .blend to see this file's history"
 NEWER_TEXT = ("This history was saved by a newer Hindsight (format {found}). Update Hindsight to see it. "
@@ -302,17 +304,22 @@ def on_save_pre(*args) -> None:
             # The parts are the step blobs themselves (no copy); anything that can go wrong in
             # putting them together happens here, before the stored copy is touched.
             parts = persist.registry_parts(reg, _codec())
-            if DATA_PROP in text:
-                # Blender's copy of the last saved history goes before the new one is built:
-                # otherwise the old copy, the new text and Blender's new copy are all held at once.
-                del text[DATA_PROP]
-                removed = True
-            data = persist.parts_to_b64(parts)    # the same text as b64encode(b"".join(parts))
+            for key in (DATA_PROP, DATA_BIN_PROP):
+                if key in text:
+                    # Blender's copy of the last saved history goes before the new one is built:
+                    # otherwise the old copy, the new bytes and Blender's new copy are all held at once.
+                    del text[key]
+                    removed = True
+            # R061: the bytes themselves (base64 cost time and a third more). Both keys are gone by now, which
+            # matters: Blender cuts bytes at the first zero when it replaces an existing bytes property.
+            data = persist.parts_to_bytes(parts)
             del parts
-            text[DATA_PROP] = data
+            text[DATA_BIN_PROP] = data
             del data
-        elif DATA_PROP in text:
-            del text[DATA_PROP]
+        else:
+            for key in (DATA_PROP, DATA_BIN_PROP):
+                if key in text:
+                    del text[key]
         if not _PROTECT["embed"]:
             text[SAVE_ID_PROP] = reg.save_id
     except Exception as e:
@@ -322,8 +329,9 @@ def on_save_pre(*args) -> None:
             # most likely): the .blend would be saved with no history at all. The history folder
             # gets it instead, and the .blend says so.
             try:
-                if DATA_PROP in text:
-                    del text[DATA_PROP]
+                for key in (DATA_PROP, DATA_BIN_PROP):
+                    if key in text:
+                        del text[key]
                 text[SIDECAR_PROP] = True
                 text[SAVE_ID_PROP] = reg.save_id
                 _FALLBACK["sidecar"] = True
@@ -388,20 +396,30 @@ def _note(sev, text):
 def _load_registry(path: str, text):
     """The saved registry for this file, or None. Never raises; problems become sidebar notes."""
     mode = _mode()
-    embedded = text is not None and DATA_PROP in text
+    embedded = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text)
 
     def from_text():
+        # R061: base64 text when it is there (an earlier build wrote it, so it is the newer copy when both
+        # are: such a build never touches the bytes), else the bytes
+        key = DATA_PROP if DATA_PROP in text else DATA_BIN_PROP
         try:
+            v = text[key]
             # a2b_base64 reads the stored text in place (b64decode would first copy it to bytes)
-            return persist.registry_from_bytes(binascii.a2b_base64(text[DATA_PROP]))
+            raw = binascii.a2b_base64(v) if key == DATA_PROP else v
+            del v
+            return persist.registry_from_bytes(raw)
         except persist.NewerFormatError as e:
             _PROTECT["embed"] = True
             _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
             runtime.log.error_once(("embed_unreadable", str(e)), f"embedded history unreadable: {e}", e)
             try:
-                text[UNREADABLE_PROP] = text[DATA_PROP]   # keep the bytes, out of the way
-                del text[DATA_PROP]
+                v = text[key]
+                if UNREADABLE_PROP in text:
+                    # Blender cuts bytes at the first zero when it replaces a bytes property: a new one only
+                    del text[UNREADABLE_PROP]
+                text[UNREADABLE_PROP] = v           # keep the data, out of the way
+                del v, text[key]
             except Exception:
                 pass
             _note("ERROR", UNREADABLE_EMBED_TEXT)

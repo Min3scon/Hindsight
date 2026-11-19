@@ -39,7 +39,8 @@ def save_and_reopen(path, mode):
     bpy.ops.wm.open_mainfile(filepath=path)
     datarec.FORCE_SCOPE[0] = "EVERYTHING"
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    assert text is not None and ("hindsight_data" in text) == (mode in ("EMBED", "BOTH"))
+    assert text is not None and ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
+    assert "hindsight_data" not in text           # R061: the base64 copy is never written
 
 
 def reload_all_rows(mode):

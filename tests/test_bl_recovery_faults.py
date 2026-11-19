@@ -157,15 +157,15 @@ def test_embed_save_out_of_memory_keeps_the_history():
     path = os.path.join(TMP, "embed_oom.blend")
     save(path)
     book.stroke(obs["A"], 10)
-    real = persist.parts_to_b64
+    real = persist.parts_to_bytes
 
     def boom(parts):
         raise MemoryError("test: out of memory building the stored history")
-    persist.parts_to_b64 = boom
+    persist.parts_to_bytes = boom
     try:
         file_state = save(path)
     finally:
-        persist.parts_to_b64 = real
+        persist.parts_to_bytes = real
     told = [t for t in notes() if t == getattr(persistence, "EMBED_FALLBACK_TEXT", None)]
     for rec in ("LAST_SAVED", "INTERRUPTED"):
         SETTINGS.crash_recovery = rec
@@ -585,7 +585,6 @@ def test_damaged_saved_history():
     """The saved history damaged on disk (a bit flipped, the end cut off, a tail of zeros), in the
     history folder and inside the .blend. Opening the file never fails and never plays damaged steps:
     what comes back matches the file at every position, and anything that didn't come back is told."""
-    import binascii
     for mode in ("SIDECAR", "EMBED"):
         for kind in ("flip", "cut", "zeros"):
             setup(mode, "LAST_SAVED")
@@ -604,8 +603,9 @@ def test_damaged_saved_history():
             else:
                 def change():
                     t = bpy.data.texts[persistence.TEXT_NAME]
-                    raw = binascii.a2b_base64(t[persistence.DATA_PROP])
-                    t[persistence.DATA_PROP] = binascii.b2a_base64(_damage(raw, kind), newline=False).decode("ascii")
+                    raw = t[persistence.DATA_BIN_PROP]
+                    del t[persistence.DATA_BIN_PROP]      # Blender cuts bytes at a zero when it replaces them
+                    t[persistence.DATA_BIN_PROP] = _damage(raw, kind)
                 _resave_without_hindsight(path, change)
             setup(mode, "LAST_SAVED")
             interrupt(path)

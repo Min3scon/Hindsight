@@ -1,0 +1,23 @@
+R061 A/B: Save mode Embed, 100k-vertex mesh, 6,000 steps (bench/saveload_bench.py setup), medians of reps 1-4 per process.
+A = ee5ba67 (base64 text in hindsight_data), B = R061 (bytes in hindsight_data_bin). Alternating processes.
+Columns: round side {save_ms, open_ms, blend_mb (file after save), save_peak_mb (VmHWM above RSS during save), steps}
+
+bpy 5.3.0 module (Compress File on, the Blender 5 default):
+1 A AB {"save_ms": 371.6, "open_ms": 346.8, "blend_mb": 54.68, "save_peak_mb": 71.7, "steps": 6001}
+1 B AB {"save_ms": 223.6, "open_ms": 162.7, "blend_mb": 54.92, "save_peak_mb": 57.0, "steps": 6001}
+2 A AB {"save_ms": 387.1, "open_ms": 342.6, "blend_mb": 54.68, "save_peak_mb": 71.6, "steps": 6001}
+2 B AB {"save_ms": 222.3, "open_ms": 152.5, "blend_mb": 54.92, "save_peak_mb": 55.7, "steps": 6001}
+3 A AB {"save_ms": 367.0, "open_ms": 331.5, "blend_mb": 54.68, "save_peak_mb": 73.0, "steps": 6001}
+3 B AB {"save_ms": 206.6, "open_ms": 144.5, "blend_mb": 54.92, "save_peak_mb": 53.8, "steps": 6001}
+4 A AB {"save_ms": 401.9, "open_ms": 359.2, "blend_mb": 54.68, "save_peak_mb": 75.9, "steps": 6001}
+4 B AB {"save_ms": 214.4, "open_ms": 154.0, "blend_mb": 54.92, "save_peak_mb": 53.5, "steps": 6001}
+5 A AB {"save_ms": 367.3, "open_ms": 336.2, "blend_mb": 54.68, "save_peak_mb": 71.7, "steps": 6001}
+5 B AB {"save_ms": 206.5, "open_ms": 151.6, "blend_mb": 54.92, "save_peak_mb": 53.7, "steps": 6001}
+
+bpy 4.2.23 module (Compress File off, the Blender 4.2 default):
+1 A AB {"save_ms": 415.1, "open_ms": 316.5, "blend_mb": 77.81, "save_peak_mb": 72.1, "steps": 6001}
+1 B AB {"save_ms": 218.8, "open_ms": 166.4, "blend_mb": 60.07, "save_peak_mb": 53.9, "steps": 6001}
+2 A AB {"save_ms": 513.2, "open_ms": 325.7, "blend_mb": 77.81, "save_peak_mb": 71.1, "steps": 6001}
+2 B AB {"save_ms": 192.1, "open_ms": 165.6, "blend_mb": 60.07, "save_peak_mb": 53.6, "steps": 6001}
+3 A AB {"save_ms": 433.4, "open_ms": 337.7, "blend_mb": 77.81, "save_peak_mb": 71.6, "steps": 6001}
+3 B AB {"save_ms": 193.0, "open_ms": 158.1, "blend_mb": 60.07, "save_peak_mb": 53.5, "steps": 6001}
