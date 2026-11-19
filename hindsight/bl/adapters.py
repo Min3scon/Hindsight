@@ -2742,7 +2742,8 @@ def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
         # (the scene's loose node groups are not: they coming and going is a step, D152, like D151's data)
-        return path in ("settings", COMP_TREE) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
+        # (the inventories coming and going, as Movie Mode stops the capture of them, is no step either)
+        return path in ("settings", COMP_TREE, INV_LOOSE, INV_GROUPS) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
                                                        SK_PREFIX, MATA_PREFIX, NG_PREFIX, NGA_PREFIX, PART_PREFIX))
 
