@@ -521,8 +521,7 @@ def _ext_part(idb) -> dict:
         nested = DATA_STRUCTS.get(d.bl_rna.identifier)
         if nested is not None:
             _put(e, DATA_PREFIX + DATA_VALUES, "the data's settings", settings_of, d, _DATA_SKIP, nested)
-            if idb.mode != "EDIT":
-                _put(e, DATA_PREFIX + GEOM, "the shape", geometry_of, d)      # D121, D131
+        # the shape (D121, D131) is read in capture: geometry_of checks its own counts every time
         # D125: always there (None without animation), so the first keyframe is a change
         if hasattr(d, "animation_data"):
             r = _part("the data's animation", anim_of, d)
@@ -569,6 +568,11 @@ class ObjectAdapter(Adapter):
         if hasattr(idb, "modifiers"):
             out.update(modifier_values(idb))   # D110: the modifier stack and each modifier's settings
         out.update(_ext_part(idb))             # D117 to D137: kept until a dependency changes
+        d = idb.data
+        if (d is not None and d.bl_rna.identifier in _GEOM_TYPES and d.library is None and idb.mode != "EDIT"
+                and d.bl_rna.identifier in DATA_STRUCTS and _owns_data(idb, d)):
+            # not kept with the rest: a point cloud's resize doesn't tell the depsgraph (D134)
+            _put(out, DATA_PREFIX + GEOM, "the shape", geometry_of, d)      # D121, D131
         if idb.data is not None and hasattr(idb.data, "materials"):
             if len(idb.material_slots):
                 hit = _OBMAT_CACHE.get(idb.session_uid)
