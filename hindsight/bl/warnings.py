@@ -117,6 +117,8 @@ def collect(context, obj) -> list:
         return out
     try:
         out = _errors(context, obj)
+        # D113: Record everything records these on an object it is on for (D108, D110 to D112)
+        everything = _recorded_fully(obj)
 
         data = getattr(obj, "data", None)
         if data is not None and getattr(obj, "type", 'MESH') == 'MESH':
@@ -126,22 +128,23 @@ def collect(context, obj) -> list:
                 out.append((WARNING, TXT_LARGE.format(verts=nv / 1e6, limit=int(SETTINGS.memory_limit_mb))))
             if getattr(data, "users", 1) > 1:
                 out.append((WARNING, TXT_LINKED))
-            if getattr(data, "shape_keys", None) is not None:
+            if getattr(data, "shape_keys", None) is not None and not everything:
                 out.append((WARNING, TXT_SHAPE_KEYS))
 
         mods = [m for m in getattr(obj, "modifiers", ()) if m.type != 'MULTIRES']
         if any(m.type in DEFORM_TYPES for m in mods):
             out.append((WARNING, TXT_DEFORM))
-        if any(m.type not in DEFORM_TYPES for m in mods):
+        if any(m.type not in DEFORM_TYPES for m in mods) and not everything:
             out.append((INFO, TXT_MODIFIERS))
 
         ad = getattr(obj, "animation_data", None)
         if ad is not None and getattr(ad, "action", None) is not None:
             out.append((WARNING, TXT_ANIMATED))
 
-        if len(getattr(obj, "vertex_groups", ())) > 0:
+        if len(getattr(obj, "vertex_groups", ())) > 0 and not everything:
             out.append((INFO, TXT_VGROUPS))
-        if any(getattr(sl, "material", None) is not None for sl in getattr(obj, "material_slots", ())):
+        if not everything and any(getattr(sl, "material", None) is not None
+                                  for sl in getattr(obj, "material_slots", ())):
             out.append((INFO, TXT_MATERIALS))
 
         out.extend(everything_notes(context, obj))
@@ -176,6 +179,15 @@ TXT_EV_PARENT_DEFORM = ("Parenting with deform added a modifier ({names}). Modif
 _DEFORM_MODIFIERS = {"ARMATURE", "LATTICE", "CURVE"}
 
 
+def _recorded_fully(obj) -> bool:
+    """Record is Everything and this object is switched on (its own data is recorded, not linked)."""
+    try:
+        from . import datarec
+        return bool(datarec.scope_everything() and datarec.is_tracked(obj) and not datarec.is_linked(obj))
+    except Exception:
+        return False
+
+
 def everything_notes(context, obj) -> list:
     """Limits of Record everything that apply to this object (only when Record is Everything)."""
     try:
@@ -208,11 +220,7 @@ def everything_notes(context, obj) -> list:
                if p.identifier != "rna_type"):
             out.append((INFO, TXT_EV_LISTS))
             break
-    parent = getattr(obj, "parent", None)
-    deform = [m.name for m in getattr(obj, "modifiers", ())
-              if parent is not None and m.type in _DEFORM_MODIFIERS and getattr(m, "object", None) == parent]
-    if deform:
-        out.append((INFO, TXT_EV_PARENT_DEFORM.format(names=", ".join(deform[:3]))))
+    # D110: the modifier and vertex groups parenting with deform adds are recorded with it now
     if getattr(obj, "type", None) == "MESH" and len(obj.data.vertices) > runtime.EDIT_STEPS_MAX:
         out.append((INFO, TXT_EV_EDIT_BIG))
     if not scene_on:

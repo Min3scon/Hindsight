@@ -162,37 +162,38 @@ rule). Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbere
 | L1 | Vertex Paint not claimed (one check failed on 5.0.1) | check fixed (D74, D71); proven on a real 5.0.1 binary in CI, then claimed (Phase 0 CI) | partial: the check is fixed and passes in module runs; no real-binary run, COVERAGE row `sculpt.colors` stays "not covered" | `tests/test_bl_recorder.py` `test_restored_colour_layer_is_active`, `test_vertex_paint_layer_added_late`; `tests/test_bl_t0_gate.py` `test_gate_colors` |
 | L2 | Objects only once switched on | one whole-file switch; default decided at release (Phase 3) | not started | none |
 | L3 | Multires and Dyntopo pause recording | Multires: one exact step per Sculpt Mode visit; Dyntopo: a step per stroke up to about 200k triangles, per visit above; strokes made while paused become a step (Phase 4, Phase 1) | not started (design: LIMITS-A sections 1.1 to 1.7) | none |
-| L4 | Animated or driven properties | the animation itself is recorded (P5); un-keyed axes and muted curves now (Phase 1, P5) | not started | none |
-| L5 | Physics and particles don't come back | settings come back; baked caches cannot (files), the note says so (Phase 1, P2) | not started | none |
+| L4 | Animated or driven properties | the animation itself is recorded (P5); un-keyed axes and muted curves now (Phase 1, P5) | partial: un-keyed axes, per-index keys and muted curves are recorded (D103); the animation itself (P5) not started | `tests/test_bl_adapters.py` `test_partly_animated_and_muted` |
+| L5 | Physics and particles don't come back | settings come back; baked caches cannot (files), the note says so (Phase 1, P2) | done for settings: physics and particle settings come back with a deleted object (D102); Dynamic Paint surfaces and baked caches can't (files), the note says so | `tests/test_bl_adapters_physics.py` |
 | L6 | Edit Mode up to 300,000 vertices | topology reads much faster; cap becomes a preference; limit re-measured (Phase 0, Phase 1) | partial: the faster reads are merged (R014 in OPTIMISATION_LOG: "70 to 150 times faster", no absolute numbers); the preference and the re-measurement are not done | `tests/test_bl_runtime_topo.py` `test_topology_read_matches_legacy`, `test_write_snapshot_matches_legacy`, `test_fingerprint_same_both_paths`, `test_topology_step_round_trip` |
-| L7 | Linked duplicates recorded once | one shared history per shared mesh, shown on every user (Phase 1). LIMITS-A: wrong in the default scope, two histories fight over one shared mesh | not started | none |
-| L8 | Linked objects not recorded | stays (Blender); library overrides keep their history across reload (Phase 1). LIMITS-A: overrides lose their history on reload today | not started | none |
-| L9 | A taken name can't be given back | swaps and chains inside one jump fixed; a name held by an untouched object stays, with the note (Phase 1) | not started | none |
-| L10 | 10,000 steps | preference up to 100,000, default stays 10,000; incremental global timeline (Phase 1) | not started | none |
-| L11 | Topology change loses weights and shapes | recorded in every scope, size threshold measured (Phase 1, P1) | not started | none |
+| L7 | Linked duplicates recorded once | one shared history per shared mesh, shown on every user (Phase 1). LIMITS-A: wrong in the default scope, two histories fight over one shared mesh | done: a shared mesh is recorded in one history, the owner's; other users' commits go to it (D104) | `tests/test_bl_linked_dup.py` |
+| L8 | Linked objects not recorded | stays (Blender); library overrides keep their history across reload (Phase 1). LIMITS-A: overrides lose their history on reload today | done: library overrides keep their history across reload; library paths in references are absolute (D109) | `tests/test_bl_override.py` |
+| L9 | A taken name can't be given back | swaps and chains inside one jump fixed; a name held by an untouched object stays, with the note (Phase 1) | done: swaps and chains of names inside one jump come back (D105); a name held by an untouched object stays, with the note | `tests/test_bl_t1_names.py` |
+| L10 | 10,000 steps | preference up to 100,000, default stays 10,000; incremental global timeline (Phase 1) | done: Steps per object goes up to 100,000; the global timeline groups are extended per step instead of rebuilt (R032) | `tests/test_bl_panels.py`, `tests/test_bl_runtime_groups.py` |
+| L11 | Topology change loses weights and shapes | recorded in every scope, size threshold measured (Phase 1, P1) | done: vertex group weights and shape keys kept on topology steps up to 300,000 vertices (EXTRAS_TOPO_MAX), refreshed on entering and leaving record modes (D106) | `tests/test_bl_topo_extras.py` |
 | L12 | Deleted parent or target | "Bring back" from the note (Phase 1; lower priority) | not started | none |
-| L13 | Collections need "Objects added and deleted" | recorded with Everything (Phase 1, P8) | not started | none |
-| L14 | Changes without Hindsight | kept when Blender's `.blend1` has the saved mesh, otherwise today's safe behaviour (Phase 1) | not started | none |
-| L15 | Modifiers, Geometry Nodes, materials, weight paint, UVs, texture paint, animation, shape keys, armatures, other object types, scene settings | P1 to P8, and G (a generic recorder for any datablock, so third-party add-ons are covered) (Phase 3); needs the P0 seam first | not started (designs in LIMITS-B sections 4 and 5; the parked tier 2 code is described in LIMITS-B section 1) | none |
-| L16 | Six defects in rows the site already claims | fixed with regression tests (rows D-a to D-f below) | not started | none |
+| L13 | Collections need "Objects added and deleted" | recorded with Everything (Phase 1, P8) | not started (deferred: needs a registry flag, journal and panel plumbing) | none |
+| L14 | Changes without Hindsight | kept when Blender's `.blend1` has the saved mesh, otherwise today's safe behaviour (Phase 1) | done: a mesh changed while Hindsight wasn't there is bridged from Blender's .blend1 when it has the saved mesh and nothing is ahead of the cursor (D107); otherwise today's safe behaviour | `tests/test_bl_outside_backup.py`, `tests/test_bl_t1_outside.py` |
+| L15 | Modifiers, Geometry Nodes, materials, weight paint, UVs, texture paint, animation, shape keys, armatures, other object types, scene settings | P1 to P8, and G (a generic recorder for any datablock, so third-party add-ons are covered) (Phase 3); needs the P0 seam first | partial, with Record everything: vertex group, UV map and shape key lists (D108), modifiers and Geometry Nodes inputs (D110, D100), material slots (D111), materials and their node trees (D112), custom properties and any add-on's data on objects, object data, scenes and materials (D114, the generic part of G for ID properties), scene, render and world settings (D116), object settings and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and meshes (D117). Not started: weight paint per stroke, texture paint, animation, armatures, curve and lattice points, view layer settings, add-on datablocks and custom node trees outside materials and worlds | `tests/test_bl_t1_lists.py`, `tests/test_bl_t1_modifiers.py`, `tests/test_bl_t1_material_slots.py`, `tests/test_bl_t1_materials.py`, `tests/test_bl_t1_addon_props.py` (stand-in add-on `tests/addons/hs_fake_addon.py`), `tests/test_bl_t1_scene_settings.py`, `tests/test_bl_t1_settings.py` |
+| L16 | Six defects in rows the site already claims | fixed with regression tests (rows D-a to D-f below) | partial: D-a, D-b, D-c, D-e fixed (D100, D110, D108, D103); D-d custom normals and D-f Weight Paint per stroke not started | see the table below |
 
 Also in the plan and not started: the whole-file "Record > Everything" switch with a real-window CI gate
 (Phase 3), the datablock snapshot fallback for data RNA cannot express (Phase 3), "File history" for data
-no object owns (Phase 3), the synthetic third-party add-on tests in `tests/addons/` (Phase 3), and
+no object owns (Phase 3), more of the third-party add-on tests in `tests/addons/` (a custom node tree, add-on
+datablocks; the property part exists: `hs_fake_addon.py`) (Phase 3), and
 Multires and Dyntopo behind one preference, off until real strokes pass in a windowed CI job (Phase 4).
 
 ### The six defects of LIMITS-B (rows the site already claims)
 
 | Id | Defect | Status | Test |
 |---|---|---|---|
-| D-a | Blender 5.2 and 5.3: an object deleted and brought back loses its Geometry Nodes input values (`adapters._id_props` raises TypeError on 5.2+; fix is a `gn_inputs()` helper used by `object_body` and `_recreate_object`) | not started | none |
-| D-b | Going back over Apply Modifier gives the mesh from before Apply without the modifier's effect | blocked: needs the modifier adapter (P2) | none |
-| D-c | Adding, removing or renaming a vertex group, shape key or UV map makes a step whose going back leaves the list as it is now (D43) | blocked: needs the mesh data adapter (P1) | none |
+| D-a | Blender 5.2 and 5.3: an object deleted and brought back loses its Geometry Nodes input values (`adapters._id_props` raises TypeError on 5.2+; fix is a `gn_inputs()` helper used by `object_body` and `_recreate_object`) | done (D100) | `tests/test_bl_adapters_gn.py` |
+| D-b | Going back over Apply Modifier gives the mesh from before Apply without the modifier's effect | done (D110) | `tests/test_bl_t1_modifiers.py` |
+| D-c | Adding, removing or renaming a vertex group, shape key or UV map makes a step whose going back leaves the list as it is now (D43) | done (D108) | `tests/test_bl_t1_lists.py` |
 | D-d | Custom normals on 5.0+ (`custom_normal`, INT16_2D) are dropped by `meshio._recordable`; going back over Set Custom Normals keeps the new normals on the old mesh | blocked: needs the INT16_2D channel type in `core/types.py` and `native/` (P1) | none |
-| D-e | The first keyframe on a recorded property makes a step that does nothing when going back (the property appears as MISSING) | not started (Phase 1, with the seam's ANIMATED rule) | none |
+| D-e | The first keyframe on a recorded property makes a step that does nothing when going back (the property appears as MISSING) | done (D103) | `tests/test_bl_adapters.py` `test_animation_is_not_recorded` |
 | D-f | Weight Paint strokes are not steps (`datarec.commit` reads only Object Mode meshes); needs a real window to confirm | blocked: needs P1 and a real window | none |
 
-These six have no DEFECTS.md numbers yet. They were found by `probe_limits.py` (80 cases on the five
+Fixed ones carry their DEFECTS.md numbers. They were found by `probe_limits.py` (80 cases on the five
 Blender versions, now lost); the verdict table is in `dev/reports/LIMITS-B.md` section 2.
 
 ### Hostile review (`dev/reports/review.md`, findings S1-1 to S4-3)

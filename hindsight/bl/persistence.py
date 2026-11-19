@@ -566,6 +566,10 @@ def on_load_post(*args) -> None:
             pass
         runtime.set_registry(reg)
         try:
+            runtime.restamp_overrides(getattr(reg, "saved", None))        # D109
+        except Exception as e:
+            guard.fail("loading", e, "could not find recorded library overrides again")
+        try:
             runtime.prime_states()
         except Exception as e:
             guard.fail("loading", e, "could not read meshes after loading")

@@ -1,6 +1,7 @@
 """Hindsight runtime: recorder (stroke detection, capture), playback and the API used by the UI."""
 from __future__ import annotations
 
+import os
 import time
 
 import bpy
@@ -278,6 +279,55 @@ def extras_on(obj) -> bool:
         return False
 
 
+EXTRAS_TOPO_MAX = 300_000    # D106: up to this many vertices, topology steps keep weights and shapes
+_SHAPES_STALE: set = set()   # D106: uids whose kept shape keys may be older than the mesh's
+
+
+def topo_extras_on(obj) -> bool:
+    """D106: an object not recorded with Record everything whose mesh has vertex groups or shape keys:
+    its topology steps (remesh, decimate, ...) carry the weights and shape keys from before and after,
+    so going back over one gives them back. Strokes don't (they don't change them)."""
+    if extras_on(obj):
+        return False
+    me = getattr(obj, "data", None)
+    if me is None or getattr(obj, "type", None) != "MESH":
+        return False
+    if not (len(getattr(obj, "vertex_groups", ())) or getattr(me, "shape_keys", None) is not None):
+        return False
+    return len(me.vertices) <= EXTRAS_TOPO_MAX
+
+
+def refresh_extras(obj, st=None, me=None, shapes_only: bool = False) -> None:
+    """D106: the state's vertex group weights and shape key positions read again (they change outside
+    recorded strokes: Weight Paint, Edit Mode, shape key edits). No step: the state follows the mesh.
+    shapes_only: after a stroke, which can change a shape key but never a weight (reading weights
+    goes through every vertex in Python)."""
+    if not topo_extras_on(obj):
+        return
+    st = st or _STATES.get(obj_uid(obj))
+    if st is None or not st.counts:
+        return
+    me = me or obj.data
+    if len(me.vertices) != st.counts.get("POINT", -1):
+        return
+    if shapes_only:
+        sk = getattr(me, "shape_keys", None)
+        vals = {}
+        if sk is not None:
+            for i, kb in enumerate(sk.key_blocks):
+                co = np.empty(len(kb.data) * 3, np.float32)
+                kb.data.foreach_get("co", co)
+                vals[meshio.sk_key(i, kb.name)] = co
+        drop = [k for k in st.arrays if k.startswith(meshio.SK_PREFIX)]
+    else:
+        vals = meshio.read_extras(obj, me)
+        drop = [k for k in st.arrays if meshio.is_extra(k)]
+    for k in drop:
+        del st.arrays[k]
+    st.arrays.update(vals)
+    _SHAPES_STALE.discard(obj_uid(obj))
+
+
 def read_mesh_snapshot(obj):
     """The object's mesh as a Snapshot. In Edit Mode the mesh attributes are the edit-mode layers,
     so the edit mesh is written back first and a plain copy is read instead."""
@@ -417,11 +467,16 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
     c = meshio.counts(me)
     ext = full and extras_on(obj)
     if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=deep)):
-        after = meshio.read_snapshot(me, ob=obj, extras=ext)
+        after = meshio.read_snapshot(me, ob=obj, extras=ext or topo_extras_on(obj))
         # `before` takes the state's arrays without copying them: every caller either drops the step
         # or calls _apply_to_state, whose set_snapshot gives the state fresh arrays (never in place)
+        before = dict(st.arrays)
+        if not ext and uid in _SHAPES_STALE:
+            # D106: strokes since the shape keys were last read: they may be older than the mesh was.
+            # No shapes rather than shapes that never existed (going back rebuilds them from positions)
+            before = {k: v for k, v in before.items() if not k.startswith(meshio.SK_PREFIX)}
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
-                    kind=TOPO, before=Snapshot(dict(st.counts), dict(st.arrays)), after=after)
+                    kind=TOPO, before=Snapshot(dict(st.counts), before), after=after)
     extra_vals = meshio.read_extras(obj, me) if ext else {}
     keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
@@ -733,6 +788,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     at = h.cursor
     removed = h.push(step)
     _apply_to_state(st, step)
+    if step.kind == DELTA and getattr(obj.data, "shape_keys", None) is not None:
+        _SHAPES_STALE.add(uid)   # D106: a stroke can change a shape key; read again when leaving
     if removed:
         _journal("TRUNC", {"hist": h.uid, "keep": at})
     entry = h.entries[-1]
@@ -908,6 +965,7 @@ def _enter(obj) -> None:
         commit(obj, label="Changes Outside History", mode=obj.mode, full=True)
     else:
         ensure_state(obj, refresh=True)
+    refresh_extras(obj)          # D106: weights and shapes as they are now (Weight Paint isn't a step)
 
 
 def check_mode_transition() -> None:
@@ -928,6 +986,8 @@ def check_mode_transition() -> None:
             commit(prev, label="Edit Mode", mode="EDIT", full=True)
     elif prev is not None and pmode in RECORD_MODES and obj_uid(prev) in _DIRTY:
         commit(prev, mode=pmode)
+    if prev is not None and pmode in RECORD_MODES and prev.mode != pmode and obj_uid(prev) in _SHAPES_STALE:
+        refresh_extras(prev, shapes_only=True)
     if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and not is_excluded(obj):
         if mode == "VERTEX_PAINT" and not len(obj.data.color_attributes):
             # Blender adds a colour layer on entering Vertex Paint; 5.3 does it after the mode's first
@@ -1120,6 +1180,14 @@ def _find_any(uid):
         return None
 
 
+def _after_mesh_write(ob) -> None:
+    try:
+        from . import adapters
+        adapters.after_mesh_write(ob)      # D108: UV map flags, once the UV maps exist again
+    except Exception as e:
+        log.error_once(("after_mesh_write", str(e)), f"could not finish restoring {ob.name}: {e}", e)
+
+
 def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     """Move one history to pos and write what changed to Blender. With acc (a global jump), the
     move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
@@ -1170,6 +1238,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
             if relink_last:
                 datarec.write(ob, st, data_keys)
                 wrote_data = True
+            _after_mesh_write(ob)
             continue
         # the mesh can be in Edit Mode through the object itself or (D51) through a linked duplicate
         editor = ob if ob.mode == "EDIT" else _mesh_editor(ob)
@@ -1180,6 +1249,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         if fp and target not in meshes:
             meshes[target] = [mesh_fingerprint(ob), None]
         _write_state(ob, st, mesh_keys, final)
+        _after_mesh_write(ob)
         if fp:
             meshes[target][1] = mesh_fingerprint(ob)
         if editor is not None:
@@ -1305,23 +1375,74 @@ def mesh_fingerprint(ob) -> str:
 _GROUPS = {}   # the global timeline's operations and the position on it, kept until they change
 
 
+def _hist_sig(h):
+    return (tuple(h.members), len(h.entries), h.entries[0].seq if h.entries else 0,
+            h.entries[-1].seq if h.entries else 0)
+
+
 def _groups(vis) -> list:
     """globaltl.global_groups, kept between calls: the slider, the header, the sidebar and Movie
     Mode ask for it on every redraw and every frame, and building it walks and sorts every step.
-    Built again when a step is recorded (every new step takes a new number), a history gains,
-    loses or replaces steps or objects, or what is visible changes."""
-    key = (id(_REG), _REG.next_seq, frozenset(vis), tuple(
-        (h.uid, tuple(h.members), len(h.entries), h.entries[0].seq if h.entries else 0,
-         h.entries[-1].seq if h.entries else 0) for h in _REG.histories.values()))
-    if _GROUPS.get("key") != key:
-        _GROUPS.clear()
-        _GROUPS.update(key=key, groups=globaltl.global_groups(_REG, vis))
-    return _GROUPS["groups"]
+    A step recorded at the end of one history (the usual case) extends the kept groups; anything else
+    (a history gains, loses or replaces steps or objects, what is visible changes) builds them again."""
+    vis = frozenset(vis)
+    sigs = {h.uid: _hist_sig(h) for h in _REG.histories.values()}
+    key = (id(_REG), _REG.next_seq, vis, tuple(sorted(sigs.items())))
+    if _GROUPS.get("key") == key:
+        return _GROUPS["groups"]
+    groups = _extend_groups(vis, sigs)
+    if groups is None:
+        groups = globaltl.global_groups(_REG, vis)
+    _GROUPS.clear()
+    _GROUPS.update(key=key, groups=groups, vis=vis, reg=id(_REG), sigs=sigs,
+                   ver=_GROUPS_VER[0] + 1)
+    _GROUPS_VER[0] += 1
+    return groups
+
+
+_GROUPS_VER = [0]
+
+
+def _extend_groups(vis, sigs):
+    """The kept groups with the one step appended since they were built, or None to build again."""
+    old = _GROUPS.get("sigs")
+    if old is None or _GROUPS.get("vis") != vis or _GROUPS.get("reg") != id(_REG) or set(old) != set(sigs):
+        return None
+    grown = [u for u in sigs if sigs[u] != old[u]]
+    if len(grown) != 1:
+        return None
+    u = grown[0]
+    om, olen, ofirst, olast = old[u]
+    m, n, first, last = sigs[u]
+    if m != om or n != olen + 1 or (olen and first != ofirst) or last <= olast:
+        return None
+    h = _REG.histories[u]
+    groups = list(_GROUPS["groups"])
+    if vis is not None and not (set(h.members) & vis):
+        return groups                                    # not on the visible timeline
+    if groups and last <= groups[-1][-1][0]:
+        return None                                      # not after every kept step: build again
+    e = h.entries[-1]
+    item = (e.seq, h.uid, n - 1)
+    gk = globaltl._group_key(e)
+    if gk != e.seq:                                      # D52: part of an operation already on it
+        for gi in range(len(groups) - 1, -1, -1):
+            g = groups[gi]
+            if globaltl._group_key(_entry(g[0])) == gk:
+                groups[gi] = sorted(g + [item])
+                return groups
+    groups.append([item])
+    return groups
+
+
+def _entry(t):
+    _seq, hid, i = t
+    return _REG.histories[hid].entries[i]
 
 
 def _position(vis, groups) -> int:
     """globaltl.global_position, kept until a cursor moves."""
-    key = (id(groups), tuple(h.cursor for h in _REG.histories.values()))
+    key = (_GROUPS.get("ver"), id(groups), tuple(h.cursor for h in _REG.histories.values()))
     if _GROUPS.get("pos_key") != key:
         _GROUPS.update(pos_key=key, pos=globaltl.global_position(_REG, vis, groups))
     return _GROUPS["pos"]
@@ -1548,8 +1669,65 @@ def reset_all(context) -> None:
 
 
 OUTSIDE_LABEL = "Changes Outside Hindsight"
+OUTSIDE_BRIDGED_TEXT = ("{name} was changed while Hindsight wasn't running. Its history goes on, with the "
+                        "change as one step, read from the backup copy Blender keeps of the file")
 OUTSIDE_MESH_TEXT = ("{name} was changed while Hindsight wasn't running, so its history no longer matches its "
                      "mesh and was left out")
+
+
+def _override_key(idb):
+    """[library file, name of the linked datablock] of a library override, else None."""
+    ol = getattr(idb, "override_library", None)
+    ref = getattr(ol, "reference", None) if ol is not None else None
+    lib = getattr(ref, "library", None) if ref is not None else None
+    if lib is None:
+        return None
+    from . import idmap
+    return [type(idb).__name__, idmap.lib_path(lib), ref.name]
+
+
+OVERRIDES_KEY = "~overrides"   # D109: in Registry.saved, {id: [type, library file, name]} of overrides
+
+
+def override_ids() -> dict:
+    """Every library override (objects and collections) that has a Hindsight id, by its key."""
+    out = {}
+    for col in (bpy.data.objects, bpy.data.collections):
+        for idb in col:
+            if getattr(idb, "override_library", None) is None:
+                continue
+            u = idb.get(UID_PROP)
+            k = _override_key(idb) if u else None
+            if k is not None:
+                out[u] = k
+    return out
+
+
+def restamp_overrides(saved) -> int:
+    """D109: Blender builds library overrides again from their library when a file is opened, and the
+    id Hindsight gave one is gone. Each override saved with an id gets it back, found by its type,
+    library file and the name of the datablock it overrides. Returns how many."""
+    from . import idmap
+    m = (saved or {}).get(OVERRIDES_KEY)
+    if not isinstance(m, dict) or not m:
+        return 0
+    want = {}
+    for u, k in m.items():
+        if isinstance(k, list) and len(k) == 3 and idmap.find(u) is None:
+            want.setdefault(tuple(k), []).append(u)
+    n = 0
+    for col in (bpy.data.objects, bpy.data.collections):
+        for idb in col:
+            k = _override_key(idb)
+            if k is None or tuple(k) not in want or idb.get(UID_PROP) is not None:
+                continue
+            us = want[tuple(k)]
+            if len(us) != 1:
+                continue                  # two overrides of one datablock: can't tell them apart
+            idb[UID_PROP] = us[0]
+            idmap.note(idb, us[0])
+            n += 1
+    return n
 
 
 def saved_prints() -> dict:
@@ -1582,7 +1760,61 @@ def saved_prints() -> dict:
             log.error_once(("saved_prints", str(e)), f"could not note {getattr(ob, 'name', u)} for saving: {e}", e)
             continue
         out[u] = rec
+    ov = override_ids()
+    if ov:
+        out[OVERRIDES_KEY] = ov               # D109: their ids, which Blender drops on load
     return out
+
+
+def _bridge_from_backup(ob, uid, h, fp) -> bool:
+    """D107: the mesh was changed in a session without Hindsight. Blender keeps the file as it was
+    before that session's save in <file>.blend1 (Save Versions). When that copy's mesh is exactly the
+    one Hindsight saved, the change becomes one topology step from it to the mesh now, and the history
+    is kept. False when there is no such copy or it doesn't match (then the history is left out)."""
+    path = bpy.data.filepath
+    if not path or ob.mode == "EDIT" or not os.path.isfile(path + "1"):
+        return False
+    name = ob.data.name
+    kinds = ("meshes", "materials", "images", "textures", "node_groups")
+    before_ids = {k: {d.as_pointer() for d in getattr(bpy.data, k)} for k in kinds}
+    loaded = None
+    try:
+        with suspended():
+            with bpy.data.libraries.load(path + "1", link=False) as (src, dst):
+                if name not in src.meshes:
+                    return False
+                dst.meshes = [name]
+            loaded = dst.meshes[0] if dst.meshes else None
+        if loaded is None:
+            return False
+        ext = extras_on(ob)
+        if meshio.fingerprint(loaded, ob if ext else None) != fp:
+            return False
+        with_extras = ext or topo_extras_on(ob)
+        before = meshio.read_snapshot(loaded, ob=ob, extras=with_extras)
+        after = meshio.read_snapshot(ob.data, ob=ob, extras=with_extras)
+        step = Step(seq=_REG.new_seq(), label=OUTSIDE_LABEL, mode="OBJECT", target=uid, time=time.time(),
+                    kind=TOPO, before=before, after=after)
+        at = h.cursor
+        removed = h.push(step)
+        if removed:
+            _journal("TRUNC", {"hist": h.uid, "keep": at})
+        entry = h.entries[-1]
+        _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
+        return True
+    except Exception as e:
+        log.error_once(("blend1_bridge", str(e)), f"could not read the backup copy of the file: {e}", e)
+        return False
+    finally:
+        # what loading the copy brought in goes again (the mesh and anything it pulled with it)
+        with suspended():
+            for k in kinds:
+                col = getattr(bpy.data, k)
+                for d in [d for d in col if d.as_pointer() not in before_ids[k] and d.users == 0]:
+                    try:
+                        col.remove(d)
+                    except Exception:
+                        pass
 
 
 def check_outside_changes(saved: dict) -> None:
@@ -1598,7 +1830,14 @@ def check_outside_changes(saved: dict) -> None:
         h = _REG.history_for(u)
         fp = rec.get("mesh")
         if fp and isinstance(ob, bpy.types.Object) and ob.type == "MESH" and h is not None and h.entries:
-            if mesh_fingerprint(ob) != fp:
+            if (mesh_fingerprint(ob) != fp and h.cursor == len(h.entries) and len(h.members) == 1
+                    and _bridge_from_backup(ob, u, h, fp)):
+                # D107 (only with nothing recovered ahead of the saved position, and for one object):
+                # the file's state is after the new step, for crash recovery as for D83
+                load_notes.append(("INFO", OUTSIDE_BRIDGED_TEXT.format(name=ob.name)))
+                ensure_state(ob, refresh=True)
+                outside.add(u)
+            elif mesh_fingerprint(ob) != fp:
                 h.reset()
                 # with the meshes as they are now: steps recorded from here on belong to them, and
                 # crash recovery must not take this history for a stale one again (D82)

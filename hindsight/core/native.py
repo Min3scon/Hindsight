@@ -1,46 +1,49 @@
-"""The optional native engine: the Rust module `hindsight_native` (source in native/ at the
-repository root, shipped as wheels in hindsight/wheels).
+"""The native engine: the Rust module `hindsight_native` (source in native/ at the repository root,
+shipped as wheels in hindsight/wheels). Pure Python, no bpy.
 
-It does the number work of delta.py (diff, apply, and the transforms of packing and unpacking a
-record) bit for bit like the Python code there, which stays as the reference and is used whenever
-the module can't be loaded. Pure Python, no bpy.
+Hindsight's storage engine runs in Rust: the step container and the codecs (zstd, lz4, zlib), and
+the number work of delta.py (diff, apply, packing and unpacking of records, runs of steps). There is
+no Python fallback for those. If the module cannot be loaded, importing this file raises
+EngineMissing with the reason, and so does importing anything that needs the engine.
 
-HINDSIGHT_NATIVE=0        always use the Python code
-HINDSIGHT_NATIVE=require  a missing, older or mismatched module is an error (tests)
+ENGINE   the module (always set when this file imported)
+lib      the module, or None while HINDSIGHT_NATIVE=0: delta.py reads this at every call and then
+         runs its own per-function Python paths. Benchmarks and the equivalence tests use that
+         switch; the step container and the codecs ignore it (they have no Python path).
 
-A module from an older release (API from MIN_API up) is still used: callers look a function up
-with getattr and run their Python code when the module doesn't have it.
+HINDSIGHT_NATIVE=0        delta.py runs its Python paths (tests and A/B runs only)
+HINDSIGHT_NATIVE=require  the same as unset; kept so test runners can say what they expect
 """
 from __future__ import annotations
 
 import os
 
-API = 2                     # the module's API number (native/src/lib.rs) this code is written for
-MIN_API = 1                 # oldest one still used: functions it lacks run in Python, one by one
-# API 1: diff, apply, pack, unpack.  API 2: + apply_steps (a run of packed steps, history.py)
+API = 3                     # the module's API number (native/src/lib.rs) this code is written for
+# API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
+# recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.
 MODE = os.environ.get("HINDSIGHT_NATIVE", "").strip().lower()
 
-lib = None                  # the module, or None: delta.py reads this at every call
-ERROR = None                # why it isn't used, for the log
+
+class EngineMissing(ImportError):
+    """The Rust engine (hindsight_native, API 3) is missing, broken or the wrong version."""
 
 
 def _load():
-    global lib, ERROR
-    if MODE == "0":
-        ERROR = "turned off (HINDSIGHT_NATIVE=0)"
-        return
     try:
         import hindsight_native as m
-        api = getattr(m, "API", None)
-        if not isinstance(api, int) or not MIN_API <= api <= API or (MODE == "require" and api != API):
-            raise ImportError(f"hindsight_native API {api}, expected {API}")
     except Exception as e:          # ImportError, or a broken binary (OSError and the like)
-        if MODE == "require":
-            raise
-        ERROR = str(e)
-        return
-    lib = m
+        raise EngineMissing(
+            f"Hindsight needs its Rust engine and could not load it ({type(e).__name__}: {e}). "
+            "Reinstall the add-on, and check that a wheel for this platform is in its wheels folder.") from e
+    api = getattr(m, "API", None)
+    if api != API:
+        raise EngineMissing(
+            f"Hindsight needs hindsight_native API {API}, found API {api} ({getattr(m, '__file__', '?')}). "
+            "Reinstall the add-on.")
+    return m
 
 
-_load()
+ENGINE = _load()
+ERROR = "turned off (HINDSIGHT_NATIVE=0)" if MODE == "0" else None
+lib = None if MODE == "0" else ENGINE
 AVAILABLE = lib is not None

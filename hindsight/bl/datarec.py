@@ -86,7 +86,38 @@ def _adapter_failed(aid: str, exc, where: str) -> None:
     guard.fail("adapter:" + aid, exc, where)
 
 
-def set_tracked(idb, on: bool) -> None:
+def file_candidates() -> list:
+    """What "Everything in this file" records: every local scene and object, except Hindsight's own
+    Movie Mode objects."""
+    out = [sc for sc in bpy.data.scenes if sc.library is None]
+    out += [ob for ob in bpy.data.objects if ob.library is None and not rigmark.is_rig(ob)]
+    return out
+
+
+def file_tracked() -> bool:
+    """True when every local scene and object is recorded (stops at the first that isn't)."""
+    if not scope_everything():
+        return False
+    try:
+        return all(is_tracked(x) for x in file_candidates())
+    except Exception:
+        return False
+
+
+def set_file_tracked(on: bool) -> int:
+    """Switch Record everything on (or off) for every local scene and object. Returns how many
+    objects that is. Objects added later are recorded while a scene is (D36)."""
+    n = 0
+    with idmap.frame():
+        for x in file_candidates():
+            if is_tracked(x) != on:
+                set_tracked(x, on, _refresh=False)
+            n += isinstance(x, bpy.types.Object)
+        refresh_mesh_users()            # once for all (per object it was one walk each)
+    return n
+
+
+def set_tracked(idb, on: bool, _refresh: bool = True) -> None:
     """Switch "Record everything on this object" (also used by tests). Linked data is refused."""
     rt = _rt()
     if on and is_linked(idb):
@@ -113,7 +144,8 @@ def set_tracked(idb, on: bool) -> None:
     else:
         rt.reg().everything.discard(uid)
     rt._journal("META_EVERYTHING", {"uid": uid, "on": bool(on)})
-    refresh_mesh_users()
+    if _refresh:
+        refresh_mesh_users()
 
 
 def _track_new(uid: str) -> None:
@@ -355,17 +387,26 @@ def on_update(depsgraph) -> None:
     """depsgraph_update_post: remember which tracked datablocks changed."""
     uids = tracked_uids()
     if not uids:
+        adapters.forget_materials()
         return
     try:
         if bpy.context.screen is not None and bpy.context.screen.is_animation_playing:
+            adapters.forget_materials()
             return            # playback changes animated values every frame; nothing to record
     except Exception:
         pass
     now = time.time()
     scenes = _scene_uids_in(uids)
+    mats = (bpy.types.Material, bpy.types.NodeTree, bpy.types.World)
     for u in depsgraph.updates:
         idv = u.id
         orig = getattr(idv, "original", idv)
+        adapters.value_changed(orig)          # D117: its kept settings are read again
+        if isinstance(orig, mats):
+            ou = adapters.material_changed(orig)   # D112: its object records it
+            if ou in uids:
+                _DIRTY[ou] = now
+            continue
         uid = idmap.uid_of(orig)
         if uid in uids:
             _DIRTY[uid] = now
@@ -534,6 +575,7 @@ def finish_operation(label: str) -> list:
     rt = _rt()
     check_exclusion()
     refresh_mesh_users()
+    adapters.forget_selected_values()     # D117
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
     try:
@@ -569,13 +611,23 @@ def _edit_step(label: str) -> None:
 
 
 def _same_values(old: dict, new: dict) -> bool:
-    """True only if the two value dicts are identical: same keys in the same order, same types,
-    floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
+    """True only if the two value dicts are identical: same keys, same types, floats bit for bit (marshal writes a float's 8 bytes; version 2 never shares objects). Then
     _diff finds nothing. False says nothing: _diff decides."""
     if len(old) != len(new):
         return False
     try:
-        return marshal.dumps(old, 2) == marshal.dumps(new, 2)
+        if old.keys() != new.keys():
+            return False
+        # a value that is the same object on both sides (kept records: a material's until the
+        # material changes, D112; settings until their datablock changes, D117) is the same value:
+        # only the others are compared
+        a, b = {}, {}
+        for k, v in new.items():
+            o = old[k]
+            if o is not v:
+                a[k] = o
+                b[k] = v
+        return marshal.dumps(a, 2) == marshal.dumps(b, 2)
     except Exception:
         return False
 
@@ -610,6 +662,8 @@ def _diff(old: dict, new: dict) -> dict:
             continue        # stored with creation and deletion steps, never read back from Blender
         if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or ""):
             continue        # a kind switched off isn't read; that isn't a removal
+        if a is b:
+            continue        # the same object: unchanged
         if exact and a is not MISSING and b is not MISSING:
             try:
                 if dumps(a, 2) == dumps(b, 2):
@@ -627,6 +681,29 @@ def _diff(old: dict, new: dict) -> dict:
     if failed:
         out = {k: v for k, v in out.items() if k[0] not in failed}
     return out
+
+
+def _data_diff(old: dict, new: dict) -> dict:
+    """_diff without the values that only come and go with ownership (see _owner_moves): after
+    Blender's undo another object can own a shared mesh than when the history was made."""
+    out = _diff(old, new)
+    for k in [k for k, (a, b) in out.items()
+              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+        del out[k]
+    return out
+
+
+def _owner_moves(st, changes: dict) -> None:
+    """Values an object records for data it owns (its mesh's properties, the materials it records)
+    come and go with the ownership: another user deleted, a material put in a slot. That isn't a change
+    of the data, so it only becomes the new baseline (no step)."""
+    for k in [k for k, (a, b) in changes.items()
+              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+        _a, b = changes.pop(k)
+        if b is MISSING:
+            st.values.pop(k, None)
+        else:
+            st.values[k] = b
 
 
 def _mesh_step(ob, uid: str, label: str):
@@ -696,6 +773,8 @@ def _commit(label: str, uids, mesh: bool) -> list:
             continue
         new = capture(idb)
         changes = {} if fast and _same_values(st.values, new) else _diff(st.values, new)
+        if changes:
+            _owner_moves(st, changes)
         if changes:
             adapters.drop_changed_refs(uid, changes)
         if not changes and mesh_step is None:
@@ -845,10 +924,51 @@ def sync_taken_names() -> None:
             st.values[("rna", "name")] = idb.name
 
 
+_ID_DATA = {"OBJECT": "objects", "MESH": "meshes", "MATERIAL": "materials", "COLLECTION": "collections",
+            "NODETREE": "node_groups", "WORLD": "worlds", "SCENE": "scenes", "CAMERA": "cameras",
+            "LIGHT": "lights", "IMAGE": "images", "TEXT": "texts", "ACTION": "actions"}
+
+
+def resolve_taken_names() -> int:
+    """D105: after a jump, a datablock that couldn't get its recorded name because another one held
+    it gets it now if that one has moved on (two objects that swapped names, a chain of renames).
+    A name another datablock still holds is left alone: renaming a datablock the user didn't scrub is
+    never done. Returns how many were renamed."""
+    done = 0
+    for _ in range(8):                                    # chains: each pass frees names for the next
+        moved = 0
+        for u, wanted in list(adapters.NAME_TAKEN.items()):
+            idb = idmap.find(u)
+            if idb is None or not isinstance(wanted, str) or idb.name == wanted:
+                adapters.NAME_TAKEN.pop(u, None)
+                continue
+            col = getattr(bpy.data, _ID_DATA.get(getattr(idb, "id_type", ""), ""), None)
+            if col is None:
+                continue
+            holder = col.get(wanted)
+            if holder is not None and holder != idb:
+                continue
+            try:
+                idb.name = wanted
+            except Exception:
+                continue
+            adapters.note_name(idb, wanted)
+            if idb.name == wanted:
+                st = _rt()._STATES.get(u)
+                if st is not None and ("rna", "name") in st.values:
+                    st.values[("rna", "name")] = wanted
+                moved += 1
+        done += moved
+        if not moved:
+            break
+    return done
+
+
 def resolve_missing_refs() -> None:
     """D37: an object a restore couldn't refer to is back (the global history brought it back): put
     the recorded references in now, so Blender matches the history again. D55: then collections
     Hindsight made again that the jump took out and left empty are removed."""
+    resolve_taken_names()
     if not adapters.MISSING_REFS:
         adapters.drop_recreated_orphans()
         return
@@ -955,7 +1075,7 @@ def _jump_matches(j, seen: dict) -> bool:
     want = j["vb"] if back else j["va"]
     if not want and not j["meshes"]:
         return False
-    if not all(uid in seen and not _diff(vals, seen[uid]) for uid, vals in want.items()):
+    if not all(uid in seen and not _data_diff(vals, seen[uid]) for uid, vals in want.items()):
         return False
     # a datablock that exists on the other side of the jump only (brought back or removed by it)
     # must not exist now
@@ -974,6 +1094,7 @@ def on_undo(direction: str = "undo") -> None:
     (undo) or after (redo) a Hindsight jump, the cursor follows; if they match a neighbouring step,
     the cursor moves one step; anything else becomes the new baseline (nothing is recorded)."""
     idmap.forget()
+    adapters.forget_materials()
     with idmap.frame():
         return _on_undo(direction)
 
@@ -1013,7 +1134,7 @@ def _on_undo(direction: str):
             # deep: an undone Edit Mode step can change the edges alone (Sort Mesh Elements)
             mesh_step = rt._observe(idb, st, True, "Undo", "OBJECT", deep=True)
             rt._NATIVE_PENDING.discard(uid)
-        diff = _diff(st.values, vals)
+        diff = _data_diff(st.values, vals)
         if (diff or mesh_step is not None) and h is not None and h.uid not in moved:
             # the direction Blender went first: after a step that returned to an earlier state,
             # both neighbours can match
@@ -1088,6 +1209,7 @@ def prime() -> None:
 
 def forget() -> None:
     _DIRTY.clear()
+    adapters.forget_materials()
     _BODIES.clear()
     _BODY_DIRTY.clear()
     _SCENE_UIDS.clear()

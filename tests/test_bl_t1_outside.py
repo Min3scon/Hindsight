@@ -149,9 +149,9 @@ def test_hidden_in_another_view_layer():
         assert a.hide_get(view_layer=vl1) and not a.hide_get(view_layer=vl2)
 
 
-def save_and_change_outside(path, change):
+def save_and_change_outside(path, change, keep_backup=True):
     """Save with Hindsight, then without it change the file and save again, then open it with
-    Hindsight."""
+    Hindsight. keep_backup=False: Blender's backup copy (.blend1, D107) is removed first."""
     SETTINGS.save_mode = "SIDECAR"
     T.select()
     bpy.ops.wm.save_as_mainfile(filepath=path)
@@ -160,6 +160,8 @@ def save_and_change_outside(path, change):
     change()
     bpy.ops.wm.save_as_mainfile(filepath=path)
     outside = state()
+    if not keep_backup and os.path.isfile(path + "1"):
+        os.remove(path + "1")
     hindsight.register()
     H._registered[0] = True
     bpy.ops.wm.open_mainfile(filepath=path)
@@ -198,11 +200,37 @@ def test_mesh_changed_without_hindsight():
         a = bpy.data.objects["A"]
         a.data.vertices[0].co.x += 1.0
         a.data.update()
-    outside = save_and_change_outside(path, change)
+    outside = save_and_change_outside(path, change, keep_backup=False)
     a = bpy.data.objects["A"]
     assert runtime.history_of(a) is None, "a history that can't match the mesh is left out"
     assert any(runtime.OUTSIDE_MESH_TEXT.format(name="A") == t for _s, t in runtime.load_notes), runtime.load_notes
     assert state() == outside
+
+
+def test_mesh_changed_without_hindsight_bridged_by_the_backup():
+    """D107: Blender's backup copy (.blend1) holds the mesh exactly as Hindsight saved it, so the change
+    made without Hindsight becomes one step and the history goes on; every position existed."""
+    setup()
+    for o in (T.translate("A", (1, 0, 0)), T.edit_ops("A", 2)[0], T.leave_edit("A")):
+        op(o)
+    states = [state()]
+    h = runtime.history_of(bpy.data.objects["A"])
+    for pos in range(len(h.entries) + 1):
+        runtime._goto_history(h, pos, True)
+        states.append(state())
+    runtime._goto_history(h, len(h.entries), True)
+    path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), "outside_bridged.blend")
+
+    def change():
+        a = bpy.data.objects["A"]
+        a.data.vertices[0].co.x += 1.0
+        a.data.update()
+    outside = save_and_change_outside(path, change)
+    a = bpy.data.objects["A"]
+    h = runtime.history_of(a)
+    assert h is not None and h.entries[-1].load().label == runtime.OUTSIDE_LABEL, "one step for the change"
+    assert state() == outside
+    every_position_existed("A", states + [outside])
 
 
 @covers("obj.transforms", "RELOAD.SIDECAR")
@@ -238,7 +266,8 @@ def test_saving_normally_never_raises_the_alarm():
 
 
 for fn in (test_record_everything_switched_off_and_on, test_paused_and_resumed, test_values_changed_without_hindsight,
-           test_mesh_changed_without_hindsight, test_saving_normally_never_raises_the_alarm,
+           test_mesh_changed_without_hindsight, test_mesh_changed_without_hindsight_bridged_by_the_backup,
+           test_saving_normally_never_raises_the_alarm,
            test_excluded_by_collection_filtering, test_hidden_in_another_view_layer):
     H.run(fn)
 H.finish()

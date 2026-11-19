@@ -127,6 +127,8 @@ def run_group(py, root, group, quick=False, only=None, env=None, timeout=3600):
     cmd = [py, os.path.join(SCEN, group + ".py"), root]
     if quick:
         cmd.append("--quick")
+    if only and any(o in group for o in only):
+        only = None          # the whole group was asked for (its name matches a pattern)
     if only:
         cmd += ["--only", ",".join(only)]
     t0 = time.time()

@@ -15,7 +15,8 @@ UID_PROP = "_hindsight_uid"
 # bpy.data collections searched by find(), in a fixed order (objects first: most lookups)
 COLLECTIONS = ("objects", "meshes", "materials", "node_groups", "worlds", "scenes", "collections",
                "cameras", "lights", "curves", "hair_curves", "armatures", "actions", "lattices",
-               "metaballs", "grease_pencils", "texts", "images", "shape_keys", "particles")
+               "metaballs", "grease_pencils", "texts", "images", "shape_keys", "particles", "fonts", "sounds",
+               "speakers", "lightprobes")
 
 _cache: dict = {}        # uid -> (collection name, datablock name)
 _owner: dict = {}        # uid -> as_pointer() of the datablock that owns it this session
@@ -180,10 +181,28 @@ def claim(idb) -> str | None:
             return idb.get(UID_PROP)
         except Exception:
             return None
+    fc = _FCACHE[0]
+    if fc is not None:
+        # inside a frame no datablock is added, removed or renamed: once claimed, a datablock keeps
+        # what it got (a copy claimed later gets its own id; this one keeps this)
+        memo = fc.get("claim")
+        if memo is None:
+            memo = fc["claim"] = {}
+        ptr = idb.as_pointer()
+        u = memo.get(ptr)
+        if u is not None and idb.get(UID_PROP) == u:
+            return u
+        u = _claim(idb, ptr)
+        if u is not None:
+            memo[ptr] = u
+        return u
+    return _claim(idb, idb.as_pointer())
+
+
+def _claim(idb, ptr):
     u = uid_of(idb, create=True)
     if u is None:
         return None
-    ptr = idb.as_pointer()
     owner = _owner.get(u)
     if owner is None or owner == ptr:
         _owner[u] = ptr
@@ -223,15 +242,33 @@ def ref_of(idb):
         coll = _collection_of(idb)
         if coll is None:
             return None
-        return LIB_PREFIX + _LIB_SEP.join((coll, lib.filepath, idb.name))
+        return LIB_PREFIX + _LIB_SEP.join((coll, lib_path(lib), idb.name))
     return claim(idb)
+
+
+def lib_path(lib) -> str:
+    """D109: a library's file as one absolute path. Blender stores it as written, absolute until the
+    file is saved and relative ("//lib.blend") after, which made the same reference look changed."""
+    try:
+        import os
+        return os.path.normcase(os.path.abspath(bpy.path.abspath(lib.filepath, library=lib.library)))
+    except Exception:
+        return lib.filepath
 
 
 def _find_linked(ref: str):
     try:
         coll, path, name = ref[len(LIB_PREFIX):].split(_LIB_SEP, 2)
         col = getattr(bpy.data, coll, None)
-        return col.get((name, path)) if col is not None else None
+        if col is None:
+            return None
+        hit = col.get((name, path))              # recorded as Blender wrote the path (before D109)
+        if hit is not None:
+            return hit
+        for lib in bpy.data.libraries:
+            if lib_path(lib) == path:
+                return col.get((name, lib.filepath))
+        return None
     except Exception:
         return None
 

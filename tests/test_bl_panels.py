@@ -149,7 +149,7 @@ def test_prefs_class_definition():
     kw = ann["crash_recovery"].keywords
     assert kw["default"] == 'LAST_SAVED'
     assert [i[0] for i in kw["items"]] == ["LAST_SAVED", "INTERRUPTED"]
-    assert ann["max_steps"].keywords["default"] == 10000 and ann["max_steps"].keywords["max"] == 10000
+    assert ann["max_steps"].keywords["default"] == 10000 and ann["max_steps"].keywords["max"] == 100000
     assert ann["memory_limit_mb"].keywords["name"] == "Memory limit (MB)"
     assert ann["raw_steps"].keywords["name"] == "Uncompressed steps"
     assert "welcomed" in ann

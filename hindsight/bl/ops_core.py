@@ -122,7 +122,25 @@ class HINDSIGHT_OT_record_scene(bpy.types.Operator):
         return {'FINISHED'}
 
 
-classes = (HINDSIGHT_OT_step_back, HINDSIGHT_OT_step_forward, HINDSIGHT_OT_goto, HINDSIGHT_OT_record_everything,
+class HINDSIGHT_OT_record_file(bpy.types.Operator):
+    bl_idname = "hindsight.record_file"
+    bl_label = "Record Everything in This File"
+    bl_description = ("Record everything on every object in this file, and objects being added and deleted. "
+                      "Objects added later are recorded too. Needs Record set to Everything")
+    bl_options = {'REGISTER'}
+
+    on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})
+
+    def execute(self, context):
+        from . import datarec, runtime
+        n = datarec.set_file_tracked(self.on)
+        runtime.tag_redraw_all()
+        if self.on:
+            self.report({'INFO'}, f"Recording everything on {n} objects")
+        return {'FINISHED'}
+
+
+classes = (HINDSIGHT_OT_step_back, HINDSIGHT_OT_step_forward, HINDSIGHT_OT_goto, HINDSIGHT_OT_record_everything, HINDSIGHT_OT_record_file,
            HINDSIGHT_OT_record_scene,
            HINDSIGHT_OT_confirm_truncate)
 

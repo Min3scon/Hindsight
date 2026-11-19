@@ -28,6 +28,7 @@ OBJECTS_OFF = ("Object recording is off: only sculpting is recorded. To record o
 SWITCHES_TITLE = "Record:"
 SWITCH_OBJECT = "Everything on this object"
 SWITCH_SCENE = "Objects added and deleted"
+SWITCH_FILE = "Everything in this file"
 CATEGORY = "Undo History"
 
 
@@ -180,8 +181,34 @@ def _draw_problems(layout, context, units=None):
     _operator(col, "hindsight.copy_diagnostics", "Copy diagnostics", 'COPYDOWN')
 
 
+ENGINE_TEXT = "Hindsight can't record: its engine didn't load. Nothing is recorded until it does."
+_ENGINE = [None]          # None: not checked yet; "": loaded; text: why it didn't load
+
+
+def engine_error() -> str:
+    """Why the Rust engine didn't load, or "" (checked once: it can't load later in this session)."""
+    if _ENGINE[0] is None:
+        try:
+            from ..core import native  # noqa: F401
+            _ENGINE[0] = ""
+        except Exception as e:
+            _ENGINE[0] = str(e) or type(e).__name__
+    return _ENGINE[0]
+
+
+def _draw_engine_missing(layout, context, err, units=None) -> None:
+    box = layout.box()
+    wrap(box, context, ENGINE_TEXT, 'ERROR', units)
+    wrap(box, context, err, 'BLANK1', units)
+    _operator(box, "hindsight.copy_diagnostics", "Copy diagnostics", 'COPYDOWN')
+
+
 def draw_main(layout, context, units=None):
     """Status, slider, step counter, back and forward. Shared by the sidebar and the popover."""
+    err = engine_error()
+    if err:
+        _draw_engine_missing(layout, context, err, units)
+        return
     _draw_problems(layout, context, units)
     obj = _ctx_active(context)
     everything = _everything_on()
@@ -323,10 +350,14 @@ def _draw_everything(layout, context, obj):
             return
         on = _tracked(obj) if obj is not None else False
         scene_on = _tracked(context.scene)
+        file_on = scene_on and (obj is None or on) and datarec.file_tracked()
     except Exception:
         return
     col = layout.column(align=True)
     col.label(text=SWITCHES_TITLE)            # short button texts: they fit the narrowest sidebar
+    op = col.operator("hindsight.record_file", text=SWITCH_FILE,
+                      icon='CHECKBOX_HLT' if file_on else 'CHECKBOX_DEHLT', depress=file_on)
+    op.on = not file_on
     if obj is not None:
         op = col.operator("hindsight.record_everything", text=SWITCH_OBJECT,
                           icon='CHECKBOX_HLT' if on else 'CHECKBOX_DEHLT', depress=on)

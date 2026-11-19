@@ -12,6 +12,7 @@ import bpy
 
 import tests.harness as H
 from tests import t1_ops as T
+from tests import t1_gate_lib as L
 from tests.gate import covers
 from hindsight.bl import datarec, runtime, ui_panel
 from hindsight.bl import warnings as W
@@ -96,7 +97,8 @@ def test_lists_in_constraint_settings():
 
 @covers("obj.parenting", "WARN")
 def test_parenting_with_deform():
-    """Ctrl+P > Lattice Deform adds a Lattice modifier to the child: not recorded in Tier 1, said."""
+    """Ctrl+P > Lattice Deform adds a Lattice modifier to the child. D110: it is recorded with the
+    parenting (going back takes it off again), so the note that said it wasn't is gone."""
     setup()
     bpy.ops.object.add(type="LATTICE", location=(0, 4, 0))
     lat = C.active_object
@@ -104,12 +106,18 @@ def test_parenting_with_deform():
     T.select("A", "B", lat.name, active=lat.name)
     bpy.ops.object.parent_set(type="OBJECT")
     assert not shows("A", W.TXT_EV_PARENT_DEFORM), "a plain parent adds nothing"
+    L.tick_like("parent")
     T.select("A", lat.name, active=lat.name)
     bpy.ops.object.parent_set(type="LATTICE")
+    L.tick_like("parent lattice")
     a = bpy.data.objects["A"]
     assert any(m.type == "LATTICE" for m in a.modifiers), [m.type for m in a.modifiers]
-    assert shows("A", W.TXT_EV_PARENT_DEFORM)
-    assert not shows("B", W.TXT_EV_PARENT_DEFORM)
+    assert not shows("A", W.TXT_EV_PARENT_DEFORM)
+    h = runtime.history_of(a)
+    runtime._goto_history(h, h.cursor - 1, True)
+    assert not any(m.type == "LATTICE" for m in a.modifiers), [m.type for m in a.modifiers]
+    runtime._goto_history(h, h.cursor + 1, True)
+    assert any(m.type == "LATTICE" for m in a.modifiers), [m.type for m in a.modifiers]
 
 
 @covers("obj.addremove", "WARN")
@@ -171,6 +179,31 @@ def test_linked_objects():
     assert shows("A", W.TXT_EV_LINKED)
 
 
+@covers("obj.transforms", "WARN")
+def test_recorded_data_not_called_unrecorded():
+    """D113: modifiers, vertex groups, shape keys and materials are recorded on an object Record
+    everything is on for (D108, D110 to D112): the notes saying they aren't are not shown there."""
+    setup()
+    a = bpy.data.objects["A"]
+    a.modifiers.new("Bevel", "BEVEL")
+    a.vertex_groups.new(name="G")
+    a.shape_key_add(name="Basis")
+    a.data.materials.append(bpy.data.materials.new("M"))
+    gone = (W.TXT_MODIFIERS, W.TXT_VGROUPS, W.TXT_SHAPE_KEYS, W.TXT_MATERIALS)
+    flat = " ".join(sidebar_text("A").split())
+    for t in gone:
+        assert t not in flat, t
+    datarec.set_tracked(a, False)
+    flat = " ".join(sidebar_text("A").split())
+    for t in gone:
+        assert t in flat, t
+    datarec.set_tracked(a, True)
+    datarec.FORCE_SCOPE[0] = "SCULPT"
+    flat = " ".join(sidebar_text("A").split())
+    for t in gone:
+        assert t in flat, t
+
+
 @covers(["obj.transforms", "obj.constraints", "obj.addremove", "obj.editsteps", "obj.collections"], "WARN")
 def test_nothing_said_with_sculpting_only():
     setup()
@@ -183,6 +216,6 @@ def test_nothing_said_with_sculpting_only():
 
 for fn in (test_animated_values, test_lists_in_constraint_settings, test_parenting_with_deform, test_physics_and_particles_note, test_objects_not_switched_on_and_other_types,
            test_big_mesh_edit_mode, test_new_collections_need_the_scene, test_linked_objects,
-           test_nothing_said_with_sculpting_only):
+           test_recorded_data_not_called_unrecorded, test_nothing_said_with_sculpting_only):
     H.run(fn)
 H.finish()

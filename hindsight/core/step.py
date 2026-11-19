@@ -1,4 +1,7 @@
-"""Step (de)serialisation. Pure Python + numpy, no bpy.
+"""Step (de)serialisation. The container (header, checksum, codecs, every record of every kind of
+step, formats 1 to 4) is done by the Rust engine (native/src/step.rs); this module turns Python
+objects (Step, ChannelDelta, Snapshot, DataChange, extras) into buffers for it and back. Pure Python +
+numpy, no bpy.
 
 Step blob, formats 3 and 4 (written since beta 2):
   b"HSS3" | u32 CRC-32 of everything after this field | u16 header length | header | body
@@ -19,19 +22,23 @@ Step blob, formats 1 and 2 (still read, never written):
 
 Snapshot blob: b"HSN1" | u32 json_len | JSON {"counts", "arrays": [[key, dtype_str, length], ...]}
               | raw array bytes concatenated (uncompressed).
+
+The JSON of extras and data records stays here (their values are Python objects); the engine
+handles it as bytes.
 """
 from __future__ import annotations
 
 import json
 import os
 import struct
-import zlib
 
 import numpy as np
 
-from . import codec as _codec
-from .delta import NORMAL, QUICK, CorruptDelta, pack_delta, unpack_at, unpack_delta
-from .types import DATA, DELTA, JOIN, MISSING, TOPO, DataChange, Snapshot, Step
+from . import native as _native
+from .delta import NORMAL, QUICK, pack_delta
+from .types import ADD, DATA, DELTA, JOIN, MISSING, TOPO, XOR, ChannelDelta, DataChange, Snapshot, Step
+
+_N = _native.ENGINE
 
 STEP_MAGIC_V1 = b"HSS1"
 STEP_MAGIC = b"HSS3"
@@ -45,11 +52,10 @@ _MISSING_JSON = {"$": "missing"}
 QUICK_FLAG = 8
 # Tests set this (or HINDSIGHT_VERIFY=1): every written step is read back and compared.
 VERIFY = bool(os.environ.get("HINDSIGHT_VERIFY"))
-_KIND_NAMES = {v: k for k, v in _KINDS.items()}
 
+_BITS = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}
 
-class CorruptStep(ValueError):
-    """A step blob is damaged or not a step at all."""
+CorruptStep = _N.CorruptStep
 
 
 def _json_default(o):
@@ -82,23 +88,13 @@ def snapshot_to_bytes(s: Snapshot) -> bytes:
     return b"".join(_snapshot_parts(s))
 
 
+def _snapshot(parsed) -> Snapshot:
+    counts, arrays = parsed
+    return Snapshot(dict(counts), {key: np.frombuffer(buf, dtype=dstr) for key, dstr, buf in arrays})
+
+
 def snapshot_from_bytes(b) -> Snapshot:
-    mv = memoryview(b)
-    if bytes(mv[:4]) != SNAP_MAGIC:
-        raise ValueError("snapshot_from_bytes: not a Hindsight snapshot (wrong header)")
-    (hl,) = _U32.unpack_from(mv, 4)
-    head = json.loads(bytes(mv[8:8 + hl]).decode("utf-8"))
-    off = 8 + hl
-    arrays = {}
-    for key, dstr, length in head["arrays"]:
-        dt = np.dtype(dstr)
-        n = int(length) * dt.itemsize
-        if n < 0 or off + n > len(mv):
-            raise ValueError("snapshot_from_bytes: cut short")
-        # copy -> owned, aligned, writeable
-        arrays[key] = np.frombuffer(mv[off:off + n], dtype=dt).copy()
-        off += n
-    return Snapshot(dict(head["counts"]), arrays)
+    return _snapshot(_N.snapshot_decode(b))
 
 
 # --------------------------------------------------------------------------- data records
@@ -140,246 +136,72 @@ def records_from_bytes(b) -> list:
 
 
 # --------------------------------------------------------------------------- writing
-def _str8(s: str) -> bytes:
-    b = s.encode("utf-8")
-    if len(b) > 255:
-        raise ValueError(f"step field too long: {s[:40]!r}")
-    return bytes((len(b),)) + b
-
-
-def _str16(s: str) -> bytes:
-    b = s.encode("utf-8")[:65535]
-    return struct.pack("<H", len(b)) + b
-
-
-def _parts(step: Step, effort: int):
-    extra = dict(step.extra or {})
-    snaps = extra.pop(SNAPSHOTS_KEY, None)
-    parts = [pack_delta(d, effort) for d in step.deltas]
-    # snapshots stay lists of buffers until the one join of the body (no full-size copies before it)
-    before = _snapshot_parts(step.before) if step.before is not None else None
-    after = _snapshot_parts(step.after) if step.after is not None else None
-    snap_parts = None
-    if snaps is not None:
-        snap_parts = [(str(uid), _snapshot_parts(s)) for uid, s in snaps.items()]
-    return extra, parts, before, after, snap_parts
-
-
-def _nbytes(parts: list) -> int:
-    return sum(memoryview(p).nbytes for p in parts)
-
-
 def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
     """Format 3 blob. effort QUICK (0) is for the crash-recovery journal, on the main thread."""
     if step.kind not in _KINDS:
         raise ValueError(f"unknown step kind {step.kind!r}")
-    extra, parts, before, after, snap_parts = _parts(step, effort)
-    body_parts = list(parts)
-    flags = 0
-    tail = b""
-    if before is not None:
-        flags |= 1
-        body_parts += before
-        tail += _U32.pack(_nbytes(before))
-    if after is not None:
-        flags |= 2
-        body_parts += after
-        tail += _U32.pack(_nbytes(after))
-    if snap_parts is not None:
-        flags |= 4
-        tail += struct.pack("<H", len(snap_parts))
-        for uid, sparts in snap_parts:
-            body_parts += sparts
-            tail += _str8(uid) + _U32.pack(_nbytes(sparts))
-    if step.records:
-        flags |= RECORDS_FLAG
-        rec_b = records_to_bytes(step.records)
-        body_parts.append(rec_b)
-        tail += _U32.pack(len(rec_b))
-    if effort == QUICK and step.deltas:
-        flags |= QUICK_FLAG
-    raw = b"".join(body_parts)
-    del body_parts, before, after, snap_parts
-    extra_b = _dumps(extra) if extra else b""
-    head = b"".join((
-        _FIXED.pack(4 if step.records else 3, _KINDS[step.kind], flags, 0, int(step.seq),
-                    float(step.time or 0.0), len(raw)),
-        _str16(step.label or ""), _str8(step.mode or ""), _str8(step.target or ""),
-        _U32.pack(len(extra_b)), extra_b, struct.pack("<H", len(parts)), tail))
-    body = _codec.compress(raw, codec, strong=strong)
-    del raw
-    prefix = struct.pack("<H", len(head)) + head
-    blob = b"".join((STEP_MAGIC, _U32.pack(zlib.crc32(body, zlib.crc32(prefix))), prefix, body))
+    extra = dict(step.extra or {})
+    snaps = extra.pop(SNAPSHOTS_KEY, None)
+    parts = [pack_delta(d, effort) for d in step.deltas]
+    # snapshots stay lists of buffers until the engine joins the body (no full-size copies before it)
+    before = _snapshot_parts(step.before) if step.before is not None else None
+    after = _snapshot_parts(step.after) if step.after is not None else None
+    snap_parts = [(str(uid), _snapshot_parts(s)) for uid, s in snaps.items()] if snaps is not None else None
+    blob = _N.step_encode(
+        step.kind, int(step.seq), float(step.time or 0.0), step.label or "", step.mode or "", step.target or "",
+        _dumps(extra) if extra else b"", parts, before, after, snap_parts,
+        records_to_bytes(step.records) if step.records else None, effort == QUICK, codec, strong)
     if VERIFY and not same_step(step, step_from_bytes(blob)):
         raise AssertionError(f"step {step.seq}: written blob does not read back the same")
     return blob
 
 
 # --------------------------------------------------------------------------- reading
-def _parse_v3(b):
-    """-> (meta dict, header info dict, body memoryview). Checks the checksum."""
-    mv = memoryview(b)
-    if len(mv) < 10:
-        raise CorruptStep("step blob: too short")
-    (crc,) = _U32.unpack_from(mv, 4)
-    if zlib.crc32(mv[8:]) != crc:
-        raise CorruptStep("step blob: checksum mismatch")
+def _extra(raw: bytes) -> dict:
+    if not raw:
+        return {}
     try:
-        (hl,) = struct.unpack_from("<H", mv, 8)
-        h = mv[10:10 + hl]
-        if len(h) != hl:
-            raise CorruptStep("step blob: header cut short")
-        ver, kind, flags, _r, seq, t, raw_len = _FIXED.unpack_from(h, 0)
-        if ver not in (3, 4) or kind not in _KIND_NAMES or flags & ~31 or (ver == 4) != bool(flags & RECORDS_FLAG):
-            raise CorruptStep("step blob: bad header")
-        off = _FIXED.size
-
-        def s8():
-            nonlocal off
-            n = h[off]
-            v = bytes(h[off + 1:off + 1 + n]).decode("utf-8")
-            off += 1 + n
-            return v
-
-        (n,) = struct.unpack_from("<H", h, off)
-        label = bytes(h[off + 2:off + 2 + n]).decode("utf-8")
-        off += 2 + n
-        mode = s8()
-        target = s8()
-        (n,) = _U32.unpack_from(h, off)
-        extra = json.loads(bytes(h[off + 4:off + 4 + n]).decode("utf-8")) if n else {}
-        off += 4 + n
-        (nd,) = struct.unpack_from("<H", h, off)
-        off += 2
-        info = {"deltas": nd, "before": None, "after": None, "snaps": None, "raw": raw_len,
-                "quick": bool(flags & QUICK_FLAG), "records": None}
-        if flags & 1:
-            (info["before"],) = _U32.unpack_from(h, off)
-            off += 4
-        if flags & 2:
-            (info["after"],) = _U32.unpack_from(h, off)
-            off += 4
-        if flags & 4:
-            (ns,) = struct.unpack_from("<H", h, off)
-            off += 2
-            snaps = []
-            for _ in range(ns):
-                uid = s8()
-                (sz,) = _U32.unpack_from(h, off)
-                off += 4
-                snaps.append([uid, sz])
-            info["snaps"] = snaps
-        if flags & RECORDS_FLAG:
-            (info["records"],) = _U32.unpack_from(h, off)
-            off += 4
-        if off != hl:
-            raise CorruptStep("step blob: header length mismatch")
-    except CorruptStep:
-        raise
-    except (struct.error, IndexError, UnicodeDecodeError, ValueError) as e:
+        e = json.loads(raw.decode("utf-8"))
+        return dict(e)
+    except (ValueError, TypeError) as e:
         raise CorruptStep(f"step blob: bad header ({e})") from e
-    meta = {"seq": seq, "label": label, "mode": mode, "target": target, "time": t,
-            "kind": _KIND_NAMES[kind], "extra": extra}
-    return meta, info, mv[10 + hl:]
 
 
 def read_header(b) -> dict:
     """Step metadata without decompressing the body."""
-    mv = memoryview(b)
-    magic = bytes(mv[:4])
-    if magic == STEP_MAGIC:
-        meta, info, _body = _parse_v3(mv)
-        return {"v": 3, "meta": meta, **info}
-    if magic == STEP_MAGIC_V1:
-        (hl,) = _U32.unpack_from(mv, 4)
-        return json.loads(bytes(mv[8:8 + hl]).decode("utf-8"))
-    raise CorruptStep("step blob: not a Hindsight step (wrong header)")
-
-
-def _from_v3(mv) -> Step:
-    meta, info, payload = _parse_v3(mv)
-    try:
-        body = memoryview(_codec.decompress(payload, info["raw"]))
-    except _codec.CorruptBlob as e:
-        raise CorruptStep(str(e)) from e
-    off = 0
-    deltas = []
-    try:
-        for _ in range(info["deltas"]):
-            d, off = unpack_at(body, off)
-            deltas.append(d)
-
-        def _snap(n):
-            nonlocal off
-            if n is None:
-                return None
-            if off + n > len(body):
-                raise CorruptStep("step blob: snapshot cut short")
-            s = snapshot_from_bytes(body[off:off + n])
-            off += n
-            return s
-
-        before = _snap(info["before"])
-        after = _snap(info["after"])
-        extra = dict(meta["extra"])
-        if info["snaps"] is not None:
-            extra[SNAPSHOTS_KEY] = {uid: _snap(n) for uid, n in info["snaps"]}
-        records = []
-        if info["records"] is not None:
-            n = info["records"]
-            if off + n > len(body):
-                raise CorruptStep("step blob: records cut short")
-            records = records_from_bytes(body[off:off + n])
-            off += n
-    except CorruptStep:
-        raise
-    except (CorruptDelta, struct.error, ValueError, KeyError, TypeError, UnicodeDecodeError, RecursionError) as e:
-        raise CorruptStep(f"step blob: damaged ({e})") from e
-    if off != len(body):
-        raise CorruptStep("step blob: unexpected data after the last record")
-    return Step(seq=meta["seq"], label=meta["label"], mode=meta["mode"], target=meta["target"],
-                time=meta["time"], kind=meta["kind"], deltas=deltas, before=before, after=after,
-                extra=extra, records=records)
-
-
-def _from_v1(mv) -> Step:
-    (hl,) = _U32.unpack_from(mv, 4)
-    head = json.loads(bytes(mv[8:8 + hl]).decode("utf-8"))
-    body = memoryview(_codec.decompress(mv[8 + hl:]))
-    off = 0
-    deltas = []
-    for dh in head["deltas"]:
-        n = dh["n"]
-        deltas.append(unpack_delta(body[off:off + n]))
-        off += n
-
-    def _snap(n):
-        nonlocal off
-        if n is None:
-            return None
-        s = snapshot_from_bytes(body[off:off + n])
-        off += n
-        return s
-
-    before = _snap(head.get("before"))
-    after = _snap(head.get("after"))
-    m = head["meta"]
-    extra = dict(m.get("extra") or {})
-    if head.get("snaps") is not None:
-        extra[SNAPSHOTS_KEY] = {uid: _snap(n) for uid, n in head["snaps"]}
-    return Step(seq=m["seq"], label=m["label"], mode=m["mode"], target=m["target"],
-                time=m.get("time", 0.0), kind=m.get("kind", "DELTA"), deltas=deltas,
-                before=before, after=after, extra=extra)
+    r = _N.step_info(b)
+    if r[0] == 1:
+        return json.loads(bytes(r[1]).decode("utf-8"))
+    _v, kind, seq, t, label, mode, target, extra, nd, before, after, snaps, raw, quick, records = r
+    meta = {"seq": seq, "label": label, "mode": mode, "target": target, "time": t, "kind": kind,
+            "extra": _extra(extra)}
+    return {"v": 3, "meta": meta, "deltas": nd, "before": before, "after": after,
+            "snaps": None if snaps is None else [[u, n] for u, n in snaps], "raw": raw, "quick": quick,
+            "records": records}
 
 
 def step_from_bytes(b) -> Step:
-    mv = memoryview(b)
-    magic = bytes(mv[:4])
-    if magic == STEP_MAGIC:
-        return _from_v3(mv)
-    if magic == STEP_MAGIC_V1:
-        return _from_v1(mv)
-    raise CorruptStep("step blob: not a Hindsight step (wrong header)")
+    (ver, seq, t, kind, label, mode, target, extra_b, _quick, deltas, before, after, snaps,
+     rec_b) = _N.step_decode(b)
+    extra = _extra(extra_b)
+    out = []
+    for key, add, e0, e1, k, w, isz, ib, vb in deltas:
+        bdt = _BITS[isz]
+        if k == 0:
+            idx, vals = np.zeros(0, dtype=np.uint32), np.zeros((0, w), dtype=bdt)
+        else:
+            idx, vals = np.frombuffer(ib, dtype=np.uint32), np.frombuffer(vb, dtype=bdt).reshape(k, w)
+        out.append(ChannelDelta(key, idx, vals, (e0, e1), ADD if add else XOR))
+    try:
+        before = _snapshot(before) if before is not None else None
+        after = _snapshot(after) if after is not None else None
+        if snaps is not None:
+            extra[SNAPSHOTS_KEY] = {uid: _snapshot(s) for uid, s in snaps}
+        records = records_from_bytes(rec_b) if rec_b is not None else []
+    except (ValueError, KeyError, TypeError, UnicodeDecodeError, RecursionError) as e:
+        raise CorruptStep(f"step blob: damaged ({e})") from e
+    return Step(seq=seq, label=label, mode=mode, target=target, time=t, kind=kind, deltas=out,
+                before=before, after=after, extra=extra, records=records)
 
 
 def version_of(b) -> int:
@@ -402,7 +224,7 @@ def _same_snap(a, b) -> bool:
 
 def same_step(a: Step, b: Step) -> bool:
     """True if two steps hold exactly the same data (deltas compared after decoding to the same
-    form: XOR deltas only equal XOR deltas, ADD only ADD)."""
+    form: XOR deltas only equal XOR deltas, ADD only ADD). Used by HINDSIGHT_VERIFY and tests."""
     if (a.seq, a.label, a.mode, a.target, a.kind) != (b.seq, b.label, b.mode, b.target, b.kind):
         return False
     if float(a.time or 0.0) != float(b.time or 0.0) or len(a.deltas) != len(b.deltas):
@@ -434,20 +256,5 @@ def same_step(a: Step, b: Step) -> bool:
 def recompress(b) -> bytes | None:
     """A smaller blob for the same step: steps from older formats and steps written quickly are
     re-packed in full, and every step gets the strong codec setting. The new blob is read back
-    and must give exactly the same data. None if there's nothing to gain."""
-    mv = memoryview(b)
-    v = version_of(mv)
-    if v == 0:
-        return None
-    if v == 3:
-        _meta, info, payload = _parse_v3(mv)
-        if _codec.is_strong(payload) and not info["quick"]:
-            return None
-        codec = _codec.codec_of(payload)
-    else:
-        codec = "auto"
-    step = step_from_bytes(mv)
-    new = step_to_bytes(step, codec, NORMAL, strong=True)
-    if len(new) >= len(b) or not same_step(step, step_from_bytes(new)):
-        return None
-    return new
+    inside the engine and must give exactly the same data. None if there's nothing to gain."""
+    return _N.recompress(b)

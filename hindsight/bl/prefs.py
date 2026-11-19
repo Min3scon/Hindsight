@@ -122,7 +122,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         default=10, min=1, soft_max=1000, update=_update)
     max_steps: IntProperty(
         name="Steps per object", description="Most steps kept for one object. Oldest go first",
-        default=10000, min=1, max=10000, update=_update)
+        default=10000, min=1, max=100000, update=_update)
 
     # Memory
     memory_limit_mb: IntProperty(

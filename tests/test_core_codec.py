@@ -208,19 +208,14 @@ def test_recompress_refuses_a_bad_result():
     st = Step(3, "Stroke", "SCULPT", "obj", 1.0, DELTA, [next(x for x in deltas_for(all_keys()[4], 300)
                                                              if x[0].idx.size > 20)[0]])
     blob = stepmod.step_to_bytes(st, "zlib", delta.QUICK)
-    real = stepmod.step_to_bytes
-    verify = stepmod.VERIFY
-
-    def broken(step, codec_name="auto", effort=delta.NORMAL, strong=False):
-        s2 = Step(step.seq + 1, step.label, step.mode, step.target, step.time, step.kind, step.deltas)
-        return real(s2, codec_name, effort, strong)        # a different step: must be noticed
-    stepmod.VERIFY = False
-    stepmod.step_to_bytes = broken
+    from hindsight.core import native
+    # the engine reads its result back and compares; its test hook makes it read back a different
+    # step (seq changed), which must be noticed
+    native.ENGINE._test_fault(True)
     try:
         assert stepmod.recompress(blob) is None
     finally:
-        stepmod.step_to_bytes = real
-        stepmod.VERIFY = verify
+        native.ENGINE._test_fault(False)
     assert stepmod.recompress(blob) is not None
     print("PASS test_recompress_refuses_a_bad_result")
 

@@ -210,7 +210,10 @@ def test_embed_save_fails_before_the_old_copy_is_touched():
         SETTINGS.crash_recovery = rec
         interrupt(path)
         ha = runtime.history_of(bpy.data.objects["A"])
-        assert ha is None or not ha.entries, f"{rec}: A's history is from the save before and must be left out"
+        # A's history is from the save before: left out, or (D107) bridged by Blender's backup copy,
+        # which holds A as that save had it, with one step to A as it is now
+        assert ha is None or not ha.entries or ha.entries[-1].load().label == runtime.OUTSIDE_LABEL, \
+            f"{rec}: A's history from the save before is never played onto this mesh"
         hb = runtime.history_of(bpy.data.objects["B"])
         assert hb is not None and len(hb.entries) >= 3, (rec, hb)
         check(book, file_state, rec)
@@ -331,8 +334,10 @@ def test_sidecar_save_failing_at_each_step():
             if index_only:
                 assert ha is not None and len(ha.entries) == 4, (what, rec, ha)
             else:
-                # A changed after the folder's save: its history no longer fits and is left out
-                assert ha is None or not ha.entries, (what, rec, ha and len(ha.entries))
+                # A changed after the folder's save: its history no longer fits and is left out, or
+                # (D107) it is bridged from Blender's backup copy with one step to A as it is now
+                assert ha is None or not ha.entries or ha.entries[-1].load().label == runtime.OUTSIDE_LABEL, \
+                    (what, rec, ha and len(ha.entries))
             assert hb is not None and len(hb.entries) >= 3, (what, rec, hb)
             if rec == "INTERRUPTED":
                 assert len(hb.entries) == 4, f"{what}: B's stroke after the failed save was not brought back"
