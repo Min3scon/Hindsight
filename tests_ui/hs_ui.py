@@ -8,7 +8,7 @@ repo (git-ignored).
     python tests_ui/hs_ui.py list
     python tests_ui/hs_ui.py build                         # real `blender --command extension build`
     python tests_ui/hs_ui.py install [--blender 5.1.2]     # CLI install into the sandbox profile
-    python tests_ui/hs_ui.py run SCENARIO [--blender all] [--fresh] [--zip PATH] [--timeout 300]
+    python tests_ui/hs_ui.py run SCENARIO[,SCENARIO...] [--blender all] [--fresh] [--zip PATH] [--timeout 300]
                                  [--arg key=value ...] [--no-install] [--background]
 
 Each run writes .tmp/ui/<scenario>/<blender>/{console.log,result.json,shots/*.png}.
@@ -282,23 +282,25 @@ def main(argv=None):
         args[k] = v
     geometry = [int(x) for x in a.geometry.split(",")]
     all_ok = True
-    for tag, exe in select(blenders, a.blender):
-        prof = a.profile or tag
-        if a.fresh:
-            wipe_profile(prof)
-        if not a.no_install:
-            cli_install(prof, exe, Path(a.zip))
-        res, out = run_one(prof, exe, a.scenario, args, Path(a.zip), a.timeout, a.background, geometry,
-                           out_tag=a.out_tag or tag)
-        ok = bool(res.get("ok"))
-        all_ok &= ok
-        fails = [c for c in res.get("checks", []) if not c.get("ok")]
-        print(f"{'OK  ' if ok else 'FAIL'} {a.scenario} on {tag} ({res['seconds']} s, exit {res['exit_code']}) "
-              f"checks {len(res.get('checks', [])) - len(fails)}/{len(res.get('checks', []))} -> {out}")
-        for c in fails[:20]:
-            print(f"     x {c['name']}: {c.get('detail', '')}")
-        if res.get("error"):
-            print("     error:", str(res["error"])[:2000])
+    for scenario in [x for x in a.scenario.split(",") if x]:      # "paint_modes,multires": one after the other
+        for tag, exe in select(blenders, a.blender):
+            prof = a.profile or tag
+            if a.fresh:
+                wipe_profile(prof)
+            if not a.no_install:
+                cli_install(prof, exe, Path(a.zip))
+            res, out = run_one(prof, exe, scenario, args, Path(a.zip), a.timeout, a.background, geometry,
+                               out_tag=a.out_tag or tag)
+            ok = bool(res.get("ok"))
+            all_ok &= ok
+            fails = [c for c in res.get("checks", []) if not c.get("ok")]
+            print(f"{'OK  ' if ok else 'FAIL'} {scenario} on {tag} ({res['seconds']} s, exit {res['exit_code']}) "
+                  f"checks {len(res.get('checks', [])) - len(fails)}/{len(res.get('checks', []))} -> {out}",
+                  flush=True)
+            for c in fails[:20]:
+                print(f"     x {c['name']}: {c.get('detail', '')}")
+            if res.get("error"):
+                print("     error:", str(res["error"])[:2000])
     return 0 if all_ok else 1
 
 
