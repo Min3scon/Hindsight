@@ -377,7 +377,7 @@ Blockers:
 2. Measure the cost of D116 to D134 on an operator at 500 objects (`bench/ab.py --only dr_finish,dr_prime`
    and the 500-material scene) on a quiet machine; log rounds in `OPTIMISATION_LOG.md`.
 3. Multires (one exact step per Sculpt Mode visit), then M3 (native `History`).
-4. Texture painting: tried in a real window (D142 found and fixed); its default is the owner's call; the Image editor's paint mode.
+4. Texture painting: tried in a real window (D142 found and fixed); the Image editor's paint mode recorded on the active object (D144, real window 5/5 on 5.3.0 and 4.2.23); its default is the owner's call.
    Multires (Record Multires): tried in a real window on 5.3.0 and 4.2.23 (D143 found in review); its default is the owner's call once the GitHub window job has run it.
 5. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
