@@ -33,7 +33,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Install numpy, zstandard and the committed wheel
         run: |
-          python -m pip install numpy zstandard==0.23.0
+          python -m pip install numpy zstandard==0.23.0 lz4==4.4.5 hypothesis==6.170.15   # the reference oracle (tests/reference) needs lz4; property tests need hypothesis
           python -m pip install --no-index --find-links hindsight/wheels hindsight_native
       - name: The native module loads
         env:
