@@ -235,7 +235,8 @@ DEFECTS.md).
 
 - `dev/reports/TOOLS.md` (static analysis): dead code and duplicates. Done by NATIVE: dead branch and
   `_IDX_ENC` in `delta.py`, unused local in `history.py`. Not done: unused locals in `joinsep.py:342`,
-  unused imports in `header.py`, `meshio.py`, `runtime.py`, duplicated keymap boilerplate in `joinsep.py`
+  unused imports (pyflakes is clean on `hindsight/` since 2026-11-19 except the deliberate import check in
+  `ui_panel.engine_error`), duplicated keymap boilerplate in `joinsep.py`
   and `ops_core.py`, the unused `@fontsource-variable/*` devDependencies and the undeclared
   `chrome-launcher` in the site's tooling. 103 empty-except and 34 cyclic-import findings from CodeQL were
   not individually triaged (the cyclic imports are lazy imports on purpose).
@@ -245,8 +246,8 @@ DEFECTS.md).
 - `tools/mutation_bl.py` compiles again, but mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
 - `tests/oracle.py`: the one-line fix for the Blender 4.2 `parent_type` test failure (in
   `dev/reports/DATAREC.md` section 6) is not applied.
-- Edit Mode step cost at 100k vertices is in `runtime.commit_edit` (`update_from_editmode` about 34 ms and
-  topology reads about 20 ms of 55 ms before R014): not re-measured after R014.
+- Edit Mode step cost: re-measured after R014 (L6): 14 to 18 ms at 100k vertices, 60 to 83 ms at 300k
+  (bench/scenarios/editmode.py, 5.3, load 6).
 
 ## e. Test matrix
 

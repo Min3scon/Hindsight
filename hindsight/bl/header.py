@@ -7,7 +7,7 @@ Blender's F3 search finds anything that is in a menu.
 import bpy
 
 from . import guard
-from .ui_panel import _FAIL, _call, _operator, draw_help, draw_history_options, draw_main, draw_step_list
+from .ui_panel import _FAIL, _call, _operator, draw_history_options, draw_main, draw_step_list
 from .ctx import active_object as _ctx_active
 
 UNITS = 13
