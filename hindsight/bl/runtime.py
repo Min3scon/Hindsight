@@ -19,8 +19,8 @@ from . import warnings as _warn
 from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
-RECORD_MODES = ("SCULPT", "VERTEX_PAINT")
-TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "EDIT")
+RECORD_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT")
+TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "EDIT")
 DEBOUNCE = 0.15
 
 _REG = Registry()
@@ -477,7 +477,10 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
             before = {k: v for k, v in before.items() if not k.startswith(meshio.SK_PREFIX)}
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
                     kind=TOPO, before=Snapshot(dict(st.counts), before), after=after)
-    extra_vals = meshio.read_extras(obj, me) if ext else {}
+    # D-f: a Weight Paint stroke is a step of the vertex group weights (every group, NaN where a
+    # vertex is not a member); objects recorded with Record everything read them with the rest
+    wp = not ext and mode == "WEIGHT_PAINT" and len(getattr(obj, "vertex_groups", ())) > 0
+    extra_vals = meshio.read_extras(obj, me) if ext else (meshio.read_weights(obj, me) if wp else {})
     keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
     for k in list(st.arrays):
@@ -714,7 +717,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         ensure_state(obj, refresh=True)
         return None
     if label is None:
-        label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "EDIT": "Edit Mode"}.get(mode, "Change")
+        label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "WEIGHT_PAINT": "Weight Paint",
+                 "EDIT": "Edit Mode"}.get(mode, "Change")
         try:
             ops = bpy.context.window_manager.operators
             if len(ops):
@@ -960,6 +964,11 @@ def _enter(obj) -> None:
             # so the first Edit Mode step holds only that operation.
             commit(obj, label="Changes Outside History", mode="OBJECT", full=True, _edit=True)
         return
+    if (obj.mode == "WEIGHT_PAINT" and st is not None and st.counts and topo_extras_on(obj)
+            and not any(k.startswith(meshio.VG_PREFIX) for k in st.arrays)):
+        # D-f: a state read without weights (a file just loaded) takes them as they are now: the
+        # weights of strokes are compared with this baseline, nothing outside a stroke is a step
+        refresh_extras(obj, st)
     if h is not None and st is not None and h.enabled and uid not in _REG.disabled:
         # Anything changed while the object was not being tracked becomes one step.
         commit(obj, label="Changes Outside History", mode=obj.mode, full=True)
@@ -1496,7 +1505,7 @@ def _switch_to(context, ob, mode: str) -> None:
                     o.select_set(False)
                 vl.objects.active = ob
                 ob.select_set(True)
-            if mode in ("SCULPT", "VERTEX_PAINT", "EDIT") and ob.mode != mode:
+            if mode in ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "EDIT") and ob.mode != mode:
                 bpy.ops.object.mode_set(mode=mode)
         except Exception as e:
             log.error_once(("preserve", str(e)), f"Follow object and mode could not switch objects: {e}", e)
