@@ -32,6 +32,7 @@ Faster and lighter:
 
 Fixed:
 
+- If one part of what an object records can't be read, only that part is left out; the rest of the object, and every other object, is still recorded.
 - With Record everything, a keyed or driven shape key no longer makes a step every time the frame changes.
 - If Hindsight's engine can't load (a damaged install, an unsupported platform), the sidebar now says so, with the reason, instead of listing parts that didn't start.
 - On an object Record everything is on for, the sidebar no longer says modifiers, vertex groups, shape keys and materials aren't part of the history.
@@ -65,6 +66,7 @@ Fixed:
 - Record everything records Edit Mode changes to bones: adding, removing, moving, rolling and parenting them, their settings and bone collections.
 - Record everything records animation: inserting, moving and deleting keyframes, interpolation, deleting F-curves, which action an object plays, its drivers and its NLA tracks, and keyframes on lights, cameras, shape keys and material nodes.
 - Record everything records the shape of curves, surfaces, lattices and metaballs: points, handles, splines and elements.
+- Record everything records Grease Pencil drawings: strokes drawn, erased and moved, their thickness, opacity and colour, frames and layers.
 - A deleted light, camera, curve, text, lattice or metaball comes back with its settings and shape even after saving and opening the file.
 - Bring back: when a step refers to a parent or constraint target that is deleted now, the Warnings panel offers to bring it back.
 - Library overrides keep their history when the file is opened again.

@@ -457,6 +457,32 @@ def set_struct_values(st, values: dict, owner=None, prefix: str = "") -> None:
             continue
 
 
+def _part(what: str, fn, *args):
+    """One part of what an object records; if reading it fails, that part is left out (one log line)
+    and the rest is still recorded (the object recorder isn't switched off for it)."""
+    try:
+        return fn(*args)
+    except Exception as e:
+        log.error_once(("capture", what, type(e).__name__), f"couldn't read {what}; it is left out: {e}", e)
+        return _FAILED
+
+
+_FAILED = object()
+
+
+def _upd(out: dict, what: str, fn, *args) -> None:
+    r = _part(what, fn, *args)
+    if r and r is not _FAILED:
+        out.update(r)
+
+
+def _put(out: dict, key: str, what: str, fn, *args) -> None:
+    """out[key] = what fn gives (None too: "no animation" is a value); nothing when reading failed."""
+    r = _part(what, fn, *args)
+    if r is not _FAILED and (r is not None or key == ANIM_KEY):
+        out[key] = r
+
+
 class ObjectAdapter(Adapter):
     """Object data that isn't a plain property: the collections it is in, its view-layer hide state
     (the eye in the outliner) and its constraint stack."""
@@ -477,41 +503,43 @@ class ObjectAdapter(Adapter):
             out.update(mesh_lists(idb))        # D108: the lists the weights and shapes belong to
         if hasattr(idb, "modifiers"):
             out.update(modifier_values(idb))   # D110: the modifier stack and each modifier's settings
-        out.update(owned_groups(idb))          # D126: the node groups it uses
+        _upd(out, "node groups", owned_groups, idb)                         # D126
         if idb.data is not None and hasattr(idb.data, "materials"):
             if len(idb.material_slots):
                 out["slots"] = material_slots(idb)  # D111: material slots (which faces use them: a mesh channel)
-                out.update(owned_materials(idb))     # D112: the materials it records (settings, node trees)
+                _upd(out, "materials", owned_materials, idb)                # D112: settings, node trees
             else:
                 out["slots"] = [int(idb.active_material_index)]   # what material_slots gives for none
-        out.update(id_props(idb, animated_paths(idb) if idb.animation_data is not None else None))  # D114
-        out[SETTINGS_KEY] = settings_of(idb, _OBJ_SETTINGS_SKIP)          # D117
+        _upd(out, "custom properties", id_props, idb,
+             animated_paths(idb) if idb.animation_data is not None else None)   # D114
+        _put(out, SETTINGS_KEY, "settings", settings_of, idb, _OBJ_SETTINGS_SKIP)   # D117
         if idb.type == "ARMATURE":
-            out[POSE_KEY] = pose_values(idb)                                 # D119
+            _put(out, POSE_KEY, "pose", pose_values, idb)                    # D119
             if idb.data is not None and idb.data.library is None and _owns_data(idb, idb.data):
-                out[DATA_PREFIX + BONES] = bones_of(idb.data)                # D129
-        out[ANIM_KEY] = anim_values(idb)                                     # D120
+                _put(out, DATA_PREFIX + BONES, "bones", bones_of, idb.data)  # D129
+        _put(out, ANIM_KEY, "animation", anim_values, idb)                   # D120
         if idb.animation_data is not None:
-            out.update(owned_action(idb))
+            _upd(out, "the action", owned_action, idb)
         d = idb.data
         if d is not None and d.library is None and _owns_data(idb, d):
-            for k, v in id_props(d, animated_paths(d) if getattr(d, "animation_data", None) is not None
-                                 else None).items():
+            props = _part("the data's custom properties", id_props, d,
+                          animated_paths(d) if getattr(d, "animation_data", None) is not None else None)
+            for k, v in (props if props is not _FAILED else {}).items():
                 out[DATA_PREFIX + k] = v      # the mesh's (curve's, light's, ...) own, with its owner
             nested = DATA_STRUCTS.get(d.bl_rna.identifier)
             if nested is not None:
-                out[DATA_PREFIX + DATA_VALUES] = settings_of(d, _DATA_SKIP, nested)   # D117
+                _put(out, DATA_PREFIX + DATA_VALUES, "the data's settings", settings_of, d, _DATA_SKIP, nested)
                 if idb.mode != "EDIT":
-                    geo = geometry_of(d)                                            # D121
-                    if geo is not None:
-                        out[DATA_PREFIX + GEOM] = geo
+                    _put(out, DATA_PREFIX + GEOM, "the shape", geometry_of, d)      # D121, D131
             # D125: always there (None without animation), so the first keyframe is a change
             if hasattr(d, "animation_data"):
-                for k, v in anim_of(d).items():
+                r = _part("the data's animation", anim_of, d)
+                for k, v in (r if r is not _FAILED else {}).items():
                     out[(DATA_PREFIX + k) if k == ANIM_KEY else k] = v
             key = getattr(d, "shape_keys", None)
             if key is not None:
-                for k, v in anim_of(key).items():
+                r = _part("the shape keys' animation", anim_of, key)
+                for k, v in (r if r is not _FAILED else {}).items():
                     out[(SK_PREFIX + k) if k == ANIM_KEY else k] = v
         return out
 
@@ -1759,7 +1787,7 @@ _DATA_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {
 # data types whose settings are recorded, with the settings structs they keep apart
 DATA_STRUCTS = {"Mesh": (), "Camera": ("dof", "stereo"), "SpotLight": (), "PointLight": (), "SunLight": (),
                 "AreaLight": (), "Curve": (), "TextCurve": (), "SurfaceCurve": (), "MetaBall": (),
-                "Speaker": (), "Armature": (), "Lattice": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
+                "Speaker": (), "Armature": (), "Lattice": (), "GreasePencil": (), "GreasePencilv3": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
                 "LightProbeVolume": ()}
 SETTINGS_KEY = "settings"
 DATA_VALUES = "values"
@@ -2186,9 +2214,158 @@ def _bulk(coll, field, n, width=1, kind=float):
     return buf
 
 
+# ---- Grease Pencil (D131): 4.3+ keeps strokes as curves with attributes in drawings; 4.2's legacy
+# Grease Pencil keeps layers, frames, strokes and points
+_ATTR_KEY = {"FLOAT": ("value", 1), "INT": ("value", 1), "BOOLEAN": ("value", 1), "INT8": ("value", 1),
+             "FLOAT_VECTOR": ("vector", 3), "FLOAT2": ("vector", 2), "FLOAT_COLOR": ("color", 4),
+             "BYTE_COLOR": ("color", 4), "INT32_2D": ("value", 2), "QUATERNION": ("value", 4),
+             "FLOAT4X4": ("value", 16)}
+_GPL_SKIP = frozenset(_UI_PROPS | {"name", "info", "select", "parent", "parent_bone", "matrix_inverse",
+                                   "line_change", "annotation_opacity", "annotation_hide",
+                                   "use_annotation_onion_skinning", "annotation_onion_before_range",
+                                   "annotation_onion_after_range", "annotation_onion_before_color",
+                                   "annotation_onion_after_color"})
+_GPS_SKIP = frozenset(_UI_PROPS | {"select", "select_index"})
+_GPP_FIELDS = (("co", 3), ("pressure", 1), ("strength", 1), ("vertex_color", 4), ("uv_factor", 1),
+               ("uv_rotation", 1), ("uv_fill", 2))
+
+
+def _is_legacy_gp(gp) -> bool:
+    """4.2's Grease Pencil (layers of GPencilLayer with frames of strokes)."""
+    try:
+        return gp.bl_rna.properties["layers"].fixed_type.identifier == "GPencilLayer"
+    except Exception:
+        return False
+
+
+def _stroke_sizes(d) -> list:
+    n = len(d.strokes)
+    if not n:
+        return []                       # an empty drawing (its offsets can't be read in bulk)
+    offs = [0] * (n + 1)
+    d.curve_offsets.foreach_get("value", offs)
+    return [b - a for a, b in zip(offs, offs[1:])]
+
+
+def _drawing_record(d) -> dict:
+    sizes = _stroke_sizes(d)
+    attrs = {}
+    for a in d.attributes:
+        kw = _ATTR_KEY.get(a.data_type)
+        if kw is None or a.name.startswith("."):
+            continue
+        key, width = kw
+        kind = float if a.data_type in ("FLOAT", "FLOAT_VECTOR", "FLOAT2", "FLOAT_COLOR", "BYTE_COLOR",
+                                        "QUATERNION", "FLOAT4X4") else int
+        attrs[a.name] = [a.domain, a.data_type, _bulk(a.data, key, len(a.data), width, kind)]
+    return {"sizes": sizes, "attrs": attrs}
+
+
+def _write_drawing(d, rec) -> None:
+    sizes = rec.get("sizes") or []
+    if _stroke_sizes(d) != sizes:
+        if len(d.strokes):
+            d.remove_strokes()
+        if sizes:
+            d.add_strokes(sizes)
+    want = rec.get("attrs") or {}
+    for a in [a for a in d.attributes if a.name not in want and not a.name.startswith(".")]:
+        try:
+            d.attributes.remove(a)
+        except Exception:
+            pass
+    for name, (domain, dtype, vals) in want.items():
+        a = d.attributes.get(name)
+        if a is None or a.data_type != dtype or a.domain != domain:
+            if a is not None:
+                try:
+                    d.attributes.remove(a)
+                except Exception:
+                    pass
+            a = d.attributes.new(name, dtype, domain)
+        key, width = _ATTR_KEY[dtype]
+        if len(a.data) * width == len(vals):
+            a.data.foreach_set(key, vals)
+    try:
+        d.tag_positions_changed()
+    except Exception:
+        pass
+
+
+def _gp_record(gp) -> dict:
+    layers = []
+    if _is_legacy_gp(gp):
+        for l in gp.layers:
+            frames = []
+            for f in l.frames:
+                strokes = []
+                for st in f.strokes:
+                    pts = st.points
+                    n = len(pts)
+                    r = {"values": struct_values(st, _GPS_SKIP), "n": n}
+                    for fld, w in _GPP_FIELDS:
+                        r[fld] = _bulk(pts, fld, n, w)
+                    strokes.append(r)
+                frames.append([int(f.frame_number), {"strokes": strokes}])
+            layers.append({"name": l.info, "values": struct_values(l, _GPL_SKIP), "frames": frames})
+        return {"legacy": True, "layers": layers}
+    for l in gp.layers:
+        frames = [[int(f.frame_number), _drawing_record(f.drawing)] for f in l.frames if f.drawing is not None]
+        layers.append({"name": l.name, "values": struct_values(l, _GPL_SKIP), "frames": frames})
+    return {"legacy": False, "layers": layers}
+
+
+def _write_gp(gp, rec) -> None:
+    want = rec.get("layers") or []
+    names = [w["name"] for w in want]
+    legacy = _is_legacy_gp(gp)
+    lname = (lambda l: l.info) if legacy else (lambda l: l.name)
+    for l in [l for l in gp.layers if lname(l) not in names]:
+        gp.layers.remove(l)
+    for w in want:
+        l = next((x for x in gp.layers if lname(x) == w["name"]), None)
+        if l is None:
+            l = gp.layers.new(w["name"])
+        set_struct_values(l, w.get("values") or {})
+        wf = {fn: fr for fn, fr in w.get("frames") or ()}
+        for f in [f for f in l.frames if int(f.frame_number) not in wf]:
+            l.frames.remove(f) if legacy else l.frames.remove(int(f.frame_number))
+        for fn, fr in w.get("frames") or ():
+            f = next((x for x in l.frames if int(x.frame_number) == fn), None)
+            if f is None:
+                f = l.frames.new(fn)
+            if legacy:
+                _write_legacy_frame(f, fr)
+            elif f.drawing is not None:
+                _write_drawing(f.drawing, fr)
+
+
+def _write_legacy_frame(f, fr) -> None:
+    want = fr.get("strokes") or []
+    if [len(st.points) for st in f.strokes] != [w["n"] for w in want]:
+        for st in list(f.strokes):          # (legacy strokes have no clear())
+            f.strokes.remove(st)
+        for w in want:
+            st = f.strokes.new()
+            if w["n"]:
+                st.points.add(w["n"])
+    for st, w in zip(f.strokes, want):
+        set_struct_values(st, w.get("values") or {})
+        for fld, _w in _GPP_FIELDS:
+            if fld in w and w["n"]:
+                st.points.foreach_set(fld, w[fld])
+
+
 def geometry_of(d):
-    """The geometry of curve, surface, lattice and metaball data, or None for other data."""
+    """The geometry of curve, surface, lattice, metaball and Grease Pencil data, or None for other
+    data."""
     t = d.bl_rna.identifier
+    if t in ("GreasePencil", "GreasePencilv3"):
+        k = d.session_uid
+        g = _GEOM_CACHE.get(k)
+        if g is None:
+            g = _GEOM_CACHE[k] = _gp_record(d)
+        return g
     if t not in ("Curve", "SurfaceCurve", "Lattice", "MetaBall"):
         return None
     k = d.session_uid
@@ -2231,6 +2408,10 @@ def write_geometry(d, g) -> None:
     _GEOM_CACHE.pop(d.session_uid, None)
     t = d.bl_rna.identifier
     try:
+        if t in ("GreasePencil", "GreasePencilv3"):
+            _write_gp(d, g)
+            _GEOM_CACHE.pop(d.session_uid, None)
+            return
         if t == "Lattice":
             if len(d.points) * 3 == len(g.get("co_deform") or ()):
                 d.points.foreach_set("co_deform", g["co_deform"])
