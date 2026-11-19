@@ -67,6 +67,9 @@ def view_bits(arr: np.ndarray) -> np.ndarray:
     return arr.view(_BITS_BY_SIZE[arr.dtype.itemsize])
 
 
+DIFF_THREADS = [None]   # R071: threads for the engine's diff (None: its own rule, two from 4 MB); tests and A/B set it
+
+
 def diff(key: str, old: np.ndarray, new: np.ndarray, exists=(True, True)):
     """Delta old -> new for channel `key` (op ADD). None if bit-identical and existence unchanged."""
     if old.size != new.size:
@@ -77,7 +80,7 @@ def diff(key: str, old: np.ndarray, new: np.ndarray, exists=(True, True)):
     exists = (bool(exists[0]), bool(exists[1]))
     ob = np.ascontiguousarray(view_bits(old)).reshape(-1, w)
     nb = np.ascontiguousarray(view_bits(new)).reshape(-1, w)
-    r = _N.diff(ob, nb, ob.dtype.itemsize, w)
+    r = _N.diff(ob, nb, ob.dtype.itemsize, w, DIFF_THREADS[0])
     if r is not None:
         return ChannelDelta(key, np.frombuffer(r[0], _U32), np.frombuffer(r[1], ob.dtype).reshape(-1, w),
                             exists, ADD)

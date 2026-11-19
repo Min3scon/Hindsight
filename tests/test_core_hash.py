@@ -8,6 +8,7 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
   threads        a large bytes object is hashed with the GIL released and the value is right"""
 import array
 import threading
+import time
 import traceback
 
 import numpy as np
@@ -143,22 +144,27 @@ def test_hasher_with_other_threads():
     want = x3(big)
     got, ticks, stop = [], [0], threading.Event()
 
-    def spin():
+    def spin():                     # gives the GIL back at every turn: it runs only while the engine lets it go
         while not stop.is_set():
             ticks[0] += 1
+            time.sleep(0)
 
+    old = sys.getswitchinterval()
+    sys.setswitchinterval(5.0)      # no forced hand-over of the GIL during the test
     t = threading.Thread(target=spin)
     t.start()
     try:
         for _ in range(3):
             got.append(x3(big))
+        ran = ticks[0]
     finally:
         stop.set()
+        sys.setswitchinterval(old)
         t.join()
     assert got == [want] * 3
-    assert ticks[0] > 100, ticks
+    assert ran > 20, ran
     assert x3(bytearray(big)) == want and x3(np.frombuffer(big, np.uint8)) == want
-    print(f"PASS test_hasher_with_other_threads (a second thread ran {ticks[0]} turns during 3 hashes of 40 MB)")
+    print(f"PASS test_hasher_with_other_threads (a second thread ran {ran} turns during 3 hashes of 40 MB)")
 
 
 def main():
