@@ -259,7 +259,7 @@ DEFECTS.md).
 ### Other open items from the audits
 
 - `dev/reports/TOOLS.md` (static analysis): dead code and duplicates. Done by NATIVE: dead branch and
-  `_IDX_ENC` in `delta.py`, unused local in `history.py`. Not done: unused locals in `joinsep.py:342`,
+  `_IDX_ENC` in `delta.py`, unused local in `history.py`. Done since: the unused call in `joinsep.py` (HINDSIGHT_OT_join.invoke). Not done:
   unused imports (pyflakes is clean on `hindsight/` since 2026-11-19 except the deliberate import check in
   `ui_panel.engine_error`), duplicated keymap boilerplate in `joinsep.py`
   and `ops_core.py`, the unused `@fontsource-variable/*` devDependencies and the undeclared
@@ -269,8 +269,8 @@ DEFECTS.md).
   this job (see `DEFECTS.md` D63 to D69 and `OPTIMISATION_LOG.md`); item 7 (dead code, about 60 lines) and
   item 8 (duplicate helpers) are open except as noted; item 12 is replaced by the Rust `diff`.
 - `tools/mutation_bl.py`: the 12 mutants whose text no longer matched (6 to 10, 18, 26, 28, 36, 45, 57, 61) were re-targeted; the tool now runs an unchanged control first and gives the Blender runs this checkout's engine (an engine-less Blender had "killed" every mutant at import). 12/12 killed in Blender 5.3.0, by five different test files. The other 66 weren't re-run.
-- `tests/oracle.py`: the one-line fix for the Blender 4.2 `parent_type` test failure (in
-  `dev/reports/DATAREC.md` section 6) is not applied.
+- `tests/oracle.py`: the Blender 4.2 `parent_type` fix (`dev/reports/DATAREC.md` section 6) is applied
+  (the oracle reads a cleared vertex parent type as OBJECT, as the recorder does).
 - Edit Mode step cost: re-measured after R014 (L6): 14 to 18 ms at 100k vertices, 60 to 83 ms at 300k
   (bench/scenarios/editmode.py, 5.3, load 6).
 
@@ -301,6 +301,7 @@ Latest runs (2026-11-19):
 | same, `run global_two` (R056) | main-session-3 2fa9f41 | 7/7 on 5.3.0 and 4.2.23: eight real strokes on two objects in turn are eight global positions; the global slider dragged to 0, 4, 8, 3, 0, 8 puts both meshes exactly as after that many strokes |
 | same, `run dyntopo_paused` (D153) | main-session-3 | 9/9 on 5.3.0 and 4.2.23: with Record Dyntopo off, two real strokes are two steps, two Dyntopo strokes no step one by one, Dyntopo off makes the visit one step; the slider gives back the quads before it and the earlier strokes exactly, and the visit's mesh forward |
 | same, `run crash --arg phase=make` then `--arg phase=check` (R064, R065, R067) | main-session | 1/1 and 8/8 on 5.3.0 and 4.2.23: three real strokes, File > Save, four more, Blender killed (SIGKILL); opened again with Interrupted, the seven steps come back at the saved one with the file's mesh and the slider gives the mesh after every stroke; with Last saved, the three saved steps and a journal started again |
+| same, `run topo_pack` (R069) | main-session | 8/8 on 5.3.0 and 4.2.23: two real strokes, a pause packs the baseline's topology, a real Voxel Remesh is one more step with a new topology, a stroke; the slider back over the remesh and forward again gives every mesh exactly |
 | same, Rounds A to D (`tests_ui/rounds.py --pass 90 --blender 5.3 --rounds ABCD`) | e4165f2 | 9/16 runs in 76 min; Round C all passed (10k, 10k with 1,000 steps, 100k, 500k, stroke split, file load, native undo); the failures were scenarios out of date (round_b_features, round_d, fail_inject: fixed and passing since), round_b redraw times under software GL, and these findings: a stale hindsight_native 0.2.0 in the Blender binaries' own site-packages here shadowed the add-on's wheel on Install from Disk (moved aside; container only), round_b redraw times are software GL under load, rounds.py's window offset breaks the Xvfb screenshot crop |
 | Native engine on GitHub, 12 jobs (Windows, macOS, Linux; x64 and ARM64; Python 3.11 and 3.13) | 7dc4853, 847bcdd, 099815c | 7dc4853: test_core_reference failed for a missing lz4 (CI dependencies fixed in 847bcdd); 847bcdd: 2 libzstd byte comparisons (fixed in 099815c); 099815c: rerun pending |
 | same | 9280a71, 3a58015 | 9280a71 (run 44466199267): every platform failed one test, the libzstd byte comparison in test_record_equals_diff_and_encode (Windows' earlier `resource` failure was gone); fixed in cd046ab; 3a58015 (run 44466670259): all 12 jobs green |
@@ -322,7 +323,7 @@ Other limits of the verification:
 
 ## f. Benchmarks
 
-- Measured rounds: `OPTIMISATION_LOG.md` (68 rows: 58 kept, 10 reverted). The target is at
+- Measured rounds: `OPTIMISATION_LOG.md` (71 rows: 60 kept, 11 reverted). The target is at
   least 100 rounds; the log is the only count.
 - Earlier prose and tables: `PERF_LOG.md` (compression format 3, tier 1 budgets, memory and the Rust
   question, Movie Mode playback, Rust engine, redraw cost, saving and the re-packer).
@@ -408,19 +409,20 @@ Blockers:
   whose setup script runs it do not exist (creating one needs the owner's approval prompt).
 - The Rust interface design does not exist (R2 and later wait for it).
 - Items that need the P0 seam first: D-b, D-c, D-d, D-f and all of Phase 3.
+- Unpacked newest steps (preference "Unpacked steps", default 64 per history): kept for quick undo, they hold about 19 MB per history at 1M vertices (64 strokes of 2%; packed about 6 MB) and grow with the mesh. A byte cap beside the count would bound it on 4M+ meshes at the cost of a decode (about 1 to 3 ms) on undoing past it; it changes what the preference means for big meshes, so it is the owner's call. Not done.
 - Record everything on big scenes: every operation reads every recorded object again (exact by design: some changes, a custom property or hiding, tell no one). Measured 2026-11-19 on bpy 5.3 with cubes (a third with a constraint): 8.6 ms per operation at 100 objects, about 42 ms at 500, about 227 ms at 2,000 (the cyclic GC plays no part; the per-object reads are spread over many small parts, R062 and R063 show what is left). Clicks (R048) and slider drags (R057) don't read everything. Reading only the objects an operator touched could miss a change, and reading the rest later puts a change into the wrong step; either is an owner decision, as is a note in the tab above some number of recorded objects. Not decided.
 - Dropping the embedded history after a save would free about 52 MB at 6,000 steps (since R061 the bytes, not
   base64 text) but would leave autosaves without a history: an owner decision, not made.
 
 ## i. Next actions, in priority order
 
-1. Pushed: R061 to R067 and the crash window scenario (bda759e, full suites 109/111 on 5.3 and 4.2 before it). R060 (engine 0.8.0, xxh3-128 mesh fingerprints) is merged on main-session-3: full suites with the 0.8.0 engine, then push and run both workflows (the wheels need the Native engine run).
+1. Pushed: R060 (engine 0.8.0) as 3e9195f after full suites with 0.8.0 on 5.3 and 4.2 (111/113 each); Blender tests and Native engine run on it. Next to push: R069 (baseline topology packed while idle, window scenario topo_pack), R073 (global positions built faster) and the joinsep clean-up, after their full suites. The agent's branch holds R070 to R072 (engine 0.9.0: the recorder's strict compare, a threaded diff, the idle recompression level): review, merge, full suites, push, both workflows.
 2. The recorder's remaining overhead at 500 objects (about 40 to 48 ms per operation): capture 31 ms spread over many small parts (none over 1 ms per 500 objects in the object adapter), `_same_values` 7.5 ms (two marshal dumps per object). Reading plain rows at once (R062) and keying values in C (R063) were measured and reverted. Next idea: a strict value comparison in the engine (type-exact, floats by bits) instead of two marshal dumps, once native/ is free.
 3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
    (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
 4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (68 logged: 58 kept, 10 reverted). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; a native parse of the step table is the next step there).
-8. Next measured candidates (2026-11-19): (a) every recorded mesh keeps its baseline for good, 61 MB at 1M vertices, 49.5 MB of it topology (edge and corner indices) read only on topology changes and Edit Mode compares: kept packed it would be a few MB; 46 places read `MeshState.arrays`, several copy or iterate all of it, so it needs an audit; (b) the engine: a strict value comparison for the recorder (type-exact, floats by bits) instead of two marshal dumps per object (7.5 ms of an operation at 500 objects); a multi-threaded diff (a 2K texture stroke diffs 67 MB in 9 ms); (c) opening a history folder parses about 6 us per step in Python (1,000 steps: 16 ms of the 30 ms open).
+6. More optimisation rounds toward the owner's 100 (71 logged: 60 kept, 11 reverted; R070 to R072 on the agent's branch). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; a native parse of the step table is the next step there).
+8. Next measured candidates (2026-11-19): (a) done as R069 (a baseline's topology packed while idle); (b) the engine: a strict value comparison for the recorder (type-exact, floats by bits) instead of two marshal dumps per object (7.5 ms of an operation at 500 objects); a multi-threaded diff (a 2K texture stroke diffs 67 MB in 9 ms); (c) opening a history folder parses about 6 us per step in Python (1,000 steps: 16 ms of the 30 ms open).
 7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.

@@ -376,7 +376,7 @@ def _history_extents(ob, uid, bases, tans):
         ext = None
         if st is not None and st.counts:
             ext = framing.history_extents_multi(h, st, uid, bases, tans)
-            pos = st.arrays.get(POSITION_KEY)
+            pos = st.light.get(POSITION_KEY)
             here = framing.extents_multi(pos, bases, tans) if pos is not None else None
             if ext is None or here is None:
                 ext = here if ext is None else ext
@@ -669,7 +669,7 @@ def _measure_deformed(ob, ev, bs, local_basis, tx, ty):
     if hit is None or hit[0] != sig:
         hit = _REACH[(h.uid, uid)] = (sig, framing.history_vertex_reach(h, st, uid))
     rho = hit[1]
-    pos0 = st.arrays.get(POSITION_KEY)
+    pos0 = st.light.get(POSITION_KEY)
     if rho is None or pos0 is None or len(rho) != len(bs) or pos0.size != bs.size:
         return None
     with np.errstate(invalid="ignore", over="ignore"):
@@ -779,7 +779,7 @@ def _entry_positions(ob) -> np.ndarray:
     on entering Edit Mode, which are the history's at its cursor."""
     uid = runtime.obj_uid(ob)
     st = runtime._STATES.get(uid) if uid is not None else None
-    pos = st.arrays.get(POSITION_KEY) if st is not None else None
+    pos = st.light.get(POSITION_KEY) if st is not None else None
     return np.asarray(pos, np.float32).reshape(-1) if pos is not None else np.empty(0, np.float32)
 
 

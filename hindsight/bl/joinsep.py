@@ -339,7 +339,6 @@ class HINDSIGHT_OT_join(bpy.types.Operator):
         return context.mode == 'OBJECT' and context.view_layer.objects.active is not None
 
     def invoke(self, context, event):
-        _a, others = _members(context)
         if _any_history(list(context.selected_objects) + [context.view_layer.objects.active]):
             try:
                 return context.window_manager.invoke_confirm(self, event, message=CONFIRM_MESSAGE)

@@ -124,7 +124,9 @@ def _brute_memory():
         steps += len(h.entries)
         if h is ah:
             ab, asn = b, len(h.entries)
-    base = sum(sum(a.nbytes for a in st.arrays.values()) for st in runtime._STATES.values())
+    # R069: a packed topology counts at its packed size (read without unpacking it)
+    base = sum(sum(a.nbytes for a in st.light.values()) + sum(len(p[0]) for p in (st._topo or {}).values())
+               for st in runtime._STATES.values())
     return {"total_bytes": total, "ram_bytes": total + base, "steps": steps,
             "objects": len(runtime.reg().by_object), "active_bytes": ab, "active_steps": asn}
 

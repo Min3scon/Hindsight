@@ -433,22 +433,29 @@ def fingerprint(me, ob=None, algo: str = "x3") -> str:
     return (X3 if algo == "x3" else "") + h.hexdigest()
 
 
-def topology_equal(me, snap_counts: dict, snap_arrays: dict, deep=False) -> bool:
+def topology_equal(me, snap_counts: dict, snap_arrays: dict, deep=False, hashes=None) -> bool:
     """Same element counts; with deep, also the same corner vertices, and unless deep is "corners",
-    the same edges."""
+    the same edges. hashes (R069): checksums of arrays the baseline keeps packed (absent from
+    snap_arrays), compared instead of the arrays."""
     if counts(me) != snap_counts:
         return False
     if not deep:
         return True
-    cv = _corner_ints(me, ".corner_vert", "vertex_index", snap_counts["CORNER"])
-    ref = snap_arrays.get(CORNER_VERT_KEY)
-    if ref is None or not np.array_equal(cv, ref):
+
+    def same(key, cur):
+        ref = snap_arrays.get(key)
+        if ref is not None:
+            return np.array_equal(cur, ref)
+        h = hashes.get(key) if hashes else None
+        if h is None:
+            return False
+        from ..core.topopack import hash_of
+        return hash_of(cur) == h
+    if not same(CORNER_VERT_KEY, _corner_ints(me, ".corner_vert", "vertex_index", snap_counts["CORNER"])):
         return False
     if deep == "corners":
         return True
-    ev = _edge_verts(me, snap_counts["EDGE"])
-    ref = snap_arrays.get(EDGE_VERTS_KEY)
-    return ref is not None and np.array_equal(ev, ref)
+    return same(EDGE_VERTS_KEY, _edge_verts(me, snap_counts["EDGE"]))
 
 
 def write_snapshot(me, snap: Snapshot, ob=None) -> None:

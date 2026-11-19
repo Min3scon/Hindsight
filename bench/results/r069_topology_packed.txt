@@ -1,0 +1,12 @@
+R069: a recorded mesh's baseline keeps its topology packed while the user is idle. bpy 5.3.0 module.
+
+topo_mem.py (one process each; baseline = MeshState.nbytes, before and after runtime.pack_idle_states):
+AB {"mesh": "grid1m", "vertices": 999698, "baseline_mb": 61.0, "packed_baseline_mb": 11.5, "pack_ms_off_main_thread": 123.3, "unpack_ms": 43.3}
+AB {"mesh": "remesh", "vertices": 1511678, "baseline_mb": 140.3, "packed_baseline_mb": 87.4, "pack_ms_off_main_thread": 782.8, "unpack_ms": 155.0}
+(grid1m: bench_bl.make_mesh, a regular grid whose indices pack to almost nothing; remesh: Suzanne after Voxel
+Remesh at 0.0045, a realistic sculpt mesh. pack_ms was measured with wait=True, so on the main thread here; the
+add-on packs on a helper thread while the user is idle and only swaps the result in.)
+
+edit_packed.py (Record everything, 300k vertices, Smooth Vertices in Edit Mode, finish_operation, 16 runs each,
+alternating packed and unpacked baseline in one process, ms):
+AB {"packed": {"min": 36.64, "med": 46.39}, "unpacked": {"min": 43.74, "med": 52.39}}

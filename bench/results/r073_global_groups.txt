@@ -1,0 +1,9 @@
+R073: global_groups reads the step metadata directly (no key function and no Entry.seq property per step, one-step
+groups not sorted, groups sorted by their first (seq, uid, index) with itemgetter). groups_ab.py, bpy 5.3.0 module,
+one process, the R072-time copy of the function (tests/test_core_global_position.py groups_before_r073) against
+the new one, alternating, 9 runs each; the machine was busy with a full suite and another agent's runs.
+10000 steps: before med 11.0 ms (min 9.3), after med 8.6 ms (min 5.7), ratio 0.78
+100000 steps: before med 266.4 ms (min 239.6), after med 214.8 ms (min 156.0), ratio 0.81
+(First pass without the itemgetter sort: 10,000 steps 9.6 -> 7.3 ms, 100,000 steps 234.3 -> 176.0 ms, 0.76 and 0.75.)
+Under cProfile the first panel read after opening a 10,000-step file spent 67 of 75 ms here; without the profiler
+the build is about 10 ms at 10,000 steps.

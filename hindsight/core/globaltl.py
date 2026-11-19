@@ -7,6 +7,8 @@ its first step in extra["op"] and are one position, applied or undone together. 
 """
 from __future__ import annotations
 
+import operator
+
 
 def _visible_histories(reg, visible=None):
     hs = []
@@ -33,15 +35,35 @@ def global_order(reg, visible=None) -> list:
     return out
 
 
+_FIRST = operator.itemgetter(0)
+
+
 def global_groups(reg, visible=None) -> list:
     """The positions of the global timeline: one list of (seq, history uid, index) per operation,
-    in the order of their first step."""
+    in the order of their first step. R073: the step metadata is read here directly (what _group_key and
+    Entry.seq read, without a call per step: built when a file is opened, 10,000 steps took 67 ms)."""
     by = {}
+    get = by.get
     for h in _visible_histories(reg, visible):
+        uid = h.uid
         for i, e in enumerate(h.entries):
-            by.setdefault(_group_key(e), []).append((e.seq, h.uid, i))
-    groups = [sorted(g) for g in by.values()]
-    groups.sort(key=lambda g: g[0][0])
+            m = e.meta
+            if isinstance(m, dict):
+                seq = m["seq"]
+                extra = m.get("extra")
+                op = extra.get("op") if isinstance(extra, dict) else None
+            else:
+                seq, op = e.seq, None
+            key = int(op) if op is not None else seq
+            g = get(key)
+            if g is None:
+                by[key] = [(seq, uid, i)]
+            else:
+                g.append((seq, uid, i))
+    groups = [g if len(g) == 1 else sorted(g) for g in by.values()]
+    # by the first step, (seq, uid, index): a step number is in one group only, so the order is the one by
+    # its seq, without a Python call per group
+    groups.sort(key=_FIRST)
     return groups
 
 

@@ -441,13 +441,13 @@ def refresh_extras(obj, st=None, me=None, shapes_only: bool = False) -> None:
                 co = np.empty(len(kb.data) * 3, np.float32)
                 kb.data.foreach_get("co", co)
                 vals[meshio.sk_key(i, kb.name)] = co
-        drop = [k for k in st.arrays if k.startswith(meshio.SK_PREFIX)]
+        drop = [k for k in st.light if k.startswith(meshio.SK_PREFIX)]
     else:
         vals = meshio.read_extras(obj, me)
-        drop = [k for k in st.arrays if meshio.is_extra(k) and not k.startswith(meshio.IMG_PREFIX)]
+        drop = [k for k in st.light if meshio.is_extra(k) and not k.startswith(meshio.IMG_PREFIX)]
     for k in drop:
-        del st.arrays[k]
-    st.arrays.update(vals)
+        del st.light[k]
+    st.light.update(vals)
     _SHAPES_STALE.discard(obj_uid(obj))
 
 
@@ -457,10 +457,10 @@ def refresh_images(obj, st=None) -> None:
     st = st or _STATES.get(obj_uid(obj))
     if st is None or not st.counts:
         return
-    for k in [k for k in st.arrays if k.startswith(meshio.IMG_PREFIX)]:
-        del st.arrays[k]
+    for k in [k for k in st.light if k.startswith(meshio.IMG_PREFIX)]:
+        del st.light[k]
     for k, a in meshio.read_images(obj).items():
-        st.arrays[k] = a.copy()
+        st.light[k] = a.copy()
 
 
 def _read_new_images(obj, st=None) -> None:
@@ -471,10 +471,10 @@ def _read_new_images(obj, st=None) -> None:
         return
     for img in meshio.paint_images(obj):
         k = meshio.img_key(img.name)
-        if k not in st.arrays:
+        if k not in st.light:
             a = meshio.read_images_named(obj, (img,)).get(k)
             if a is not None:
-                st.arrays[k] = a.copy()
+                st.light[k] = a.copy()
 
 
 _PAINTING = [None]     # D142: uid of the object a texture painting stroke is running on
@@ -655,7 +655,7 @@ def _deltas_match(seen: Step, rec: Step, st: MeshState, inverse: bool) -> bool:
         e = by_key.get(d.key)
         if e is None:
             return False
-        before = st.arrays.get(d.key)
+        before = st.light.get(d.key)
         if before is None:
             before = np.zeros(int(st.counts[split_key(d.key)[1]]) * key_width(d.key), dtype=key_dtype(d.key))
         if not D.same_change(d, e, before, inverse):
@@ -693,7 +693,7 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
     uid = obj_uid(obj)
     c = meshio.counts(me)
     ext = full and extras_on(obj)
-    if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.arrays, deep=deep)):
+    if c != st.counts or (full and not meshio.topology_equal(me, st.counts, st.light, deep=deep, hashes=st.topo_hashes())):
         after = meshio.read_snapshot(me, ob=obj, extras=ext or topo_extras_on(obj))
         # `before` takes the state's arrays without copying them: every caller either drops the step
         # or calls _apply_to_state, whose set_snapshot gives the state fresh arrays (never in place)
@@ -713,7 +713,7 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
         extra_vals.update(meshio.read_images(obj))
     keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
-    for k in list(st.arrays):
+    for k in list(st.light):
         if k in meshio.TOPO_KEYS or k in present or (meshio.is_extra(k) and not ext):
             continue
         name = split_key(k)[0]
@@ -722,13 +722,13 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
     deltas = []
     for key in keys:
         new = extra_vals.get(key) if meshio.is_extra(key) else meshio.read_channel(me, key, reuse=True)
-        old = st.arrays.get(key)
+        old = st.light.get(key)
         if new is None and old is None:
             continue
         if key.startswith(meshio.IMG_PREFIX) and (old is None or new is None or old.size != new.size):
             # no baseline for this image yet, or it was resized: take it as it is, no step
             if new is not None:
-                st.arrays[key] = new.copy()
+                st.light[key] = new.copy()
             continue
         name, domain, dtn = split_key(key)
         n = st.counts[domain] * CHANNEL_TYPES[dtn][1]
@@ -766,7 +766,7 @@ def _clamp_state_weights(obj, st: MeshState) -> None:
     """D43: Blender only takes weights from 0 to 1: the state keeps what Blender now holds, so the
     clamping is never recorded as a change."""
     clamped = False
-    for k, arr in st.arrays.items():
+    for k, arr in st.light.items():
         if k.startswith(meshio.VG_PREFIX):
             clamped |= meshio.clamp_weights(arr)
     uid = obj_uid(obj)
@@ -808,8 +808,8 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
                 return
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            if multires.MR_KEY in st.arrays:
-                multires.restore(obj, st.arrays[multires.MR_KEY])
+            if multires.MR_KEY in st.light:
+                multires.restore(obj, st.light[multires.MR_KEY])
                 me = obj.data
             else:
                 meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
@@ -826,7 +826,7 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
             if obj.mode == "SCULPT" and multires.active(obj):
                 multires.begin_visit(obj)
         else:
-            meshio.write_changes(me, st.arrays, keys, st.removed, ob=obj)
+            meshio.write_changes(me, st.arrays if any(k in meshio.TOPO_KEYS for k in keys) else st.light, keys, st.removed, ob=obj)
             if obj.mode == "SCULPT" and final and _refresh_toggle():
                 _sculpt_refresh(obj)
         st.removed.clear()
@@ -965,7 +965,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         return None
     mode = _shared(mode or obj.mode)
     st = _STATES.get(uid)
-    if st is not None and multires.MR_KEY in st.arrays and _mr_step is None:
+    if st is not None and multires.MR_KEY in st.light and _mr_step is None:
         st = ensure_state(obj, refresh=True)      # the state held a Multires snapshot: read the mesh again
     if st is None or not st.counts:          # no mesh baseline yet (or data values only)
         ensure_state(obj, refresh=True)
@@ -1254,7 +1254,7 @@ def _enter(obj) -> None:
             commit(obj, label="Changes Outside History", mode="OBJECT", full=True, _edit=True)
         return
     if (obj.mode == "WEIGHT_PAINT" and st is not None and st.counts and topo_extras_on(obj)
-            and not any(k.startswith(meshio.VG_PREFIX) for k in st.arrays)):
+            and not any(k.startswith(meshio.VG_PREFIX) for k in st.light)):
         # D-f: a state read without weights (a file just loaded) takes them as they are now: the
         # weights of strokes are compared with this baseline, nothing outside a stroke is a step
         refresh_extras(obj, st)
@@ -1367,6 +1367,69 @@ def _tick_once() -> bool:
     return painting
 
 
+# R069: a baseline's topology (edge and corner indices: about 50 MB at 1M vertices) is packed on a helper
+# thread while the user is idle; the main thread swaps it in only if the arrays are still the same.
+TOPO_PACK_DEFAULT = 8 << 20      # bytes of topology before packing pays (a mesh of about 150k vertices)
+TOPO_PACK_MIN = [TOPO_PACK_DEFAULT]
+TOPO_PACK_IDLE_S = 2.0           # seconds without a stroke or jump before packing starts
+_PACKING: dict = {}              # uid -> (MeshState, job, future) being packed
+_PACK_EXEC = [None]
+
+
+def baseline_bytes() -> int:
+    """What the baselines of the recorded meshes hold (packed topology at its packed size)."""
+    return sum(st.nbytes() for st in _STATES.values())
+
+
+def _pack_job(st):
+    job = st.pack_job()
+    if job is None or sum(a.nbytes for a in job.values()) < TOPO_PACK_MIN[0]:
+        return None
+    return job
+
+
+def pack_idle_states(wait: bool = False) -> int:
+    """Swap in the packed topology of finished jobs and start the next one (one at a time). wait
+    (tests): pack every baseline that can be before returning. Returns how many were swapped in."""
+    from ..core import topopack
+    done = 0
+    for uid, (st, job, fut) in list(_PACKING.items()):
+        if not (wait or fut.done()):
+            continue
+        _PACKING.pop(uid, None)
+        try:
+            packed = fut.result()
+        except Exception as e:
+            log.error_once(("topo_pack", str(e)), f"could not pack a mesh's topology: {e}", e)
+            continue
+        if _STATES.get(uid) is st and st.finish_pack(job, packed):
+            done += 1
+    if wait:
+        for uid, st in list(_STATES.items()):
+            job = _pack_job(st)
+            if job is not None and st.finish_pack(job, topopack.pack_all(job)):
+                done += 1
+        return done
+    if not _PACKING:
+        for uid, st in _STATES.items():
+            job = _pack_job(st)
+            if job is not None:
+                ex = _PACK_EXEC[0]
+                if ex is None:
+                    from concurrent.futures import ThreadPoolExecutor
+                    ex = _PACK_EXEC[0] = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hindsight-topo")
+                _PACKING[uid] = (st, job, ex.submit(topopack.pack_all, job))
+                break
+    return done
+
+
+def _maybe_pack() -> None:
+    p = packer
+    idle = p._user_idle_for() if p is not None else TOPO_PACK_IDLE_S
+    if _PACKING or (idle >= TOPO_PACK_IDLE_S and not _DIRTY and not stroke_running()):
+        pack_idle_states()
+
+
 def tick() -> float:
     """Commits each stroke as it ends (or once updates settle). Never raises."""
     busy = False
@@ -1375,6 +1438,11 @@ def tick() -> float:
         ensure_handlers()
     except Exception as e:
         log.error_once(("tick", str(e)), f"timer error: {e}", e)
+    if not busy:
+        try:
+            _maybe_pack()
+        except Exception as e:
+            log.error_once(("topo_pack_tick", str(e)), f"could not pack a mesh's topology: {e}", e)
     try:
         from . import datarec
         datarec.tick()
@@ -2337,7 +2405,7 @@ def memory_stats() -> dict:
         steps += len(h.entries)
         if h is ah:
             active_b, active_s = b, len(h.entries)
-    base = sum(sum(a.nbytes for a in st.arrays.values()) for st in _STATES.values())
+    base = baseline_bytes()
     return {"total_bytes": total, "ram_bytes": total + base, "steps": steps,
             "objects": len(_REG.by_object), "active_bytes": active_b, "active_steps": active_s}
 
@@ -2381,6 +2449,10 @@ def unregister() -> None:
             hl.remove(fn)
     if bpy.app.timers.is_registered(tick):
         bpy.app.timers.unregister(tick)
+    _PACKING.clear()
+    ex, _PACK_EXEC[0] = _PACK_EXEC[0], None
+    if ex is not None:
+        ex.shutdown(wait=False)
     global packer
     if packer is not None:
         try:
