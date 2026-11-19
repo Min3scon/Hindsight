@@ -334,6 +334,59 @@ def test_strokes_after_a_mesh_changed_without_hindsight():
     assert any(runtime.OUTSIDE_MESH_TEXT.format(name=NAME) == t for t in notes()), notes()
 
 
+# R060: the same, with the session before the interruption run by a build before R060: the file's
+# fingerprints and the RESET written when the file was opened hold blake2b values without a tag. This build
+# recovers it and compares them that way: the strokes come back, and a further change without Hindsight is
+# still caught.
+def test_strokes_after_a_mesh_changed_without_hindsight_by_an_older_build():
+    real = runtime.mesh_fingerprint
+
+    def older_build(ob, algo="x3"):
+        return real(ob, "blake2b")               # every fingerprint as builds before R060 made it
+    setup()
+    runtime.mesh_fingerprint = older_build
+    try:
+        ob, _after, path = start("outside_mesh_old", 3)
+        save(ob, path)
+        H.fresh(register=False)                  # a session without Hindsight
+        bpy.ops.wm.open_mainfile(filepath=path)
+        H.fake_stroke(bpy.data.objects[NAME], 99, n=80)
+        bpy.ops.wm.save_mainfile()
+        if os.path.isfile(path + "1"):
+            os.remove(path + "1")
+        setup()
+        bpy.ops.wm.open_mainfile(filepath=path)
+        ob = bpy.data.objects[NAME]
+        assert runtime.history_of(ob) is None
+        assert any(runtime.OUTSIDE_MESH_TEXT.format(name=NAME) == t for t in notes()), notes()
+        H.enter(ob, "SCULPT")
+        file_state = H.snapshot(ob)
+        after = {}
+        stroke(ob, 50, after)
+        stroke(ob, 51, after)
+        live = seqs(ob)
+    finally:
+        runtime.mesh_fingerprint = real
+    ob = interrupt(path)
+    # what was compared is the RESET's blake2b value of the mesh as the file holds it
+    fp = runtime.reg().saved[runtime.obj_uid(ob)]["mesh"]
+    assert fp == real(ob, "blake2b") and ":" not in fp, fp
+    h = runtime.history_of(ob)
+    assert h is not None and seqs(ob) == live and h.cursor == 0, (h and seqs(ob), h and h.cursor)
+    assert not notes(), notes()
+    check(ob, after, file_state)
+    # the same file changed again without Hindsight is caught again
+    H.fresh(register=False)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    H.fake_stroke(bpy.data.objects[NAME], 98, n=80)
+    bpy.ops.wm.save_mainfile()
+    if os.path.isfile(path + "1"):
+        os.remove(path + "1")
+    setup()
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert runtime.history_of(bpy.data.objects[NAME]) is None
+    assert any(runtime.OUTSIDE_MESH_TEXT.format(name=NAME) == t for t in notes()), notes()
+
 
 # D107 with D82: the change is bridged from Blender's backup copy; strokes after it come back after an
 # interruption, and the file's state is after the bridging step

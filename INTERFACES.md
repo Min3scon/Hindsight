@@ -202,6 +202,9 @@ RTYPES = {"STEP": 1, "CURSOR": 2, "TRUNC": 3, "DROP": 4, "RESET": 5, "META": 6, 
 # META   header {"resync": true}                    (no hist: a recovered file was opened; replay starts
 #                                                    its bookkeeping again here)
 # META   header {"saved": {object uid: {...}}}      (no hist: recorded objects as the file holds them now)
+# A mesh fingerprint (here and in the registry's "saved") is "x3:" + 32 hex digits (xxh3-128, R060); 32 hex
+# digits without a tag are blake2b-128 (builds before R060) and are compared by hashing that way; another
+# tag is not known to this build and never counts as a change.
 # SAVE   header {"blend": path}                     (marks a successful save point)
 def atomic_write(path: str, data: bytes) -> None   # tmp file in same dir + flush + fsync + os.replace
 def atomic_write_json(path: str, obj) -> None

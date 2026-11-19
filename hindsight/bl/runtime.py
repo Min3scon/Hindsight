@@ -1676,14 +1676,15 @@ def _reenter_edit(context, name) -> None:
 
 def mesh_changed(ob, stored) -> bool:
     """Is the object's mesh not the one a stored fingerprint was made of? The stored value says how it was
-    made (R057: blake2b before, xxh3-128 now), and the mesh is hashed that way, so a value written by an
-    older build still compares; a tag this build doesn't know is taken as unchanged."""
+    made (R060: blake2b without a tag before, "x3:" xxh3-128 now), and the mesh is hashed that way, so a
+    value written by an older build still compares; a tag this build doesn't know is taken as unchanged
+    (never as a change, which would leave the history out)."""
     algo = meshio.print_algo(stored)
     return algo is not None and mesh_fingerprint(ob, algo) != stored
 
 
 def mesh_fingerprint(ob, algo: str = "x3") -> str:
-    """meshio.fingerprint of an object's mesh, also in Edit Mode (read from a copy)."""
+    """meshio.fingerprint of an object's mesh (algo "x3" or "blake2b"), also in Edit Mode (read from a copy)."""
     with_ob = ob if extras_on(ob) else None
     if ob.mode != "EDIT":
         return meshio.fingerprint(ob.data, with_ob, algo)

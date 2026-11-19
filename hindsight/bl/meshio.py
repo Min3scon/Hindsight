@@ -380,14 +380,17 @@ def write_extras(ob, me, arrays: dict, removed=(), rebuilt: bool = False) -> Non
             kb.data.foreach_set("co", co)
 
 
-X3 = "x3:"      # tag of a fingerprint made with xxh3-128 (the engine); an untagged one is blake2b-128 (older builds)
+X3 = "x3:"      # R060: tag of a fingerprint made with xxh3-128 (the engine's Hasher128); one without a tag
+                # is blake2b-128, what builds before R060 wrote into files and crash journals
 
 
 def _hasher(algo: str):
+    if algo == "x3":
+        from ..core.native import ENGINE
+        return ENGINE.Hasher128()
     if algo == "blake2b":
         return hashlib.blake2b(digest_size=16)
-    from ..core.native import ENGINE
-    return ENGINE.Hasher128()
+    raise ValueError(f"unknown fingerprint algorithm {algo!r}")
 
 
 def print_algo(stored) -> str | None:
@@ -406,8 +409,9 @@ def fingerprint(me, ob=None, algo: str = "x3") -> str:
     """A digest of the whole mesh as Hindsight records it (counts, topology, every recorded
     channel; with ob, its weights and shape keys too). Used to tell which recorded state Blender's
     undo put back after a Hindsight jump, and to tell a mesh changed without Hindsight. algo "x3"
-    (xxh3-128, written "x3:" + hex) is what is written now; "blake2b" gives the form older builds
-    stored, to compare with such a value (R057)."""
+    (xxh3-128, written "x3:" + 32 hex digits) is what is written now; "blake2b" (32 hex digits, no
+    tag) gives the form builds before R060 stored, to compare with such a value. Both hash the same
+    bytes in the same order."""
     # the same digest as hashing read_snapshot(me, ob=ob, extras=ob is not None), but each array is
     # read, hashed and let go in turn, so the whole mesh is never copied at once
     c = counts(me)
