@@ -69,4 +69,29 @@ def run(d):
                 (pos, C.info(d)["pos"], got, states[pos], _dyn(d)))
     yield from C.real_stroke(d, 3)
     yield 0.4
+    states.append(_state(d))
     d.check("a stroke at the end after the jumps is a fourth step", C.info(d)["len"] == 4, C.info(d))
+
+    # Blender's own undo and redo of a Dyntopo stroke: the history follows (one position back and forward),
+    # never a new step, and the triangles are the step's (Blender's undo may order vertices differently)
+    i = C.info(d)
+    n, pos = i["len"], i["pos"]
+    win, area, reg, ui, space = d.view3d()
+    cx, cy = reg.x + reg.width // 2, reg.y + reg.height // 2
+    d.ev("MOUSEMOVE", x=cx, y=cy)
+    yield 0.2
+    d.key("Z", ctrl=True, x=cx, y=cy)
+    yield 1.2
+    j, got = C.info(d), _state(d)
+    d.check("Ctrl+Z after a Dyntopo stroke: one position back, no new step, the triangles before the stroke",
+            j["len"] == n and j["pos"] == pos - 1 and got[:2] == states[3][:2] and _dyn(d),
+            (n, pos, j, got, states[3:]))
+    d.key("Z", ctrl=True, shift=True, x=cx, y=cy)
+    yield 1.2
+    k, got = C.info(d), _state(d)
+    d.check("Ctrl+Shift+Z: forward again, no new step, the stroke's triangles",
+            k["len"] == n and k["pos"] == pos and got[:2] == states[4][:2], (n, pos, k, got, states[4]))
+    yield from C.drag_slider_to(d, 2)
+    yield 0.6
+    d.check("after Blender's undo and redo the slider still puts step 2 back exactly",
+            C.info(d)["pos"] == 2 and _state(d) == states[2], (C.info(d), _state(d), states[2]))
