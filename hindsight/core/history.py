@@ -143,9 +143,22 @@ class MeshState:
 
     # --------------------------------------------------------------- snapshots
     def set_snapshot(self, snap: Snapshot) -> None:
+        from .topopack import TOPO_KEYS
         old_keys = self.all_keys()        # no unpacking only to be replaced
         self.counts = dict(snap.counts)
-        self.arrays = {k: np.array(v, copy=True) for k, v in snap.arrays.items()}
+        arrays = {}
+        for k, v in snap.arrays.items():
+            if k in TOPO_KEYS:
+                # R080: nothing writes topology in place (a change of it is a new snapshot), so the baseline holds
+                # the step's own arrays, read-only so that a write would fail instead of changing the step (a 1M
+                # copy was 25 ms and 50 MB). The channels are copied: strokes write the baseline's in place.
+                a = np.asarray(v)
+                if a.flags.writeable:
+                    a.flags.writeable = False
+                arrays[k] = a
+            else:
+                arrays[k] = np.array(v, copy=True)
+        self.arrays = arrays
         new_keys = set(self._arrays)
         self.removed |= old_keys - new_keys
         self.removed -= new_keys
