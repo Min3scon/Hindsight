@@ -1700,11 +1700,24 @@ def _entry(t):
     return _REG.histories[hid].entries[i]
 
 
+def _pos_index(groups):
+    """globaltl.position_index of the kept groups (R055), built once per version of them."""
+    if _GROUPS.get("groups") is not groups:
+        return None
+    if _GROUPS.get("pidx_ver") != _GROUPS.get("ver"):
+        _GROUPS.update(pidx=globaltl.position_index(groups), pidx_ver=_GROUPS.get("ver"))
+    return _GROUPS["pidx"]
+
+
+def _gpos(vis, groups) -> int:
+    return globaltl.global_position(_REG, vis, groups, _pos_index(groups))
+
+
 def _position(vis, groups) -> int:
     """globaltl.global_position, kept until a cursor moves."""
     key = (_GROUPS.get("ver"), id(groups), tuple(h.cursor for h in _REG.histories.values()))
     if _GROUPS.get("pos_key") != key:
-        _GROUPS.update(pos_key=key, pos=globaltl.global_position(_REG, vis, groups))
+        _GROUPS.update(pos_key=key, pos=_gpos(vis, groups))
     return _GROUPS["pos"]
 
 
@@ -1714,7 +1727,7 @@ def global_goto(context, g: int, final: bool = True) -> None:
     from . import datarec
     vis = _visible_uids()
     groups = _groups(vis)
-    old = globaltl.global_position(_REG, vis, groups)
+    old = _gpos(vis, groups)
     acc = {"hists": {}, "vb": {}, "va": {}, "meshes": {}, "wrote": False, "object_mode": True}
     held = _leave_edit_for_push(context, final) if g != old else None
     pre = datarec.recorded_values()          # the whole scene before the jump (objects it brings back
@@ -1726,7 +1739,7 @@ def global_goto(context, g: int, final: bool = True) -> None:
     datarec.resolve_missing_refs()          # D37: objects brought back get their references back
     p = _scene_props(context)
     preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
-    new_g = globaltl.global_position(_REG, vis, groups) if preserve and final else old
+    new_g = _gpos(vis, groups) if preserve and final else old
     if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
         if datarec.push_undo():
             datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])
