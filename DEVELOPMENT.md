@@ -23,8 +23,9 @@ Where a fact has no source, this page says "not measured" or "no report".
    that script when a session's container is built; it was created on 2026-11-18 and its setup script
    is unproven until a fresh session has started on it. `bash tools/build_native.sh` rebuilds the six
    engine wheels into `hindsight/wheels/`.
-   - There is no Blender binary and no GPU in the container (`download.blender.org` is blocked).
-     Real Blender runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
+   - No GPU in the container. Since 2026-11-18 the "Hindsight" environment allows `download.blender.org`:
+     Blender 4.2 and 5.3 Linux binaries are unpacked in `/home/user/blender/` and
+     `python3 tools/ci/run_suite.py --blender <binary>` runs the suite in them. Real Blender also runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
      hand with inputs `versions`, `filter`, `run_module`, `run_ui`) runs the suite in Blender binaries
      4.2 to 5.3, on Windows and macOS as a module, and a windowed probe under Xvfb. Workflow
      `Native engine` proves the wheels on Windows, macOS and Linux, x64 and ARM64. Both are triggered
@@ -45,20 +46,18 @@ Where a fact has no source, this page says "not measured" or "no report".
 ## b. Repository and branch state
 
 - Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default and the
-  Pages source. There is no open pull request and none is planned: work goes straight to this branch.
-- Main line: see `git log`. Merged and tested by the orchestrator on 2026-11-18: crash recovery D77 to
-  D83, redraw work (D84), save and load work (D85, D86), data recorder work (D87), the Rust engine 0.2.0
-  (`apply_steps`), the runtime work (D88 to D90, topology reads through attributes, cached slider info
-  wired into the slider, header and panel), Movie Mode listing the visible objects once per frame, this
-  record, the CI workflow and scripts, and engine wheels for Windows ARM64 and Linux ARM64.
-- In progress on agent branches (local to the session's container until merged; check `git branch`):
-  CAMERA-FINISH (review and completion of the Movie Mode camera fixes S2-1, S3-1, S3-2 from the
-  unmerged branch `worktree-agent-ac952619567257298`), BENCH (`bench/suite.py`, `bench/ab.py`),
-  RECOVERY-REVIEW (fault injection for the journal and saves), RUST (core design, then migration).
+  Pages source. No pull requests: work is merged into this branch after its tests pass.
+- Main line (2026-11-19): everything up to D118 and the Rust engine M1 (merge `7dc4853`, CI dependency
+  fix `847bcdd`). Work since then is on the main session's local branches `main-session-3` and
+  `main-session-4` (worktrees `.claude/worktrees/ms-p8` and `ms-eng`): D119 to D134 (poses, animation,
+  curves and other shapes, node groups and zones, collection and view layer settings, bones, Grease
+  Pencil, hair and points, Bring back, whole-file switch). It is merged after its full suite on 5.3 and
+  4.2. The Rust agent works on `worktree-agent-a388cd589ccb15b22` (M2, custom normals D-d, Weight Paint
+  D-f).
 - Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and `docs/download/hindsight.zip`
   is the beta.2 zip. `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
-- The site (`site/`, `docs/`) was not edited in this job (owner: "don't edit site, just get the add-on
-  updated"). `COVERAGE.md` and `TEST_EVIDENCE.md` are unchanged.
+- The site (`site/`, `docs/`) is not edited outside a release (owner: "don't edit site, just get the add-on
+  updated").
 
 ## c. Architecture
 
@@ -88,23 +87,24 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 ### What runs in Rust today
 
-Exactly five functions of `hindsight_native`:
+Engine `hindsight_native` 0.5.1, API 5 (M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
+diff, apply, pack and unpack, its numpy code is `tests/reference/delta.py`; `record_step` exists and is
+tested but `runtime.commit` doesn't use it, since the stroke is already diffed once). The engine is required: if it
+can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
+the add-on. The Python implementations it replaced are in `tests/reference/` as the oracle, and a test
+fails if anything under `hindsight/` imports them.
 
-| Function | What it does | Used by |
-|---|---|---|
-| `diff` | changed elements of a channel and their wrapping differences | `core/delta.py` |
-| `apply` | applies a delta in place (ADD both ways, XOR) | `core/delta.py` |
-| `pack` (`pack_delta`) | format 3 record: index coding, prediction orders 0 to 3, zigzag, byte planes | `core/delta.py` |
-| `unpack` (`unpack_at`) | the same transforms read back | `core/delta.py` |
-| `apply_steps` | a run of packed DELTA steps of one object: CRC, header, zstd, decode, apply, GIL released, up to 3 helper threads for long runs | `History.goto` |
+| In Rust (API 3) | Used by |
+|---|---|
+| `diff`, `apply`, `pack`, `unpack` (channels, records) | `core/delta.py` |
+| `apply_steps` (runs of DELTA steps, GIL released, helper threads) | `History.goto` |
+| codecs zstd, lz4, zlib, none | `core/codec.py` (facade) |
+| step container: formats 1 to 4 read, 3 and 4 written, all step kinds, recompress, CRC | `core/step.py` (facade) |
+| errors `CorruptStep`, `CorruptBlob`, `CorruptDelta`, `NewerFormatError`, `EngineMissing` | `core/native.py` |
 
-Everything else is Python: step headers and the container, error types, compression calls (zstd, lz4,
-zlib are C libraries), history, store, persist, journal, registry, global timeline, framing, morph and
-the whole Blender side. Steps that `apply_steps` does not take (TOPO, JOIN, DATA, extras, format 1,
-zlib or lz4 bodies, channels that appear or go, any damage) are crossed by Python, which also raises
-every error. The Python implementations are still the fallback in `hindsight/`; the owner's decision
-that Rust is required, with the Python copies moved to `tests/reference/`, has not been carried out
-(`tests/reference/` does not exist, and nothing fails if the module is missing).
+Still Python: history, store, persist, journal, registry, global timeline, framing, morph, and the whole
+Blender side (by design: it needs bpy). `HINDSIGHT_NATIVE=0` only switches `delta.py` to its Python paths
+for tests and A/B runs.
 
 ### Migration plan to Rust (from the approved plan)
 
@@ -121,13 +121,13 @@ before it reported, so none exists.
 | Step | Content | Status |
 |---|---|---|
 | R1 | Merge `apply_steps` (API 2) | done: merged in `f092d7c`, `tests/test_core_native_steps.py` passes |
-| R2 | Formats in Rust: step container (header, CRC, codecs zstd/lz4/zlib via zstd-safe, lz4_flex, miniz_oxide; extras JSON as bytes), journal framing and crash-tolerant reader, registry stream writer and reader (formats 1 to 4 read, 4 written); removes python-zstandard from the hot path | not started |
-| R3 | History engine: a `History` pyclass owning entries, cursor, goto planning and application through borrowed numpy buffers, caps, eviction and tier accounting, drop, truncate and join bookkeeping; Python keeps a thin facade | not started |
-| R4 | Recording pipeline: one native `record()` per stroke (diff, pack, compress, journal append, GIL released, reusing the `foreach_get` buffers); fingerprints from arrays already read | not started |
+| R2 | Formats in Rust: step container (header, CRC, codecs zstd/lz4/zlib via zstd-safe, lz4_flex, miniz_oxide; extras JSON as bytes), journal framing and crash-tolerant reader, registry stream writer and reader (formats 1 to 4 read, 4 written); removes python-zstandard from the hot path | partial: step container, codecs and delta are in the engine (0.5.1, API 5; M1 in `dev/RUST_DESIGN.md`), python-zstandard and lz4 are no longer used; journal framing and the registry stream are still Python (M5) |
+| R3 | History engine: a `History` pyclass owning entries, cursor, goto planning and application through borrowed numpy buffers, caps, eviction and tier accounting, drop, truncate and join bookkeeping; Python keeps a thin facade | done as far as it pays: measured first, Python glue is about 3% of a jump (OPTIMISATION_LOG "Tried"), so no pyclass; `History.goto` crosses packed steps only through the engine's `apply_steps`, the Python loop is `tests/reference/history.py` |
+| R4 | Recording pipeline: one native `record()` per stroke (diff, pack, compress, journal append, GIL released, reusing the `foreach_get` buffers); fingerprints from arrays already read | partial: `record_step` exists in the engine (API 4) but commit doesn't use it (it would diff twice; saving below 4%, see "Tried"); the journal blob is lz4 (R043) |
 | R5 | Background packer as a Rust thread (zstd 19 off the GIL, idle policy kept) | not started |
 | R6 | Global timeline (incremental groups, transition), `framing.history_extents`, morph blending | not started |
-| Rust required | Python copies to `tests/reference/`, clear error panel if the module cannot load, never record with a broken engine | not started |
-| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | not started |
+| Rust required | Python copies to `tests/reference/`, clear error panel if the module cannot load, never record with a broken engine | done: no Python path ships (`tests/reference/`), `EngineMissing` and the panel's engine message (`test_bl_engine_missing`), HINDSIGHT_NATIVE selects nothing any more |
+| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.5.1 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
 
 Stays Python (needs `bpy`): `foreach_get` and `foreach_set`, RNA capture in datarec and adapters,
 vertex group weight reads, handlers, UI and drawing, operators. Their cost is attacked by doing less
@@ -160,21 +160,21 @@ rule). Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbere
 | # | Line | Planned outcome (phase) | Status | Test that proves it |
 |---|---|---|---|---|
 | L1 | Vertex Paint not claimed (one check failed on 5.0.1) | check fixed (D74, D71); proven on a real 5.0.1 binary in CI, then claimed (Phase 0 CI) | partial: the check is fixed and passes in module runs; no real-binary run, COVERAGE row `sculpt.colors` stays "not covered" | `tests/test_bl_recorder.py` `test_restored_colour_layer_is_active`, `test_vertex_paint_layer_added_late`; `tests/test_bl_t0_gate.py` `test_gate_colors` |
-| L2 | Objects only once switched on | one whole-file switch; default decided at release (Phase 3) | not started | none |
-| L3 | Multires and Dyntopo pause recording | Multires: one exact step per Sculpt Mode visit; Dyntopo: a step per stroke up to about 200k triangles, per visit above; strokes made while paused become a step (Phase 4, Phase 1) | not started (design: LIMITS-A sections 1.1 to 1.7) | none |
-| L4 | Animated or driven properties | the animation itself is recorded (P5); un-keyed axes and muted curves now (Phase 1, P5) | partial: un-keyed axes, per-index keys and muted curves are recorded (D103); the animation itself (P5) not started | `tests/test_bl_adapters.py` `test_partly_animated_and_muted` |
+| L2 | Objects only once switched on | one whole-file switch; default decided at release (Phase 3) | partial: "Everything in this file" switches every object and the scene on in one click, objects added later follow (D36); the default scope is still the owner's release decision | `tests/test_bl_record_file.py` |
+| L3 | Multires and Dyntopo pause recording | Multires: one exact step per Sculpt Mode visit; Dyntopo: a step per stroke up to about 200k triangles, per visit above; strokes made while paused become a step (Phase 4, Phase 1) | done behind two preferences, off by default: Multires is one exact step per Sculpt Mode visit (Record Multires; real window 5/5 on 5.3.0 and 4.2.23, D143 fixed); Dyntopo strokes are steps on meshes up to 200,000 faces (Record Dyntopo, D145; real window 8/8 on 5.3.0 and 4.2.23), bigger ones still pause. Their defaults are the owner's call | `tests/test_bl_multires.py`, `tests/test_bl_dyntopo.py`, `tests_ui/scenarios/s_multires.py`, `tests_ui/scenarios/s_dyntopo.py` |
+| L4 | Animated or driven properties | the animation itself is recorded (P5); un-keyed axes and muted curves now (Phase 1, P5) | partial: un-keyed axes, per-index keys and muted curves are recorded (D103); an object's actions, keyframes, drivers and NLA are recorded (D120), and the animation of its data, its shape keys, its materials' node trees, the scene and the world (D125); not yet: a node group's own animation (keys on inputs inside a group) | `tests/test_bl_adapters.py` `test_partly_animated_and_muted` |
 | L5 | Physics and particles don't come back | settings come back; baked caches cannot (files), the note says so (Phase 1, P2) | done for settings: physics and particle settings come back with a deleted object (D102); Dynamic Paint surfaces and baked caches can't (files), the note says so | `tests/test_bl_adapters_physics.py` |
-| L6 | Edit Mode up to 300,000 vertices | topology reads much faster; cap becomes a preference; limit re-measured (Phase 0, Phase 1) | partial: the faster reads are merged (R014 in OPTIMISATION_LOG: "70 to 150 times faster", no absolute numbers); the preference and the re-measurement are not done | `tests/test_bl_runtime_topo.py` `test_topology_read_matches_legacy`, `test_write_snapshot_matches_legacy`, `test_fingerprint_same_both_paths`, `test_topology_step_round_trip` |
+| L6 | Edit Mode up to 300,000 vertices | topology reads much faster; cap becomes a preference; limit re-measured (Phase 0, Phase 1) | done: the faster reads are merged (R014); the cap is the preference "Edit Mode steps up to" (default 300,000, 10,000 to 5,000,000); re-measured on 5.3 (bench/scenarios/editmode.py, load 6): an Edit Mode step costs 14 to 18 ms at 100k vertices and 60 to 83 ms at 300k, about a third of the old 55 ms per 100k | `tests/test_bl_runtime_topo.py` `test_topology_read_matches_legacy`, `test_write_snapshot_matches_legacy`, `test_fingerprint_same_both_paths`, `test_topology_step_round_trip`; `tests/test_bl_edit_cap.py` |
 | L7 | Linked duplicates recorded once | one shared history per shared mesh, shown on every user (Phase 1). LIMITS-A: wrong in the default scope, two histories fight over one shared mesh | done: a shared mesh is recorded in one history, the owner's; other users' commits go to it (D104) | `tests/test_bl_linked_dup.py` |
 | L8 | Linked objects not recorded | stays (Blender); library overrides keep their history across reload (Phase 1). LIMITS-A: overrides lose their history on reload today | done: library overrides keep their history across reload; library paths in references are absolute (D109) | `tests/test_bl_override.py` |
 | L9 | A taken name can't be given back | swaps and chains inside one jump fixed; a name held by an untouched object stays, with the note (Phase 1) | done: swaps and chains of names inside one jump come back (D105); a name held by an untouched object stays, with the note | `tests/test_bl_t1_names.py` |
 | L10 | 10,000 steps | preference up to 100,000, default stays 10,000; incremental global timeline (Phase 1) | done: Steps per object goes up to 100,000; the global timeline groups are extended per step instead of rebuilt (R032) | `tests/test_bl_panels.py`, `tests/test_bl_runtime_groups.py` |
 | L11 | Topology change loses weights and shapes | recorded in every scope, size threshold measured (Phase 1, P1) | done: vertex group weights and shape keys kept on topology steps up to 300,000 vertices (EXTRAS_TOPO_MAX), refreshed on entering and leaving record modes (D106) | `tests/test_bl_topo_extras.py` |
-| L12 | Deleted parent or target | "Bring back" from the note (Phase 1; lower priority) | not started | none |
-| L13 | Collections need "Objects added and deleted" | recorded with Everything (Phase 1, P8) | not started (deferred: needs a registry flag, journal and panel plumbing) | none |
+| L12 | Deleted parent or target | "Bring back" from the note (Phase 1; lower priority) | done: Bring back button in the Warnings panel (D123) | `tests/test_bl_t1_bring_back.py` |
+| L13 | Collections need "Objects added and deleted" | recorded with Everything (Phase 1, P8) | done with the whole-file switch: "Everything in this file" records the scene too, so collections made, filled and deleted come back on the global timeline; an object switched on by itself without the scene keeps the note (TXT_EV_NEW_COLLECTIONS) | `tests/test_bl_record_file.py` `test_collections_made_and_deleted_with_the_file_switch` |
 | L14 | Changes without Hindsight | kept when Blender's `.blend1` has the saved mesh, otherwise today's safe behaviour (Phase 1) | done: a mesh changed while Hindsight wasn't there is bridged from Blender's .blend1 when it has the saved mesh and nothing is ahead of the cursor (D107); otherwise today's safe behaviour | `tests/test_bl_outside_backup.py`, `tests/test_bl_t1_outside.py` |
-| L15 | Modifiers, Geometry Nodes, materials, weight paint, UVs, texture paint, animation, shape keys, armatures, other object types, scene settings | P1 to P8, and G (a generic recorder for any datablock, so third-party add-ons are covered) (Phase 3); needs the P0 seam first | partial, with Record everything: vertex group, UV map and shape key lists (D108), modifiers and Geometry Nodes inputs (D110, D100), material slots (D111), materials and their node trees (D112), custom properties and any add-on's data on objects, object data, scenes and materials (D114, the generic part of G for ID properties), scene, render and world settings (D116), object settings and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and meshes (D117). Not started: weight paint per stroke, texture paint, animation, armatures, curve and lattice points, view layer settings, add-on datablocks and custom node trees outside materials and worlds | `tests/test_bl_t1_lists.py`, `tests/test_bl_t1_modifiers.py`, `tests/test_bl_t1_material_slots.py`, `tests/test_bl_t1_materials.py`, `tests/test_bl_t1_addon_props.py` (stand-in add-on `tests/addons/hs_fake_addon.py`), `tests/test_bl_t1_scene_settings.py`, `tests/test_bl_t1_settings.py` |
-| L16 | Six defects in rows the site already claims | fixed with regression tests (rows D-a to D-f below) | partial: D-a, D-b, D-c, D-e fixed (D100, D110, D108, D103); D-d custom normals and D-f Weight Paint per stroke not started | see the table below |
+| L15 | Modifiers, Geometry Nodes, materials, weight paint, UVs, texture paint, animation, shape keys, armatures, other object types, scene settings | P1 to P8, and G (a generic recorder for any datablock, so third-party add-ons are covered) (Phase 3); needs the P0 seam first | partial, with Record everything: vertex group, UV map and shape key lists (D108), modifiers and Geometry Nodes inputs (D110, D100), material slots (D111), materials and their node trees (D112), custom properties and any add-on's data on objects, object data, scenes and materials (D114, the generic part of G for ID properties), scene, render and world settings (D116), object settings and the settings of lights, cameras, curves, text, metaballs, speakers, light probes and meshes (D117), armature poses with bone constraints and properties (D119), animation: actions, F-curves, keyframes, drivers and NLA of objects, their data, shape keys, material node trees, scenes and worlds (D120, D125), the shape of curves, surfaces, lattices and metaballs (D121), node groups of Geometry Nodes modifiers and materials with zones and item lists (D126, D130), collection settings (D127), view layer settings (D128), armature bones in Edit Mode (D129), Grease Pencil drawings (D131), the compositor and node trees no object uses (D133), hair curves and point clouds (D134), particle settings (D137). texture painting behind a preference that is off (D141, D142), in the Image Editor's Paint mode too (D144). Not started: add-on datablocks no object or scene uses | `tests/test_bl_t1_lists.py`, `tests/test_bl_t1_modifiers.py`, `tests/test_bl_t1_material_slots.py`, `tests/test_bl_t1_materials.py`, `tests/test_bl_t1_addon_props.py` (stand-in add-on `tests/addons/hs_fake_addon.py`), `tests/test_bl_t1_scene_settings.py`, `tests/test_bl_t1_settings.py`, `tests/test_bl_t1_pose.py`, `tests/test_bl_t1_anim.py`, `tests/test_bl_t1_geometry.py`, `tests/test_bl_t1_node_groups.py`, `tests/test_bl_t1_collection_settings.py` |
+| L16 | Six defects in rows the site already claims | fixed with regression tests (rows D-a to D-f below) | done: D-a, D-b, D-c, D-d, D-e, D-f fixed (D100, D110, D108, D139, D103, D140) | see the table below |
 
 Also in the plan and not started: the whole-file "Record > Everything" switch with a real-window CI gate
 (Phase 3), the datablock snapshot fallback for data RNA cannot express (Phase 3), "File history" for data
@@ -189,9 +189,9 @@ Multires and Dyntopo behind one preference, off until real strokes pass in a win
 | D-a | Blender 5.2 and 5.3: an object deleted and brought back loses its Geometry Nodes input values (`adapters._id_props` raises TypeError on 5.2+; fix is a `gn_inputs()` helper used by `object_body` and `_recreate_object`) | done (D100) | `tests/test_bl_adapters_gn.py` |
 | D-b | Going back over Apply Modifier gives the mesh from before Apply without the modifier's effect | done (D110) | `tests/test_bl_t1_modifiers.py` |
 | D-c | Adding, removing or renaming a vertex group, shape key or UV map makes a step whose going back leaves the list as it is now (D43) | done (D108) | `tests/test_bl_t1_lists.py` |
-| D-d | Custom normals on 5.0+ (`custom_normal`, INT16_2D) are dropped by `meshio._recordable`; going back over Set Custom Normals keeps the new normals on the old mesh | blocked: needs the INT16_2D channel type in `core/types.py` and `native/` (P1) | none |
+| D-d | Custom normals on 5.0+ (`custom_normal`, INT16_2D) are dropped by `meshio._recordable`; going back over Set Custom Normals keeps the new normals on the old mesh | done (D139; 4.2 keeps them in a hidden layer: not recorded there) | `tests/test_bl_custom_normals.py` |
 | D-e | The first keyframe on a recorded property makes a step that does nothing when going back (the property appears as MISSING) | done (D103) | `tests/test_bl_adapters.py` `test_animation_is_not_recorded` |
-| D-f | Weight Paint strokes are not steps (`datarec.commit` reads only Object Mode meshes); needs a real window to confirm | blocked: needs P1 and a real window | none |
+| D-f | Weight Paint strokes are not steps (`datarec.commit` reads only Object Mode meshes); needs a real window to confirm | done (D140) | `tests/test_bl_weight_paint.py` |
 
 Fixed ones carry their DEFECTS.md numbers. They were found by `probe_limits.py` (80 cases on the five
 Blender versions, now lost); the verdict table is in `dev/reports/LIMITS-B.md` section 2.
@@ -235,54 +235,52 @@ DEFECTS.md).
 
 - `dev/reports/TOOLS.md` (static analysis): dead code and duplicates. Done by NATIVE: dead branch and
   `_IDX_ENC` in `delta.py`, unused local in `history.py`. Not done: unused locals in `joinsep.py:342`,
-  unused imports in `header.py`, `meshio.py`, `runtime.py`, duplicated keymap boilerplate in `joinsep.py`
+  unused imports (pyflakes is clean on `hindsight/` since 2026-11-19 except the deliberate import check in
+  `ui_panel.engine_error`), duplicated keymap boilerplate in `joinsep.py`
   and `ops_core.py`, the unused `@fontsource-variable/*` devDependencies and the undeclared
   `chrome-launcher` in the site's tooling. 103 empty-except and 34 cyclic-import findings from CodeQL were
   not individually triaged (the cyclic imports are lazy imports on purpose).
 - `dev/reports/ponytail_audit.md`: items 1, 2, 3, 4, 5, 6, 9, 10, 11 and 13 were done by earlier work in
   this job (see `DEFECTS.md` D63 to D69 and `OPTIMISATION_LOG.md`); item 7 (dead code, about 60 lines) and
   item 8 (duplicate helpers) are open except as noted; item 12 is replaced by the Rust `diff`.
-- `tools/mutation_bl.py` compiles again, but mutants 6, 7, 8, 17, 35, 56 and 60 need re-targeting.
+- `tools/mutation_bl.py`: the 12 mutants whose text no longer matched (6 to 10, 18, 26, 28, 36, 45, 57, 61) were re-targeted; the tool now runs an unchanged control first and gives the Blender runs this checkout's engine (an engine-less Blender had "killed" every mutant at import). 12/12 killed in Blender 5.3.0, by five different test files. The other 66 weren't re-run.
 - `tests/oracle.py`: the one-line fix for the Blender 4.2 `parent_type` test failure (in
   `dev/reports/DATAREC.md` section 6) is not applied.
-- Edit Mode step cost at 100k vertices is in `runtime.commit_edit` (`update_from_editmode` about 34 ms and
-  topology reads about 20 ms of 55 ms before R014): not re-measured after R014.
+- Edit Mode step cost: re-measured after R014 (L6): 14 to 18 ms at 100k vertices, 60 to 83 ms at 300k
+  (bench/scenarios/editmode.py, 5.3, load 6).
 
 ## e. Test matrix
 
-Headless runs use Blender as a Python module (`pip install bpy`), in the container, not a Blender
-binary and not a window. Three levels exist; only the first has run for the work of 2026-11-18.
+Latest runs (2026-11-19):
 
-| Level | Blender versions | State |
+| Level | Code | Result |
 |---|---|---|
-| Python module in the container | 4.2.23, 5.0.1 (Python 3.11.18); 5.1.2, 5.2.2, 5.3.0 (Python 3.13.18) | The beta 3 work (HANDOFF "Beta 3 job") was tested on all five. The agents ran their areas on 5.3.0 and 4.2.23 (the NATIVE twin-history tests with the engine required, on, and off). The RECORD agent re-ran the 12 files in section d on 5.3.0 only. No single full-suite result across the five versions after the last merge (`04af744`) is recorded in any source; the DATAREC report gives 48 of 50 files on 5.3.0 before the later merges. |
-| Real Blender binaries | 5.3.0 and 4.2.23, headless, whole suite, `HINDSIGHT_NATIVE=require` | Run here on 2026-11-18 (`tools/ci/run_suite.py`, `dev/reports/REAL_BLENDER.md`) and on GitHub (blender.yml run 44408088741, commit 8090ffa). Here: 5.3 63/66 files, 4.2 60/66. GitHub: 5.3 65/68, 4.2 61/68 (68 files: it has the two new recovery fault tests and `test_core_journal_faults`). Failures are listed below. The beta 2 gate (October 2026) ran real 5.0.1, 5.1.1 and 5.1.2 with a window on the owner's Windows PC (`tests_ui/hs_ui.py`, `TEST_ROUNDS.md`). |
-| bpy module on GitHub runners | Windows and macOS, same run | Both green (whole suite, native engine required). |
-| A real window (UI gate) | Blender 5.1.2 and 5.3 under Xvfb plus Mesa llvmpipe (OpenGL 4.5), here (5.3) and on GitHub (both) | `regress_slider_visible` passes 3 of 3 on both GitHub jobs. Earlier it failed 1 of 3 on 5.3 here: not the product. Blender's own screenshot reads the front buffer, which is all black under Xvfb. The slider is drawn (orange track, 2/2, above the shelf). Fix, CI side: `tests_ui/bl_driver.py` grabs the X root window when `HS_UI_XSHOT=1`, the Xvfb screen is 1600x900 like the window, ImageMagick installed. Not yet run in a window: the Movie Mode panel rows, "Use this view", camera and lamps put back, a real timelapse render with EEVEE and Workbench, 4.2 in a window. |
-| native.yml | GitHub, run 44408094816 | Green. |
+| bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine required | main line 7dc4853 (D111 to D118, Rust M1) | 84/86 each; the two failures are the known ones below |
+| same | main-session-4 4d856db (adds D119 to D134) | 5.3: 94/96; 4.2: the known two failures in the part that ran before the code moved on (a final run is pending) |
+| Real Blender binaries on GitHub (Blender tests, run 44439641564) | 7dc4853 | 5.3.0: 84/86; 4.2.23: 84/86. Besides `test_bl_t1_migrate`, only `test_core_reference` failed: libzstd version (fixed in 099815c) and one engine divergence in `test_hostile_blobs` (with the Rust agent) |
+| bpy module on GitHub, Windows and macOS (same run) | 7dc4853 | macOS: green. Windows: 83/86, `test_core_reference` as above plus the two known |
+| Window probe under Xvfb, 5.1.2 and 5.3 (same run) | 7dc4853 | green |
+| Real windows in the container (Xvfb, Mesa llvmpipe, Blender binaries 5.3.0 and 4.2.23): `tests_ui/hs_ui.py run regress_slider_visible` and `run paint_modes` | main-session-4 after 8c1838d | slider 3/3 on 5.3.0; paint_modes 12/12 on 5.3.0 and 4.2.23 (after D142; before it the texture painting checks failed) |
+| same, `run movie_mode` and `run multires` | main-session-3 dbad258 | Movie Mode 16/16 and Multires 5/5 on 5.3.0 and 4.2.23 (Movie Mode: camera, lamps, Use this view, put back after Delete but not during a stroke, a drag, playback or a render, Workbench and EEVEE timelapse renders; Multires: one step per visit, slider back and forward exact) |
+| same, `run image_paint` and `run slider_layout` | main-session-3 245df4e | Image Editor painting 5/5 (D144) and the slider with toolbar, sidebar, both and neither 15/15 (clear of the panels, visible, drags to the right position, placed as D62 says), on 5.3.0 and 4.2.23 |
+| same, older scenarios on 4.2.23 | main-session-3 de59263 and later | tier1 17/17, adapters 15/15, fail_inject 13/13, regress_stroke_split 3/3, regress_native_undo 7/7, regress_file_load 3/3, movie_mode 16/16, paint_modes 12/12, round_b_features 19/19 (after its 4.2 tool id fix), t1_gate 47/48 (the simulated knife clicks make no cut on 4.2: no change, so no step) |
+| same, `run addon`, `run dyntopo` | main-session-3 45924a0 | a third-party add-on's data (stand-in tests/addons/hs_fake_addon.py: settings on objects and the scene, a list) 6/6 and Dyntopo 8/8 on 5.3.0 and 4.2.23: the add-on's operator run from the window and a menu-style setting change are one step each, the global slider puts every value back |
+| same, Rounds A to D (`tests_ui/rounds.py --pass 90 --blender 5.3 --rounds ABCD`) | e4165f2 | 9/16 runs in 76 min; Round C all passed (10k, 10k with 1,000 steps, 100k, 500k, stroke split, file load, native undo); the failures were scenarios out of date (round_b_features, round_d, fail_inject: fixed and passing since), round_b redraw times under software GL, and these findings: a stale hindsight_native 0.2.0 in the Blender binaries' own site-packages here shadowed the add-on's wheel on Install from Disk (moved aside; container only), round_b redraw times are software GL under load, rounds.py's window offset breaks the Xvfb screenshot crop |
+| Native engine on GitHub, 12 jobs (Windows, macOS, Linux; x64 and ARM64; Python 3.11 and 3.13) | 7dc4853, 847bcdd, 099815c | 7dc4853: test_core_reference failed for a missing lz4 (CI dependencies fixed in 847bcdd); 847bcdd: 2 libzstd byte comparisons (fixed in 099815c); 099815c: rerun pending |
 
 Known failing tests:
 
 | Test | Where | Why |
 |---|---|---|
-| `test_bl_metadata::test_opens_without_hindsight` | everywhere in the container | needs a Blender binary |
-| `test_bl_t1_migrate` | everywhere in the container | needs `.tmp/old/b1.zip`, which is not in the repository |
-| `test_bl_t1_gate::test_gate_parenting` | Blender 4.2 | Blender 4.2 Clear Parent keeps a hidden vertex parent type; RNA reads `''` and refuses to set it without a parent. Fails on beta 2 code too. The fix belongs in `tests/oracle.py` (patch in `dev/reports/DATAREC.md` section 6), not applied |
-| `test_bl_t1_reload` (6 to 7 of 7) | Blender 4.2 | not investigated |
-| test files that use `collection_uid` | Blender 4.2 | fixed on the main line by `6b3d012` (`tests/t1_ops.py`); the agents' worktrees still had the old helper |
-| `test_bl_t0_gate`, `test_bl_t0_reload` | real Blender 4.2.23 | Blender crashes (SIGSEGV, rc -11), on GitHub and here. Pass on 5.3. Not investigated |
-| `test_core_native_steps::test_damaged_blobs` | real Blender 4.2.23 | native engine returns ok on a damaged blob (`damaged 50`) where Python raises `CorruptStep`. Passes on 5.3. Open |
-| `test_core_native_steps::test_mixed_histories` | real Blender 5.3 on GitHub (not here, not on 4.2) | native and Python both raise `TypeError` but the text differs in operand order (`'str' and 'tuple'` against `'tuple' and 'str'`, seed 4). Expected red product test |
-| `test_bl_adapters::test_awkward_values_round_trip` | real Blender 5.3 | Blender runs with flush-to-zero: the denormal does not survive. Passes on 4.2 and in the bpy module. Open |
-| `test_bl_t1_prop` | real Blender, locally | was red: Hypothesis refuses subnormal floats under flush-to-zero. Fixed in the test (`allow_subnormal=False`); 2000 sequences pass on real 5.3 |
-| `test_bl_t1_corrupt::test_damage_before_the_saved_step`, `test_bl_t1_migrate::test_format3_file` | Blender 4.2 | same parent_type quirk as `test_gate_parenting` |
+| `test_bl_metadata::test_opens_without_hindsight` | bpy module | needs a Blender binary |
+| `test_bl_t1_migrate` | everywhere | needs `.tmp/old/b1.zip` (the beta 1 release zip), which is not in the repository |
+| `test_core_reference::test_hostile_blobs` | real Blender 5.3, Windows module (random draws) | engine and reference both accept a damaged step but the engine's recompress keeps a header byte the reference writes as 0; with the Rust agent |
 
 Other limits of the verification:
 
 - Optional `lz4` is installed in the venvs but not in the owner's Blender; it exposed D73.
-- Real Blender bundles its own numpy (for example 1.26 in 5.0); only the planned CI binary jobs would test
-  that. The venvs use whatever pip resolved.
-- The macOS and Windows 0.2.0 wheels were cross-built and never run; the 0.1.0 wheels were run by CI.
+- The venvs' python-zstandard has libzstd 1.5.7 like the engine; CI pins 0.23.0 (1.5.6) and Blender 4.2
+  bundles an older one, so zstd bytes are compared only where the versions match.
 - Timings in the container come from a shared 4-core VM with load average often 5 to 14.
 
 ## f. Benchmarks
@@ -310,25 +308,17 @@ Other limits of the verification:
 
 ## g. Agents
 
-- Rules: `dev/AGENT_RULES.md` (the brief every agent had, adapted). Reports of the agents of 2026-11-18
-  are in `dev/reports/`: NATIVE, SAVELOAD, DRAW, DATAREC (merged), TOOLS, LIMITS-A, LIMITS-B (reports
-  only), `review.md` and `ponytail_audit.md`. There is no report for RUNTIME (merged; the report was lost,
-  its seven commits and tests are the record: `6d8f06d`, `5e6ca36`, `9c2c77b`, `2475d91`, `ff67677`,
-  `07996c0`, `a207a88`), MOVIE (2 commits, not merged), CAMERA (2 commits, not merged). A design agent
-  for the Rust interface was interrupted before it reported.
-- Model tiers (plan): the orchestrator is the main session on the strongest model. Agents: the strongest
-  tier ("opus") for Rust, data integrity, recovery, recording semantics, concurrency and reviews; the
-  middle tier ("sonnet") for CI workflows, routine tests, docs, benchmark harness; the smallest ("haiku")
-  for running suites and summarising. Never the orchestrator's own model for agents.
-- Limit: at most 4 agents at once, at most 3 of them on the strongest tier. Reason: bursts of 10
-  strongest-tier agents hit the 5-hour usage limit twice in the session of 2026-11-18. On a rate-limit
-  sign: start no new agents, commit and push, update this file, report.
+- Rules: `dev/AGENT_RULES.md`. Reports of the agents of 2026-11-18 are in `dev/reports/`; the Rust
+  agent's design is `dev/RUST_DESIGN.md` and its report `dev/reports/RUST.md`.
+- Since 2026-11-19 (owner): the main session does the engineering itself and stays busy without pause,
+  with about one agent beside it (two running at once at most). The agents use the middle tier
+  ("sonnet"). Every agent reads `.claude/skills/ultracave/SKILL.md` and answers in that style.
+- RUST (`a388cd589ccb15b22`, branch `worktree-agent-a388cd589ccb15b22`): M1 and the M2 part merged; D-d
+  custom normals (D139), D-f Weight Paint (D140), texture painting (D141) and the subnormal-time engine
+  fix (0.5.1) merged into `main-session-3` on 2026-11-19. Next for it: Multires, one exact step per
+  Sculpt Mode visit (a datablock snapshot step kind), then M3 (native `History`).
 - Each agent owns disjoint files and works in its own git worktree; agents never spawn agents, never
-  push; work is merged only after the orchestrator re-runs its tests; agents cannot write report files,
-  the final message is the report. Agents that were not finished can be resumed with the same context
-  (MOVIE, CAMERA were meant to be).
-- Commit trailers: the brief asked for "Claude Fable 5.2"; the agents' session instructions said
-  "Claude Opus 5.5" and replaced it, so most agent commits carry the latter. Not a defect.
+  push; their work is merged only after the main session re-runs its tests.
 
 ## h. Blockers and decisions
 
@@ -374,8 +364,9 @@ physics and bake caches), Blender's preferences and window layout.
 
 Blockers:
 
-- No Blender binary and no GPU in the container (download blocked). A real-window gate needs the planned
-  GitHub Actions job (real binaries, xvfb and Mesa llvmpipe) or the owner's machine.
+- No GPU in the container. Blender 4.2.23 and 5.3.0 binaries are there (`/home/user/blender`), so
+  windowed scenarios run locally under Xvfb and Mesa llvmpipe (`tests_ui/hs_ui.py`, a `blender` shim on
+  PATH adding `--gpu-backend opengl`, as in `.github/workflows/blender.yml`); the GitHub job runs the same.
 - The environment is not reproducible yet: `tools/dev_env.sh` and a personal cloud environment "Hindsight"
   whose setup script runs it do not exist (creating one needs the owner's approval prompt).
 - The Rust interface design does not exist (R2 and later wait for it).
@@ -385,43 +376,14 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Merge this record (`dev/`, `DEVELOPMENT.md`, `OPTIMISATION_LOG.md`) into the default branch and push.
-   Review and merge the two unmerged branches, or re-brief them: CAMERA (S2-1, S3-1, S3-2) needs a full
-   review of its 1,548 lines and a run of the whole suite; MOVIE needs its patch for `runtime.goto` with
-   `vis=` and a report. They exist only in the old container.
-2. Make the environment reproducible: commit `tools/dev_env.sh` (venvs 4.2 and 5.3 by default, `--all`
-   adds 5.0, 5.1, 5.2; test dependencies; maturin and zig; installs the committed wheel) and
-   `tools/build_native.sh`; propose the personal cloud environment "Hindsight".
-3. First wave, at most 4 agents:
-   - CI on real Blender (middle tier): `.github/workflows/blender.yml` with `workflow_dispatch` and push on
-     `hindsight/** tests/** native/**`, real 4.2 LTS, 5.0, 5.1, 5.2, 5.3 (Linux tarballs cached), the full
-     suite headless with Rust required, a bpy-module job on Windows and macOS for 5.3; then the UI gate
-     under xvfb with `tests_ui/hs_ui.py`.
-   - BENCH (middle tier): `bench/suite.py`, move the lost scratch benches into `bench/`, a baseline JSON at
-     the merged commit.
-   - RECOVERY-REVIEW (strongest tier): an independent review of D77 to D86 and fault-injection tests
-     (journal cut at every record boundary and byte offset, interrupted sidecar writes, crash mid-jump,
-     mid-save, mid-join). Owns `tests/test_bl_recovery_faults.py`, `core/journal.py`, `persist.replay`.
-   - Rust formats R2 (strongest tier), starting with the interface design for review.
-4. Release 1.0.0-beta.3: bump the manifest, build the wheels, build the zip with `blender_ext.py build`,
-   install-test, update `docs/download/hindsight.zip`, `tools/check_copy.py`, push without `[skip ci]`,
-   verify the Pages run, check the live zip. Before the release, check in a real window what the
-   HANDOFF "Beta 3 job" lists.
-5. Phase 1, data integrity first, in waves of 3 to 4 agents, one agent per file: linked duplicates (L7),
-   strokes made while paused, taken-name swaps (L9), D-a, D-e, the Blender 4.2 parenting test and
-   `test_bl_t1_reload` on 4.2. Resume CAMERA for S2-1, S3-1, S3-2. File ownership as in LIMITS-A work
-   packages: runtime.py and dupsep.py; datarec.py and globaltl.py; adapters.py; warnings, ui_panel,
-   ui_menu and prefs (texts). Then the cheap limits: animated per-index and muted curves (L4), physics
-   settings (L5), topology extras, overrides, `.blend1` recovery (L14), history maximum 100,000 (L10),
-   incremental groups.
-6. Phase 2, Rust migration R2 to R6 as in section c, one agent on `native/` at a time.
-7. Phase 3, the P0 seam, then P1 and P2 (they fix D-b to D-d, D-f and D-a), then P3 to P8 and the generic
-   recorder (LIMITS-B section 6 and 7 give sizes and the test plan).
-8. Phase 4, Multires and Dyntopo.
-9. Throughout: optimisation rounds toward the target of 100, in the areas not yet covered (startup,
-   shutdown and idle cost, recording when nothing changed, Edit Mode steps, large scenes with 500 or more
-   objects, long histories of 50,000 steps, memory growth over long sessions, timelapse frames, weight and
-   shape key reads); clear the audit's dead code and the stale mutants; a beta per phase.
-10. At every merge: changed suites on bpy53 and bpy42 locally, with Rust required and off where relevant;
-    at every phase end the full suite on five versions plus `blender.yml`; update this file's test matrix
-    with what really ran. Nothing is marked done on an agent's word alone.
+1. Merge `main-session-3` into the working branch once its full suite passes on 5.3 and 4.2; push; run
+   `Blender tests` (binaries 4.2 to 5.3, the window job now on 4.2, 5.0.1, 5.1.2, 5.2, 5.3 with eight
+   scenarios) and `Native engine` on GitHub; fix what they find.
+2. The agent's queue: the recorder's remaining overhead (rounds), D146 (node group animation), D147 (a UI
+   drag split on slow redraws).
+3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
+   (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
+4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
+   `docs/download/hindsight.zip`, push without `[skip ci]`.
+5. Window scenarios on 4.2 for the older rounds (t1_gate made version-aware; Round B and C on 4.2).
+6. More optimisation rounds toward the owner's 100 (43 logged: 38 kept, 5 reverted).

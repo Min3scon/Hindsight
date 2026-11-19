@@ -14,7 +14,7 @@
 Each group of scenarios runs in its own process (bench/scenarios/<group>.py, see bench/README.md).
 The Rust engine used is the one shipped in the ROOT's own hindsight/wheels (unpacked to a cache
 folder and put first on PYTHONPATH), so an old root runs the engine it was released with, not
-whatever the venv holds. Set HINDSIGHT_NATIVE=0 to measure the Python fallback instead.
+whatever the venv holds (the add-on has no Python fallback; tests/reference holds the Python versions).
 """
 import argparse
 import json

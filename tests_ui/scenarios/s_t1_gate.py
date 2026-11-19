@@ -242,8 +242,8 @@ def run(d):
     select("C")
     before = counts()
     with d.override():                            # what M > + New Collection runs
-        bpy.ops.object.move_to_collection(collection_uid=bpy.context.scene.collection.session_uid,
-                                          is_new=True, new_collection_name="Extra")
+        bpy.ops.object.move_to_collection(**T._coll_arg(None), is_new=True,   # by uid on 4.3+, by index before
+                                          new_collection_name="Extra")
     yield from step("M, New Collection", ROWS["coll"], ["C", "scene"])
 
     select("B")
@@ -285,7 +285,12 @@ def run(d):
     yield 0.3
     d.ev("RIGHTMOUSE", "PRESS", x=cx, y=cy)
     d.ev("RIGHTMOUSE", "RELEASE", x=cx, y=cy)
-    yield 0.4
+    # the warning waits for the grab to end, then the next timer tick: under software GL with this scene
+    # that can take longer than the 0.4 s this waited before
+    for _ in range(30):
+        yield 0.1
+        if shown:
+            break
     d.shot("alt_d_warning")
     d.check("Alt+D on a recorded mesh: the shared-mesh warning comes up", any(shown), shown,
             covers="sculpt.joinsep, obj.addremove: WARN")

@@ -12,16 +12,92 @@ from ..core import globaltl
 from ..core.history import MeshState
 from ..core.registry import Registry, new_uid
 from ..core.types import (
-    SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
+    JOURNAL_CODEC, SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
-from . import filtering, guard, log, meshio, rigmark
+from . import filtering, guard, log, meshio, multires, rigmark
 from . import warnings as _warn
 from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
-RECORD_MODES = ("SCULPT", "VERTEX_PAINT")
-TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "EDIT")
+RECORD_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT")
+TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT", "EDIT")
 DEBOUNCE = 0.15
+FORCE_TEXTURE = [None]      # tests: True or False when the preferences aren't registered
+
+
+def texture_on() -> bool:
+    """Record texture painting (preference, off by default)."""
+    if FORCE_TEXTURE[0] is not None:
+        return FORCE_TEXTURE[0]
+    try:
+        from .prefs import get_prefs
+        p = get_prefs()
+        return p is not None and bool(getattr(p, "record_texture_painting", False))
+    except Exception:
+        return False
+
+
+FORCE_DYNTOPO = [None]     # tests: True or False when the preferences aren't registered
+DYNTOPO_TRIS_MAX = 200_000  # D145: a Dyntopo stroke's step holds the whole mesh (LIMITS-A 1.5: about 250 ms
+                            # per stroke at 100k triangles, 1.4 s and 32 to 64 MB at 1M)
+
+
+def dyntopo_on() -> bool:
+    """Record Dyntopo (preference, off by default)."""
+    if FORCE_DYNTOPO[0] is not None:
+        return FORCE_DYNTOPO[0]
+    try:
+        from .prefs import get_prefs
+        p = get_prefs()
+        return p is not None and bool(getattr(p, "record_dyntopo", False))
+    except Exception:
+        return False
+
+
+def dyntopo_active(obj) -> bool:
+    """obj is in Sculpt Mode with Dyntopo on (the flag reads False outside Sculpt Mode)."""
+    return getattr(obj, "mode", None) == "SCULPT" and bool(getattr(obj, "use_dynamic_topology_sculpting", False))
+
+
+def dyntopo_recorded(obj) -> bool:
+    """D145: Dyntopo strokes are steps: Record Dyntopo is on and the mesh (as last written back) has at
+    most DYNTOPO_TRIS_MAX faces. Otherwise Dyntopo pauses recording, as before."""
+    return (dyntopo_active(obj) and dyntopo_on() and obj.data is not None
+            and len(obj.data.polygons) <= DYNTOPO_TRIS_MAX)
+
+
+_DYN_LAST: dict = {}     # uid -> Dyntopo was on when the object's state was last read or committed
+_DYN_WANT: dict = {}     # uid -> Dyntopo on or off after the jump being written (_dyn_at)
+
+
+def _dyn_at(h, pos: int) -> bool:
+    """Whether Dyntopo was on at history position pos: each step committed with Dyntopo on (or just
+    turned off) holds extra["dyn"] = [before, after] (D145); no record means off."""
+    try:
+        if pos > 0:
+            d = (h.entries[pos - 1].meta.get("extra") or {}).get("dyn")
+            return bool(d and d[1])
+        if h.entries:
+            d = (h.entries[0].meta.get("extra") or {}).get("dyn")
+            return bool(d and d[0])
+    except Exception:
+        pass
+    return False
+
+
+def _flush_dyntopo(obj) -> bool:
+    """Write Dyntopo's own mesh (a BMesh while sculpting) back to obj.data, so it can be read."""
+    try:
+        with suspended():
+            bpy.ops.ed.flush_edits()
+        return True
+    except Exception as e:
+        log.error_once(("dyntopo_flush", str(e)), f"could not read the Dyntopo mesh: {e}", e)
+        return False
+
+
+def _mode_recorded(mode) -> bool:
+    return mode in RECORD_MODES and (mode != "TEXTURE_PAINT" or texture_on())
 
 _REG = Registry()
 _STATES: dict = {}          # object uid -> MeshState (what the mesh shows at the cursor)
@@ -321,11 +397,112 @@ def refresh_extras(obj, st=None, me=None, shapes_only: bool = False) -> None:
         drop = [k for k in st.arrays if k.startswith(meshio.SK_PREFIX)]
     else:
         vals = meshio.read_extras(obj, me)
-        drop = [k for k in st.arrays if meshio.is_extra(k)]
+        drop = [k for k in st.arrays if meshio.is_extra(k) and not k.startswith(meshio.IMG_PREFIX)]
     for k in drop:
         del st.arrays[k]
     st.arrays.update(vals)
     _SHAPES_STALE.discard(obj_uid(obj))
+
+
+def refresh_images(obj, st=None) -> None:
+    """The state's image baselines (the pixels of the images a texture stroke can change), read now.
+    No step: strokes are compared with this."""
+    st = st or _STATES.get(obj_uid(obj))
+    if st is None or not st.counts:
+        return
+    for k in [k for k in st.arrays if k.startswith(meshio.IMG_PREFIX)]:
+        del st.arrays[k]
+    for k, a in meshio.read_images(obj).items():
+        st.arrays[k] = a.copy()
+
+
+def _read_new_images(obj, st=None) -> None:
+    """D142: an image the tool can paint now but that has no baseline yet (a canvas or texture node
+    picked while in Texture Paint) is read as it is before it is painted. No step."""
+    st = st or _STATES.get(obj_uid(obj))
+    if st is None or not st.counts:
+        return
+    for img in meshio.paint_images(obj):
+        k = meshio.img_key(img.name)
+        if k not in st.arrays:
+            a = meshio.read_images_named(obj, (img,)).get(k)
+            if a is not None:
+                st.arrays[k] = a.copy()
+
+
+_PAINTING = [None]     # D142: uid of the object a texture painting stroke is running on
+
+
+def _image_stroke_running() -> bool:
+    try:
+        for win in bpy.context.window_manager.windows:
+            for op in getattr(win, "modal_operators", ()):
+                if op.bl_idname == "PAINT_OT_image_paint":
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _image_editor_images() -> set:
+    """Names of the images shown in an Image Editor in Paint mode (2D texture painting)."""
+    out = set()
+    try:
+        for win in bpy.context.window_manager.windows:
+            for area in win.screen.areas:
+                if area.type == "IMAGE_EDITOR":
+                    sp = area.spaces.active
+                    if getattr(sp, "mode", None) == "PAINT" and sp.image is not None:
+                        out.add(sp.image.name)
+    except Exception:
+        pass
+    return out
+
+
+def _paint_target():
+    """(object, in_mode): the mesh object a texture painting stroke changes, or (None, False). In
+    Texture Paint, the active object; D144: in an Image Editor's Paint mode, the active mesh object
+    in Object Mode when the image shown there is one of the images it paints."""
+    if not texture_on():
+        return None, False
+    obj = _active()
+    if obj is None or obj.type != "MESH" or is_excluded(obj):
+        return None, False
+    if obj.mode == "TEXTURE_PAINT":
+        return obj, True
+    if obj.mode == "OBJECT":
+        shown = _image_editor_images()
+        if shown and not shown.isdisjoint(i.name for i in meshio.paint_images(obj)):
+            return obj, False
+    return None, False
+
+
+def _watch_image_paint() -> bool:
+    """D142: painting an image sends no depsgraph update (seen in a real window), so the end of a
+    texture painting stroke is seen from its operator, which the timer polls while there is a
+    target (see _paint_target). True while there is one (the timer then runs faster)."""
+    obj, in_mode = _paint_target()
+    if obj is not None and _image_stroke_running():
+        _PAINTING[0] = (obj_uid(obj, create=True), in_mode)
+        return True
+    held, _PAINTING[0] = _PAINTING[0], None
+    if held is not None:
+        uid, was_in_mode = held
+        if was_in_mode:
+            _DIRTY[uid] = time.time()
+            _STROKE_SEEN.add(uid)      # a stroke ended: committed at once
+        else:
+            ob = find_object(uid)      # D144: painted in an Image Editor, the object stays in Object Mode
+            if ob is not None and ob.mode == "OBJECT":
+                commit(ob, label="Texture Paint", mode="TEXTURE_PAINT")
+    elif obj is not None and obj_uid(obj) not in _DIRTY:
+        if not in_mode:
+            uid = obj_uid(obj, create=True)
+            st = _STATES.get(uid)
+            if st is None or not st.counts:
+                ensure_state(obj, refresh=True)     # a baseline before the first stroke
+        _read_new_images(obj)
+    return obj is not None
 
 
 def read_mesh_snapshot(obj):
@@ -362,9 +539,12 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
     if obj.mode == "EDIT" and st is not None and st.counts:
         return st  # mesh arrays are not readable in Edit Mode; keep the pre-edit baseline
     if st is None or refresh or not st.counts:
+        if dyntopo_active(obj) and not stroke_running():
+            _flush_dyntopo(obj)          # D145: the mesh as Dyntopo has it, not as it was last written back
         snap = read_mesh_snapshot(obj)
         st = MeshState(snap.counts, snap.arrays, st.values if st is not None else None)
         _STATES[uid] = st
+        _DYN_LAST[uid] = dyntopo_active(obj)
     return st
 
 
@@ -477,7 +657,13 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
             before = {k: v for k, v in before.items() if not k.startswith(meshio.SK_PREFIX)}
         return Step(seq=0, label=label or "Topology Change", mode=mode, target=uid, time=time.time(),
                     kind=TOPO, before=Snapshot(dict(st.counts), before), after=after)
-    extra_vals = meshio.read_extras(obj, me) if ext else {}
+    # D-f: a Weight Paint stroke is a step of the vertex group weights (every group, NaN where a
+    # vertex is not a member); objects recorded with Record everything read them with the rest
+    wp = not ext and mode == "WEIGHT_PAINT" and len(getattr(obj, "vertex_groups", ())) > 0
+    extra_vals = meshio.read_extras(obj, me) if ext else (meshio.read_weights(obj, me) if wp else {})
+    if mode == "TEXTURE_PAINT" and texture_on():
+        extra_vals = dict(extra_vals)
+        extra_vals.update(meshio.read_images(obj))
     keys = meshio.channel_keys(me, sculpt_only=not full) + list(extra_vals)
     present = set(keys)
     for k in list(st.arrays):
@@ -491,6 +677,11 @@ def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, dee
         new = extra_vals.get(key) if meshio.is_extra(key) else meshio.read_channel(me, key, reuse=True)
         old = st.arrays.get(key)
         if new is None and old is None:
+            continue
+        if key.startswith(meshio.IMG_PREFIX) and (old is None or new is None or old.size != new.size):
+            # no baseline for this image yet, or it was resized: take it as it is, no step
+            if new is not None:
+                st.arrays[key] = new.copy()
             continue
         name, domain, dtn = split_key(key)
         n = st.counts[domain] * CHANNEL_TYPES[dtn][1]
@@ -541,8 +732,17 @@ def _clamp_state_weights(obj, st: MeshState) -> None:
 def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
     mark_written(obj)
     me = obj.data
+    uid = obj_uid(obj)
+    dyn_now = dyntopo_active(obj)
+    want = _DYN_WANT.pop(uid, None) if uid is not None else None
+    want = dyn_now if want is None else (want and obj.mode == "SCULPT")
+    dyn = dyn_now or want
     with suspended():
-        if "__TOPO__" in keys:
+        if "__TOPO__" in keys or dyn:
+            # D145: while Dyntopo is on the mesh is a BMesh that the next write-back would overwrite:
+            # leave Sculpt Mode, write, come back and turn Dyntopo on again (4.2 doesn't by itself)
+            if dyn and "__TOPO__" not in keys:
+                keys = set(keys) | {"__TOPO__"}
             mode = obj.mode
             is_active = bpy.context.view_layer.objects.active == obj
             if mode != "OBJECT" and is_active and IN_HANDLER[0]:
@@ -561,9 +761,23 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
                 return
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode="OBJECT")
-            meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
+            if multires.MR_KEY in st.arrays:
+                multires.restore(obj, st.arrays[multires.MR_KEY])
+                me = obj.data
+            else:
+                meshio.write_snapshot(me, st.to_snapshot(), ob=obj)
             if mode != "OBJECT" and is_active:
                 bpy.ops.object.mode_set(mode=mode)
+                d = obj.data
+                if (want and obj.mode == "SCULPT" and not obj.use_dynamic_topology_sculpting
+                        and len(d.loops) == 3 * len(d.polygons)):
+                    # Dyntopo was on at this position (and its meshes are all triangles, so turning
+                    # it on changes nothing in the mesh); 4.2 and a rewritten mesh don't by themselves
+                    bpy.ops.sculpt.dynamic_topology_toggle()
+                if uid is not None:
+                    _DYN_LAST[uid] = dyntopo_active(obj)
+            if obj.mode == "SCULPT" and multires.active(obj):
+                multires.begin_visit(obj)
         else:
             meshio.write_changes(me, st.arrays, keys, st.removed, ob=obj)
             if obj.mode == "SCULPT" and final and _refresh_toggle():
@@ -605,7 +819,7 @@ def commit_edit(obj, label: str = "Edit"):
     return commit(obj, label=label, mode="EDIT", full=True, _edit=True)
 
 
-EDIT_STEPS_MAX = 300_000   # vertices; above this an Edit Mode step (about 55 ms per 100k) is too slow
+# L6: the Edit Mode cap is SETTINGS.edit_steps_max (preference "Edit Mode steps up to", default 300,000)
 
 
 def _mesh_owned_elsewhere(obj) -> bool:
@@ -620,7 +834,7 @@ def edit_steps_on(obj) -> bool:
     try:
         from . import adapters, datarec
         return (datarec.is_tracked(obj) and adapters.kind_on("edit_steps")
-                and len(obj.data.vertices) <= EDIT_STEPS_MAX and not datarec.mesh_owned_elsewhere(obj))
+                and len(obj.data.vertices) <= SETTINGS.edit_steps_max and not datarec.mesh_owned_elsewhere(obj))
     except Exception:
         return False
 
@@ -667,13 +881,16 @@ def _leave_shared(obj, uid) -> None:
     ensure_state(obj, refresh=obj.mode != "EDIT")
 
 
-def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False):
+def commit(obj, label: str | None = None, mode: str | None = None, full: bool = False, _edit: bool = False,
+           _mr_step=None):
     """Record what changed on obj since the last commit as ONE step. Returns the Step or None."""
     if obj is None or obj.type != "MESH":
         return None
     uid = obj_uid(obj, create=True)
     _DIRTY.pop(uid, None)
     _STROKE_SEEN.discard(uid)
+    if _mr_step is None and multires.active(obj):
+        return None      # a Multires object: its step is the visit's (multires.end_visit), never a stroke's
     if not _edit and obj.mode != "EDIT":
         _leave_shared(obj, uid)
         shared = _shared_owner(obj, uid)
@@ -694,10 +911,14 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
             return commit(o, label=label, mode=mode or obj.mode, full=full)
     if obj.mode == "EDIT" and not _edit:
         return None  # Edit Mode changes are grouped and recorded when leaving Edit Mode
+    if (mode or obj.mode) == "TEXTURE_PAINT" and not texture_on():
+        return None
     if uid in _REG.disabled or is_excluded(obj):
         return None
     mode = mode or obj.mode
     st = _STATES.get(uid)
+    if st is not None and multires.MR_KEY in st.arrays and _mr_step is None:
+        st = ensure_state(obj, refresh=True)      # the state held a Multires snapshot: read the mesh again
     if st is None or not st.counts:          # no mesh baseline yet (or data values only)
         ensure_state(obj, refresh=True)
         return None
@@ -714,13 +935,22 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         ensure_state(obj, refresh=True)
         return None
     if label is None:
-        label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "EDIT": "Edit Mode"}.get(mode, "Change")
+        label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "WEIGHT_PAINT": "Weight Paint", "TEXTURE_PAINT": "Texture Paint",
+                 "EDIT": "Edit Mode"}.get(mode, "Change")
         try:
             ops = bpy.context.window_manager.operators
             if len(ops):
                 label = ops[-1].bl_label or label
         except Exception:
             pass
+    dyn = dyntopo_active(obj)
+    if dyn:
+        if stroke_running():
+            _DIRTY[uid] = time.time()        # never in the middle of a stroke: when it ends
+            return None
+        if not _flush_dyntopo(obj):
+            return None
+        full = True                          # Dyntopo changes the topology: compare all of it
     src = None
     if _edit and obj.mode == "EDIT":
         # In Edit Mode the mesh's attributes are the edit-mode layers ("position" isn't one of them):
@@ -728,7 +958,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         with suspended():
             src = obj.data.copy()
     try:
-        step = _observe(obj, st, full, label, mode, me=src)
+        step = _mr_step if _mr_step is not None else _observe(obj, st, full, label, mode, me=src)
     finally:
         if src is not None:
             with suspended():
@@ -737,6 +967,11 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     _NATIVE_PENDING.discard(uid)
     if step is None:
         return None
+    was = bool(_DYN_LAST.get(uid))
+    if dyn or was:                           # D145: going back and forward puts Dyntopo on or off with it
+        step.extra = dict(step.extra or {})
+        step.extra["dyn"] = [int(was), int(dyn)]
+    _DYN_LAST[uid] = dyn
     if h is not None and native:
         # Native undo / redo / F9 redo moved the mesh onto a neighbouring recorded state. The
         # direction Blender went is tried first: after a step that returned to an earlier state,
@@ -788,12 +1023,14 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     at = h.cursor
     removed = h.push(step)
     _apply_to_state(st, step)
+    if step.kind != DELTA and obj.mode == "TEXTURE_PAINT" and texture_on():
+        refresh_images(obj, st)      # a rebuilt mesh dropped the image baselines
     if step.kind == DELTA and getattr(obj.data, "shape_keys", None) is not None:
         _SHAPES_STALE.add(uid)   # D106: a stroke can change a shape key; read again when leaving
     if removed:
         _journal("TRUNC", {"hist": h.uid, "keep": at})
     entry = h.entries[-1]
-    _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
+    _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
     _enforce(h)
     try:
         from . import datarec
@@ -945,6 +1182,8 @@ def _active():
 def _enter(obj) -> None:
     uid = obj_uid(obj, create=True)
     _WROTE.discard(uid)      # entering a mode starts a fresh Blender undo context for it
+    if obj.mode == "SCULPT" and multires.active(obj):
+        multires.begin_visit(obj)
     h = _REG.history_for(uid)
     st = _STATES.get(uid)
     if _mesh_owned_elsewhere(obj):
@@ -960,12 +1199,19 @@ def _enter(obj) -> None:
             # so the first Edit Mode step holds only that operation.
             commit(obj, label="Changes Outside History", mode="OBJECT", full=True, _edit=True)
         return
+    if (obj.mode == "WEIGHT_PAINT" and st is not None and st.counts and topo_extras_on(obj)
+            and not any(k.startswith(meshio.VG_PREFIX) for k in st.arrays)):
+        # D-f: a state read without weights (a file just loaded) takes them as they are now: the
+        # weights of strokes are compared with this baseline, nothing outside a stroke is a step
+        refresh_extras(obj, st)
     if h is not None and st is not None and h.enabled and uid not in _REG.disabled:
         # Anything changed while the object was not being tracked becomes one step.
         commit(obj, label="Changes Outside History", mode=obj.mode, full=True)
     else:
         ensure_state(obj, refresh=True)
     refresh_extras(obj)          # D106: weights and shapes as they are now (Weight Paint isn't a step)
+    if obj.mode == "TEXTURE_PAINT" and texture_on():
+        refresh_images(obj)
 
 
 def check_mode_transition() -> None:
@@ -979,6 +1225,8 @@ def check_mode_transition() -> None:
     prev = find_object(_TRACK["uid"]) if _TRACK["uid"] else None
     pmode = _TRACK["mode"]
     _TRACK.update(name=name, uid=obj_uid(obj) if obj is not None else None, mode=mode)
+    if prev is not None and pmode == "SCULPT" and prev.mode != "SCULPT" and multires.active(prev):
+        multires.leave(prev)              # a Multires visit is one step, taken (flush) once Sculpt Mode has ended
     if prev is not None and pmode == "EDIT" and prev.mode != "EDIT":
         if _mesh_owned_elsewhere(prev):
             ensure_state(prev, refresh=True)    # D39: the mesh's owner records this visit
@@ -988,7 +1236,8 @@ def check_mode_transition() -> None:
         commit(prev, mode=pmode)
     if prev is not None and pmode in RECORD_MODES and prev.mode != pmode and obj_uid(prev) in _SHAPES_STALE:
         refresh_extras(prev, shapes_only=True)
-    if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and not is_excluded(obj):
+    if obj is not None and obj.type == "MESH" and mode in TRACK_MODES and (mode != "TEXTURE_PAINT" or texture_on()) \
+            and not is_excluded(obj):
         if mode == "VERTEX_PAINT" and not len(obj.data.color_attributes):
             # Blender adds a colour layer on entering Vertex Paint; 5.3 does it after the mode's first
             # update. The mesh is read once it is there, so that layer is never taken for a change.
@@ -1021,12 +1270,13 @@ def _on_depsgraph(scene, depsgraph=None) -> None:
     if obj is None or obj.type != "MESH":
         check_mode_transition()
         return
-    if obj.mode in RECORD_MODES:
+    if _mode_recorded(obj.mode):
         data = obj.data
+        paint = {i.name for i in meshio.paint_images(obj)} if obj.mode == "TEXTURE_PAINT" else ()
         for u in depsgraph.updates:
             idv = u.id
             orig = getattr(idv, "original", idv)
-            if orig == obj or orig == data:
+            if orig == obj or orig == data or (paint and isinstance(orig, bpy.types.Image) and orig.name in paint):
                 uid = obj_uid(obj)
                 if uid is not None:
                     _DIRTY[uid] = time.time()
@@ -1037,10 +1287,15 @@ def _on_depsgraph(scene, depsgraph=None) -> None:
 
 
 @guard.guarded("recorder")
-def _tick_once() -> None:
+def _tick_once() -> bool:
     check_mode_transition()
+    painting = _watch_image_paint()
+    multires.flush()
+    ob_ = _active()
+    if ob_ is not None and ob_.mode == "SCULPT" and multires.active(ob_) and not stroke_running():
+        multires.tick(ob_)
     if _DIRTY and stroke_running():
-        return   # never split a stroke, even if a slow modifier stack pauses its updates
+        return painting   # never split a stroke, even if a slow modifier stack pauses its updates
     now = time.time()
     for uid, t in list(_DIRTY.items()):
         # A stroke that has finished is committed at once, so quick strokes stay separate steps.
@@ -1048,25 +1303,26 @@ def _tick_once() -> None:
         # updates to settle.
         if uid in _STROKE_SEEN or now - t >= DEBOUNCE:
             ob = find_object(uid)
-            if ob is None or ob.mode not in RECORD_MODES:
+            if ob is None or not _mode_recorded(ob.mode):
                 _DIRTY.pop(uid, None)
                 _STROKE_SEEN.discard(uid)
                 continue
             commit(ob)
+    return painting
 
 
 def tick() -> float:
     """Commits each stroke as it ends (or once updates settle). Never raises."""
     busy = False
     try:
-        _tick_once()
+        busy = _tick_once()
         ensure_handlers()
     except Exception as e:
         log.error_once(("tick", str(e)), f"timer error: {e}", e)
     try:
         from . import datarec
         datarec.tick()
-        busy = bool(datarec._DIRTY)
+        busy = busy or bool(datarec._DIRTY)
     except Exception as e:
         log.error_once(("datarec_tick", str(e)), f"data recorder error: {e}", e)
     try:
@@ -1192,6 +1448,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     """Move one history to pos and write what changed to Blender. With acc (a global jump), the
     move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
     from . import datarec
+    multires.flush()
     states = {}
     for m in list(h.members):
         ob = find_object(m)
@@ -1248,6 +1505,8 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
         fp = pushing and ob.mode == "OBJECT" and ob.type == "MESH" and target in datarec.tracked_uids()
         if fp and target not in meshes:
             meshes[target] = [mesh_fingerprint(ob), None]
+        if ob.type == "MESH":
+            _DYN_WANT[target] = _dyn_at(h, pos)
         _write_state(ob, st, mesh_keys, final)
         _after_mesh_write(ob)
         if fp:
@@ -1283,7 +1542,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
 # object leaves Sculpt Mode mid-stroke (reproduced without Hindsight, see DECISIONS.md).
 _STROKE_OPS = frozenset({
     "SCULPT_OT_brush_stroke", "PAINT_OT_vertex_paint", "PAINT_OT_weight_paint", "SCULPT_OT_mesh_filter",
-    "SCULPT_OT_cloth_filter", "SCULPT_OT_color_filter", "HINDSIGHT_OT_morph_stroke",
+    "SCULPT_OT_cloth_filter", "SCULPT_OT_color_filter", "HINDSIGHT_OT_morph_stroke", "PAINT_OT_image_paint",
 })
 
 
@@ -1496,7 +1755,7 @@ def _switch_to(context, ob, mode: str) -> None:
                     o.select_set(False)
                 vl.objects.active = ob
                 ob.select_set(True)
-            if mode in ("SCULPT", "VERTEX_PAINT", "EDIT") and ob.mode != mode:
+            if mode in ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT", "EDIT") and ob.mode != mode:
                 bpy.ops.object.mode_set(mode=mode)
         except Exception as e:
             log.error_once(("preserve", str(e)), f"Follow object and mode could not switch objects: {e}", e)
@@ -1800,7 +2059,7 @@ def _bridge_from_backup(ob, uid, h, fp) -> bool:
         if removed:
             _journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
-        _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
+        _journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
         return True
     except Exception as e:
         log.error_once(("blend1_bridge", str(e)), f"could not read the backup copy of the file: {e}", e)

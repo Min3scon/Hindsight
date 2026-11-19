@@ -74,6 +74,24 @@ pub struct DDelta {
     pub vals: Vec<u8>,
 }
 
+/// A record to write, borrowed: key, flags, and the changed indices and values as bytes.
+pub struct RecRef<'a> {
+    pub key: &'a str,
+    pub exists: (bool, bool),
+    pub add: bool,
+    pub isz: usize,
+    pub w: usize,
+    pub k: usize,
+    pub idx: &'a [u8],
+    pub vals: &'a [u8],
+}
+
+impl DDelta {
+    fn as_ref(&self) -> RecRef<'_> {
+        RecRef { key: &self.key, exists: self.exists, add: self.add, isz: self.isz, w: self.w, k: self.k, idx: &self.idx, vals: &self.vals }
+    }
+}
+
 /// One record read from the body, checked, not yet decoded.
 struct Plan<'a> {
     key: String,
@@ -153,7 +171,7 @@ fn plan_record(body: &[u8], off: usize) -> Result<(Plan<'_>, usize), String> {
     Ok((p, stop))
 }
 
-fn decode_plan(p: &Plan<'_>) -> Result<DDelta, StepErr> {
+fn decode_plan(p: &Plan<'_>) -> Result<DDelta, DErr> {
     let (k, isz, w) = (p.k, p.isz, p.w);
     let mut d = DDelta { key: p.key.clone(), exists: p.exists, add: p.add, isz, w, k, idx: Vec::new(), vals: Vec::new() };
     if k == 0 {
@@ -161,13 +179,11 @@ fn decode_plan(p: &Plan<'_>) -> Result<DDelta, StepErr> {
     }
     let nvals = (k as u128 * isz as u128 * w as u128).min(u64::MAX as u128) as u64;
     if (k as u64 * 4).saturating_add(nvals) > MAX_OUT {
-        return corrupt("step blob: damaged (delta: implausible size)");
+        return Err(DErr::Msg("delta: implausible size".into()));
     }
-    d.idx = try_vec(k * 4)?;
-    d.idx.resize(k * 4, 0);
-    d.vals = try_vec(k * w * isz)?;
-    d.vals.resize(k * w * isz, 0);
-    let dam = |e: &str| StepErr::Corrupt(format!("step blob: damaged ({e})"));
+    d.idx = vec_zeroed(k * 4)?;
+    d.vals = vec_zeroed(k * w * isz)?;
+    let dam = |e: &str| DErr::Msg(e.to_string());
     if let Some((dsz, first, gaps, planes)) = p.v1 {
         put_idx(&mut d.idx, 0, first as u32);
         if k > 1 {
@@ -193,6 +209,27 @@ fn decode_plan(p: &Plan<'_>) -> Result<DDelta, StepErr> {
     decode_idx(p.code, p.ibytes, k, &mut d.idx).map_err(dam)?;
     by_size!(isz, decode_vals(p.vin, k, w, p.add, &mut d.vals)).map_err(dam)?;
     Ok(d)
+}
+
+/// A record that could not be decoded: damaged (message as delta.py's) or out of memory.
+pub enum DErr {
+    Msg(String),
+    Mem,
+}
+
+fn vec_zeroed(n: usize) -> Result<Vec<u8>, DErr> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(n).map_err(|_| DErr::Mem)?;
+    v.resize(n, 0);
+    Ok(v)
+}
+
+/// A damaged record seen from inside a step.
+fn in_step(e: DErr) -> StepErr {
+    match e {
+        DErr::Msg(m) => StepErr::Corrupt(format!("step blob: damaged ({m})")),
+        DErr::Mem => StepErr::Mem,
+    }
 }
 
 // ---------------------------------------------------------------------------------- snapshots
@@ -377,7 +414,7 @@ fn decode_v3(b: &[u8]) -> Result<Dec, StepErr> {
     let mut out_bytes = 0u64;
     for _ in 0..h.n_deltas {
         let (p, next) = plan_record(&body, off).map_err(|e| StepErr::Corrupt(format!("step blob: damaged ({e})")))?;
-        let d = decode_plan(&p)?;
+        let d = decode_plan(&p).map_err(in_step)?;
         out_bytes += (d.idx.len() + d.vals.len()) as u64;
         if out_bytes > MAX_OUT {
             return corrupt("step blob: damaged (delta: implausible size)");
@@ -462,7 +499,7 @@ fn decode_v1(b: &[u8]) -> Result<Dec, StepErr> {
         // the record is read from the start of its slice; bytes of the slice after it are ignored
         let end = (off as u128 + dh.n as u128).min(body.len() as u128) as usize;
         let (p, _next) = plan_record(&body[..end], off).map_err(dam)?;
-        let d = decode_plan(&p)?;
+        let d = decode_plan(&p).map_err(in_step)?;
         out_bytes += (d.idx.len() + d.vals.len()) as u64;
         if out_bytes > MAX_OUT {
             return corrupt("step blob: damaged (delta: implausible size)");
@@ -595,7 +632,10 @@ pub fn assemble(l: &Layout, raw: &[u8], codec_id: u8, strong: bool) -> Result<Ve
     head.push(if l.records.is_some() { 4 } else { 3 });
     head.extend_from_slice(&[kind as u8, flags, 0]);
     head.extend_from_slice(&l.seq.to_le_bytes());
-    head.extend_from_slice(&l.time.to_le_bytes());
+    // the reference writes float(time or 0.0): a zero time of either sign goes out as +0.0 (subnormals
+    // keep their bits: whether Python calls them falsy depends on the platform's FTZ/DAZ mode)
+    let time = if l.time == 0.0 { 0.0f64 } else { l.time };
+    head.extend_from_slice(&time.to_le_bytes());
     head.extend_from_slice(&size32(raw.len())?);
     let lb = &l.label.as_bytes()[..l.label.len().min(65535)];
     head.extend_from_slice(&(lb.len() as u16).to_le_bytes());
@@ -623,13 +663,14 @@ pub fn assemble(l: &Layout, raw: &[u8], codec_id: u8, strong: bool) -> Result<Ve
 }
 
 /// delta.pack_delta for a decoded record (NORMAL effort: predictors for ADD).
-fn pack_record(d: &DDelta, out: &mut Vec<u8>) -> Result<(), StepErr> {
+pub fn pack_record(d: &RecRef, predict: bool, out: &mut Vec<u8>) -> Result<(), StepErr> {
     let key = d.key.as_bytes();
+    let klen = u16::try_from(key.len()).map_err(|_| val(format!("pack_delta {}: key too long", d.key)))?;
     let flags = d.exists.0 as u8 | (d.exists.1 as u8) << 1 | (d.add as u8) << 2;
     let hdr = |out: &mut Vec<u8>, code: u8, ilen: usize| -> Result<(), StepErr> {
         out.extend_from_slice(b"HE");
         out.extend_from_slice(&[flags, d.isz as u8, d.w as u8, code]);
-        out.extend_from_slice(&(key.len() as u16).to_le_bytes());
+        out.extend_from_slice(&klen.to_le_bytes());
         out.extend_from_slice(&size32(d.k)?);
         out.extend_from_slice(&size32(ilen)?);
         out.extend_from_slice(key);
@@ -638,15 +679,15 @@ fn pack_record(d: &DDelta, out: &mut Vec<u8>) -> Result<(), StepErr> {
     if d.k == 0 {
         return hdr(out, IDX_GAPS, 0);
     }
-    let (code, ib) = pack_index(&d.idx, d.k).ok_or_else(|| val(format!("pack_delta {}: indices must be sorted and unique", d.key)))?;
+    let (code, ib) = pack_index(d.idx, d.k).ok_or_else(|| val(format!("pack_delta {}: indices must be sorted and unique", d.key)))?;
     hdr(out, code, ib.len())?;
     out.extend_from_slice(&ib);
     let at = out.len();
     let n = d.w + d.k * d.isz * d.w;
     out.try_reserve(n).map_err(|_| StepErr::Mem)?;
     out.resize(at + n, 0);
-    let (isz, k, w, predict) = (d.isz, d.k, d.w, d.add);
-    by_size!(isz, pack_vals(&d.vals, k, w, predict, &mut out[at..]));
+    let (isz, k, w) = (d.isz, d.k, d.w);
+    by_size!(isz, pack_vals(d.vals, k, w, predict, &mut out[at..]));
     Ok(())
 }
 
@@ -667,7 +708,7 @@ fn sect<'a>(d: &'a Dec, r: &Option<Range>) -> Option<&'a [u8]> {
 /// are written as compact JSON, not copied).
 fn same_dec(a: &Dec, b: &Dec) -> bool {
     a.seq == b.seq
-        && a.time.to_bits() == b.time.to_bits()
+        && (a.time.to_bits() == b.time.to_bits() || (a.time == 0.0 && b.time == 0.0))
         && a.kind == b.kind
         && a.label.as_bytes()[..a.label.len().min(65535)] == *b.label.as_bytes()
         && a.mode == b.mode
@@ -701,7 +742,7 @@ pub fn recompress_core(b: &[u8]) -> Result<Option<Vec<u8>>, StepErr> {
     let codec_id = if d.version == 3 { codec::id_of(codec::name_of(d.codec)).unwrap_or(codec::ZLIB) } else { codec::ZSTD };
     let mut raw = try_vec(d.body.len() + 64)?;
     for x in &d.deltas {
-        pack_record(x, &mut raw)?;
+        pack_record(&x.as_ref(), x.add, &mut raw)?;
     }
     let before = d.before.as_ref().map(|r| r.len());
     let after = d.after.as_ref().map(|r| r.len());
@@ -959,8 +1000,157 @@ fn join_parts(parts: &Bound<'_, PyAny>, out: &mut Vec<u8>) -> PyResult<usize> {
     Ok(n)
 }
 
+/// One delta of a step to write, its arrays borrowed from the caller for the call.
+struct InDelta {
+    key: String,
+    e0: bool,
+    e1: bool,
+    add: bool,
+    isz: usize,
+    w: usize,
+    idx: Buf,
+    vals: Buf,
+}
+
+impl InDelta {
+    fn rec(&self) -> RecRef<'_> {
+        RecRef {
+            key: &self.key,
+            exists: (self.e0, self.e1),
+            add: self.add,
+            isz: self.isz,
+            w: self.w,
+            k: self.idx.len() / 4,
+            idx: self.idx.bytes(),
+            vals: self.vals.bytes(),
+        }
+    }
+}
+
+/// (key, indices, values, itemsize, width, exists before, exists after, add) per delta. The
+/// arrays are only read, and only while the call runs; they must not change meanwhile (raw steps
+/// never do).
+fn take_deltas(deltas: &Bound<'_, PyAny>) -> PyResult<Vec<InDelta>> {
+    let mut out = Vec::new();
+    for it in deltas.iter()? {
+        let (key, idx, vals, isz, w, e0, e1, add): (String, Bound<'_, PyAny>, Bound<'_, PyAny>, usize, usize, bool, bool, bool) = it?.extract()?;
+        let row = check_size(isz, w)?;
+        if w > MAX_WIDTH {
+            return Err(PyValueError::new_err("hindsight_native: width too large"));
+        }
+        let (idx, vals) = (Buf::new(&idx, false)?, Buf::new(&vals, false)?);
+        if idx.len() % 4 != 0 || (idx.len() / 4).checked_mul(row) != Some(vals.len()) {
+            return Err(PyValueError::new_err(format!("pack_delta {key}: sizes don't match")));
+        }
+        out.push(InDelta { key, e0, e1, add, isz, w, idx, vals });
+    }
+    Ok(out)
+}
+
+/// record(kind, seq, time, label, mode, target, extra JSON bytes, channels, quick, codec, strong)
+/// -> the step blob of a stroke, or None if no channel changed: the diff of every channel, the
+/// packing and the codec in one call, the GIL released. `channels` is [(key, old, new, itemsize,
+/// width, exists before, exists after)] with flat arrays; old or new None stands for zeros (a
+/// channel that appears or goes). A channel whose sizes differ is left out.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn record<'py>(
+    py: Python<'py>,
+    kind: &str,
+    seq: u64,
+    time: f64,
+    label: &str,
+    mode: &str,
+    target: &str,
+    extra: &Bound<'py, PyAny>,
+    channels: &Bound<'py, PyAny>,
+    quick: bool,
+    name: &str,
+    strong: bool,
+) -> PyResult<Option<Bound<'py, PyBytes>>> {
+    guard(|| {
+        let ex = input(extra)?;
+        struct Ch {
+            key: String,
+            old: Option<Buf>,
+            new: Option<Buf>,
+            isz: usize,
+            w: usize,
+            e: (bool, bool),
+        }
+        let mut chs = Vec::new();
+        for it in channels.iter()? {
+            let (key, old, new, isz, w, e0, e1): (String, Bound<'_, PyAny>, Bound<'_, PyAny>, usize, usize, bool, bool) = it?.extract()?;
+            let row = check_size(isz, w)?;
+            if w > MAX_WIDTH {
+                return Err(PyValueError::new_err("hindsight_native: width too large"));
+            }
+            let o = if old.is_none() { None } else { Some(Buf::new(&old, false)?) };
+            let n = if new.is_none() { None } else { Some(Buf::new(&new, false)?) };
+            if let (Some(a), Some(b)) = (&o, &n) {
+                if a.len() != b.len() {
+                    continue;
+                }
+            }
+            let len = o.as_ref().or(n.as_ref()).map_or(0, |b| b.len());
+            if len % row != 0 {
+                return Err(PyValueError::new_err(format!("record {key}: size is not a whole number of elements")));
+            }
+            chs.push(Ch { key, old: o, new: n, isz, w, e: (e0, e1) });
+        }
+        let id = resolve_name(name);
+        let exb = ex.get();
+        // plain slices of the borrowed arrays: what the GIL-free part gets
+        let views: Vec<(&str, Option<&[u8]>, Option<&[u8]>, usize, usize, (bool, bool))> =
+            chs.iter().map(|c| (c.key.as_str(), c.old.as_ref().map(|b| b.bytes()), c.new.as_ref().map(|b| b.bytes()), c.isz, c.w, c.e)).collect();
+        let out = py.allow_threads(|| -> Result<Option<Vec<u8>>, StepErr> {
+            let mut raw = Vec::new();
+            let mut n = 0usize;
+            for &(key, old, new, isz, w, e) in &views {
+                let len = old.or(new).map_or(0, |b| b.len());
+                let zeros;
+                let (a, b): (&[u8], &[u8]) = match (old, new) {
+                    (Some(a), Some(b)) => (a, b),
+                    (Some(a), None) => {
+                        zeros = vec![0u8; len];
+                        (a, &zeros)
+                    }
+                    (None, Some(b)) => {
+                        zeros = vec![0u8; len];
+                        (&zeros, b)
+                    }
+                    (None, None) => continue,
+                };
+                let c = (key, isz, w, e);
+                let r = match diff_core(a, b, c.1, c.2) {
+                    Some((idx, vals)) => {
+                        let ib: Vec<u8> = idx.iter().flat_map(|i| i.to_le_bytes()).collect();
+                        let rec = RecRef { key: c.0, exists: c.3, add: true, isz: c.1, w: c.2, k: idx.len(), idx: &ib, vals: &vals };
+                        pack_record(&rec, !quick, &mut raw)?;
+                        true
+                    }
+                    None if c.3.0 != c.3.1 => {
+                        let rec = RecRef { key: c.0, exists: c.3, add: true, isz: c.1, w: c.2, k: 0, idx: &[], vals: &[] };
+                        pack_record(&rec, !quick, &mut raw)?;
+                        true
+                    }
+                    None => false,
+                };
+                n += r as usize;
+            }
+            if n == 0 {
+                return Ok(None);
+            }
+            let l = Layout { kind, seq, time, label, mode, target, extra: exb, n_deltas: n, before: None, after: None, snaps: None, records: None, quick };
+            assemble(&l, &raw, id, strong).map(Some)
+        });
+        Ok(out.map_err(err)?.map(|v| PyBytes::new_bound(py, &v)))
+    })
+}
+
 /// step_encode(kind, seq, time, label, mode, target, extra JSON bytes, deltas, before, after, snaps,
-/// records, quick, codec, strong) -> the step blob. `deltas`, `before`, `after` and each snapshot of
+/// records, quick, codec, strong) -> the step blob. `deltas` is [(key, indices, values, itemsize,
+/// width, exists before, exists after, add)] (packed here, GIL released); `before`, `after` and each snapshot of
 /// `snaps` ([(uid, parts)]) are lists of buffers (packed records, snapshot blob pieces), `records`
 /// is JSON bytes or None. The parts are copied once into the body; the codec and the checksum run
 /// without the GIL.
@@ -986,9 +1176,17 @@ fn step_encode<'py>(
 ) -> PyResult<Bound<'py, PyBytes>> {
     guard(|| {
         let ex = input(extra)?;
-        let mut raw: Vec<u8> = Vec::new();
-        let n_deltas = deltas.len()?;
-        join_parts(deltas, &mut raw)?;
+        let ins = take_deltas(deltas)?;
+        let n_deltas = ins.len();
+        let recs: Vec<RecRef> = ins.iter().map(|d| d.rec()).collect();
+        let packed = py.allow_threads(|| -> Result<Vec<u8>, StepErr> {
+            let mut o = Vec::new();
+            for r in &recs {
+                pack_record(r, r.add && !quick, &mut o)?;
+            }
+            Ok(o)
+        });
+        let mut raw = packed.map_err(err)?;
         let before_n = if before.is_none() { None } else { Some(join_parts(before, &mut raw)?) };
         let after_n = if after.is_none() { None } else { Some(join_parts(after, &mut raw)?) };
         let mut uids: Vec<(String, usize)> = Vec::new();
@@ -1045,7 +1243,72 @@ fn recompress<'py>(py: Python<'py>, blob: &Bound<'py, PyAny>) -> PyResult<Option
     })
 }
 
+/// pack_record(key, idx, vals, itemsize, width, exists before, exists after, add, predict) -> the
+/// format 3 record of delta.pack_delta (bytes). Indices must be sorted and unique.
+#[pyfunction]
+#[pyo3(name = "pack_record")]
+#[allow(clippy::too_many_arguments)]
+fn pack_record_py<'py>(
+    py: Python<'py>,
+    key: &str,
+    idx: &Bound<'py, PyAny>,
+    vals: &Bound<'py, PyAny>,
+    isz: usize,
+    w: usize,
+    e0: bool,
+    e1: bool,
+    add: bool,
+    predict: bool,
+) -> PyResult<Bound<'py, PyBytes>> {
+    guard(|| {
+        let row = check_size(isz, w)?;
+        if w > MAX_WIDTH {
+            return Err(PyValueError::new_err("hindsight_native: width too large"));
+        }
+        let (ib, vb) = (Buf::new(idx, false)?, Buf::new(vals, false)?);
+        if ib.len() % 4 != 0 || (ib.len() / 4).checked_mul(row) != Some(vb.len()) {
+            return Err(PyValueError::new_err(format!("pack_delta {key}: sizes don't match")));
+        }
+        let (iv, vv) = (ib.bytes(), vb.bytes());
+        let rec = RecRef { key, exists: (e0, e1), add, isz, w, k: iv.len() / 4, idx: iv, vals: vv };
+        let mut out = Vec::new();
+        py.allow_threads(|| pack_record(&rec, predict, &mut out)).map_err(err)?;
+        Ok(PyBytes::new_bound(py, &out))
+    })
+}
+
+/// unpack_record(buffer, offset) -> (key, add, exists before, exists after, k, width, itemsize,
+/// index bytearray or None, value bytearray or None, offset after the record): delta.unpack_at.
+/// Damage raises CorruptDelta with delta.py's messages.
+#[pyfunction]
+fn unpack_record(py: Python<'_>, buf: &Bound<'_, PyAny>, off: usize) -> PyResult<PyObject> {
+    guard(|| {
+        let inp = input(buf)?;
+        let body = inp.get();
+        if off > body.len() {
+            return Err(CorruptDelta::new_err("delta: too short"));
+        }
+        let r = py.allow_threads(|| -> Result<(DDelta, usize), DErr> {
+            let (p, next) = plan_record(body, off).map_err(DErr::Msg)?;
+            Ok((decode_plan(&p)?, next))
+        });
+        let (d, next) = match r {
+            Ok(x) => x,
+            Err(DErr::Msg(m)) => return Err(CorruptDelta::new_err(m)),
+            Err(DErr::Mem) => return Err(no_mem()),
+        };
+        let (ib, vb) = if d.k == 0 {
+            (py.None(), py.None())
+        } else {
+            (PyByteArray::new_bound(py, &d.idx).into_py(py), PyByteArray::new_bound(py, &d.vals).into_py(py))
+        };
+        Ok((d.key.as_str(), d.add as u8, d.exists.0, d.exists.1, d.k, d.w, d.isz, ib, vb, next).into_py(py))
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(unpack_record, m)?)?;
+    m.add_function(wrap_pyfunction!(pack_record_py, m)?)?;
     m.add_function(wrap_pyfunction!(codec_resolve, m)?)?;
     m.add_function(wrap_pyfunction!(codec_compress, m)?)?;
     m.add_function(wrap_pyfunction!(codec_decompress, m)?)?;
@@ -1053,6 +1316,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(step_decode, m)?)?;
     m.add_function(wrap_pyfunction!(step_info, m)?)?;
     m.add_function(wrap_pyfunction!(step_encode, m)?)?;
+    m.add_function(wrap_pyfunction!(record, m)?)?;
     m.add_function(wrap_pyfunction!(recompress, m)?)?;
     m.add_function(wrap_pyfunction!(_test_fault, m)?)?;
     let py = m.py();

@@ -111,8 +111,61 @@ def test_nothing_recorded_in_movie_mode():
     assert _len(sc) == n + 1
 
 
+def test_view_layer_settings():
+    """D128: view layer passes and switches, and an add-on's view layer data, are recorded."""
+    setup()
+    sc = C.scene
+    vl = C.view_layer
+    read = lambda: (vl.use_pass_z, vl.use_pass_mist, vl.use_freestyle, vl.samples)
+    states = [read()]
+    for label, fn in (("z pass", lambda: setattr(vl, "use_pass_z", not vl.use_pass_z)),
+                      ("mist", lambda: setattr(vl, "use_pass_mist", True)),
+                      ("freestyle", lambda: setattr(vl, "use_freestyle", not vl.use_freestyle)),
+                      ("samples", lambda: setattr(vl, "samples", 7))):
+        fn()
+        L.tick_like(label)
+        states.append(read())
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(sc)
+    runtime._goto_history(h, h.cursor - 4, True)
+    assert read() == states[0], (read(), states[0])
+    runtime._goto_history(h, h.cursor + 4, True)
+    assert read() == states[-1], (read(), states[-1])
+
+
+def _keys(x):
+    ad = getattr(x, "animation_data", None)
+    if ad is None or ad.action is None:
+        return 0
+    from hindsight.bl import adapters
+    return sum(len(f.keyframe_points) for f in adapters._fcurves(ad.action, getattr(ad, "action_slot", None))
+               if not f.data_path.startswith("hindsight."))
+
+
+def test_scene_and_world_animation():
+    """D125: keyframes on the scene's settings and on the world's node inputs are recorded in the
+    scene's history; Movie Mode's own keys aren't."""
+    setup()
+    sc = C.scene
+    read = lambda: (_keys(sc), _keys(sc.world.node_tree))
+    states = [read()]
+    for label, fn in (("scene key", lambda: sc.keyframe_insert("audio_volume", frame=1)),
+                      ("world key", lambda: _bg(sc.world).inputs["Strength"].keyframe_insert("default_value", frame=1))):
+        fn()
+        L.tick_like(label)
+        states.append(read())
+    assert states == [(0, 0), (1, 0), (1, 1)], states
+    h = runtime.history_of(sc)
+    runtime._goto_history(h, h.cursor - 2, True)
+    assert read() == (0, 0), read()
+    runtime._goto_history(h, h.cursor + 2, True)
+    assert read() == (1, 1), read()
+
+
 if __name__ == "__main__":
     H.run(test_scene_settings_come_back)
     H.run(test_frame_cursor_and_tools_are_not_steps)
     H.run(test_nothing_recorded_in_movie_mode)
+    H.run(test_scene_and_world_animation)
+    H.run(test_view_layer_settings)
     H.finish()

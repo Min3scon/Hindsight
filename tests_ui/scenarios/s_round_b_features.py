@@ -63,9 +63,14 @@ def run(d):
     d.check("Morph History stroke changes the mesh and records one step", after != before and C.info(d)["len"] == 5,
             C.info(d))
     with d.override():
-        bpy.ops.wm.tool_set_by_id(name="builtin.brush", space_type='VIEW_3D')
+        # back to the sculpt brush: "builtin.brush" since 4.3 (brush assets), "builtin_brush.Draw" before
+        bpy.ops.wm.tool_set_by_id(name="builtin.brush" if bpy.app.version >= (4, 3, 0) else "builtin_brush.Draw",
+                                  space_type='VIEW_3D')
         rt.goto(bpy.context, 4)
     d.check("going back before the morph stroke is exact", mesh_hash(a) == states[4])
+    tool = bpy.context.workspace.tools.from_space_view3d_mode("SCULPT", create=False)
+    d.check("the sculpt brush is the active tool again", tool is not None and tool.idname != "hindsight.morph_history",
+            getattr(tool, "idname", None))
     with d.override():
         rt.goto(bpy.context, 5)
 
@@ -111,9 +116,13 @@ def run(d):
     yield 0.2
 
     # ---------------------------------------------------------------- Join, then scrub back past it
+    # Movie Mode playback ("Follow object and mode") leaves A in Sculpt Mode, where Add does nothing:
+    # the active object would still be A, and naming it "B" broke every check after this one
+    activate(d, a, "OBJECT")
     with d.override():
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=0.8, location=(2.6, 0, 0))
+        res = bpy.ops.mesh.primitive_uv_sphere_add(segments=64, ring_count=32, radius=0.8, location=(2.6, 0, 0))
         b = bpy.context.active_object
+        assert res == {"FINISHED"} and b != a, (res, b.name)
         b.name = "B"
         bpy.ops.view3d.view_all()
     activate(d, b, "SCULPT")
@@ -123,7 +132,8 @@ def run(d):
     yield from d.drag(reg, [(p.x - 30 + i * 6, p.y) for i in range(11)], step_wait=0.015)
     yield 0.5
     d.check("B has its own history", rt.history_of(b) is not None and len(rt.history_of(b).entries) == 1,
-            None if rt.history_of(b) is None else len(rt.history_of(b).entries))
+            None if rt.history_of(b) is None else [(e.meta.get("label"), e.meta.get("mode"))
+                                                   for e in rt.history_of(b).entries])
     activate(d, a, "OBJECT")
     with d.override():
         b.select_set(True)

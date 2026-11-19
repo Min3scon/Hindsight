@@ -857,7 +857,6 @@ def _on_load_post(*_a):
 
 
 def register():
-    global _draw_handle
     for cls in classes:
         if "bl_rna" not in cls.__dict__:
             bpy.utils.register_class(cls)

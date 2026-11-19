@@ -457,6 +457,96 @@ def set_struct_values(st, values: dict, owner=None, prefix: str = "") -> None:
             continue
 
 
+def _part(what: str, fn, *args):
+    """One part of what an object records; if reading it fails, that part is left out (one log line)
+    and the rest is still recorded (the object recorder isn't switched off for it)."""
+    try:
+        return fn(*args)
+    except Exception as e:
+        log.error_once(("capture", what, type(e).__name__), f"couldn't read {what}; it is left out: {e}", e)
+        return _FAILED
+
+
+_FAILED = object()
+
+
+def _upd(out: dict, what: str, fn, *args) -> None:
+    r = _part(what, fn, *args)
+    if r and r is not _FAILED:
+        out.update(r)
+
+
+def _put(out: dict, key: str, what: str, fn, *args) -> None:
+    """out[key] = what fn gives (None too: "no animation" is a value); nothing when reading failed."""
+    r = _part(what, fn, *args)
+    if r is not _FAILED and (r is not None or key == ANIM_KEY):
+        out[key] = r
+
+
+# The parts of an object's record the depsgraph reports changes of (its settings, pose, bones,
+# animation, node groups, particle settings, its data's settings, shape and animation): kept per
+# object until the object or something it depends on changes (datarec.on_update calls
+# value_changed), an operator ends with it selected, or Hindsight writes it.
+_EXT_CACHE: dict = {}        # object session_uid -> values
+_EXT_DEPS: dict = {}         # session_uid of a datablock -> session_uids of the objects using it
+
+
+def _ext_part(idb) -> dict:
+    sid = idb.session_uid
+    e = _EXT_CACHE.get(sid)
+    if e is not None:
+        return e
+    e = {}
+    deps = []
+    groups = _part("node groups", owned_groups, idb)                        # D126
+    if groups and groups is not _FAILED:
+        e.update(groups)
+    deps += [g for g in groups_of(idb)] if groups is not _FAILED else []
+    _upd(e, "particle settings", owned_particles, idb)                      # D137
+    deps += [ps.settings for ps in getattr(idb, "particle_systems", ()) if ps.settings is not None]
+    _put(e, SETTINGS_KEY, "settings", settings_of, idb, _OBJ_SETTINGS_SKIP)  # D117
+    if idb.type == "ARMATURE":
+        _put(e, POSE_KEY, "pose", pose_values, idb)                          # D119
+        if idb.data is not None and idb.data.library is None and _owns_data(idb, idb.data):
+            _put(e, DATA_PREFIX + BONES, "bones", bones_of, idb.data)        # D129
+    _put(e, ANIM_KEY, "animation", anim_values, idb)                         # D120
+    ad = idb.animation_data
+    if ad is not None:
+        _upd(e, "the action", owned_action, idb)
+        if ad.action is not None:
+            deps.append(ad.action)
+    d = idb.data
+    if d is not None and d.library is None and _owns_data(idb, d):
+        deps.append(d)
+        nested = DATA_STRUCTS.get(d.bl_rna.identifier)
+        if nested is not None:
+            _put(e, DATA_PREFIX + DATA_VALUES, "the data's settings", settings_of, d, _DATA_SKIP, nested)
+        # the shape (D121, D131) is read in capture: geometry_of checks its own counts every time
+        # D125: always there (None without animation), so the first keyframe is a change
+        if hasattr(d, "animation_data"):
+            r = _part("the data's animation", anim_of, d)
+            for k, v in (r if r is not _FAILED else {}).items():
+                e[(DATA_PREFIX + k) if k == ANIM_KEY else k] = v
+            dad = getattr(d, "animation_data", None)
+            if dad is not None and dad.action is not None:
+                deps.append(dad.action)
+        key = getattr(d, "shape_keys", None)
+        if key is not None:
+            deps.append(key)
+            r = _part("the shape keys' animation", anim_of, key)
+            for k, v in (r if r is not _FAILED else {}).items():
+                e[(SK_PREFIX + k) if k == ANIM_KEY else k] = v
+            if key.animation_data is not None and key.animation_data.action is not None:
+                deps.append(key.animation_data.action)
+    for x in deps:
+        try:
+            _EXT_DEPS.setdefault(x.session_uid, set()).add(sid)
+        except Exception:
+            continue
+    _EXT_CACHE[sid] = e
+    return e
+
+
 class ObjectAdapter(Adapter):
     """Object data that isn't a plain property: the collections it is in, its view-layer hide state
     (the eye in the outliner) and its constraint stack."""
@@ -477,25 +567,48 @@ class ObjectAdapter(Adapter):
             out.update(mesh_lists(idb))        # D108: the lists the weights and shapes belong to
         if hasattr(idb, "modifiers"):
             out.update(modifier_values(idb))   # D110: the modifier stack and each modifier's settings
+        out.update(_ext_part(idb))             # D117 to D137: kept until a dependency changes
+        d = idb.data
+        if (d is not None and d.bl_rna.identifier in _GEOM_TYPES and d.library is None and idb.mode != "EDIT"
+                and d.bl_rna.identifier in DATA_STRUCTS and _owns_data(idb, d)):
+            # not kept with the rest: a point cloud's resize doesn't tell the depsgraph (D134)
+            _put(out, DATA_PREFIX + GEOM, "the shape", geometry_of, d)      # D121, D131
         if idb.data is not None and hasattr(idb.data, "materials"):
             if len(idb.material_slots):
-                out["slots"] = material_slots(idb)  # D111: material slots (which faces use them: a mesh channel)
-                out.update(owned_materials(idb))     # D112: the materials it records (settings, node trees)
-            else:
-                out["slots"] = [int(idb.active_material_index)]   # what material_slots gives for none
-        out.update(id_props(idb, animated_paths(idb) if idb.animation_data is not None else None))  # D114
-        out[SETTINGS_KEY] = settings_of(idb, _OBJ_SETTINGS_SKIP)          # D117
+                hit = _OBMAT_CACHE.get(idb.session_uid)
+                if hit is None:
+                    r = _part("materials", owned_materials, idb)
+                    r = r if r is not _FAILED else None
+                    hit = (material_slots(idb), r, _owned_refs(idb, r))          # D111, D112
+                    _OBMAT_CACHE[idb.session_uid] = hit
+                out["slots"] = hit[0]
+                if hit[1]:
+                    out.update(hit[1])
+                    _upd(out, "material properties", material_props, hit[2])
+            else:                               # what material_slots gives for none (shared: never changed)
+                i = int(idb.active_material_index)
+                out["slots"] = _NO_SLOTS.get(i) or _NO_SLOTS.setdefault(i, [i])
+        # custom properties are read every time: ob["name"] = value doesn't tell the depsgraph
+        _upd(out, "custom properties", id_props, idb,
+             animated_paths(idb) if idb.animation_data is not None else None)   # D114
         d = idb.data
         if d is not None and d.library is None and _owns_data(idb, d):
-            for k, v in id_props(d, animated_paths(d) if getattr(d, "animation_data", None) is not None
-                                 else None).items():
+            props = _part("the data's custom properties", id_props, d,
+                          animated_paths(d) if getattr(d, "animation_data", None) is not None else None)
+            for k, v in (props if props is not _FAILED else {}).items():
                 out[DATA_PREFIX + k] = v      # the mesh's (curve's, light's, ...) own, with its owner
-            nested = DATA_STRUCTS.get(d.bl_rna.identifier)
-            if nested is not None:
-                out[DATA_PREFIX + DATA_VALUES] = settings_of(d, _DATA_SKIP, nested)   # D117
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
+        _OBMAT_CACHE.pop(idb.session_uid, None)
+        _EXT_CACHE.pop(idb.session_uid, None)
+        for path, v in values.items():          # D126: node groups before the modifiers using them
+            if path.startswith(NG_PREFIX) and isinstance(v, dict):
+                write_group(path[len(NG_PREFIX):], v)
+            elif path.startswith(PART_PREFIX) and isinstance(v, dict):     # D137
+                st = idmap.find(path[len(PART_PREFIX):])
+                if st is not None:
+                    write_settings(st, v)
         if "collections" in values and values["collections"] is not MISSING:
             want = set(values["collections"])
             have = {_coll_ref(c): c for c in idb.users_collection}
@@ -542,8 +655,32 @@ class ObjectAdapter(Adapter):
             write_id_props(idb.data, dv)
             if DATA_VALUES in dv and dv[DATA_VALUES] is not MISSING:
                 write_settings(idb.data, dv[DATA_VALUES], DATA_STRUCTS.get(idb.data.bl_rna.identifier) or ())
+            if GEOM in dv and dv[GEOM] is not MISSING and idb.mode != "EDIT":
+                write_geometry(idb.data, dv[GEOM])          # after the settings (lattice resolution)
         if SETTINGS_KEY in values and values[SETTINGS_KEY] is not MISSING:
             write_settings(idb, values[SETTINGS_KEY])
+        for path, v in values.items():          # D120: the actions, then which one it plays
+            if path.startswith(ACT_PREFIX) and v is not MISSING:
+                write_action(path, v)
+        if ANIM_KEY in values and values[ANIM_KEY] is not MISSING:
+            write_anim(idb, values[ANIM_KEY])
+        for path, v in values.items():          # D125: its data's, shape keys' and materials'
+            if v is MISSING:
+                continue
+            if path == DATA_PREFIX + ANIM_KEY and idb.data is not None:
+                write_anim(idb.data, v)
+            elif path == SK_PREFIX + ANIM_KEY and getattr(idb.data, "shape_keys", None) is not None:
+                write_anim(idb.data.shape_keys, v)
+            elif path.startswith(MATA_PREFIX):
+                mu, _sep, k = path[len(MATA_PREFIX):].partition("|")
+                m = idmap.find(mu)
+                if m is not None and getattr(m, "node_tree", None) is not None and k == ANIM_KEY:
+                    write_anim(m.node_tree, v)
+        b = values.get(DATA_PREFIX + BONES, MISSING)
+        if b is not MISSING and idb.type == "ARMATURE":
+            write_bones(idb, b)                 # D129: the bones before their pose
+        if POSE_KEY in values and values[POSE_KEY] is not MISSING and idb.type == "ARMATURE":
+            write_pose(idb, values[POSE_KEY])
 
 
 # ----------------------------------------------------------------------------- materials (D112)
@@ -576,18 +713,186 @@ def material_changed(idb) -> str | None:
     except Exception:
         return None
     if isinstance(idb, bpy.types.NodeTree):
-        k = _TREE_MAT.get(k)
-        if k is None:
-            return None
+        _MAT_GROUPS.clear()
+        k = _TREE_MAT.get(k, k)          # a material's own tree, or a node group (D126)
     _MAT_CACHE.pop(k, None)
     return _MAT_OWNER_OF.get(k)
 
 
 def forget_materials() -> None:
+    _EXT_CACHE.clear()
+    _EXT_DEPS.clear()
+    _OBMAT_CACHE.clear()
+    _BONES_CACHE.clear()
+    _MAT_GROUPS.clear()
     _VAL_CACHE.clear()
+    _GEOM_CACHE.clear()
+    _ACT_CACHE.clear()
     _MAT_CACHE.clear()
     _MAT_OWNER_OF.clear()
     _TREE_MAT.clear()
+
+
+# ----------------------------------------------------------------------------- node groups (D126)
+NG_PREFIX = "@ng:"
+_IFACE_SKIP = frozenset(_UI_PROPS | {"name", "socket_type", "select", "bl_socket_idname", "identifier",
+                                     "item_type", "in_out", "index", "position", "parent", "is_panel_toggle"})
+
+
+def _groups_in_tree(nt, out: list, seen: set) -> None:
+    for n in nt.nodes:
+        g = getattr(n, "node_tree", None)
+        if g is not None and g.library is None and g.as_pointer() not in seen:
+            seen.add(g.as_pointer())
+            out.append(g)
+            _groups_in_tree(g, out, seen)
+
+
+def groups_of(ob) -> list:
+    """Node groups this object's Geometry Nodes modifiers and its materials use (nested ones too)."""
+    if not len(bpy.data.node_groups):
+        return []
+    out, seen = [], set()
+    for m in getattr(ob, "modifiers", ()):
+        g = getattr(m, "node_group", None)
+        if g is not None and g.library is None and g.as_pointer() not in seen:
+            seen.add(g.as_pointer())
+            out.append(g)
+            _groups_in_tree(g, out, seen)
+    for sl in getattr(ob, "material_slots", ()):
+        mt = sl.material
+        nt = getattr(mt, "node_tree", None) if mt is not None else None
+        if nt is None:
+            continue
+        lst = _MAT_GROUPS.get(nt.session_uid)
+        if lst is None:                  # kept until a node tree changes (walking every node is slow)
+            lst = []
+            _groups_in_tree(nt, lst, set())
+            _MAT_GROUPS[nt.session_uid] = lst
+        for g in lst:
+            if g.as_pointer() not in seen:
+                seen.add(g.as_pointer())
+                out.append(g)
+    return out
+
+
+_MAT_GROUPS: dict = {}       # material node tree session_uid -> node groups it uses (nested too)
+
+
+def group_owner_map() -> dict:
+    """node group pointer -> uid of the object that records it (the first recorded object by name
+    that uses it). Kept for one recorder frame."""
+    fc = idmap.frame_cache()
+    if fc is not None and "ng_owner" in fc:
+        return fc["ng_owner"]
+    from . import datarec
+    users = []
+    for u in datarec.tracked_uids():
+        ob = idmap.find(u)
+        if isinstance(ob, bpy.types.Object):
+            users.append((ob.name, u, ob))
+    out = {}
+    for _n, u, ob in sorted(users, key=lambda t: t[0]):
+        for g in groups_of(ob):
+            out.setdefault(g.as_pointer(), u)
+    if fc is not None:
+        fc["ng_owner"] = out
+    return out
+
+
+def interface_items(ng) -> list:
+    iface = getattr(ng, "interface", None)
+    if iface is None:
+        return []
+    rows = []
+    for it in iface.items_tree:
+        if it.item_type == "SOCKET":
+            rows.append(["SOCKET", it.in_out, it.name, it.socket_type, it.identifier,
+                         struct_values(it, _IFACE_SKIP)])
+        else:
+            rows.append(["PANEL", "", it.name, "", "", struct_values(it, _IFACE_SKIP)])
+    return rows
+
+
+def group_record(ng, owner=None) -> dict:
+    k = ng.session_uid
+    if owner is not None:
+        _MAT_OWNER_OF[k] = owner
+    rec = _MAT_CACHE.get(k)
+    if rec is None:
+        rec = _MAT_CACHE[k] = {"tree": capture_tree(ng), "iface": interface_items(ng)}
+    return rec
+
+
+def owned_groups(ob) -> dict:
+    groups = groups_of(ob)
+    if not groups:
+        return {}
+    uid = idmap.uid_of(ob)
+    owners = None
+    out = {}
+    for g in groups:
+        if g.users > 1 + bool(g.use_fake_user):
+            if owners is None:
+                owners = group_owner_map()
+            if owners.get(g.as_pointer()) != uid:
+                continue
+        gu = idmap.claim(g)
+        if gu:
+            try:
+                out[NG_PREFIX + gu] = group_record(g, uid)
+            except Exception:
+                continue
+    return out
+
+
+def write_interface(ng, rows) -> None:
+    iface = getattr(ng, "interface", None)
+    if iface is None or not isinstance(rows, list):
+        return
+    want_ids = {r[4] for r in rows if r[0] == "SOCKET"}
+    for it in [x for x in iface.items_tree if x.item_type == "SOCKET" and x.identifier not in want_ids]:
+        iface.remove(it)
+    have = {x.identifier: x for x in iface.items_tree if x.item_type == "SOCKET"}
+    for r in rows:
+        if r[0] != "SOCKET" or r[4] in have:
+            continue
+        try:
+            it = iface.new_socket(r[2], in_out=r[1], socket_type=r[3])
+            have[r[4]] = it              # (a socket made again gets a new identifier: Blender's)
+        except Exception as e:
+            log.error_once(("iface", str(e)), f"could not restore a group input or output: {e}", e)
+    order = [have[r[4]] for r in rows if r[0] == "SOCKET" and r[4] in have]
+    for pos, it in enumerate(order):
+        try:
+            if it.position != pos:
+                iface.move(it, pos)
+        except Exception:
+            pass
+    for r in rows:
+        it = have.get(r[4]) if r[0] == "SOCKET" else None
+        if it is None:
+            continue
+        try:
+            if it.name != r[2]:
+                it.name = r[2]
+            set_struct_values(it, r[5] or {})
+        except Exception:
+            pass
+
+
+def write_group(gu: str, rec) -> None:
+    ng = idmap.find(gu)
+    if ng is None or not isinstance(rec, dict):
+        return
+    _MAT_CACHE.pop(ng.session_uid, None)
+    try:
+        write_interface(ng, rec.get("iface"))
+        if rec.get("tree"):
+            write_tree(ng, rec["tree"])
+    except Exception as e:
+        log.error_once(("group", str(e)), f"could not restore the node group {ng.name}: {e}", e)
+    _MAT_CACHE.pop(ng.session_uid, None)
 
 
 def material_owner_map() -> dict:
@@ -634,11 +939,42 @@ def owned_materials(ob) -> dict:
         if mu:
             try:
                 out[MAT_PREFIX + mu] = material_record(m, uid)
-                # D114: its custom properties and add-on data, read every time (setting one with
-                # m["name"] = value doesn't tell the depsgraph, so the kept record can't hold them)
-                out[MATP_PREFIX + mu] = id_props(m, animated_paths(m) if m.animation_data is not None else None)
             except Exception:
                 continue
+    return out
+
+
+# D117 style: an object's material part (slots, owned material records) is kept until the depsgraph
+# reports the object changed (a slot or its material changing tags it) or an operator ends with it
+# selected; what the depsgraph doesn't see is read every time (material_props)
+_OBMAT_CACHE: dict = {}      # object session_uid -> (slots, {MAT_PREFIX + id: record})
+
+
+def _owned_refs(ob, owned) -> list:
+    """[(material id, material)] for the owned records (kept with them: no search every time)."""
+    if not owned:
+        return []
+    by_id = {}
+    for sl in ob.material_slots:
+        m = sl.material
+        if m is not None:
+            u = idmap.uid_of(m)
+            if u is not None:
+                by_id[u] = m
+    return [(k[len(MAT_PREFIX):], by_id[k[len(MAT_PREFIX):]]) for k in owned
+            if k[len(MAT_PREFIX):] in by_id]
+
+
+def material_props(refs) -> dict:
+    """D114/D125: the owned materials' custom properties and add-on data, and their node trees'
+    animation, read every time (setting m["name"] = value doesn't tell the depsgraph)."""
+    out = {}
+    for mu, m in refs:
+        out[MATP_PREFIX + mu] = id_props(m, animated_paths(m) if m.animation_data is not None else None)
+        nt = getattr(m, "node_tree", None)
+        if nt is not None:
+            for k, v in anim_of(nt).items():
+                out[(MATA_PREFIX + mu + "|" + k) if k == ANIM_KEY else k] = v
     return out
 
 
@@ -697,10 +1033,68 @@ def capture_tree(nt) -> dict:
             ov = _socket_value(n.outputs[0])
             if ov is not None:
                 rec["out"] = ov
+        items = _node_items(n)                  # D130: zone and switch items (their sockets)
+        if items:
+            rec["items"] = items
+        po = getattr(n, "paired_output", None)  # D130: a zone's input node and its output node
+        if po is not None:
+            rec["pair"] = po.name
         vals[n.name] = rec
-    links = [[l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier]
+    # sockets by identifier, and by position for item sockets made again (new identifiers)
+    links = [[l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier,
+              _sock_index(l.from_node.outputs, l.from_socket), _sock_index(l.to_node.inputs, l.to_socket)]
              for l in nt.links]
     return {"nodes": nodes, "node": vals, "links": links}
+
+
+_ITEM_COLLS_SKIP = frozenset({"inputs", "outputs", "internal_links", "panel_states"})
+_ITEM_SKIP = frozenset(_UI_PROPS | {"color"})
+
+
+def _sock_index(socks, sock) -> int:
+    for i, x in enumerate(socks):
+        if x == sock:
+            return i
+    return -1
+
+
+def _node_items(n) -> dict:
+    out = {}
+    for p in n.bl_rna.properties:
+        if p.type != "COLLECTION" or p.identifier in _ITEM_COLLS_SKIP:
+            continue
+        coll = getattr(n, p.identifier, None)
+        if coll is None or not hasattr(coll, "new"):
+            continue
+        out[p.identifier] = [struct_values(it, _ITEM_SKIP) for it in coll]
+    return out
+
+
+def _item_key(v) -> tuple:
+    return (v.get("name"), v.get("socket_type") or v.get("data_type"))
+
+
+def _write_items(node, items: dict) -> None:
+    for cname, want in items.items():
+        coll = getattr(node, cname, None)
+        if coll is None:
+            continue
+        have = [_item_key(struct_values(it, _ITEM_SKIP)) for it in coll]
+        if have != [_item_key(w) for w in want]:
+            coll.clear()
+            for w in want:
+                t = w.get("socket_type") or w.get("data_type")
+                name = w.get("name") or ""
+                for args in ((t, name), (name,), ()):
+                    if args and args[0] is None:
+                        continue
+                    try:
+                        coll.new(*args)
+                        break
+                    except Exception:
+                        continue
+        for it, w in zip(coll, want):
+            set_struct_values(it, {k: x for k, x in w.items() if k not in ("socket_type", "data_type")})
 
 
 def write_material(muid: str, rec: dict) -> None:
@@ -708,6 +1102,7 @@ def write_material(muid: str, rec: dict) -> None:
     if m is None:
         return
     _MAT_CACHE.pop(m.session_uid, None)
+    _OBMAT_CACHE.clear()
     try:
         set_struct_values(m, rec.get("values") or {})
         tree = rec.get("tree")
@@ -740,6 +1135,11 @@ def write_tree(nt, tree: dict) -> None:
         if node is None:
             continue
         set_struct_values(node, rec.get("props") or {})
+        if rec.get("items"):
+            try:
+                _write_items(node, rec["items"])
+            except Exception as e:
+                log.error_once(("node_items", str(e)), f"could not restore the items of {node.name}: {e}", e)
         by_id = {s.identifier: s for s in node.inputs}
         for ident, v in rec.get("in") or ():
             sock = by_id.get(ident)
@@ -753,17 +1153,33 @@ def write_tree(nt, tree: dict) -> None:
                 _set_socket(node.outputs[0], rec["out"])
             except Exception:
                 pass
+    for n, rec in (tree.get("node") or {}).items():     # D130: zones paired once both nodes exist
+        node, out = nt.nodes.get(n), nt.nodes.get(rec.get("pair") or "")
+        if node is not None and out is not None and hasattr(node, "pair_with_output"):
+            po = getattr(node, "paired_output", None)
+            if po is None or po.name != out.name:
+                try:
+                    node.pair_with_output(out)
+                except Exception:
+                    pass
     want_links = [tuple(l) for l in tree.get("links") or ()]
-    have = [(l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier)
+    have = [(l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier,
+             _sock_index(l.from_node.outputs, l.from_socket), _sock_index(l.to_node.inputs, l.to_socket))
             for l in nt.links]
-    if have != want_links:
+    if [h[:len(w)] for h, w in zip(have, want_links)] != want_links or len(have) != len(want_links):
         nt.links.clear()
-        for fn, fs, tn, ts in want_links:
+        for row in want_links:
+            fn, fs, tn, ts = row[:4]
+            fi, ti = (row[4], row[5]) if len(row) >= 6 else (-1, -1)
             a, b = nt.nodes.get(fn), nt.nodes.get(tn)
             if a is None or b is None:
                 continue
             so = next((x for x in a.outputs if x.identifier == fs), None)
             si = next((x for x in b.inputs if x.identifier == ts), None)
+            if so is None and 0 <= fi < len(a.outputs):
+                so = a.outputs[fi]          # an item socket made again: same place, new identifier
+            if si is None and 0 <= ti < len(b.inputs):
+                si = b.inputs[ti]
             if so is not None and si is not None:
                 nt.links.new(so, si)
 
@@ -936,8 +1352,14 @@ def mesh_lists(ob) -> dict:
         out["shapekeys"] = None
     else:
         blocks = []
+        anim = animated_slots(key) if key.animation_data is not None else {}
         for kb in key.key_blocks:
             row = [kb.name] + [normalise(getattr(kb, f)) for f in _SK_FIELDS]
+            if anim:
+                pre = f'key_blocks["{bpy.utils.escape_identifier(kb.name)}"].'
+                for j, f in enumerate(_SK_FIELDS):
+                    if pre + f in anim:
+                        row[1 + j] = ANIMATED     # D124: keyed or driven, it follows the frame
             row.append(kb.relative_key.name if kb.relative_key is not None else "")
             blocks.append(row)
         out["shapekeys"] = {"blocks": blocks, "use_relative": bool(key.use_relative),
@@ -1050,6 +1472,8 @@ def _write_shapekeys(ob, rec) -> list:
         if kb is None:
             continue
         for f, v in zip(_SK_FIELDS, b[1:1 + len(_SK_FIELDS)]):
+            if v == ANIMATED:
+                continue                      # D124: the animation sets it
             try:
                 if getattr(kb, f) != v:
                     setattr(kb, f, v)
@@ -1192,19 +1616,21 @@ def _coll_from_ref(ref: str):
     return idmap.find(ref)
 
 
-def _write_constraints(ob, want: list) -> None:
-    have = [(c.type, c.name) for c in ob.constraints]
+def _write_constraints(ob, want: list, holder=None, base: str = "") -> None:
+    """Put a constraint stack back on ob (or on holder, a pose bone of ob, whose path is base)."""
+    st = holder if holder is not None else ob
+    have = [(c.type, c.name) for c in st.constraints]
     if have == [(w["type"], w["name"]) for w in want]:
-        pairs = list(zip(ob.constraints, want))
+        pairs = list(zip(st.constraints, want))
     else:
-        for c in list(ob.constraints):
-            ob.constraints.remove(c)
+        for c in list(st.constraints):
+            st.constraints.remove(c)
         # each constraint made gets its own recorded values: one that can't be made is left out
         # (zipping the stack with the recorded list gave every later one the wrong values)
         pairs = []
         for w in want:
             try:
-                c = ob.constraints.new(w["type"])
+                c = st.constraints.new(w["type"])
             except Exception as e:
                 log.error_once(("constraint_new", str(e)), f"could not restore a constraint: {e}", e)
                 continue
@@ -1214,7 +1640,182 @@ def _write_constraints(ob, want: list) -> None:
                 log.error_once(("constraint_name", str(e)), f"could not name a restored constraint: {e}", e)
             pairs.append((c, w))
     for c, w in pairs:
-        set_struct_values(c, w.get("values") or {}, ob, f'constraints["{c.name}"].')
+        set_struct_values(c, w.get("values") or {}, ob, f'{base}constraints["{c.name}"].')
+
+
+# ----------------------------------------------------------------------------- bones (D129)
+BONES = "bones"
+_BONE_SKIP = frozenset(_UI_PROPS | {"name", "hide", "hide_select", "select", "select_head", "select_tail"})
+_BONES_CACHE: dict = {}        # armature session_uid -> recorded bones
+
+
+def bones_of(arm) -> dict:
+    """An armature's bones as Edit Mode makes them: name, parent, head, tail, orientation (roll),
+    connected or not, their settings and bone collections. Read from the armature's bones (Edit Mode
+    changes reach them when Edit Mode ends)."""
+    k = arm.session_uid
+    rec = _BONES_CACHE.get(k)
+    if rec is not None:
+        return rec
+    rows = []
+    for b in arm.bones:
+        rows.append({"name": b.name, "parent": b.parent.name if b.parent is not None else "",
+                     "head": list(b.head_local), "tail": list(b.tail_local),
+                     "matrix": [list(r) for r in b.matrix_local], "connect": bool(b.use_connect),
+                     "values": struct_values(b, _BONE_SKIP),
+                     "colls": sorted(c.name for c in getattr(b, "collections", ()))})
+    colls = [[c.name, bool(getattr(c, "is_visible", True))] for c in getattr(arm, "collections_all", ())]
+    rec = _BONES_CACHE[k] = {"bones": rows, "collections": colls}
+    return rec
+
+
+def _bone_shape(arm) -> list:
+    return [(b.name, b.parent.name if b.parent is not None else "", [round(x, 6) for x in b.head_local],
+             [round(x, 6) for x in b.tail_local], [round(x, 6) for r in b.matrix_local for x in r],
+             bool(b.use_connect)) for b in arm.bones]
+
+
+def write_bones(ob, rec) -> None:
+    arm = ob.data
+    if not isinstance(rec, dict) or arm is None:
+        return
+    _BONES_CACHE.pop(arm.session_uid, None)
+    want = rec.get("bones") or []
+    shape = [(w["name"], w["parent"], [round(x, 6) for x in w["head"]], [round(x, 6) for x in w["tail"]],
+              [round(x, 6) for r in w["matrix"] for x in r], w["connect"]) for w in want]
+    try:
+        for name, vis in rec.get("collections") or ():       # bone collections first (by name)
+            if arm.collections_all.get(name) is None:
+                arm.collections.new(name)
+        for c in list(getattr(arm, "collections_all", ())):
+            if c.name not in {n for n, _v in rec.get("collections") or ()}:
+                arm.collections.remove(c)
+        for name, vis in rec.get("collections") or ():
+            c = arm.collections_all.get(name)
+            if c is not None and c.is_visible != vis:
+                c.is_visible = vis
+        if _bone_shape(arm) != shape:
+            _edit_bones(ob, want)
+        for w in want:
+            b = arm.bones.get(w["name"])
+            if b is None:
+                continue
+            set_struct_values(b, w.get("values") or {})
+            have = {c.name for c in b.collections}
+            for cn in set(w.get("colls") or ()) - have:
+                c = arm.collections_all.get(cn)
+                if c is not None:
+                    c.assign(b)
+            for cn in have - set(w.get("colls") or ()):
+                c = arm.collections_all.get(cn)
+                if c is not None:
+                    c.unassign(b)
+    except Exception as e:
+        log.error_once(("bones", str(e)), f"could not restore the bones of {ob.name}: {e}", e)
+    _BONES_CACHE.pop(arm.session_uid, None)
+
+
+def _edit_bones(ob, want) -> None:
+    """Put the bones back through a short Edit Mode visit (bones can only be made, moved and parented
+    there), then back to the mode the object was in."""
+    from mathutils import Matrix
+    ctx = bpy.context
+    vl = ctx.view_layer
+    prev_active = vl.objects.active
+    prev_mode = ob.mode
+    with ctx.temp_override(active_object=ob, object=ob, selected_objects=[ob], selected_editable_objects=[ob]):
+        vl.objects.active = ob
+        if prev_mode != "EDIT":
+            bpy.ops.object.mode_set(mode="EDIT")
+        try:
+            eb = ob.data.edit_bones
+            names = {w["name"] for w in want}
+            for b in [b for b in eb if b.name not in names]:
+                eb.remove(b)
+            for w in want:
+                b = eb.get(w["name"]) or eb.new(w["name"])
+                b.use_connect = False
+                b.head, b.tail = w["head"], w["tail"]
+                b.matrix = Matrix(w["matrix"])
+                b.tail = w["tail"]
+            for w in want:
+                b = eb.get(w["name"])
+                b.parent = eb.get(w["parent"]) if w["parent"] else None
+                b.use_connect = w["connect"]
+        finally:
+            if prev_mode != "EDIT":
+                bpy.ops.object.mode_set(mode=prev_mode if prev_mode in ("OBJECT", "POSE") else "OBJECT")
+    if prev_active is not None and prev_active != ob:
+        vl.objects.active = prev_active
+
+
+# ----------------------------------------------------------------------------- pose (D119)
+POSE_KEY = "pose"
+_POSE_FIELDS = (("location", 3), ("rotation_quaternion", 4), ("rotation_euler", 3),
+                ("rotation_axis_angle", 4), ("scale", 3))
+
+
+def pose_values(ob) -> dict:
+    """An armature object's pose: each pose bone's transform and rotation mode, its constraint stack
+    and its custom properties. What an animation or driver sets is ANIMATED."""
+    pose = ob.pose
+    if pose is None:
+        return {}
+    bones = pose.bones
+    n = len(bones)
+    flat = {}
+    for f, k in _POSE_FIELDS:
+        buf = [0.0] * (n * k)
+        bones.foreach_get(f, buf)
+        flat[f] = buf
+    anim = animated_slots(ob) if ob.animation_data is not None else {}
+    out = {}
+    for i, pb in enumerate(bones):
+        name = pb.name
+        row = {}
+        pre = f'pose.bones["{bpy.utils.escape_identifier(name)}"].' if anim else ""
+        for f, k in _POSE_FIELDS:
+            v = flat[f][i * k:(i + 1) * k]
+            idx = anim.get(pre + f) if anim else None
+            if idx:
+                v = [ANIMATED if j in idx else x for j, x in enumerate(v)]
+            row[f] = v
+        row["rotation_mode"] = pb.rotation_mode
+        if len(pb.constraints):
+            row["constraints"] = [{"type": c.type, "name": c.name,
+                                   "values": struct_values(c, anim=anim or None)} for c in pb.constraints]
+        props = _group_json(pb)
+        if props:
+            row["props"] = props
+        out[name] = row
+    return out
+
+
+def write_pose(ob, want: dict) -> None:
+    pose = ob.pose
+    if pose is None or not isinstance(want, dict):
+        return
+    for pb in pose.bones:
+        row = want.get(pb.name)
+        if row is None:
+            continue
+        try:
+            if pb.rotation_mode != row.get("rotation_mode", pb.rotation_mode):
+                pb.rotation_mode = row["rotation_mode"]
+            for f, _k in _POSE_FIELDS:
+                v = row.get(f)
+                if not v:
+                    continue
+                cur = list(getattr(pb, f))
+                new = [c if x == ANIMATED else x for x, c in zip(v, cur)]
+                if new != cur:
+                    setattr(pb, f, new)
+            if row.get("constraints") or len(pb.constraints):
+                _write_constraints(ob, row.get("constraints") or [], holder=pb,
+                                   base=f'pose.bones["{bpy.utils.escape_identifier(pb.name)}"].')
+            _write_group(pb, row.get("props") or {})
+        except Exception as e:
+            log.error_once(("pose", str(e)), f"could not restore the pose of {pb.name}: {e}", e)
 
 
 # Object settings a body leaves out: the name, data and parent are set on their own; matrices and
@@ -1281,7 +1882,8 @@ _DATA_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {
 # data types whose settings are recorded, with the settings structs they keep apart
 DATA_STRUCTS = {"Mesh": (), "Camera": ("dof", "stereo"), "SpotLight": (), "PointLight": (), "SunLight": (),
                 "AreaLight": (), "Curve": (), "TextCurve": (), "SurfaceCurve": (), "MetaBall": (),
-                "Speaker": (), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
+                "Speaker": (), "Armature": (), "Lattice": (), "GreasePencil": (), "GreasePencilv3": (), "Curves": (), "PointCloud": (),
+                "Volume": ("display", "render"), "LightProbe": (), "LightProbeSphere": (), "LightProbePlane": (),
                 "LightProbeVolume": ()}
 SETTINGS_KEY = "settings"
 DATA_VALUES = "values"
@@ -1304,15 +1906,52 @@ def forget_selected_values() -> None:
     for o in obs:
         try:
             _VAL_CACHE.pop(o.session_uid, None)
+            _OBMAT_CACHE.pop(o.session_uid, None)
+            _EXT_CACHE.pop(o.session_uid, None)
             if o.data is not None:
                 _VAL_CACHE.pop(o.data.session_uid, None)
+                _GEOM_CACHE.pop(o.data.session_uid, None)
+                _BONES_CACHE.pop(o.data.session_uid, None)
+            ad = o.animation_data
+            if ad is not None and ad.action is not None:
+                _ACT_CACHE.pop(ad.action.session_uid, None)
+            for ps in getattr(o, "particle_systems", ()):
+                if ps.settings is not None:
+                    _VAL_CACHE.pop(ps.settings.session_uid, None)
         except Exception:
             continue
+
+
+def forget_loose_groups() -> None:
+    """D133: node groups nothing evaluates aren't in the depsgraph, so it never says they changed:
+    their kept records are read again when an operator ends."""
+    try:
+        nt = getattr(bpy.context.scene, "node_tree", None)
+        if nt is not None:
+            _MAT_CACHE.pop(nt.session_uid, None)
+        if not len(bpy.data.node_groups):
+            return                      # (most files: no walk over the objects)
+        with idmap.frame():
+            used = group_owner_map()
+            for g in bpy.data.node_groups:
+                if g.as_pointer() not in used:
+                    _MAT_CACHE.pop(g.session_uid, None)
+    except Exception:
+        pass
 
 
 def value_changed(idb) -> None:
     try:
         _VAL_CACHE.pop(idb.session_uid, None)
+        _ACT_CACHE.pop(idb.session_uid, None)
+        _GEOM_CACHE.pop(idb.session_uid, None)
+        _BONES_CACHE.pop(idb.session_uid, None)
+        _OBMAT_CACHE.pop(idb.session_uid, None)
+        _EXT_CACHE.pop(idb.session_uid, None)
+        for o in _EXT_DEPS.pop(idb.session_uid, ()):
+            _EXT_CACHE.pop(o, None)
+        if isinstance(idb, (bpy.types.Material, bpy.types.NodeTree)) and _OBMAT_CACHE:
+            _OBMAT_CACHE.clear()        # its users' records are read again (cheap: records are kept)
     except Exception:
         pass
 
@@ -1363,11 +2002,728 @@ def write_settings(idb, v, nested=()) -> None:
         log.error_once(("settings", str(e)), f"could not restore the settings of {idb.name}: {e}", e)
 
 
+# ----------------------------------------------------------------------------- animation (D120)
+# Which action an object plays (and its slot on Blender 4.4+), how (blend, influence, extrapolation),
+# and the action itself: every F-curve of the object's slot with all its keyframes, read in bulk. An
+# action is recorded with the first recorded object by name that plays it with that slot, and kept
+# until the depsgraph says it changed (keyframe edits tell it) or an operator ends with a user of it
+# selected.
+ANIM_KEY = "anim"
+ACT_PREFIX = "@act:"
+_AD_SKIP = frozenset(_UI_PROPS | {"action_tweak_storage", "action_slot_handle_tweak_storage", "use_tweak_mode",
+                                  "use_pin", "action_slot_handle", "last_slot_identifier", "action_slot"})
+_KEY_2 = ("co", "handle_left", "handle_right")
+_KEY_INT = ("interpolation", "type", "handle_left_type", "handle_right_type", "easing")
+_KEY_1 = ("back", "amplitude", "period")
+_ACT_CACHE: dict = {}          # action session_uid -> {slot identifier: record}
+_OWN_PATHS = ("hindsight.",)   # Hindsight's own animated properties (Movie Mode keys the scene's step)
+_SLOT_TYPES = {"OB": "OBJECT", "ME": "MESH", "MA": "MATERIAL", "WO": "WORLD", "SC": "SCENE", "CA": "CAMERA",
+               "LA": "LIGHT", "KE": "KEY", "NT": "NODETREE", "CU": "CURVE", "AR": "ARMATURE"}
+
+
+_TARGET_SKIP = frozenset(_UI_PROPS | {"id_type"})
+_STRIP_SKIP = frozenset(_UI_PROPS | {"select", "frame_start_raw", "frame_end_raw", "frame_start_ui", "frame_end_ui",
+                                     "strip_time", "action_slot_handle", "last_slot_identifier", "action_slot",
+                                     "name"})
+
+
+def _keys_of(fc) -> dict:
+    kp = fc.keyframe_points
+    n = len(kp)
+    r = {}
+    for f in _KEY_2:
+        buf = [0.0] * (2 * n)
+        kp.foreach_get(f, buf)
+        r[f] = buf
+    for f in _KEY_INT:
+        buf = [0] * n
+        kp.foreach_get(f, buf)
+        r[f] = buf
+    for f in _KEY_1:
+        buf = [0.0] * n
+        kp.foreach_get(f, buf)
+        r[f] = buf
+    return r
+
+
+def _set_keys(fc, r) -> None:
+    kp = fc.keyframe_points
+    n = len(r.get("interpolation") or ())
+    if len(kp) != n:
+        kp.clear()
+        kp.add(n)
+    if n:
+        for f in _KEY_2 + _KEY_INT + _KEY_1:
+            kp.foreach_set(f, r[f])
+    fc.update()
+
+
+def _driver_values(fc) -> dict:
+    d = fc.driver
+    out = {"path": fc.data_path, "index": int(fc.array_index), "mute": bool(fc.mute),
+           "type": d.type, "expression": d.expression, "use_self": bool(d.use_self), "keys": _keys_of(fc)}
+    out["vars"] = [{"name": v.name, "type": v.type,
+                    "targets": [dict(struct_values(t, _TARGET_SKIP), id_type=t.id_type) for t in v.targets]}
+                   for v in d.variables]
+    return out
+
+
+def _nla_values(ad) -> list:
+    out = []
+    for t in ad.nla_tracks:
+        strips = []
+        for st in t.strips:
+            v = struct_values(st, _STRIP_SKIP)
+            slot = getattr(st, "action_slot", None)
+            v["slot"] = slot.identifier if slot is not None else None
+            strips.append([st.name, v])
+        out.append({"name": t.name, "mute": bool(t.mute), "is_solo": bool(t.is_solo), "lock": bool(t.lock),
+                    "strips": strips})
+    return out
+
+
+def anim_values(ob):
+    """How the object plays its action, its drivers and its NLA tracks, or None when it has no
+    animation data."""
+    ad = ob.animation_data
+    if ad is None:
+        return None
+    v = struct_values(ad, _AD_SKIP)
+    slot = getattr(ad, "action_slot", None)
+    v["slot"] = slot.identifier if slot is not None else None
+    if len(ad.drivers):
+        v["drivers"] = [_driver_values(fc) for fc in ad.drivers]
+    if len(ad.nla_tracks):
+        v["nla"] = _nla_values(ad)
+    return v
+
+
+def _write_drivers(ob, ad, want: list) -> None:
+    if [(_d["path"], _d["index"]) for _d in want] != [(f.data_path, f.array_index) for f in ad.drivers]:
+        for fc in list(ad.drivers):
+            ad.drivers.remove(fc)
+        for w in want:
+            try:
+                fc = ob.driver_add(w["path"], w["index"]) if w["index"] >= 0 else ob.driver_add(w["path"])
+            except Exception:
+                try:
+                    fc = ob.driver_add(w["path"])
+                except Exception as e:
+                    log.error_once(("driver_add", str(e)), f"could not restore a driver: {e}", e)
+                    continue
+            if isinstance(fc, list):
+                fc = fc[0]
+    by = {(f.data_path, f.array_index): f for f in ad.drivers}
+    for w in want:
+        fc = by.get((w["path"], w["index"]))
+        if fc is None:
+            continue
+        cur = _driver_values(fc)
+        if cur == w:
+            continue
+        d = fc.driver
+        fc.mute = w.get("mute", False)
+        d.type = w["type"]
+        d.expression = w.get("expression", "")
+        d.use_self = w.get("use_self", False)
+        while len(d.variables):
+            d.variables.remove(d.variables[0])
+        for vw in w.get("vars") or ():
+            v = d.variables.new()
+            v.name = vw["name"]
+            v.type = vw["type"]
+            for t, tw in zip(v.targets, vw.get("targets") or ()):
+                try:
+                    if t.id_type != tw.get("id_type", t.id_type):
+                        t.id_type = tw["id_type"]
+                except Exception:
+                    pass
+                set_struct_values(t, {k: x for k, x in tw.items() if k != "id_type"})
+        _set_keys(fc, w.get("keys") or {})
+
+
+def _write_nla(ad, want: list) -> None:
+    shape = [(t["name"], [n for n, _v in t["strips"]]) for t in want]
+    if shape != [(t.name, [s.name for s in t.strips]) for t in ad.nla_tracks]:
+        for t in list(ad.nla_tracks):
+            ad.nla_tracks.remove(t)
+        for tw in want:
+            t = ad.nla_tracks.new()
+            t.name = tw["name"]
+            for name, sv in tw["strips"]:
+                ref = (sv.get("action") or {}).get("ref")
+                act = idmap.find(ref) if ref else None
+                if act is None:
+                    continue
+                try:
+                    st = t.strips.new(name, int(sv.get("frame_start", 1)), act)
+                except Exception as e:
+                    log.error_once(("nla_strip", str(e)), f"could not restore an NLA strip: {e}", e)
+    for t, tw in zip(ad.nla_tracks, want):
+        t.mute, t.lock = tw.get("mute", False), tw.get("lock", False)
+        if t.is_solo != tw.get("is_solo", False):
+            t.is_solo = tw.get("is_solo", False)
+        for st, (name, sv) in zip(t.strips, tw["strips"]):
+            set_struct_values(st, {k: x for k, x in sv.items() if k != "slot"})
+            ident = sv.get("slot")
+            if ident and hasattr(st, "action_slot") and st.action is not None:
+                slot = _slot_of(st.action, ident)
+                if slot is not None and st.action_slot != slot:
+                    st.action_slot = slot
+
+
+def _slot_of(action, ident):
+    if not ident or not hasattr(action, "slots"):
+        return None
+    return next((x for x in action.slots if x.identifier == ident), None)
+
+
+def action_record(action, ident) -> dict:
+    per = _ACT_CACHE.get(action.session_uid)
+    if per is not None and ident in per:
+        return per[ident]
+    rows = []
+    for fc in _fcurves(action, _slot_of(action, ident)):
+        if fc.data_path.startswith(_OWN_PATHS):
+            continue                    # Hindsight's own keys (Movie Mode's step) are never recorded
+        r = {"path": fc.data_path, "index": int(fc.array_index),
+             "group": fc.group.name if fc.group is not None else "", "mute": bool(fc.mute),
+             "extrapolation": fc.extrapolation, "lock": bool(fc.lock)}
+        r.update(_keys_of(fc))
+        rows.append(r)
+    rec = {"name": action.name, "fcurves": rows}
+    _ACT_CACHE.setdefault(action.session_uid, {})[ident] = rec
+    return rec
+
+
+def action_owner_map() -> dict:
+    """(action pointer, slot identifier) -> uid of the object that records that action (the first
+    recorded object by name that plays it). Kept for one recorder frame."""
+    fc = idmap.frame_cache()
+    if fc is not None and "act_owner" in fc:
+        return fc["act_owner"]
+    from . import datarec
+    users = []
+    for u in datarec.tracked_uids():
+        ob = idmap.find(u)
+        ad = getattr(ob, "animation_data", None) if isinstance(ob, bpy.types.Object) else None
+        if ad is not None and ad.action is not None and ad.action.library is None:
+            slot = getattr(ad, "action_slot", None)
+            users.append((ob.name, u, ad.action.as_pointer(), slot.identifier if slot is not None else None))
+    out = {}
+    for _n, u, ap, ident in sorted(users, key=lambda t: t[0]):
+        out.setdefault((ap, ident), u)
+    if fc is not None:
+        fc["act_owner"] = out
+    return out
+
+
+def owned_action(ob) -> dict:
+    ad = ob.animation_data
+    if ad is None or ad.action is None or ad.action.library is not None:
+        return {}
+    a = ad.action
+    slot = getattr(ad, "action_slot", None)
+    ident = slot.identifier if slot is not None else None
+    if a.users > 1 + bool(a.use_fake_user):
+        if action_owner_map().get((a.as_pointer(), ident)) != idmap.uid_of(ob):
+            return {}
+    au = idmap.claim(a)
+    if not au:
+        return {}
+    return {ACT_PREFIX + au + "|" + (ident or ""): action_record(a, ident)}
+
+
+def _fcurve_coll(action, ident, create: bool):
+    if hasattr(action, "slots"):                       # Blender 4.4+: layered actions, a slot's channels
+        from bpy_extras import anim_utils
+        slot = _slot_of(action, ident)
+        if slot is None:
+            if not create or not ident:
+                return None, None
+            slot = action.slots.new(id_type=_SLOT_TYPES.get(ident[:2], "OBJECT"), name=ident[2:])
+        cb = (anim_utils.action_ensure_channelbag_for_slot(action, slot) if create
+              else anim_utils.action_get_channelbag_for_slot(action, slot))
+        return (cb.fcurves if cb is not None else None), cb
+    return action.fcurves, None
+
+
+def write_action(key: str, rec) -> None:
+    if not isinstance(rec, dict):
+        return
+    au, _sep, ident = key[len(ACT_PREFIX):].partition("|")
+    ident = ident or None
+    a = idmap.find(au)
+    try:
+        if a is None:
+            # gone from the file (nothing used it when it was saved): made again under its id
+            a = bpy.data.actions.new(rec.get("name") or "Action")
+            a[idmap.UID_PROP] = au
+            idmap.note(a, au)
+        _ACT_CACHE.pop(a.session_uid, None)
+        coll, cb = _fcurve_coll(a, ident, create=True)
+        if coll is None:
+            return
+        want = {(r["path"], r["index"]): r for r in rec.get("fcurves") or ()}
+        for fc in [f for f in coll if (f.data_path, f.array_index) not in want
+                   and not f.data_path.startswith(_OWN_PATHS)]:
+            coll.remove(fc)
+        for r in rec.get("fcurves") or ():
+            fc = coll.find(r["path"], index=r["index"])
+            if fc is None:
+                if cb is None:
+                    fc = coll.new(r["path"], index=r["index"], action_group=r.get("group") or "")
+                else:
+                    fc = coll.new(r["path"], index=r["index"])
+                    if r.get("group"):
+                        g = cb.groups.get(r["group"]) or cb.groups.new(r["group"])
+                        fc.group = g
+            fc.mute = r.get("mute", False)
+            fc.lock = r.get("lock", False)
+            if fc.extrapolation != r.get("extrapolation", fc.extrapolation):
+                fc.extrapolation = r["extrapolation"]
+            _set_keys(fc, r)
+        _ACT_CACHE.pop(a.session_uid, None)
+    except Exception as e:
+        log.error_once(("action", str(e)), f"could not restore the animation {rec.get('name')}: {e}", e)
+
+
+def write_anim(ob, want) -> None:
+    try:
+        if want is None:
+            if ob.animation_data is not None:      # animated later than this: it had none then
+                ob.animation_data_clear()
+            return
+        ad = ob.animation_data or ob.animation_data_create()
+        ref = (want.get("action") or {}).get("ref")
+        act = idmap.find(ref) if ref else None
+        if ad.action != act:
+            ad.action = act
+        ident = want.get("slot")
+        if act is not None and ident and hasattr(ad, "action_slot"):
+            slot = _slot_of(act, ident)
+            if slot is not None and ad.action_slot != slot:
+                ad.action_slot = slot
+        set_struct_values(ad, {k: v for k, v in want.items() if k not in ("action", "slot", "drivers", "nla")})
+        if want.get("drivers") or len(ad.drivers):
+            _write_drivers(ob, ad, want.get("drivers") or [])
+        if want.get("nla") or len(ad.nla_tracks):
+            _write_nla(ad, want.get("nla") or [])
+    except Exception as e:
+        log.error_once(("anim", str(e)), f"could not restore which animation {ob.name} plays: {e}", e)
+
+
+# ----------------------------------------------------------------------------- geometry of other types (D121)
+# Curve and surface splines with their points, lattice points and metaball elements: editable in
+# Object Mode, so recorded like settings (kept until the depsgraph reports the data changed). Changes
+# made in Edit Mode reach the data when Edit Mode ends, and are recorded then.
+GEOM = "geom"
+_GEOM_CACHE: dict = {}         # data session_uid -> recorded geometry
+_SPLINE_SKIP = frozenset(_UI_PROPS | {"hide"})
+_BEZ_3 = ("co", "handle_left", "handle_right")
+_BEZ_INT = ("handle_left_type", "handle_right_type")
+_PT_1 = ("radius", "tilt", "weight_softbody")
+_MB_SKIP = frozenset(_UI_PROPS | {"select", "hide"})
+
+
+def _bulk(coll, field, n, width=1, kind=float):
+    buf = [kind(0)] * (n * width)
+    if n:
+        coll.foreach_get(field, buf)
+    return buf
+
+
+# ---- Grease Pencil (D131): 4.3+ keeps strokes as curves with attributes in drawings; 4.2's legacy
+# Grease Pencil keeps layers, frames, strokes and points
+_ATTR_KEY = {"FLOAT": ("value", 1), "INT": ("value", 1), "BOOLEAN": ("value", 1), "INT8": ("value", 1),
+             "FLOAT_VECTOR": ("vector", 3), "FLOAT2": ("vector", 2), "FLOAT_COLOR": ("color", 4),
+             "BYTE_COLOR": ("color", 4), "INT32_2D": ("value", 2), "QUATERNION": ("value", 4),
+             "FLOAT4X4": ("value", 16)}
+_GPL_SKIP = frozenset(_UI_PROPS | {"name", "info", "select", "parent", "parent_bone", "matrix_inverse",
+                                   "line_change", "annotation_opacity", "annotation_hide",
+                                   "use_annotation_onion_skinning", "annotation_onion_before_range",
+                                   "annotation_onion_after_range", "annotation_onion_before_color",
+                                   "annotation_onion_after_color"})
+_GPS_SKIP = frozenset(_UI_PROPS | {"select", "select_index"})
+_GPP_FIELDS = (("co", 3), ("pressure", 1), ("strength", 1), ("vertex_color", 4), ("uv_factor", 1),
+               ("uv_rotation", 1), ("uv_fill", 2))
+
+
+def _is_legacy_gp(gp) -> bool:
+    """4.2's Grease Pencil (layers of GPencilLayer with frames of strokes)."""
+    try:
+        return gp.bl_rna.properties["layers"].fixed_type.identifier == "GPencilLayer"
+    except Exception:
+        return False
+
+
+def _stroke_sizes(d) -> list:
+    n = len(d.strokes)
+    if not n:
+        return []                       # an empty drawing (its offsets can't be read in bulk)
+    offs = [0] * (n + 1)
+    d.curve_offsets.foreach_get("value", offs)
+    return [b - a for a, b in zip(offs, offs[1:])]
+
+
+def _drawing_record(d) -> dict:
+    sizes = _stroke_sizes(d)
+    attrs = {}
+    for a in d.attributes:
+        kw = _ATTR_KEY.get(a.data_type)
+        if kw is None or a.name.startswith("."):
+            continue
+        key, width = kw
+        kind = float if a.data_type in ("FLOAT", "FLOAT_VECTOR", "FLOAT2", "FLOAT_COLOR", "BYTE_COLOR",
+                                        "QUATERNION", "FLOAT4X4") else int
+        attrs[a.name] = [a.domain, a.data_type, _bulk(a.data, key, len(a.data), width, kind)]
+    return {"sizes": sizes, "attrs": attrs}
+
+
+def _write_drawing(d, rec) -> None:
+    sizes = rec.get("sizes") or []
+    if _stroke_sizes(d) != sizes:
+        if len(d.strokes):
+            d.remove_strokes()
+        if sizes:
+            d.add_strokes(sizes)
+    want = rec.get("attrs") or {}
+    for a in [a for a in d.attributes if a.name not in want and not a.name.startswith(".")]:
+        try:
+            d.attributes.remove(a)
+        except Exception:
+            pass
+    for name, (domain, dtype, vals) in want.items():
+        a = d.attributes.get(name)
+        if a is None or a.data_type != dtype or a.domain != domain:
+            if a is not None:
+                try:
+                    d.attributes.remove(a)
+                except Exception:
+                    pass
+            a = d.attributes.new(name, dtype, domain)
+        key, width = _ATTR_KEY[dtype]
+        if len(a.data) * width == len(vals):
+            a.data.foreach_set(key, vals)
+    try:
+        d.tag_positions_changed()
+    except Exception:
+        pass
+
+
+def _gp_record(gp) -> dict:
+    layers = []
+    if _is_legacy_gp(gp):
+        for l in gp.layers:
+            frames = []
+            for f in l.frames:
+                strokes = []
+                for st in f.strokes:
+                    pts = st.points
+                    n = len(pts)
+                    r = {"values": struct_values(st, _GPS_SKIP), "n": n}
+                    for fld, w in _GPP_FIELDS:
+                        r[fld] = _bulk(pts, fld, n, w)
+                    strokes.append(r)
+                frames.append([int(f.frame_number), {"strokes": strokes}])
+            layers.append({"name": l.info, "values": struct_values(l, _GPL_SKIP), "frames": frames})
+        return {"legacy": True, "layers": layers}
+    for l in gp.layers:
+        frames = [[int(f.frame_number), _drawing_record(f.drawing)] for f in l.frames if f.drawing is not None]
+        layers.append({"name": l.name, "values": struct_values(l, _GPL_SKIP), "frames": frames})
+    return {"legacy": False, "layers": layers}
+
+
+def _write_gp(gp, rec) -> None:
+    want = rec.get("layers") or []
+    names = [w["name"] for w in want]
+    legacy = _is_legacy_gp(gp)
+    lname = (lambda l: l.info) if legacy else (lambda l: l.name)
+    for l in [l for l in gp.layers if lname(l) not in names]:
+        gp.layers.remove(l)
+    for w in want:
+        l = next((x for x in gp.layers if lname(x) == w["name"]), None)
+        if l is None:
+            l = gp.layers.new(w["name"])
+        set_struct_values(l, w.get("values") or {})
+        wf = {fn: fr for fn, fr in w.get("frames") or ()}
+        for f in [f for f in l.frames if int(f.frame_number) not in wf]:
+            l.frames.remove(f) if legacy else l.frames.remove(int(f.frame_number))
+        for fn, fr in w.get("frames") or ():
+            f = next((x for x in l.frames if int(x.frame_number) == fn), None)
+            if f is None:
+                f = l.frames.new(fn)
+            if legacy:
+                _write_legacy_frame(f, fr)
+            elif f.drawing is not None:
+                _write_drawing(f.drawing, fr)
+
+
+def _write_legacy_frame(f, fr) -> None:
+    want = fr.get("strokes") or []
+    if [len(st.points) for st in f.strokes] != [w["n"] for w in want]:
+        for st in list(f.strokes):          # (legacy strokes have no clear())
+            f.strokes.remove(st)
+        for w in want:
+            st = f.strokes.new()
+            if w["n"]:
+                st.points.add(w["n"])
+    for st, w in zip(f.strokes, want):
+        set_struct_values(st, w.get("values") or {})
+        for fld, _w in _GPP_FIELDS:
+            if fld in w and w["n"]:
+                st.points.foreach_set(fld, w[fld])
+
+
+# ---- hair curves and point clouds (D134): generic attributes
+def _attrs_of(owner) -> dict:
+    out = {}
+    for a in owner.attributes:
+        kw = _ATTR_KEY.get(a.data_type)
+        if kw is None or a.name.startswith("."):
+            continue
+        key, width = kw
+        kind = float if a.data_type in ("FLOAT", "FLOAT_VECTOR", "FLOAT2", "FLOAT_COLOR", "BYTE_COLOR",
+                                        "QUATERNION", "FLOAT4X4") else int
+        out[a.name] = [a.domain, a.data_type, _bulk(a.data, key, len(a.data), width, kind)]
+    return out
+
+
+def _write_attrs(owner, want: dict) -> None:
+    for a in [a for a in owner.attributes if a.name not in want and not a.name.startswith(".")]:
+        try:
+            owner.attributes.remove(a)
+        except Exception:
+            pass
+    for name, (domain, dtype, vals) in want.items():
+        a = owner.attributes.get(name)
+        if a is None or a.data_type != dtype or a.domain != domain:
+            if a is not None:
+                try:
+                    owner.attributes.remove(a)
+                except Exception:
+                    pass
+            a = owner.attributes.new(name, dtype, domain)
+        key, width = _ATTR_KEY[dtype]
+        if len(a.data) * width == len(vals):
+            a.data.foreach_set(key, vals)
+
+
+def _curve_sizes(c) -> list:
+    n = len(c.curves)
+    if not n:
+        return []
+    offs = [0] * (n + 1)
+    c.curve_offset_data.foreach_get("value", offs)
+    return [b - a for a, b in zip(offs, offs[1:])]
+
+
+def _write_hair(c, g) -> None:
+    sizes = g.get("sizes") or []
+    if _curve_sizes(c) != sizes:
+        if hasattr(c, "remove_curves"):
+            if len(c.curves):
+                c.remove_curves()
+            if sizes:
+                c.add_curves(sizes)
+        else:                                    # Blender 4.2 can only add curves
+            log.error_once(("hair", "resize"), "hair curves added or removed can't be put back on this Blender version")
+            return
+    _write_attrs(c, g.get("attrs") or {})
+    c.update_tag()
+
+
+def _write_points(pc, g) -> None:
+    n = g.get("n", 0)
+    if len(pc.points) != n:
+        if hasattr(pc, "resize"):
+            pc.resize(n)
+        else:
+            log.error_once(("points", "resize"), "points added or removed can't be put back on this Blender version")
+            return
+    _write_attrs(pc, g.get("attrs") or {})
+    pc.update_tag()
+
+
+def _geom_print(d, t):
+    """Counts that change when points, strokes or elements are added or removed: some of those calls
+    (a point cloud's resize) don't tell the depsgraph, so a kept record is checked against them."""
+    if t == "Curves":
+        return (len(d.curves), len(d.points), len(d.attributes))
+    if t == "PointCloud":
+        return (len(d.points), len(d.attributes))
+    if t == "Lattice":
+        return (len(d.points),)
+    if t == "MetaBall":
+        return (len(d.elements),)
+    if t in ("Curve", "SurfaceCurve"):
+        return tuple(len(sp.bezier_points) + len(sp.points) for sp in d.splines)
+    return (len(d.layers),)
+
+
+def geometry_of(d):
+    """The geometry of curve, surface, lattice, metaball, Grease Pencil, hair curves and point cloud
+    data, or None for other data."""
+    t = d.bl_rna.identifier
+    if t not in _GEOM_TYPES:
+        return None
+    k = d.session_uid
+    fp = _geom_print(d, t)
+    hit = _GEOM_CACHE.get(k)
+    if hit is not None and hit[0] == fp:
+        return hit[1]
+    g = _read_geometry(d, t)
+    _GEOM_CACHE[k] = (fp, g)
+    return g
+
+
+_GEOM_TYPES = frozenset({"Curves", "PointCloud", "GreasePencil", "GreasePencilv3", "Curve", "SurfaceCurve",
+                         "Lattice", "MetaBall"})
+
+
+def _read_geometry(d, t):
+    if t == "Curves":
+        return {"sizes": _curve_sizes(d), "attrs": _attrs_of(d)}
+    if t == "PointCloud":
+        return {"n": len(d.points), "attrs": _attrs_of(d)}
+    if t in ("GreasePencil", "GreasePencilv3"):
+        return _gp_record(d)
+    if t == "Lattice":
+        n = len(d.points)
+        g = {"co_deform": _bulk(d.points, "co_deform", n, 3), "weight_softbody": _bulk(d.points, "weight_softbody", n)}
+    elif t == "MetaBall":
+        g = {"elements": [struct_values(e, _MB_SKIP) for e in d.elements]}
+    else:
+        rows = []
+        for sp in d.splines:
+            r = {"values": struct_values(sp, _SPLINE_SKIP)}
+            if sp.type == "BEZIER":
+                pts = sp.bezier_points
+                n = len(pts)
+                for f in _BEZ_3:
+                    r[f] = _bulk(pts, f, n, 3)
+                for f in _BEZ_INT:
+                    r[f] = _bulk(pts, f, n, 1, int)
+            else:
+                pts = sp.points
+                n = len(pts)
+                r["co"] = _bulk(pts, "co", n, 4)
+                r["weight"] = _bulk(pts, "weight", n)
+            for f in _PT_1:
+                r[f] = _bulk(pts, f, n)
+            r["n"] = n
+            rows.append(r)
+        g = {"splines": rows}
+    return g
+
+
+def write_geometry(d, g) -> None:
+    if not isinstance(g, dict):
+        return
+    _GEOM_CACHE.pop(d.session_uid, None)
+    t = d.bl_rna.identifier
+    try:
+        if t in ("GreasePencil", "GreasePencilv3"):
+            _write_gp(d, g)
+            _GEOM_CACHE.pop(d.session_uid, None)
+            return
+        if t == "Curves":
+            _write_hair(d, g)
+            _GEOM_CACHE.pop(d.session_uid, None)
+            return
+        if t == "PointCloud":
+            _write_points(d, g)
+            _GEOM_CACHE.pop(d.session_uid, None)
+            return
+        if t == "Lattice":
+            if len(d.points) * 3 == len(g.get("co_deform") or ()):
+                d.points.foreach_set("co_deform", g["co_deform"])
+                d.points.foreach_set("weight_softbody", g["weight_softbody"])
+                d.update_tag()
+        elif t == "MetaBall":
+            want = g.get("elements") or []
+            if [e.type for e in d.elements] != [w.get("type") for w in want]:
+                d.elements.clear()
+                for w in want:
+                    d.elements.new(type=w.get("type", "BALL"))
+            for e, w in zip(d.elements, want):
+                set_struct_values(e, w)
+        elif t in ("Curve", "SurfaceCurve"):
+            want = g.get("splines") or []
+            same = [(sp.type, len(sp.bezier_points) if sp.type == "BEZIER" else len(sp.points)) for sp in d.splines] \
+                == [(w["values"].get("type"), w["n"]) for w in want]
+            if not same:
+                d.splines.clear()
+                for w in want:
+                    sp = d.splines.new(w["values"].get("type", "POLY"))
+                    pts = sp.bezier_points if sp.type == "BEZIER" else sp.points
+                    if w["n"] > len(pts):
+                        pts.add(w["n"] - len(pts))
+            for sp, w in zip(d.splines, want):
+                set_struct_values(sp, {k: x for k, x in w["values"].items() if k != "type"})
+                if sp.type == "BEZIER":
+                    pts = sp.bezier_points
+                    for f in _BEZ_INT:          # handle types first: setting one moves the handles
+                        pts.foreach_set(f, w[f])
+                    for f in _BEZ_3:
+                        pts.foreach_set(f, w[f])
+                else:
+                    pts = sp.points
+                    pts.foreach_set("co", w["co"])
+                    pts.foreach_set("weight", w["weight"])
+                for f in _PT_1:
+                    pts.foreach_set(f, w[f])
+            d.update_tag()
+    except Exception as e:
+        log.error_once(("geometry", str(e)), f"could not restore the shape of {d.name}: {e}", e)
+
+
+SK_PREFIX = "sk."               # the shape keys' own (their animation)
+MATA_PREFIX = "@mata:"          # a recorded material's node tree animation: "@mata:<material id>|<key>"
+
+
+_NO_ANIM = {"anim": None}
+_NO_SLOTS: dict = {}            # active index -> [index], the slots value of an object without slots
+
+
+def anim_of(x) -> dict:
+    """{ANIM_KEY: how x plays its animation} and, when x is the only user of its action, the action
+    (D120 for data other than objects)."""
+    if x.animation_data is None:
+        return _NO_ANIM
+    out = {ANIM_KEY: anim_values(x)}
+    ad = x.animation_data
+    if ad is not None and ad.action is not None and ad.action.library is None:
+        a = ad.action
+        if a.users <= 1 + bool(a.use_fake_user):
+            slot = getattr(ad, "action_slot", None)
+            ident = slot.identifier if slot is not None else None
+            au = idmap.claim(a)
+            if au:
+                out[ACT_PREFIX + au + "|" + (ident or "")] = action_record(a, ident)
+    return out
+
+
+def write_anim_of(x, vals: dict) -> None:
+    for path, v in vals.items():
+        if path.startswith(ACT_PREFIX) and v is not MISSING:
+            write_action(path, v)
+    if ANIM_KEY in vals and vals[ANIM_KEY] is not MISSING:
+        write_anim(x, vals[ANIM_KEY])
+
+
+def assignment_path(path: str) -> bool:
+    """A recorded "which animation it plays" value (an object's, its data's, its shape keys', a
+    material's node tree's)."""
+    return path == ANIM_KEY or path.endswith(("." + ANIM_KEY, "|" + ANIM_KEY))
+
+
 def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
-        return path == "settings" or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
-    return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX))
+        return path in ("settings", COMP_TREE) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX))
+    return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
+                                                       SK_PREFIX, MATA_PREFIX, NG_PREFIX, PART_PREFIX))
 
 
 def _owns_data(ob, d) -> bool:
@@ -1483,19 +2839,27 @@ def _mark_animated(d: dict, anim) -> None:
             d[k] = ANIMATED
 
 
+_NONE = {}                       # a shared empty group: never changed, so a value that is the same
+                                 # object on both sides of a compare is skipped (datarec._same_values)
+_ID_EMPTY4 = {IDPROPS_KEY: _NONE}
+_ID_EMPTY5 = {IDPROPS_KEY: _NONE, SYSPROPS_KEY: _NONE}
+
+
 def id_props(idb, anim=None) -> dict:
     """{IDPROPS_KEY: the datablock's own ID properties, SYSPROPS_KEY: Blender 5's add-on group}. Both
     are always there (empty when nothing is set): a value that disappears would read as a kind that
     isn't recorded, not as properties taken off."""
-    own = _group_json(idb)
+    own = _group_json(idb) or _NONE
+    five = hasattr(idb, "bl_system_properties_get")
+    sysd = (_group_json(_sys_group(idb)) or _NONE) if five else None
+    if own is _NONE and not sysd:
+        return _ID_EMPTY5 if five else _ID_EMPTY4
     out = {IDPROPS_KEY: own}
-    if hasattr(idb, "bl_system_properties_get"):
-        sysd = _group_json(_sys_group(idb))
+    if five:
         out[SYSPROPS_KEY] = sysd
-    else:
-        sysd = None
     if anim:
-        _mark_animated(own, anim)
+        if own is not _NONE:
+            _mark_animated(own, anim)
         if sysd:
             _mark_animated(sysd, anim)
     return out
@@ -1667,6 +3031,55 @@ def _nested_values(m) -> dict:
     return out
 
 
+# ----------------------------------------------------------------------------- particle settings (D137)
+PART_PREFIX = "@part:"
+_PART_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {"active_texture_index", "active_instanceweight_index"})
+
+
+def particle_owner_map() -> dict:
+    """particle settings pointer -> uid of the object that records them (the first recorded object
+    by name with a particle system using them). Kept for one recorder frame."""
+    fc = idmap.frame_cache()
+    if fc is not None and "part_owner" in fc:
+        return fc["part_owner"]
+    from . import datarec
+    users = []
+    for u in datarec.tracked_uids():
+        ob = idmap.find(u)
+        if isinstance(ob, bpy.types.Object) and len(getattr(ob, "particle_systems", ())):
+            users.append((ob.name, u, ob))
+    out = {}
+    for _n, u, ob in sorted(users, key=lambda t: t[0]):
+        for ps in ob.particle_systems:
+            if ps.settings is not None:
+                out.setdefault(ps.settings.as_pointer(), u)
+    if fc is not None:
+        fc["part_owner"] = out
+    return out
+
+
+def owned_particles(ob) -> dict:
+    systems = getattr(ob, "particle_systems", None)
+    if not systems or not len(systems):
+        return {}
+    uid = idmap.uid_of(ob)
+    out = {}
+    owners = None
+    for ps in systems:
+        st = ps.settings
+        if st is None or st.library is not None:
+            continue
+        if st.users > 1 + bool(st.use_fake_user):
+            if owners is None:
+                owners = particle_owner_map()
+            if owners.get(st.as_pointer()) != uid:
+                continue
+        su = idmap.claim(st)
+        if su:
+            out[PART_PREFIX + su] = settings_of(st, _PART_SKIP)
+    return out
+
+
 def _particles(m):
     """A particle system modifier: its settings datablock (by id, and its values in case it is gone
     when the object comes back) and its seed. Baked particles are not part of it."""
@@ -1761,7 +3174,60 @@ def object_body(ob) -> dict:
         "hidden": _hidden(ob),
         "custom": _group_json(ob),              # D114: nested groups and their pointers too
         "sys": _group_json(_sys_group(ob)),     # D114: Blender 5 keeps add-ons' data apart
+        **_data_body(data),                     # D122: other data, to make it again when it's gone
+        **_anim_body(ob),                       # D135: its animation, and its action if it's the only user
     }
+
+
+def _anim_body(ob) -> dict:
+    if ob.animation_data is None:
+        return {}
+    r = _part("the animation", anim_of, ob)
+    return {"anim": r} if r is not _FAILED else {}
+
+
+# data types a deleted object's data can be made again from (D122): bl_rna type -> how to make it
+_REMAKE = {"Camera": lambda n, v: bpy.data.cameras.new(n),
+           "Speaker": lambda n, v: bpy.data.speakers.new(n),
+           "Lattice": lambda n, v: bpy.data.lattices.new(n),
+           "MetaBall": lambda n, v: bpy.data.metaballs.new(n),
+           "Volume": lambda n, v: bpy.data.volumes.new(n),
+           "Curve": lambda n, v: bpy.data.curves.new(n, type="CURVE"),
+           "SurfaceCurve": lambda n, v: bpy.data.curves.new(n, type="SURFACE"),
+           "TextCurve": lambda n, v: bpy.data.curves.new(n, type="FONT")}
+for _lt in ("PointLight", "SunLight", "SpotLight", "AreaLight"):
+    _REMAKE[_lt] = (lambda t: lambda n, v: bpy.data.lights.new(n, type=t))(_lt[:-5].upper())
+OBJECT_TYPES_REMADE = frozenset({"MESH", "EMPTY", "CAMERA", "SPEAKER", "LATTICE", "META", "CURVE", "SURFACE",
+                                 "FONT", "LIGHT", "VOLUME"})
+
+
+def _data_body(d) -> dict:
+    if d is None or d.library is not None or d.bl_rna.identifier not in _REMAKE:
+        return {}
+    t = d.bl_rna.identifier
+    out = {"data_type": t, "data_values": settings_of(d, _DATA_SKIP, DATA_STRUCTS.get(t) or ()),
+           "data_props": id_props(d)}
+    geo = geometry_of(d)
+    if geo is not None:
+        out["data_geom"] = geo
+    return out
+
+
+def _remake_data(body):
+    t = body.get("data_type")
+    make = _REMAKE.get(t)
+    if make is None:
+        return None
+    vals = body.get("data_values") or {}
+    d = make(body.get("data_name") or body.get("name") or "Data", vals)
+    if body.get("data"):
+        d[idmap.UID_PROP] = body["data"]
+        idmap.note(d, body["data"])
+    write_settings(d, vals, DATA_STRUCTS.get(t) or ())
+    write_id_props(d, body.get("data_props") or {})
+    if body.get("data_geom"):
+        write_geometry(d, body["data_geom"])
+    return d
 
 
 class SceneAdapter(Adapter):
@@ -1774,6 +3240,7 @@ class SceneAdapter(Adapter):
         out = {}
         if kind_on("scene_collections"):
             out["collections"] = collection_tree(idb)
+            out[COLL_SETTINGS] = collection_settings(idb)       # D127
         if kind_on("objects"):
             # linked objects are left out: bringing one back would make a local copy of it. Hindsight's
             # own Movie Mode objects (rigmark) are left out and never get an id
@@ -1785,6 +3252,7 @@ class SceneAdapter(Adapter):
             # settings aren't read then (their coming and going is no step, datarec._owner_moves)
             out["settings"] = scene_settings(idb)
             out.update(owned_world(idb))
+            _upd(out, "node groups", scene_groups, idb)          # D133
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:
@@ -1796,10 +3264,24 @@ class SceneAdapter(Adapter):
                 w = idmap.find(path[len(WORLDP_PREFIX):])
                 if w is not None:
                     write_id_props(w, v)
+                    if isinstance(v.get("anim"), dict):
+                        write_anim_of(w, v["anim"])
+                    if isinstance(v.get("tree_anim"), dict) and getattr(w, "node_tree", None) is not None:
+                        write_anim_of(w.node_tree, v["tree_anim"])
+        for path, v in values.items():          # D133: groups no object uses
+            if path.startswith(NG_PREFIX) and isinstance(v, dict):
+                write_group(path[len(NG_PREFIX):], v)
+        if COMP_TREE in values and isinstance(values[COMP_TREE], dict) and getattr(idb, "node_tree", None) is not None:
+            try:
+                write_tree(idb.node_tree, values[COMP_TREE])
+            except Exception as e:
+                log.error_once(("comp_tree", str(e)), f"could not restore the compositor: {e}", e)
         if "settings" in values and values["settings"] is not MISSING and not _movie_playing():
             write_scene_settings(idb, values["settings"])
         if "collections" in values and values["collections"] is not MISSING:
             _write_collection_tree(idb, values["collections"])
+        if COLL_SETTINGS in values and values[COLL_SETTINGS] is not MISSING:
+            write_collection_settings(idb, values[COLL_SETTINGS])
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
             return
         want = set(values["objects"])
@@ -1869,7 +3351,20 @@ def scene_settings(sc) -> dict:
         st = _scene_struct(sc, path)
         if st is not None:
             out[path] = struct_values(st, anim=anim or None)
+    out["anim"] = anim_of(sc)           # D125: the scene's own animation (frame range keys, ...)
+    vls = {}
+    for vl in sc.view_layers:           # D128: passes, overrides, filters, add-ons' view layer data
+        r = {"values": struct_values(vl, _VL_SKIP)}
+        ee = getattr(vl, "eevee", None)
+        if ee is not None:
+            r["eevee"] = struct_values(ee)
+        r.update(id_props(vl))
+        vls[vl.name] = r
+    out["view_layers"] = vls
     return out
+
+
+_VL_SKIP = frozenset(_UI_PROPS | {"name", "active_aov_index", "active_lightgroup_index"})
 
 
 def write_scene_settings(sc, rec) -> None:
@@ -1881,6 +3376,16 @@ def write_scene_settings(sc, rec) -> None:
             st = _scene_struct(sc, path)
             if st is not None and path in rec:
                 set_struct_values(st, rec[path] or {})
+        if isinstance(rec.get("anim"), dict):
+            write_anim_of(sc, rec["anim"])
+        for vl in sc.view_layers:
+            r = (rec.get("view_layers") or {}).get(vl.name)
+            if not isinstance(r, dict):
+                continue
+            set_struct_values(vl, r.get("values") or {})
+            if r.get("eevee") and getattr(vl, "eevee", None) is not None:
+                set_struct_values(vl.eevee, r["eevee"])
+            write_id_props(vl, r)
     except Exception as e:
         log.error_once(("scene_settings", str(e)), f"could not restore the scene settings: {e}", e)
 
@@ -1899,11 +3404,103 @@ def owned_world(sc) -> dict:
     if not wu:
         return {}
     out = {WORLD_PREFIX + wu: material_record(w, idmap.uid_of(sc))}
-    out[WORLDP_PREFIX + wu] = id_props(w, animated_paths(w) if w.animation_data is not None else None)
+    p = dict(id_props(w, animated_paths(w) if w.animation_data is not None else None))   # (a copy: id_props
+    p["anim"] = anim_of(w)                                           # D125     can give a shared constant)
+    if getattr(w, "node_tree", None) is not None:
+        p["tree_anim"] = anim_of(w.node_tree)
+    out[WORLDP_PREFIX + wu] = p
     return out
 
 
 WORLDP_PREFIX = "worldp:"
+COMP_TREE = "comp_tree"
+
+
+def scene_groups(sc) -> dict:
+    """D133: node groups no recorded object uses (the compositor's on Blender 5, add-ons' custom
+    node trees, groups kept for later), recorded with the first recorded scene by name; and 4.2's
+    compositor tree, which belongs to the scene."""
+    from . import datarec
+    scenes = sorted(x.name for x in bpy.data.scenes if x.library is None and datarec.is_tracked(x))
+    out = {}
+    nt = getattr(sc, "node_tree", None)          # Blender 4: the compositor's own tree
+    if nt is not None:
+        out[COMP_TREE] = capture_tree(nt)
+    if (scenes and scenes[0] != sc.name) or not len(bpy.data.node_groups):
+        return out
+    used = group_owner_map()
+    uid = idmap.uid_of(sc)
+    for g in bpy.data.node_groups:
+        if g.library is not None or g.as_pointer() in used:
+            continue
+        gu = idmap.claim(g)
+        if gu:
+            out[NG_PREFIX + gu] = group_record(g, uid)
+    return out
+
+
+# ----------------------------------------------------------------------------- collection settings (D127)
+COLL_SETTINGS = "coll_settings"
+_COLL_SKIP = frozenset(_UI_PROPS | _ID_SKIP | {"active_exporter_index"})
+_LC_FLAGS = ("exclude", "hide_viewport", "holdout", "indirect_only")
+
+
+def _walk_colls(c, out):
+    for ch in c.children:
+        out.append(ch)
+        _walk_colls(ch, out)
+
+
+def collection_settings(sc) -> dict:
+    """Every collection's own settings (hide in viewport and render, selectable, colour tag, Line
+    Art, instance offset) and, per view layer, each collection's Exclude, Hide in Viewport, Holdout
+    and Indirect Only."""
+    colls = []
+    _walk_colls(sc.collection, colls)
+    vals = {}
+    for c in colls:
+        if c.library is not None:
+            continue
+        cu = idmap.claim(c)
+        if cu:
+            vals[cu] = struct_values(c, _COLL_SKIP)
+    layers = {}
+    for vl in sc.view_layers:
+        rows = {}
+        stack = list(vl.layer_collection.children)
+        while stack:
+            lc = stack.pop()
+            cu = idmap.uid_of(lc.collection)
+            if cu:
+                rows[cu] = [bool(getattr(lc, f)) for f in _LC_FLAGS]
+            stack.extend(lc.children)
+        layers[vl.name] = rows
+    return {"colls": vals, "layers": layers}
+
+
+def write_collection_settings(sc, rec) -> None:
+    if not isinstance(rec, dict):
+        return
+    try:
+        for cu, v in (rec.get("colls") or {}).items():
+            c = idmap.find(cu)
+            if c is not None and isinstance(v, dict):
+                set_struct_values(c, v)
+        for vl in sc.view_layers:
+            rows = (rec.get("layers") or {}).get(vl.name)
+            if not rows:
+                continue
+            stack = list(vl.layer_collection.children)
+            while stack:
+                lc = stack.pop()
+                want = rows.get(idmap.uid_of(lc.collection))
+                if want:
+                    for f, w in zip(_LC_FLAGS, want):     # Exclude first: it changes the others
+                        if bool(getattr(lc, f)) != w:
+                            setattr(lc, f, w)
+                stack.extend(lc.children)
+    except Exception as e:
+        log.error_once(("coll_settings", str(e)), f"could not restore collection settings: {e}", e)
 
 
 def collection_tree(scene) -> list:
@@ -1986,6 +3583,12 @@ def _recreate_object(scene, uid, body, snap):
         if body.get("data"):
             data[idmap.UID_PROP] = body["data"]
             idmap.note(data, body["data"])
+    if data is None and body.get("data_type"):
+        try:
+            data = _remake_data(body)                # D122: its data left the file: made again
+        except Exception as e:
+            log.error_once(("remake", str(e)), f"could not make {body.get('name')}'s data again: {e}", e)
+            data = None
     if data is None and body.get("type") not in ("EMPTY",):
         log.warn(f"{body.get('name')} can't be brought back: its data is gone")
         return None
@@ -2039,6 +3642,8 @@ def _recreate_object(scene, uid, body, snap):
     _write_group(ob, body.get("custom") or {})
     if body.get("sys"):
         _write_group(_sys_group(ob, create=True), body["sys"])
+    if isinstance(body.get("anim"), dict):
+        write_anim_of(ob, body["anim"])         # D135
     return ob
 
 
@@ -2049,9 +3654,10 @@ _OBJECT_KINDS = {"collections": "collections", "hide": "visibility", "constraint
 def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
     if adapter_id == "scene":
-        if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings") or path.startswith((WORLD_PREFIX, WORLDP_PREFIX)):
+        if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings", COMP_TREE) or path.startswith(
+                (WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX)):
             return None
-        return "scene_collections" if path == "collections" else "objects"
+        return "scene_collections" if path in ("collections", COLL_SETTINGS) else "objects"
     if adapter_id == "object":
         return _OBJECT_KINDS.get(path)
     if adapter_id == "rna":

@@ -25,6 +25,7 @@ CHANNEL_TYPES = {
     "FLOAT_VECTOR": (np.float32, 3, "vector"),
     "FLOAT2": (np.float32, 2, "vector"),
     "INT32_2D": (np.int32, 2, "value"),
+    "INT16_2D": (np.int16, 2, "value"),      # custom_normal, Blender 5.0+
     "FLOAT_COLOR": (np.float32, 4, "color"),
     "BYTE_COLOR": (np.float32, 4, "color_srgb"),
     "QUATERNION": (np.float32, 4, "value"),
@@ -265,6 +266,12 @@ class Settings:
     truncation_threshold: int = 10     # confirm before dropping >= this many future steps
     save_mode: str = "SIDECAR"         # SIDECAR | EMBED | BOTH
     crash_recovery: str = "LAST_SAVED" # LAST_SAVED | INTERRUPTED
+    edit_steps_max: int = 300_000      # vertices: Record everything records Edit Mode per operation up to
+                                       # this, per visit above (about 20 to 27 ms per 100k per operation)
 
+
+# The crash journal's step blobs are written on the main thread at every stroke: lz4 costs about
+# 60% of zstd level 3 there and the journal is temporary. History, packer and save keep the user's codec.
+JOURNAL_CODEC = "lz4"
 
 SETTINGS = Settings()

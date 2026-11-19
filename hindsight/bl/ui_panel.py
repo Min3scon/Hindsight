@@ -453,6 +453,27 @@ class VIEW3D_PT_hindsight_warnings(_SubPanel, bpy.types.Panel):
         col = self.layout.column(align=True)
         for sev, text in (res if res is not None else _warnings(context)):
             wrap(col, context, text, 'ERROR' if sev == "ERROR" else 'INFO')
+        _draw_bring_back(col, context)
+
+
+def _draw_bring_back(layout, context) -> None:
+    """L12: a button per deleted object a step refers to (not collections: the global history
+    brings those back)."""
+    try:
+        obj = _ctx_active(context)
+        if obj is None:
+            return
+        adapters, datarec = _mod("adapters"), _mod("datarec")
+        seen = set()
+        for _p, ref in adapters.missing_refs(obj):
+            if ref in seen or ref in adapters.COLL_NAMES:
+                continue
+            seen.add(ref)
+            op = layout.operator("hindsight.bring_back", text=f"Bring back {datarec.ref_label(ref)}",
+                                 icon='LOOP_BACK')
+            op.uid = ref
+    except Exception:
+        return
 
 
 def draw_step_list(layout, context, around=12):
@@ -541,11 +562,13 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
             return
         if not sh.use_global:
             wrap(layout, context, "Movie Mode plays the global history. Turn on global history first.", 'INFO')
-        col = layout.column()
+        col = layout.column(align=True)
         col.active = bool(sh.movie_mode)
-        col.use_property_split = True
-        col.use_property_decorate = True
-        col.prop(sh, "movie_step", text="Step")
+        # labels inside the fields: split rows cut "Frames per step" at the sidebar's usual width.
+        # Step keeps its keyframe dot (Quick auto key keys it)
+        row = col.row(align=True)
+        row.prop(sh, "movie_step", text="Step")
+        row.prop_decorator(sh, "movie_step")
         col.prop(sh, "frames_per_step", text="Frames per step")
         col.prop(sh, "movie_steps_per_frame", text="Steps per frame")
         length = _movie_length(context)

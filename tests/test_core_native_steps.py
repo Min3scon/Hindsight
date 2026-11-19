@@ -2,9 +2,8 @@
 
 History.goto hands runs of packed DELTA steps of one object to hindsight_native.apply_steps, which
 applies them in Rust and stops before any step it doesn't take; goto crosses that step in Python.
-Every test here runs the same jumps on twin histories, once with the engine (apply_steps), once
-with an engine that lacks apply_steps (a module from an older release: the four functions of API 1
-only) and once with no engine (native.lib None, the reference), and compares after each jump: the
+Every test here runs the same jumps on twin histories, once with the engine (apply_steps) and once
+with tests/reference/history.py (the Python loop, one step at a time), and compares after each jump: the
 cursor, the changed keys per object (and the order of the objects), every array (dtype, shape,
 bytes), the removed channels, the recorded values, and any exception (type and message).
 
@@ -26,6 +25,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import test_core_codec as tc                                     # noqa: E402  (damaged-blob maker)
 from hindsight.core import codec, delta, native, step as stepmod   # noqa: E402
 from hindsight.core.history import History, MeshState           # noqa: E402
+from reference.history import History as RefHistory                # noqa: E402
 from hindsight.core.types import (                              # noqa: E402
     ADD, CHANNEL_TYPES, DATA, DELTA, MISSING, POSITION_KEY, TOPO, XOR,
     ChannelDelta, DataChange, Entry, Snapshot, Step, key_dtype, key_width, make_key,
@@ -37,16 +37,7 @@ KEYS = [make_key(f"c_{t.lower()}", "POINT", t) for t in CHANNEL_TYPES]
 WEIRD32 = tc.WEIRD32
 
 
-class OldModule:
-    """The engine as an older release ships it: no apply_steps (per-function fallback)."""
-    API = 1
-
-    def __init__(self, m):
-        for name in ("diff", "apply", "pack", "unpack"):
-            setattr(self, name, getattr(m, name))
-
-
-ENGINES = [("native", LIB), ("old module", OldModule(LIB) if LIB is not None else None), ("python", None)]
+ENGINES = [("native", History), ("reference", RefHistory)]       # History.goto against the Python loop
 
 
 def skip(name):
@@ -211,8 +202,8 @@ def pack(rng, st, mix):
     return Entry(blob=b, meta=st.meta())
 
 
-def twin(entries, start, cursor):
-    h = History("A", members=sorted(start))
+def twin(entries, start, cursor, cls=History):
+    h = cls("A", members=sorted(start))
     h.entries = [Entry(e.step, e.blob, dict(e.meta)) for e in entries]
     h.cursor = cursor
     states = {t: MeshState(s.counts, {k: v.copy() for k, v in s.arrays.items()}, s.values) for t, s in start.items()}
@@ -238,17 +229,13 @@ def outcome(fn):
 def run_twins(entries, start, cursor, plan, label):
     """Runs the same gotos on one twin per engine; all must agree after every jump."""
     twins = []
-    for name, lib in ENGINES:
-        h, states = twin(entries, start, cursor)
-        twins.append((name, lib, h, states))
+    for name, cls in ENGINES:
+        h, states = twin(entries, start, cursor, cls)
+        twins.append((name, cls, h, states))
     for step_no, pos in enumerate(plan):
         res = []
-        for name, lib, h, states in twins:
-            native.lib = lib
-            try:
-                o = outcome(lambda: h.goto(pos, states))
-            finally:
-                native.lib = LIB
+        for name, cls, h, states in twins:
+            o = outcome(lambda: h.goto(pos, states))
             res.append((name, o, h.cursor, state_key(states)))
         ref = res[-1]
         for r in res[:-1]:
@@ -522,14 +509,10 @@ def test_hostile_calls():
         done, _ = L.apply_steps([b], a, True, int(rng.integers(0, 3)))
         if done:
             # whatever it applied must be exactly what Python makes of the blob
-            native.lib = None
-            try:
-                stp = stepmod.step_from_bytes(b)
-                hh = History("A")
-                hh.entries = [Entry(stp)]
-                hh.goto(1, {stp.target: MeshState({"POINT": 1000}, ref)})   # the header may name another
-            finally:
-                native.lib = LIB
+            stp = stepmod.step_from_bytes(b)
+            hh = RefHistory("A")
+            hh.entries = [Entry(stp)]
+            hh.goto(1, {stp.target: MeshState({"POINT": 1000}, ref)})   # the header may name another
             assert a[key].tobytes() == ref[key].tobytes(), (stp.deltas, b[:80])
             agree += 1
         else:
@@ -587,7 +570,7 @@ def test_property():
 def test_old_module_and_loader():
     """The engine must be API 3: a module from an older release (API 1 or 2, no codecs or step
     container) or a newer one (or none at all) is refused with EngineMissing, in every mode. The
-    module without apply_steps (OldModule above) is still a valid delta.py engine in-process."""
+    engine is one module: there is no older-module mode."""
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
     def fake(api):

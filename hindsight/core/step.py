@@ -35,8 +35,8 @@ import struct
 import numpy as np
 
 from . import native as _native
-from .delta import NORMAL, QUICK, pack_delta
-from .types import ADD, DATA, DELTA, JOIN, MISSING, TOPO, XOR, ChannelDelta, DataChange, Snapshot, Step
+from .delta import NORMAL, QUICK
+from .types import key_width, ADD, DATA, DELTA, JOIN, MISSING, TOPO, XOR, ChannelDelta, DataChange, Snapshot, Step
 
 _N = _native.ENGINE
 
@@ -136,13 +136,38 @@ def records_from_bytes(b) -> list:
 
 
 # --------------------------------------------------------------------------- writing
+def _delta_args(d) -> tuple:
+    """A ChannelDelta as the engine takes it: its arrays are borrowed, packed in the engine."""
+    idx = np.ascontiguousarray(d.idx, dtype=np.uint32).reshape(-1)
+    v = np.ascontiguousarray(d.vals)
+    w = v.shape[1] if v.ndim == 2 else key_width(d.key)
+    return (d.key, idx, v.reshape(-1), v.dtype.itemsize, w, bool(d.exists[0]), bool(d.exists[1]), d.op == ADD)
+
+
+def record_step(kind, seq, t, label, mode, target, channels, extra=None, codec="auto", effort=NORMAL,
+                strong=False):
+    """The blob of a stroke in one engine call (diff, packing and codec, GIL released), or None if no
+    channel changed. channels: [(key, old, new, exists before, exists after)] with flat native
+    arrays; old or new None for a channel that appears or goes. Same bytes as diffing each channel,
+    building the Step and step_to_bytes (the stroke's DELTA step)."""
+    chs = []
+    for key, old, new, e0, e1 in channels:
+        ref = new if new is not None else old
+        w = key_width(key)
+        o = None if old is None else np.ascontiguousarray(old).reshape(-1).view(np.uint8)
+        n = None if new is None else np.ascontiguousarray(new).reshape(-1).view(np.uint8)
+        chs.append((key, o, n, np.dtype(ref.dtype).itemsize, w, bool(e0), bool(e1)))
+    return _N.record(kind, int(seq), float(t or 0.0), label or "", mode or "", target or "",
+                     _dumps(extra) if extra else b"", chs, effort == QUICK, codec, strong)
+
+
 def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
     """Format 3 blob. effort QUICK (0) is for the crash-recovery journal, on the main thread."""
     if step.kind not in _KINDS:
         raise ValueError(f"unknown step kind {step.kind!r}")
     extra = dict(step.extra or {})
     snaps = extra.pop(SNAPSHOTS_KEY, None)
-    parts = [pack_delta(d, effort) for d in step.deltas]
+    parts = [_delta_args(d) for d in step.deltas]
     # snapshots stay lists of buffers until the engine joins the body (no full-size copies before it)
     before = _snapshot_parts(step.before) if step.before is not None else None
     after = _snapshot_parts(step.after) if step.after is not None else None

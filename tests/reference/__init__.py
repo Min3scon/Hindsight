@@ -2,18 +2,23 @@
 oracles for tests. Nothing under hindsight/ may import this package (tests/test_core_reference.py
 fails if it does).
 
-`pure()` runs a block with the engine's per-function delta paths off (hindsight.core.native.lib is
-None), so a reference step encode or decode is Python all the way down.
+`pure()` runs a block with the Python reference in place of the engine's delta functions.
 """
 import contextlib
 
 
 @contextlib.contextmanager
 def pure():
-    from hindsight.core import native
-    saved = native.lib
-    native.lib = None
+    """Run a block with hindsight.core.delta's functions replaced by the reference (numpy) ones.
+    (History: use reference.history.History, which crosses steps one at a time in Python.)"""
+    from hindsight.core import delta
+    from . import delta as ref
+    names = ("diff", "apply", "pack_delta", "unpack_delta", "unpack_at", "packed_size")
+    saved = {n: getattr(delta, n) for n in names}
+    for n in names:
+        setattr(delta, n, getattr(ref, n))
     try:
         yield
     finally:
-        native.lib = saved
+        for n, f in saved.items():
+            setattr(delta, n, f)

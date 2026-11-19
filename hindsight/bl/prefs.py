@@ -172,6 +172,29 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
         default=_KIND_DEFAULT,
         update=_update_kinds,
     )
+    record_texture_painting: BoolProperty(
+        name="Record texture painting",
+        description=("Record each texture painting stroke as a step. Off by default. It reads the whole image "
+                     "after every stroke. Images over 2K are left out"),
+        default=False)
+    record_multires: BoolProperty(
+        name="Record Multires",
+        description=("Record one step per Sculpt Mode visit on an object with a Multires modifier. "
+                     "Off by default. "
+                     "Off: recording pauses on a Multires object"),
+        default=False)
+    record_dyntopo: BoolProperty(
+        name="Record Dyntopo",
+        description=("Record each Dyntopo stroke as a step, on meshes up to 200,000 faces. Each step holds the "
+                     "whole mesh: about a quarter of a second per stroke at 100,000 faces. Off by default. "
+                     "Off: recording pauses while Dyntopo is on"),
+        default=False)
+    edit_steps_max: IntProperty(
+        name="Edit Mode steps up to",
+        description=("With Record everything, Edit Mode changes are recorded one operation at a time on meshes "
+                     "up to this many vertices, and as one step per visit on bigger ones. Each operation costs "
+                     "about 25 ms per 100,000 vertices"),
+        default=300_000, min=10_000, max=5_000_000, update=_update)
     welcomed: BoolProperty(default=False, options={'HIDDEN'})
 
     def draw(self, context):
@@ -193,6 +216,10 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
 
         col = section("History", 'RECOVER_LAST')
         col.prop(self, "record_scope")
+        col.prop(self, "record_texture_painting")
+        col.prop(self, "record_multires")
+        col.prop(self, "record_dyntopo")
+        col.prop(self, "edit_steps_max")
         col.prop(self, "max_steps")
         col.prop(self, "truncation_threshold")
 

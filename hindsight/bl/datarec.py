@@ -15,7 +15,7 @@ import time
 import bpy
 
 from ..core.history import DATA_MARK, MeshState
-from ..core.types import DATA, MISSING, DataChange, Step
+from ..core.types import DATA, JOURNAL_CODEC, MISSING, DataChange, Step
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
@@ -576,6 +576,7 @@ def finish_operation(label: str) -> list:
     check_exclusion()
     refresh_mesh_users()
     adapters.forget_selected_values()     # D117
+    adapters.forget_loose_groups()        # D133
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
     try:
@@ -621,13 +622,8 @@ def _same_values(old: dict, new: dict) -> bool:
         # a value that is the same object on both sides (kept records: a material's until the
         # material changes, D112; settings until their datablock changes, D117) is the same value:
         # only the others are compared
-        a, b = {}, {}
-        for k, v in new.items():
-            o = old[k]
-            if o is not v:
-                a[k] = o
-                b[k] = v
-        return marshal.dumps(a, 2) == marshal.dumps(b, 2)
+        ks = [k for k, v in new.items() if old[k] is not v]
+        return marshal.dumps([old[k] for k in ks], 2) == marshal.dumps([new[k] for k in ks], 2)
     except Exception:
         return False
 
@@ -687,18 +683,25 @@ def _data_diff(old: dict, new: dict) -> dict:
     """_diff without the values that only come and go with ownership (see _owner_moves): after
     Blender's undo another object can own a shared mesh than when the history was made."""
     out = _diff(old, new)
-    for k in [k for k, (a, b) in out.items()
-              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+    for k in _moves_only(out):
         del out[k]
     return out
+
+
+def _moves_only(changes: dict) -> list:
+    """The keys of changes that only come and go with ownership. An action that appears or goes
+    while the object starts or stops playing one (the first keyframe, D120) is a change of its own."""
+    assigned = any(k[0] == "object" and adapters.assignment_path(k[1]) for k in changes)
+    return [k for k, (a, b) in changes.items()
+            if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])
+            and not (assigned and k[1].startswith(adapters.ACT_PREFIX))]
 
 
 def _owner_moves(st, changes: dict) -> None:
     """Values an object records for data it owns (its mesh's properties, the materials it records)
     come and go with the ownership: another user deleted, a material put in a slot. That isn't a change
     of the data, so it only becomes the new baseline (no step)."""
-    for k in [k for k, (a, b) in changes.items()
-              if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])]:
+    for k in _moves_only(changes):
         _a, b = changes.pop(k)
         if b is MISSING:
             st.values.pop(k, None)
@@ -840,7 +843,7 @@ def _commit(label: str, uids, mesh: bool) -> list:
         if removed:
             rt._journal("TRUNC", {"hist": h.uid, "keep": at})
         entry = h.entries[-1]
-        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(rt.SETTINGS.compression, 0))
+        rt._journal("STEP", {"hist": h.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
         rt._enforce(h)
         steps.append(step)
     if steps:
@@ -881,6 +884,58 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
     sync_taken_names()
     sync_missing_refs(idb, st, data_keys)
     _DIRTY.pop(idmap.uid_of(idb), None)
+
+
+def find_deleted(uid):
+    """(scene, body, mesh snapshot) of the newest recorded deletion of uid at or before a scene
+    history's cursor, or None."""
+    rt = _rt()
+    key = f"body:{uid}"
+    for sc in bpy.data.scenes:
+        su = idmap.uid_of(sc)
+        h = rt.reg().history_for(su) if su else None
+        if h is None:
+            continue
+        for e in reversed(h.entries[:h.cursor]):
+            step = e.load()
+            for r in step.records:
+                if r.adapter != "scene":
+                    continue
+                ch = r.changes.get(key)
+                if ch and ch[0] is not MISSING and ch[1] is MISSING:
+                    snap = ((step.extra or {}).get("_snapshots") or {}).get(uid)
+                    return sc, ch[0], snap
+    return None
+
+
+BROUGHT_BACK = "Bring Back"
+
+
+def bring_back(uid: str):
+    """L12: make a deleted object a step's reference waits for exist again, as a new step of the
+    scene's history (its own history can't, the global history could only by going back). Returns
+    the object, or None."""
+    if not uid or idmap.find(uid) is not None:
+        return None
+    hit = find_deleted(uid)
+    if hit is None:
+        body = _body(uid)
+        if body is None:
+            return None
+        hit = (bpy.context.scene, body, None)
+    sc, body, snap = hit
+    ob = adapters._recreate_object(sc, uid, body, snap)
+    if ob is None:
+        return None
+    if isinstance(body, dict) and body.get("parent"):
+        par = idmap.find(body["parent"])
+        if par is not None:
+            ob.parent = par
+            ob.matrix_parent_inverse = adapters.to_rna(body["parent_inverse"])
+    idmap.forget()
+    finish_operation(BROUGHT_BACK)            # the scene records it coming back; references resolve
+    resolve_missing_refs()
+    return ob
 
 
 def ref_label(ref) -> str:

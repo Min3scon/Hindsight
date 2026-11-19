@@ -14,6 +14,7 @@ test models to test_rounds/pass<N>/ (WebP). Never copies anything from Round E (
 """
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -25,7 +26,8 @@ sys.path.insert(0, str(HERE))
 import hs_ui  # noqa: E402
 
 ROOT = hs_ui.ROOT
-GEOM = [40, 40, 1600, 900]
+# Under Xvfb (HS_UI_XSHOT) screenshots crop the X root at the bottom left: the window must sit at 0, 0
+GEOM = [0, 0, 1600, 900] if os.environ.get("HS_UI_XSHOT") else [40, 40, 1600, 900]
 
 ROUNDS = {
     "A": [("install_gui", {}, "fresh-gui"), ("audit_register", {}, ""), ("lifecycle", {}, "fresh")],

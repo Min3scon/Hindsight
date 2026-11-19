@@ -15,7 +15,7 @@ from mathutils import Matrix
 
 from ..core.history import MeshState, TOPO_MARK
 from ..core.step import SNAPSHOTS_KEY
-from ..core.types import JOIN, SETTINGS, Step, split_key
+from ..core.types import JOIN, JOURNAL_CODEC, Step, split_key
 from . import log, meshio, runtime
 
 MAP_ATTR = "_hs_src"
@@ -199,7 +199,7 @@ def join_with_history(context) -> bool:
         runtime._journal("RESET", {"hist": hist.uid})
         for i, e in enumerate(hist.entries):
             runtime._journal("STEP", {"hist": hist.uid, "at": i},
-                             lambda e=e: e.to_bytes(SETTINGS.compression, 0))
+                             lambda e=e: e.to_bytes(JOURNAL_CODEC, 0))
 
     # (7) the JOIN step
     step = Step(seq=R.new_seq(), label="Join", mode="OBJECT", target=a_uid, time=time.time(),
@@ -211,7 +211,7 @@ def join_with_history(context) -> bool:
     at = hist.cursor
     hist.push(step)
     entry = hist.entries[-1]
-    runtime._journal("STEP", {"hist": hist.uid, "at": at}, lambda e=entry: e.to_bytes(SETTINGS.compression, 0))
+    runtime._journal("STEP", {"hist": hist.uid, "at": at}, lambda e=entry: e.to_bytes(JOURNAL_CODEC, 0))
 
     # (8) baselines
     runtime.ensure_state(A, refresh=True)

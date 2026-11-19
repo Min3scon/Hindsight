@@ -119,8 +119,23 @@ def test_mesh_settings_and_symmetry():
     assert round(a.data.remesh_voxel_size, 5) != 0.05
 
 
+def test_volume_settings():
+    """D138: a volume's settings (file, frames, display and render settings) are recorded."""
+    L.fresh_scene()
+    bpy.ops.object.volume_add(location=(0, 4, 0))
+    ob = C.active_object
+    v = ob.data
+    read = lambda: (v.frame_offset, round(v.display.density, 4), v.render.space, v.sequence_mode)
+    run_ops(ob, read, (
+        ("offset", lambda: setattr(v, "frame_offset", 5)),
+        ("density", lambda: setattr(v.display, "density", 0.4)),
+        ("space", lambda: setattr(v.render, "space", "WORLD" if v.render.space != "WORLD" else "OBJECT")),
+        ("sequence", lambda: setattr(v, "sequence_mode", "REPEAT"))))
+
+
 if __name__ == "__main__":
     H.run(test_object_settings)
     H.run(test_light_camera_curve_text_data)
     H.run(test_mesh_settings_and_symmetry)
+    H.run(test_volume_settings)
     H.finish()

@@ -87,6 +87,36 @@ def test_lists_come_back():
     assert snap(ob) == states[0], "back at the start: no groups, no keys, one UV map"
 
 
+def test_keyed_shape_key_value_is_not_a_step():
+    """D124: a shape key value an animation sets changes with the frame: no step when the frame
+    changes, and going back over another change leaves it to the animation."""
+    L.fresh_scene()
+    a = bpy.data.objects["A"]
+    a.shape_key_add(name="Basis")
+    k = a.shape_key_add(name="Smile")
+    k.value = 0.0
+    k.keyframe_insert("value", frame=1)
+    k.value = 1.0
+    k.keyframe_insert("value", frame=20)
+    C.scene.frame_set(5)
+    L.track_all()
+    L.tick_like("baseline")
+    h = runtime.history_of(a)
+    n = len(h.entries) if h else 0
+    for f in (10, 15):
+        C.scene.frame_set(f)
+        L.tick_like("frame")
+    h = runtime.history_of(a)
+    assert (len(h.entries) if h else 0) == n, [e.meta.get("label") for e in h.entries]
+    at15 = round(k.value, 4)
+    k.slider_max = 2.0
+    L.tick_like("slider")
+    h = runtime.history_of(a)
+    runtime._goto_history(h, h.cursor - 1, True)
+    assert round(k.slider_max, 4) == 1.0 and round(k.value, 4) == at15, (k.slider_max, k.value, at15)
+
+
 if __name__ == "__main__":
     H.run(test_lists_come_back)
+    H.run(test_keyed_shape_key_value_is_not_a_step)
     H.finish()
