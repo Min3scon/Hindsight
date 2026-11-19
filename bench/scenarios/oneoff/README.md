@@ -9,3 +9,8 @@ with the median save and open times, the .blend size and the memory peak while s
 `replay_ab.py CODE_ROOT [N]` (R064): crash recovery of N (3,000) unsaved strokes at 100k vertices; prints one
 `AB {...}` line with the open time, how much the process grew over the open, the history's size and how many
 of its steps are decoded.
+
+`fingerprint_ab.py CODE_ROOT [K]` (R060): mesh fingerprints at 100k and 1M vertices, `runtime.saved_prints()` with K (3)
+recorded 1M meshes, and opening that file (`check_outside_changes` alone and the whole open); prints one `AB {...}` line
+with the engine's version. A venv holds one engine version, so put each side's own engine (its wheel unpacked) first
+with PYTHONPATH (no `-I`): `PYTHONPATH=<engine folder> <bpy python> bench/scenarios/oneoff/fingerprint_ab.py CODE_ROOT`.
