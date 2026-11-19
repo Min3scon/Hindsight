@@ -1,0 +1,21 @@
+R070: the data recorder's "nothing changed" check (datarec._same_values) with the engine's same_values.
+500 cubes, a third with a constraint, all recorded with Record everything (bench/scenarios/datarec.py).
+
+1) bench/ab.py, separate processes alternating A B, 5 rounds, bpy 5.3.0 module, load 7 to 8.6 (another agent's
+   suite was running): A = fc64c72 with its engine 0.8.0, B = R070 (13d8666) with engine 0.9.0. Raw rounds in
+   ab_r070_same_values.json, table in ab_r070_same_values.md:
+| scenario | r070_A_fc64c72 min | r070_A_fc64c72 med | r070_B min | r070_B med | r070_B/r070_A_fc64c72 min | r070_B/r070_A_fc64c72 med | spread r070_A_fc64c72 | spread r070_B | mem r070_A_fc64c72 tm/hwm MB | mem r070_B tm/hwm MB |
+|---|---|---|---|---|---|---|---|---|---|---|
+| dr_finish_nochange_500 | 42.22 | 54.31 | 35.3 | 44.53 | 0.8362 | 0.8199 | 26% | 63% |  |  |
+| dr_on_update_500 | 0.1395 | 0.181 | 0.14 | 0.2118 | 1.004 | 1.17 | 33% | 50% |  |  |
+| dr_finish_move_500 | 43.26 | 56.62 | 41.92 | 54.02 | 0.969 | 0.9541 | 20% | 72% | 0.46 / 0.465 | 0.461 / 0.402 |
+
+2) In-process toggle (bench/scenarios/oneoff/same_values_ab.py, 15 rounds, each round 5 calls per case on each
+   side, order A B / B A alternating; engine 0.9.0 for both sides): A = _same_values before R070 (marshal compare
+   alone), B = R070. same_values_share = the time spent inside _same_values during one no-change operation
+   (501 calls). Medians of the round medians and best, ms; ratio = B/A by medians. Five separate runs:
+bpy53 AB {"nochange": {"A_med": 49.16, "B_med": 43.637, "A_min": 39.988, "B_min": 36.78, "ratio_med": 0.888}, "move": {"A_med": 53.157, "B_med": 46.832, "A_min": 43.628, "B_min": 38.22, "ratio_med": 0.881}, "same_values_share": {"A_med": 7.434, "B_med": 3.163, "A_min": 6.408, "B_min": 2.459, "ratio_med": 0.425}, "rounds": 15, "load": ["4.80", "4.37", "2.93"]}
+bpy53 AB {"nochange": {"A_med": 51.827, "B_med": 46.474, "A_min": 46.114, "B_min": 37.043, "ratio_med": 0.897}, "move": {"A_med": 60.364, "B_med": 51.488, "A_min": 52.252, "B_min": 45.823, "ratio_med": 0.853}, "same_values_share": {"A_med": 8.177, "B_med": 3.34, "A_min": 6.727, "B_min": 2.905, "ratio_med": 0.408}, "rounds": 15, "load": ["4.25", "4.27", "2.93"]}
+bpy53 AB {"nochange": {"A_med": 50.289, "B_med": 44.225, "A_min": 40.46, "B_min": 35.969, "ratio_med": 0.879}, "move": {"A_med": 53.307, "B_med": 49.848, "A_min": 42.762, "B_min": 39.107, "ratio_med": 0.935}, "same_values_share": {"A_med": 7.466, "B_med": 3.2, "A_min": 6.186, "B_min": 2.737, "ratio_med": 0.429}, "rounds": 15, "load": ["4.23", "4.27", "2.97"]}
+bpy42 AB {"nochange": {"A_med": 44.278, "B_med": 38.873, "A_min": 35.792, "B_min": 31.27, "ratio_med": 0.878}, "move": {"A_med": 47.163, "B_med": 42.091, "A_min": 38.915, "B_min": 34.12, "ratio_med": 0.892}, "same_values_share": {"A_med": 7.056, "B_med": 2.689, "A_min": 5.765, "B_min": 2.197, "ratio_med": 0.381}, "rounds": 15, "load": ["3.87", "4.18", "2.98"]}
+bpy42 AB {"nochange": {"A_med": 42.988, "B_med": 39.396, "A_min": 34.865, "B_min": 31.342, "ratio_med": 0.916}, "move": {"A_med": 46.227, "B_med": 42.524, "A_min": 38.242, "B_min": 33.332, "ratio_med": 0.92}, "same_values_share": {"A_med": 7.254, "B_med": 2.786, "A_min": 5.835, "B_min": 2.227, "ratio_med": 0.384}, "rounds": 15, "load": ["3.53", "4.06", "2.98"]}

@@ -34,7 +34,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 7;
+const API: u32 = 8;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -184,6 +184,7 @@ mod codec;
 mod step;
 mod crc;
 mod hash;
+mod same;
 
 // ------------------------------------------------------------------------------------ diff
 fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut [u8]) {
@@ -198,38 +199,101 @@ fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut
 
 /// Indices of the rows (of `w` values of `isz` bytes) whose bits differ, and new - old of those
 /// rows (wrapping), as delta.diff; None if nothing differs. Sizes must match (the caller checks).
+/// Large arrays are split over threads as `diff` does (R071); the result is the same.
 fn diff_core(a: &[u8], b: &[u8], isz: usize, w: usize) -> Option<(Vec<u32>, Vec<u8>)> {
+    let parts = diff_parts(a, b, isz, w, diff_auto_threads(a.len()));
+    if parts.len() == 1 {
+        let (idx, v) = parts.into_iter().next().unwrap();
+        return if idx.is_empty() { None } else { Some((idx, v)) };
+    }
+    let k: usize = parts.iter().map(|p| p.0.len()).sum();
+    if k == 0 {
+        return None;
+    }
+    let mut idx = Vec::with_capacity(k);
+    let mut v = Vec::with_capacity(k * isz * w);
+    for (i, x) in parts {
+        idx.extend_from_slice(&i);
+        v.extend_from_slice(&x);
+    }
+    Some((idx, v))
+}
+
+/// Rows r0..r1 of the diff: the changed rows (global row numbers) and new - old of them.
+fn diff_rows(a: &[u8], b: &[u8], isz: usize, w: usize, r0: usize, r1: usize) -> (Vec<u32>, Vec<u8>) {
     let row = isz * w;
     const ROWS: usize = 32; // compare blocks of rows first: most of a mesh is unchanged
     let blk = row * ROWS;
+    let (sa, sb) = (&a[r0 * row..r1 * row], &b[r0 * row..r1 * row]);
     let mut idx: Vec<u32> = Vec::new();
-    for (bi, (ca, cb)) in a.chunks(blk).zip(b.chunks(blk)).enumerate() {
+    for (bi, (ca, cb)) in sa.chunks(blk).zip(sb.chunks(blk)).enumerate() {
         if ca != cb {
             for (j, (ra, rb)) in ca.chunks_exact(row).zip(cb.chunks_exact(row)).enumerate() {
                 if ra != rb {
-                    idx.push((bi * ROWS + j) as u32); // as numpy's astype(uint32)
+                    idx.push((r0 + bi * ROWS + j) as u32); // as numpy's astype(uint32)
                 }
             }
         }
     }
-    if idx.is_empty() {
-        return None;
-    }
     let mut v = vec![0u8; idx.len() * row];
     by_size!(isz, sub_rows(a, b, &idx, w, &mut v));
-    Some((idx, v))
+    (idx, v)
 }
 
-/// diff(old, new, itemsize, width) -> None if no element changed, else (indices as uint32 bytes,
-/// new - old of the changed elements, wrapping). As delta.diff: indices of the elements (rows of
-/// `width` values) whose bits differ.
+/// R071: the rows split into `threads` runs of consecutive rows, each diffed on its own thread (the
+/// calling thread takes the first). The parts, in order, are exactly the one-thread result.
+fn diff_parts(a: &[u8], b: &[u8], isz: usize, w: usize, threads: usize) -> Vec<(Vec<u32>, Vec<u8>)> {
+    let n = a.len() / (isz * w);
+    let t = threads.clamp(1, DIFF_MAX_THREADS).min(n.max(1));
+    if t == 1 {
+        return vec![diff_rows(a, b, isz, w, 0, n)];
+    }
+    let per = n.div_ceil(t);
+    std::thread::scope(|scope| {
+        let helpers: Vec<_> = (1..t)
+            .map(|i| {
+                let (r0, r1) = ((i * per).min(n), ((i + 1) * per).min(n));
+                scope.spawn(move || diff_rows(a, b, isz, w, r0, r1))
+            })
+            .collect();
+        let mut parts = vec![diff_rows(a, b, isz, w, 0, per.min(n))];
+        for h in helpers {
+            // a helper that panicked is a bug: resume it here so guard() reports it
+            parts.push(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
+        }
+        parts
+    })
+}
+
+/// R071: threads in all (the calling one included). Measured on a shared 4-core VM (one array of
+/// float32 rows, unchanged or with 2% of it changed): from 4 MB two threads took 0.46 to 0.77 of one
+/// thread's time in 18 of 20 samples, below 4 MB 0.83 to 1.65; three or four beat two only in 4 of
+/// 20 samples, by 1 to 11% (the compare is bound by memory). `threads` can ask for up to four (tests).
+const DIFF_MAX_THREADS: usize = 4;
+const DIFF_AUTO_THREADS: usize = 2;
+const DIFF_MIN_BYTES: usize = 4 << 20;
+
+fn diff_auto_threads(len: usize) -> usize {
+    if len < DIFF_MIN_BYTES {
+        return 1;
+    }
+    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(DIFF_AUTO_THREADS)
+}
+
+/// diff(old, new, itemsize, width, threads=None) -> None if no element changed, else (indices as
+/// uint32 bytes, new - old of the changed elements, wrapping). As delta.diff: indices of the
+/// elements (rows of `width` values) whose bits differ. threads: how many threads in all, at most 4
+/// (None: one below 4 MB per array, else two if there are two cores); the result is the same for any
+/// number. The GIL is released from 4 MB, or when more than one thread is asked for.
 #[pyfunction]
+#[pyo3(signature = (old, new, isz, w, threads=None))]
 fn diff<'py>(
     py: Python<'py>,
     old: &Bound<'py, PyAny>,
     new: &Bound<'py, PyAny>,
     isz: usize,
     w: usize,
+    threads: Option<usize>,
 ) -> PyResult<Option<(Bound<'py, PyByteArray>, Bound<'py, PyByteArray>)>> {
     guard(|| {
         let row = check_size(isz, w)?;
@@ -238,19 +302,32 @@ fn diff<'py>(
         if a.len() != b.len() || a.len() % row != 0 {
             return Err(bad("hindsight_native.diff: sizes don't match"));
         }
-        let (idx, vals) = match diff_core(a, b, isz, w) {
-            Some(r) => r,
-            None => return Ok(None),
+        let t = threads.unwrap_or_else(|| diff_auto_threads(a.len())).clamp(1, DIFF_MAX_THREADS);
+        let parts = if t > 1 || a.len() >= DIFF_MIN_BYTES {
+            py.allow_threads(|| diff_parts(a, b, isz, w, t))
+        } else {
+            diff_parts(a, b, isz, w, 1)
         };
-        let k = idx.len();
+        let k: usize = parts.iter().map(|p| p.0.len()).sum();
+        if k == 0 {
+            return Ok(None);
+        }
         let ib = PyByteArray::new_bound_with(py, k * 4, |o| {
-            for (j, &i) in idx.iter().enumerate() {
-                o[4 * j..4 * j + 4].copy_from_slice(&i.to_le_bytes());
+            let mut j = 0;
+            for (idx, _) in &parts {
+                for &i in idx {
+                    o[4 * j..4 * j + 4].copy_from_slice(&i.to_le_bytes());
+                    j += 1;
+                }
             }
             Ok(())
         })?;
         let vb = PyByteArray::new_bound_with(py, k * row, |o| {
-            o.copy_from_slice(&vals);
+            let mut at = 0;
+            for (_, v) in &parts {
+                o[at..at + v.len()].copy_from_slice(v);
+                at += v.len();
+            }
             Ok(())
         })?;
         Ok(Some((ib, vb)))
@@ -1365,5 +1442,6 @@ fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     step::register(m)?;
     crc::register(m)?;
     hash::register(m)?;
+    same::register(m)?;
     Ok(())
 }

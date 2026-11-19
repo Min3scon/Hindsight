@@ -1,8 +1,8 @@
 """Byte compression: zstd, lz4, zlib and none, all done by the Rust engine (native/src/codec.rs).
 
 Blob format: first byte = codec id, then payload. Ids: 0 none, 1 zlib level 1, 2 lz4 frame,
-3 zstd level 3, 4 zstd level 19, 5 zlib level 9. Ids 4 and 5 are the "strong" forms written by
-background recompression; they decode exactly like 3 and 1. This module only names things and
+3 zstd level 3, 4 zstd strong (level 15 for data up to 1 MB, 19 above; R072), 5 zlib level 9. Ids 4
+and 5 are the "strong" forms written by background recompression; they decode exactly like 3 and 1. This module only names things and
 calls the engine. Pure Python, no bpy.
 """
 from __future__ import annotations
@@ -13,7 +13,8 @@ _N = _native.ENGINE
 
 NONE, ZLIB, LZ4, ZSTD, ZSTD_MAX, ZLIB_MAX = 0, 1, 2, 3, 4, 5
 _NAMES = {NONE: "none", ZLIB: "zlib", LZ4: "lz4", ZSTD: "zstd", ZSTD_MAX: "zstd", ZLIB_MAX: "zlib"}
-STRONG_LEVEL = 19
+STRONG_LEVEL = 19          # data over 1 MB (the engine's codec.rs, R072)
+STRONG_LEVEL_SMALL = 15    # data up to 1 MB
 # largest body a blob may claim, so a damaged length can't ask for a huge allocation
 MAX_RAW = 1 << 30
 
