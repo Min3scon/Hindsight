@@ -406,6 +406,7 @@ Blockers:
   whose setup script runs it do not exist (creating one needs the owner's approval prompt).
 - The Rust interface design does not exist (R2 and later wait for it).
 - Items that need the P0 seam first: D-b, D-c, D-d, D-f and all of Phase 3.
+- Record everything on big scenes: every operation reads every recorded object again (exact by design: some changes, a custom property or hiding, tell no one). Measured 2026-11-19 on bpy 5.3 with cubes (a third with a constraint): 8.6 ms per operation at 100 objects, about 42 ms at 500, about 227 ms at 2,000 (the cyclic GC plays no part; the per-object reads are spread over many small parts, R062 and R063 show what is left). Clicks (R048) and slider drags (R057) don't read everything. Reading only the objects an operator touched could miss a change, and reading the rest later puts a change into the wrong step; either is an owner decision, as is a note in the tab above some number of recorded objects. Not decided.
 - Dropping the embedded history after a save would free about 52 MB at 6,000 steps (since R061 the bytes, not
   base64 text) but would leave autosaves without a history: an owner decision, not made.
 
