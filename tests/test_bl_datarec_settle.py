@@ -150,9 +150,70 @@ def test_only_the_newest_step_is_continued():
     print("PASS test_only_the_newest_step_is_continued")
 
 
+def _interrupted_after(drag_values, tag):
+    """Save, drag (merged by the settle timer), then open the file again without saving (a crash): the
+    history the journal brings back. Returns (history, the strength the file has, the drag's last)."""
+    import tempfile
+    from hindsight.core.types import SETTINGS
+    ob, uid = setup()
+    SETTINGS.save_mode = "SIDECAR"
+    SETTINGS.crash_recovery = "INTERRUPTED"
+    update(ob, uid, 0.5)                             # a stored value (an unset one reads as the default)
+    advance(1.0)
+    clock[0] += 5.0
+    path = os.path.join(tempfile.mkdtemp(prefix="hs_settle_"), f"{tag}.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    saved = round(ob.hsfake.strength, 4)
+    update(ob, uid, drag_values[0])
+    for i, v in enumerate(drag_values[1:]):
+        advance([0.44, 0.24, 0.23, 0.25][i % 4])
+        update(ob, uid, v)
+    advance(1.0)
+    live = [(e.seq, e.meta.get("label")) for e in steps_of(ob)]
+    datarec._now = lambda: __import__("time").time()
+    bpy.ops.wm.open_mainfile(filepath=path)          # interrupted: the journal is replayed
+    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    ob = bpy.data.objects["A"]
+    h = runtime.reg().history_for(idmap.uid_of(ob))
+    return ob, h, live, saved
+
+
+def test_a_merged_step_comes_back_after_a_crash():
+    """D147: the merged step is written to the crash journal as a TRUNC and a STEP at the same position.
+    After an interrupted session the history has that one step, at the file's state, and going forward
+    gives the end of the drag (driven end to end, not reasoned from the replay rules)."""
+    try:
+        ob, h, live, saved = _interrupted_after([0.6, 0.65, 0.7, 0.75, 0.8], "merged")
+        assert len(live) == 2, live                  # the stored value, then the whole drag
+        assert h is not None and [(e.seq, e.meta.get("label")) for e in h.entries] == live, \
+            (None if h is None else [(e.seq, e.meta.get("label")) for e in h.entries], live)
+        assert h.cursor == 1 and round(ob.hsfake.strength, 4) == saved, (h.cursor, ob.hsfake.strength, saved)
+        runtime._goto_history(h, 2, True)
+        assert round(ob.hsfake.strength, 4) == 0.8, ob.hsfake.strength
+        runtime._goto_history(h, 1, True)
+        assert round(ob.hsfake.strength, 4) == saved
+    finally:
+        teardown()
+    print("PASS test_a_merged_step_comes_back_after_a_crash")
+
+
+def test_a_drag_back_to_the_start_leaves_no_step_after_a_crash():
+    """D147: a drag that ends where it began takes its merged step away (TRUNC only): nothing comes back."""
+    try:
+        ob, h, live, saved = _interrupted_after([0.6, 0.7, 0.6, 0.5], "back")      # 0.5: where it began
+        assert len(live) == 1, live                  # only the stored value's step
+        assert h is not None and [(e.seq, e.meta.get("label")) for e in h.entries] == live, \
+            [(e.seq, e.meta.get("label")) for e in h.entries]
+        assert round(ob.hsfake.strength, 4) == saved
+    finally:
+        teardown()
+    print("PASS test_a_drag_back_to_the_start_leaves_no_step_after_a_crash")
+
+
 if __name__ == "__main__":
     for t in (test_a_slow_drag_is_one_step, test_a_single_change_commits_after_the_settle_time,
               test_the_wait_follows_the_gap_between_updates, test_a_drag_back_to_where_it_started_leaves_no_step,
-              test_only_the_newest_step_is_continued):
+              test_only_the_newest_step_is_continued, test_a_merged_step_comes_back_after_a_crash,
+              test_a_drag_back_to_the_start_leaves_no_step_after_a_crash):
         H.run(t)
     H.finish()
