@@ -227,8 +227,13 @@ def paint_images(ob) -> list:
 
 def read_images(ob) -> dict:
     """{key: float32 RGBA pixels, flat} per paintable image (reused buffers, never handed out as a baseline)."""
+    return read_images_named(ob, paint_images(ob))
+
+
+def read_images_named(ob, images) -> dict:
+    """read_images for some of the paintable images."""
     out = {}
-    for img in paint_images(ob):
+    for img in images:
         key = img_key(img.name)
         n = img.size[0] * img.size[1] * 4
         buf = _buf(key, n, np.float32)

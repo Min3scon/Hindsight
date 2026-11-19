@@ -357,6 +357,53 @@ def refresh_images(obj, st=None) -> None:
         st.arrays[k] = a.copy()
 
 
+def _read_new_images(obj, st=None) -> None:
+    """D142: an image the tool can paint now but that has no baseline yet (a canvas or texture node
+    picked while in Texture Paint) is read as it is before it is painted. No step."""
+    st = st or _STATES.get(obj_uid(obj))
+    if st is None or not st.counts:
+        return
+    for img in meshio.paint_images(obj):
+        k = meshio.img_key(img.name)
+        if k not in st.arrays:
+            a = meshio.read_images_named(obj, (img,)).get(k)
+            if a is not None:
+                st.arrays[k] = a.copy()
+
+
+_PAINTING = [None]     # D142: uid of the object a texture painting stroke is running on
+
+
+def _image_stroke_running() -> bool:
+    try:
+        for win in bpy.context.window_manager.windows:
+            for op in getattr(win, "modal_operators", ()):
+                if op.bl_idname == "PAINT_OT_image_paint":
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _watch_image_paint() -> bool:
+    """D142: painting an image sends no depsgraph update (seen in a real window), so the end of a
+    texture painting stroke is seen from its operator, which the timer polls while the active object
+    is in Texture Paint. True while there is something to watch (the timer then runs faster)."""
+    obj = _active()
+    watching = (obj is not None and obj.type == "MESH" and obj.mode == "TEXTURE_PAINT" and texture_on()
+                and not is_excluded(obj))
+    if watching and _image_stroke_running():
+        _PAINTING[0] = obj_uid(obj)
+        return True
+    uid, _PAINTING[0] = _PAINTING[0], None
+    if uid is not None:
+        _DIRTY[uid] = time.time()
+        _STROKE_SEEN.add(uid)          # a stroke ended: committed at once
+    elif watching and obj_uid(obj) not in _DIRTY:
+        _read_new_images(obj)
+    return watching
+
+
 def read_mesh_snapshot(obj):
     """The object's mesh as a Snapshot. In Edit Mode the mesh attributes are the edit-mode layers,
     so the edit mesh is written back first and a plain copy is read instead."""
@@ -1091,10 +1138,11 @@ def _on_depsgraph(scene, depsgraph=None) -> None:
 
 
 @guard.guarded("recorder")
-def _tick_once() -> None:
+def _tick_once() -> bool:
     check_mode_transition()
+    painting = _watch_image_paint()
     if _DIRTY and stroke_running():
-        return   # never split a stroke, even if a slow modifier stack pauses its updates
+        return painting   # never split a stroke, even if a slow modifier stack pauses its updates
     now = time.time()
     for uid, t in list(_DIRTY.items()):
         # A stroke that has finished is committed at once, so quick strokes stay separate steps.
@@ -1107,20 +1155,21 @@ def _tick_once() -> None:
                 _STROKE_SEEN.discard(uid)
                 continue
             commit(ob)
+    return painting
 
 
 def tick() -> float:
     """Commits each stroke as it ends (or once updates settle). Never raises."""
     busy = False
     try:
-        _tick_once()
+        busy = _tick_once()
         ensure_handlers()
     except Exception as e:
         log.error_once(("tick", str(e)), f"timer error: {e}", e)
     try:
         from . import datarec
         datarec.tick()
-        busy = bool(datarec._DIRTY)
+        busy = busy or bool(datarec._DIRTY)
     except Exception as e:
         log.error_once(("datarec_tick", str(e)), f"data recorder error: {e}", e)
     try:
@@ -1337,7 +1386,7 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
 # object leaves Sculpt Mode mid-stroke (reproduced without Hindsight, see DECISIONS.md).
 _STROKE_OPS = frozenset({
     "SCULPT_OT_brush_stroke", "PAINT_OT_vertex_paint", "PAINT_OT_weight_paint", "SCULPT_OT_mesh_filter",
-    "SCULPT_OT_cloth_filter", "SCULPT_OT_color_filter", "HINDSIGHT_OT_morph_stroke",
+    "SCULPT_OT_cloth_filter", "SCULPT_OT_color_filter", "HINDSIGHT_OT_morph_stroke", "PAINT_OT_image_paint",
 })
 
 

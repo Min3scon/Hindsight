@@ -227,6 +227,17 @@ jobs:
           xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" \
             python tests_ui/hs_ui.py run regress_slider_visible --blender "${{ matrix.version }}" \
             --fresh --geometry 0,0,1600,900 --timeout 900
+      - name: Weight, Vertex and Texture Paint strokes in a real window
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
+          MESA_GL_VERSION_OVERRIDE: "4.5"
+          MESA_GLSL_VERSION_OVERRIDE: "450"
+          HS_UI_XSHOT: "1"
+        run: |
+          xvfb-run -a -s "-screen 0 1600x900x24 +extension GLX" \
+            python tests_ui/hs_ui.py run paint_modes --blender "${{ matrix.version }}" \
+            --fresh --geometry 0,0,1600,900 --timeout 900
       - name: Collect screenshots and logs
         if: always()
         run: |

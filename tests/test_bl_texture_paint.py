@@ -140,10 +140,46 @@ def test_leaving_the_mode_and_painting_again():
     print("PASS test_leaving_the_mode_and_painting_again")
 
 
+def test_stroke_seen_from_its_operator():
+    """D142: in a real window, painting an image sends no depsgraph update at all (seen on 5.3 with
+    tests_ui/scenarios/s_paint_modes.py): the end of a stroke is seen from the image paint operator,
+    which the timer polls. A canvas picked while in Texture Paint is read before it is painted."""
+    ob, imgs = setup()
+    enter(ob)
+    canvas = bpy.data.images.new("Canvas2", 32, 32, alpha=True)
+    C.scene.tool_settings.image_paint.canvas = canvas
+    h = runtime.history_of(ob)
+    n = len(h.entries) if h is not None else 0
+    real = getattr(runtime, "_image_stroke_running", None)
+    try:
+        runtime._tick_once()                       # between strokes: the new canvas gets a baseline
+        want0 = pixels(canvas)
+        runtime._image_stroke_running = lambda: True
+        runtime._tick_once()                       # the stroke starts
+        a = pixels(canvas)
+        a[:256] = 0.25
+        canvas.pixels.foreach_set(a)               # no update_tag, no depsgraph update: as in a window
+        runtime._tick_once()
+        runtime._image_stroke_running = lambda: False
+        runtime._tick_once()                       # the operator has ended: one step
+    finally:
+        runtime._image_stroke_running = real
+        C.scene.tool_settings.image_paint.canvas = None
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == n + 1, "the stroke made no step"
+    want1 = pixels(canvas)
+    runtime.goto(C, n)
+    assert pixels(canvas).tobytes() == want0.tobytes(), "going back didn't put the canvas back"
+    runtime.goto(C, n + 1)
+    assert pixels(canvas).tobytes() == want1.tobytes()
+    print("PASS test_stroke_seen_from_its_operator")
+
+
 if __name__ == "__main__":
     for t in (test_off_by_default_records_nothing, test_byte_image_strokes_are_exact,
               test_float_image_strokes_are_exact, test_two_images_on_one_object, test_images_over_2k_are_left_out,
-              test_steps_are_small_and_counted, test_leaving_the_mode_and_painting_again):
+              test_steps_are_small_and_counted, test_leaving_the_mode_and_painting_again,
+              test_stroke_seen_from_its_operator):
         H.run(t)
     runtime.FORCE_TEXTURE[0] = None
     H.finish()

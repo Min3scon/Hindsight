@@ -259,6 +259,7 @@ Latest runs (2026-11-19):
 | Real Blender binaries on GitHub (Blender tests, run 44439641564) | 7dc4853 | 5.3.0: 84/86; 4.2.23: 84/86. Besides `test_bl_t1_migrate`, only `test_core_reference` failed: libzstd version (fixed in 099815c) and one engine divergence in `test_hostile_blobs` (with the Rust agent) |
 | bpy module on GitHub, Windows and macOS (same run) | 7dc4853 | macOS: green. Windows: 83/86, `test_core_reference` as above plus the two known |
 | Window probe under Xvfb, 5.1.2 and 5.3 (same run) | 7dc4853 | green |
+| Real windows in the container (Xvfb, Mesa llvmpipe, Blender binaries 5.3.0 and 4.2.23): `tests_ui/hs_ui.py run regress_slider_visible` and `run paint_modes` | main-session-4 after 8c1838d | slider 3/3 on 5.3.0; paint_modes 12/12 on 5.3.0 and 4.2.23 (after D142; before it the texture painting checks failed) |
 | Native engine on GitHub, 12 jobs (Windows, macOS, Linux; x64 and ARM64; Python 3.11 and 3.13) | 7dc4853, 847bcdd, 099815c | 7dc4853: test_core_reference failed for a missing lz4 (CI dependencies fixed in 847bcdd); 847bcdd: 2 libzstd byte comparisons (fixed in 099815c); 099815c: rerun pending |
 
 Known failing tests:
@@ -357,8 +358,9 @@ physics and bake caches), Blender's preferences and window layout.
 
 Blockers:
 
-- No Blender binary and no GPU in the container (download blocked). A real-window gate needs the planned
-  GitHub Actions job (real binaries, xvfb and Mesa llvmpipe) or the owner's machine.
+- No GPU in the container. Blender 4.2.23 and 5.3.0 binaries are there (`/home/user/blender`), so
+  windowed scenarios run locally under Xvfb and Mesa llvmpipe (`tests_ui/hs_ui.py`, a `blender` shim on
+  PATH adding `--gpu-backend opengl`, as in `.github/workflows/blender.yml`); the GitHub job runs the same.
 - The environment is not reproducible yet: `tools/dev_env.sh` and a personal cloud environment "Hindsight"
   whose setup script runs it do not exist (creating one needs the owner's approval prompt).
 - The Rust interface design does not exist (R2 and later wait for it).
@@ -373,7 +375,7 @@ Blockers:
 2. Measure the cost of D116 to D134 on an operator at 500 objects (`bench/ab.py --only dr_finish,dr_prime`
    and the 500-material scene) on a quiet machine; log rounds in `OPTIMISATION_LOG.md`.
 3. Multires (one exact step per Sculpt Mode visit), then M3 (native `History`).
-4. Texture painting: try it in a real window, then decide its default; the Image editor's paint mode.
+4. Texture painting: tried in a real window (D142 found and fixed); its default is the owner's call; the Image editor's paint mode.
 5. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
    `docs/download/hindsight.zip`, push without `[skip ci]`.
 6. Multires (one step per Sculpt Mode visit) and Dyntopo (per stroke), behind one preference (Phase 4).
