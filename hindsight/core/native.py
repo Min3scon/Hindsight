@@ -7,23 +7,19 @@ no Python fallback for those. If the module cannot be loaded, importing this fil
 EngineMissing with the reason, and so does importing anything that needs the engine.
 
 ENGINE   the module (always set when this file imported)
-lib      the module, or None while HINDSIGHT_NATIVE=0: delta.py reads this at every call and then
-         runs its own per-function Python paths. Benchmarks and the equivalence tests use that
-         switch; the step container and the codecs ignore it (they have no Python path).
+lib      the same module (kept for callers that ask whether it is there)
 
-HINDSIGHT_NATIVE=0        delta.py runs its Python paths (tests and A/B runs only)
-HINDSIGHT_NATIVE=require  the same as unset; kept so test runners can say what they expect
+Nothing in the shipped add-on has a Python path any more: delta.py, step.py, codec.py and
+history.py call the engine. The Python versions are in tests/reference/. HINDSIGHT_NATIVE is read
+by nobody (CI sets it to "require", which is what happens anyway).
 """
 from __future__ import annotations
-
-import os
 
 API = 5                     # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
 # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
 # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
 # API 5: + pack_record, unpack_record; apply takes any indices (the numpy fallbacks of delta.py are gone).
-MODE = os.environ.get("HINDSIGHT_NATIVE", "").strip().lower()
 
 
 class EngineMissing(ImportError):
@@ -46,6 +42,6 @@ def _load():
 
 
 ENGINE = _load()
-ERROR = "turned off (HINDSIGHT_NATIVE=0)" if MODE == "0" else None
-lib = None if MODE == "0" else ENGINE
-AVAILABLE = lib is not None
+ERROR = None
+lib = ENGINE
+AVAILABLE = True

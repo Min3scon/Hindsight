@@ -25,18 +25,6 @@ TOPO_MARK = "__TOPO__"
 DATA_MARK = "@"
 SNAPSHOTS_KEY = "_snapshots"   # same key as step.SNAPSHOTS_KEY (not imported: step imports history types)       # changed-key tuples ("@", adapter, path) for data records
 
-def _steps(entries: list, states: dict):
-    """Yield the Step of each entry in order, or None when its object isn't being moved.
-
-    Whether an object is being moved is checked when its step comes up, not before the jump: a
-    join step crossed backwards brings its members back (and into `states`) in the middle of it.
-    (Decoding ahead on worker threads was tried: faster in plain Python, but inside Blender the
-    threads compete with the main thread for the interpreter and long jumps got 70% slower.)
-    """
-    for e in entries:
-        yield e.load() if e.target in states else None
-
-
 class MeshState:
     """Current recorded state of ONE datablock (the baseline shown at the cursor): mesh channels
     for meshes, plus the values data adapters record ((adapter, path) -> value)."""
@@ -169,24 +157,19 @@ class History:
             forward = pos > cur
             order = range(cur, pos) if forward else range(cur - 1, pos - 1, -1)
             entries = [self.entries[i] for i in order]
-            run = getattr(_native.lib, "apply_steps", None)
-            if run is None:
-                for entry, step in zip(entries, _steps(entries, states)):
-                    if step is not None:       # None: object not being moved, skipped without unpacking
-                        self._cross(entry, step, forward, states, join_hook, changed)
-            else:
-                self._cross_runs(run, entries, forward, states, join_hook, changed)
+            self._cross_runs(_native.ENGINE.apply_steps, entries, forward, states, join_hook, changed)
         self.cursor = pos
         return changed
 
     @staticmethod
     def _cross_runs(run, entries: list, forward: bool, states: dict, join_hook, changed: dict) -> None:
-        """The loop of goto with the native engine: consecutive packed DELTA steps of one object
-        are crossed by one native call (apply_steps), which stops before any step it doesn't take
-        (other kinds and formats, extras, channels that appear or go, damage); that step is then
-        crossed here as without the engine, so results and exceptions are the same. The native
-        call releases the GIL; its helper threads (decompressing ahead) run no Python, so they
-        don't compete with Blender's main thread for the interpreter as Python threads did."""
+        """The loop of goto: consecutive packed DELTA steps of one object are crossed by one engine
+        call (apply_steps), which stops before any step it doesn't take (other kinds and formats,
+        extras, channels that appear or go, damage); that step is then crossed here, one at a time,
+        so results and exceptions are those of tests/reference/history.py. The engine call releases
+        the GIL; its helper threads (decompressing ahead) run no Python, so they don't compete with
+        Blender's main thread for the interpreter as Python threads did. Steps of an object that is
+        not being moved are skipped without being decoded."""
         i, n = 0, len(entries)
         while i < n:
             e = entries[i]

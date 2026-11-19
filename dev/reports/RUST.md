@@ -226,3 +226,31 @@ Cost per visit at a 10k base and level 4: one write at the start (about 60 ms), 
 * A restored mesh is a new datablock (same name, same users); anything holding a pointer to the old one (the shared-mesh bookkeeping of D39/D44 when Record everything is on) may take it for a mesh change.
 
 Whole `test_bl_` on bpy53 without t1_prop: 81 of 84 files pass; the three failures are metadata and migrate (known) and t1_hair_points (fixed upstream in main-session-4 8c1838d).
+
+---
+
+# Sixth job: M3, measured; History on the engine only
+
+Merged main-session-3 (dbad258) fast-forward. No engine change (0.5.1, API 5), so no wheel rebuild.
+
+## Result: the native `History` object was not built; why
+
+Evidence (`mixprof.py`, `topodec.py`, bpy53, 100,489 vertices, min of 30): a full jump over a mixed history of 1,500 packed steps (2% TOPO, 2% DATA) takes 105 ms: 61% is `step_decode` of the 60 TOPO and DATA steps (a TOPO step: 1.24 ms, of which zstd decompression alone is 1.27 ms; the `set_snapshot` copy is 0.07 ms), 31% is `apply_steps`, about 3% is Python glue. A native History would replace that 3%. `Entry` holds raw Python Steps that runtime and tests edit through `h.entries`, so owning entries in Rust would add a conversion at every access. Caps and eviction (`store.py`): O(1) per commit, a full pass every 64 commits, entangled with the packer thread and Entry objects; nothing measurable to gain. Not done, on purpose; written up in `dev/RUST_DESIGN.md` ("M3 revisited").
+
+## What changed (the part of M3 that is real: no Python path left in history)
+
+* `hindsight/core/history.py`: `goto` always crosses runs of packed steps with `ENGINE.apply_steps`; the per-step Python loop (`_steps`, the `native.lib` branch) is gone from the shipped add-on. Steps the engine doesn't take are crossed one at a time in `_cross` (snapshots, data records, appearing channels; that is the 3%).
+* `tests/reference/history.py`: `History` subclass with the old loop as `goto` (the oracle). `test_core_native_steps.py` twins compare engine `History` against it (3 engines became 2: the "older module" mode went with the per-function module versions; "python" is the reference class); the hostile direct calls compare against it.
+* `hindsight/core/native.py`: `HINDSIGHT_NATIVE` and the per-function switch are removed; `lib` is the engine, `AVAILABLE` True. `test_switch` updated: the variable has no effect; a wrong or missing module still raises `EngineMissing` in every mode.
+* `tests/reference/__init__.py` `pure()` only swaps the delta functions now. `bench/bench_native.py`: `--jumps` compares the engine History with the reference History; `both()` uses `pure()`.
+* Numbers (`bench_native.py --jumps --nv 100000 --rounds 2`, min ms engine / reference loop, machine load 7): 30 steps 0.49 / 1.02, 300 steps 4.96 / 10.48, 3,000 steps 48.9 / 103.5, drag over 5,000 steps 85.7 / 172.3. The reference loop runs on the native codec and delta, so this is the cost of crossing in Python step by step, not the old pure-Python time.
+
+## Tests
+
+`test_core_*` (14 files) pass on bpy53 and bpy42. Whole `test_bl_` without t1_prop on both: result below. No A/B is claimed for jumps: they run the same code as before (`apply_steps` unchanged).
+
+Whole `test_bl_` without t1_prop: 82 of 84 files pass on bpy53 and on bpy42; the two failures are test_bl_metadata and test_bl_t1_migrate (known, need a Blender binary and `.tmp/old/b1.zip`).
+
+Appends (`append.py`, 5,000 steps at 100k vertices, bpy53): `History.push` 1.7 us per step. `enforce_caps` full pass 1.46 ms average over a history that grows to 5,000 entries (it sums `nbytes` over every entry); the runtime runs a full pass every 64 commits, so about 25 us per commit amortised, against a commit of about 400 us. Not worth moving.
+
+For OPTIMISATION_LOG (nothing kept as an optimisation; one measured non-attempt): "native History object: not built. Python glue is 3% of a mixed 100k jump (105 ms: 61% decode of TOPO and DATA steps, bound by zstd decompression 1.27 ms per 2.4 MB, 31% apply_steps); push 1.7 us; caps pass about 25 us per commit amortised. Nothing to gain; History made engine-only instead."

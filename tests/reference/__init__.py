@@ -9,19 +9,16 @@ import contextlib
 
 @contextlib.contextmanager
 def pure():
-    """Run a block with hindsight.core.delta's functions replaced by the reference (numpy) ones and
-    native.lib None (History.goto without apply_steps): Python all the way down."""
-    from hindsight.core import delta, native
+    """Run a block with hindsight.core.delta's functions replaced by the reference (numpy) ones.
+    (History: use reference.history.History, which crosses steps one at a time in Python.)"""
+    from hindsight.core import delta
     from . import delta as ref
     names = ("diff", "apply", "pack_delta", "unpack_delta", "unpack_at", "packed_size")
     saved = {n: getattr(delta, n) for n in names}
-    lib = native.lib
     for n in names:
         setattr(delta, n, getattr(ref, n))
-    native.lib = None
     try:
         yield
     finally:
         for n, f in saved.items():
             setattr(delta, n, f)
-        native.lib = lib
