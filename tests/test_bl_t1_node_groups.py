@@ -29,6 +29,19 @@ def tree_state(ng):
     return (nodes, vals, links, iface)
 
 
+def tree_state_by_name(ng):
+    """tree_state with sockets told by name: a group made again gets new socket identifiers (Blender's)."""
+    nodes, vals, links, iface = tree_state(ng)
+    links = tuple(sorted((l.from_node.name, l.from_socket.name, l.to_node.name, l.to_socket.name) for l in ng.links))
+    return (nodes, vals, links, tuple(sorted(iface)))
+
+
+def _gn_named(name):
+    ng = make_gn()
+    ng.name = name
+    return ng
+
+
 def make_gn():
     ng = bpy.data.node_groups.new("Shape", "GeometryNodeTree")
     ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
@@ -292,10 +305,104 @@ def test_group_animation_comes_back():
     assert anim_state(ng) == states[-1], (anim_state(ng), states[-1])
 
 
+def _group_states(name, ops, read):
+    L.fresh_scene()
+    L.track_all()
+    L.tick_like("baseline")
+    states = [read()]
+    for label, fn in ops:
+        fn()
+        L.tick_like(label)
+        states.append(read())
+    assert all(x != y for x, y in zip(states, states[1:])), states
+    h = runtime.history_of(C.scene)
+    assert len(h.entries) == len(states) - 1, (len(h.entries), len(states))
+    from hindsight.bl import datarec
+    for pos in list(range(len(states) - 1, -1, -1)) + list(range(len(states))):
+        runtime._goto_history(h, pos, True)
+        datarec.resolve_missing_refs()
+        assert read() == states[pos], (name, pos, read(), states[pos])
+    return states
+
+
+def test_group_made_and_deleted():
+    """D152: a node group no object uses (kept with a fake user): going back over its making removes it,
+    going back over its deletion makes it again with its nodes, links and inputs (geometry and shader)."""
+    def make_gn():
+        ng = _gn_named("KeptGN")
+        ng.use_fake_user = True
+
+    def make_shader():
+        g = bpy.data.node_groups.new("KeptShader", "ShaderNodeTree")
+        g.use_fake_user = True
+        v = g.nodes.new("ShaderNodeValue")
+        v.name = "K"
+        v.outputs[0].default_value = 3.0
+
+    def read():
+        out = []
+        for n in ("KeptGN", "KeptShader"):
+            g = bpy.data.node_groups.get(n)
+            out.append(None if g is None else (g.bl_idname, g.use_fake_user, tree_state_by_name(g),
+                                               round(g.nodes["K"].outputs[0].default_value, 4) if "K" in g.nodes else None))
+        return tuple(out)
+    _group_states("gn+shader", [
+        ("make geometry group", make_gn), ("make shader group", make_shader),
+        ("edit", lambda: setattr(bpy.data.node_groups["KeptShader"].nodes["K"].outputs[0], "default_value", 5.0)),
+        ("delete geometry group", lambda: bpy.data.node_groups.remove(bpy.data.node_groups["KeptGN"])),
+        ("delete shader group", lambda: bpy.data.node_groups.remove(bpy.data.node_groups["KeptShader"]))], read)
+
+
+def test_addon_tree_made_and_deleted():
+    """D152: an add-on's own node tree type (tests/addons/hs_fake_addon.py: HSFakeTree) is made again."""
+    from tests.addons import hs_fake_addon as FAKE
+    FAKE.register()
+    try:
+        def make():
+            g = bpy.data.node_groups.new("Fake", "HSFakeTree")
+            g.use_fake_user = True
+            n = g.nodes.new("HSFakeGain")
+            n.name = "G"
+            n.gain = 2.5
+            n.kind = "LOG"
+
+        def read():
+            g = bpy.data.node_groups.get("Fake")
+            return None if g is None else (g.bl_idname, round(g.nodes["G"].gain, 4), g.nodes["G"].kind, len(g.nodes))
+        _group_states("hsfake", [("make", make),
+                                 ("gain", lambda: setattr(bpy.data.node_groups["Fake"].nodes["G"], "gain", 0.5)),
+                                 ("delete", lambda: bpy.data.node_groups.remove(bpy.data.node_groups["Fake"]))], read)
+    finally:
+        FAKE.unregister()
+
+
+def test_group_made_then_used_is_not_taken_away():
+    """D152: going back over the making of a group an object's modifier uses now leaves it (and the object's
+    own history still has the modifier): never removes what is used."""
+    L.fresh_scene()
+    L.track_all()
+    L.tick_like("baseline")
+    a = bpy.data.objects["A"]
+    ng = _gn_named("Later")
+    ng.use_fake_user = True
+    L.tick_like("make group")
+    m = a.modifiers.new("GN", "NODES")
+    m.node_group = ng
+    L.tick_like("use it")
+    hs = runtime.history_of(C.scene)
+    runtime._goto_history(hs, 0, True)
+    assert bpy.data.node_groups.get("Later") is not None and m.node_group is not None, "a used group was removed"
+    runtime._goto_history(hs, len(hs.entries), True)
+    assert bpy.data.node_groups.get("Later") is not None
+
+
 if __name__ == "__main__":
     H.run(test_geometry_nodes_group_comes_back)
     H.run(test_shader_group_in_material_and_shared_group)
     H.run(test_zones_and_items_come_back)
     H.run(test_loose_group_and_compositor_with_the_scene)
     H.run(test_group_animation_comes_back)
+    H.run(test_group_made_and_deleted)
+    H.run(test_addon_tree_made_and_deleted)
+    H.run(test_group_made_then_used_is_not_taken_away)
     H.finish()

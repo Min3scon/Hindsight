@@ -192,6 +192,17 @@ def _journal(rtype, header, payload_fn=None):
 _FRESH_UIDS: set = set()     # ids given out for recording that may never happen (see drop_unused_uids)
 
 
+_SHARED_STR: dict = {}    # R058: one object per id, mode and label string the steps keep
+
+
+def _shared(s):
+    """The one kept copy of an equal string (Blender gives a new string each time an id property, an
+    enum or an operator's label is read, and every step kept its own: about 150 bytes per step)."""
+    if s.__class__ is not str:
+        return s
+    return _SHARED_STR.setdefault(s, s)
+
+
 def obj_uid(obj, create: bool = False):
     if obj is None or getattr(obj, "type", None) != "MESH":
         return None
@@ -199,6 +210,8 @@ def obj_uid(obj, create: bool = False):
         u = obj.get(UID_PROP)
     except Exception:
         return None
+    if u is not None:
+        u = _shared(u)
     if u is None and create:
         u = new_uid()
         obj[UID_PROP] = u
@@ -916,7 +929,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         return None
     if uid in _REG.disabled or is_excluded(obj):
         return None
-    mode = mode or obj.mode
+    mode = _shared(mode or obj.mode)
     st = _STATES.get(uid)
     if st is not None and multires.MR_KEY in st.arrays and _mr_step is None:
         st = ensure_state(obj, refresh=True)      # the state held a Multires snapshot: read the mesh again
@@ -944,6 +957,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
                 label = ops[-1].bl_label or label
         except Exception:
             pass
+    label = _shared(label)
     dyn = dyntopo_active(obj)
     if dyn:
         if stroke_running():
@@ -1700,11 +1714,24 @@ def _entry(t):
     return _REG.histories[hid].entries[i]
 
 
+def _pos_index(groups):
+    """globaltl.position_index of the kept groups (R055), built once per version of them."""
+    if _GROUPS.get("groups") is not groups:
+        return None
+    if _GROUPS.get("pidx_ver") != _GROUPS.get("ver"):
+        _GROUPS.update(pidx=globaltl.position_index(groups), pidx_ver=_GROUPS.get("ver"))
+    return _GROUPS["pidx"]
+
+
+def _gpos(vis, groups) -> int:
+    return globaltl.global_position(_REG, vis, groups, _pos_index(groups))
+
+
 def _position(vis, groups) -> int:
     """globaltl.global_position, kept until a cursor moves."""
     key = (_GROUPS.get("ver"), id(groups), tuple(h.cursor for h in _REG.histories.values()))
     if _GROUPS.get("pos_key") != key:
-        _GROUPS.update(pos_key=key, pos=globaltl.global_position(_REG, vis, groups))
+        _GROUPS.update(pos_key=key, pos=_gpos(vis, groups))
     return _GROUPS["pos"]
 
 
@@ -1714,11 +1741,12 @@ def global_goto(context, g: int, final: bool = True) -> None:
     from . import datarec
     vis = _visible_uids()
     groups = _groups(vis)
-    old = globaltl.global_position(_REG, vis, groups)
+    old = _gpos(vis, groups)
     acc = {"hists": {}, "vb": {}, "va": {}, "meshes": {}, "wrote": False, "object_mode": True}
     held = _leave_edit_for_push(context, final) if g != old else None
-    pre = datarec.recorded_values()          # the whole scene before the jump (objects it brings back
-                                             # or removes must not count on the wrong side)
+    # the whole scene before the jump (objects it brings back or removes must not count on the wrong
+    # side), for Blender's undo of a final jump only: R057, a drag doesn't read it at every event
+    pre = _recorded_values() if final and not IN_HANDLER[0] else None
     for hid, cur in globaltl.transition(_REG, g, vis, groups):
         h = _REG.histories.get(hid)
         if h is not None and h.cursor != cur:
@@ -1726,10 +1754,10 @@ def global_goto(context, g: int, final: bool = True) -> None:
     datarec.resolve_missing_refs()          # D37: objects brought back get their references back
     p = _scene_props(context)
     preserve = bool(p.preserve_modes) if p is not None else _REG.preserve_modes
-    new_g = globaltl.global_position(_REG, vis, groups) if preserve and final else old
-    if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"]:
+    new_g = _gpos(vis, groups) if preserve and final else old
+    if acc["wrote"] and final and not IN_HANDLER[0] and acc["object_mode"] and pre is not None:
         if datarec.push_undo():
-            datarec.note_jump(acc["hists"], pre, datarec.recorded_values(), acc["meshes"])
+            datarec.note_jump(acc["hists"], pre, _recorded_values(), acc["meshes"])
     _reenter_edit(context, held)
     if preserve and final and new_g != old:
         piv = globaltl.pivot_entry(_REG, old, new_g, vis, groups)
@@ -1740,6 +1768,14 @@ def global_goto(context, g: int, final: bool = True) -> None:
                 tgt = find_object(e.target) or _find_any(e.target)
                 if isinstance(tgt, bpy.types.Object):
                     _switch_to(context, tgt, e.meta.get("mode", "SCULPT"))
+
+
+def _recorded_values() -> dict:
+    """datarec.recorded_values in one id frame (its look-ups use the frame's index: 7.2 -> 1.4 ms with
+    500 recorded objects). Nothing is made or removed while it reads."""
+    from . import datarec, idmap
+    with idmap.frame():
+        return datarec.recorded_values()
 
 
 def _switch_to(context, ob, mode: str) -> None:

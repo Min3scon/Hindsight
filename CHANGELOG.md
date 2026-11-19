@@ -20,6 +20,7 @@ New:
 - Record everything records materials: their settings and node trees, with nodes added and removed, links made and broken and every input value. A material several objects share is recorded once, with the first of them by name.
 - Record everything records node groups: editing a Geometry Nodes group or a shader group inside a material is a step that comes back, inputs and outputs, zones and item lists included.
 - Record everything records the compositor and node trees no object uses, add-ons' custom node trees included, in the scene's history.
+- Record everything records what no object uses, in the scene's history: texts (an add-on's settings, scripts), materials and worlds kept for later, and the custom properties and add-on data of images, actions, palettes, brushes and the file's other datablocks. Making or deleting a text, an unused material or world or a node group is taken back too (going back over the making removes it if nothing uses it, going back over the deletion makes it again with what was recorded; images, actions, palettes and brushes are not made again, their properties are).
 - Record everything records custom properties and the data any add-on keeps on objects, scenes and materials (its settings, lists and links to other objects), on Blender 4 and 5.
 - Record everything records the scene's settings in the scene's history: render and output settings, frame range, units, colour management, EEVEE and Workbench settings, view layer passes, the active camera, and the world with its node tree.
 - Record everything records collection settings: hiding a collection, making it unselectable, its colour tag, and Exclude, Holdout and Indirect Only in each view layer.
@@ -45,6 +46,7 @@ New:
 Faster and lighter:
 
 - Playing or rendering a timelapse: Hindsight's own work per frame went from 22.6 ms to 2.7 ms at 5,000 steps on a 100k mesh. A frame that shows the same step as the one before costs about 0.1 ms.
+- Going back and forward on the global timeline over strokes made on several objects in turn writes each object once per jump instead of once per stroke: with two 100k-vertex objects and 600 strokes, jumping to the start went from about 200 ms to 30 ms, and each step of a drag from 9 ms to under 2 ms.
 - With global history on, the slider, the header and the sidebar no longer rebuild the whole timeline on every redraw. That took 18 ms each time at 10,000 steps.
 - Saving and loading history works step by step. Peak memory while saving a 6,000-step history of a 100k mesh went from 89 MB to 43 MB, and loading from 141 MB to 83 MB. Recording a remesh at 1M vertices needs 426 MB instead of 609 MB.
 - What Hindsight remembers about its own jumps for Blender's undo is kept only as far back as Blender can undo. It used to keep up to 512 copies of every recorded value.

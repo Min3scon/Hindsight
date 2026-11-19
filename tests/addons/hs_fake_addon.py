@@ -1,5 +1,6 @@
 """A stand-in for a third-party add-on (tests only): property groups on Object, Scene and Material,
-a collection, a pointer to another object, and an operator that edits them the way add-ons do."""
+a collection, a pointer to another object, an operator that edits them the way add-ons do, and the
+add-on's own node tree type (a tree, a node with settings and a socket with a value)."""
 import bpy
 
 _classes = []
@@ -39,16 +40,58 @@ class HSFAKE_OT_bump(bpy.types.Operator):
         return {"FINISHED"}
 
 
+@_reg
+class HSFAKE_NS_value(bpy.types.NodeSocket):
+    bl_idname = "HSFakeSocketValue"
+    bl_label = "Value"
+    default_value: bpy.props.FloatProperty(default=1.0)
+
+    def draw(self, context, layout, node, text):
+        layout.prop(self, "default_value", text=text)
+
+    def draw_color(self, context, node):
+        return (0.6, 0.6, 0.2, 1.0)
+
+
+@_reg
+class HSFAKE_NT_tree(bpy.types.NodeTree):
+    bl_idname = "HSFakeTree"
+    bl_label = "Fake Tree"
+    bl_icon = "NODETREE"
+
+
+@_reg
+class HSFAKE_N_gain(bpy.types.Node):
+    bl_idname = "HSFakeGain"
+    bl_label = "Gain"
+    gain: bpy.props.FloatProperty(default=1.0)
+    kind: bpy.props.EnumProperty(items=[("LIN", "Linear", ""), ("LOG", "Log", "")], default="LIN")
+
+    @classmethod
+    def poll(cls, ntree):
+        return ntree.bl_idname == "HSFakeTree"
+
+    def init(self, context):
+        self.inputs.new("HSFakeSocketValue", "In")
+        self.outputs.new("HSFakeSocketValue", "Out")
+
+    def draw_buttons(self, context, layout):
+        layout.prop(self, "gain")
+        layout.prop(self, "kind")
+
+
 def register():
     for c in _classes:
         bpy.utils.register_class(c)
-    bpy.types.Object.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
-    bpy.types.Scene.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
-    bpy.types.Material.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
+    for t in _HOSTS:
+        t.hsfake = bpy.props.PointerProperty(type=HSFAKE_PG_settings)
+
+
+_HOSTS = (bpy.types.Object, bpy.types.Scene, bpy.types.Material, bpy.types.Text, bpy.types.Image)
 
 
 def unregister():
-    for t in (bpy.types.Object, bpy.types.Scene, bpy.types.Material):
+    for t in _HOSTS:
         del t.hsfake
     for c in reversed(_classes):
         bpy.utils.unregister_class(c)

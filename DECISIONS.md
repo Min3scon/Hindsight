@@ -42,7 +42,7 @@ with no camera or light in the scene; "don't edit site, just get the add-on upda
 use the Ponytail and CodeOptiX repositories to optimise; rewrite in Rust.
 
 ### Environment and what it means for the tests
-- No Blender binary and no GPU here (download.blender.org is blocked). Everything ran on Blender as a
+- No Blender binary and no GPU here (download.blender.org was refused by the network policy then (corrected 2026-11-19: since 2026-11-18 the "Hindsight" cloud environment allows download.blender.org; binaries 4.2.23 and 5.3.0 are downloaded and used for real-window runs, see DEVELOPMENT.md)). Everything ran on Blender as a
   Python module from PyPI: 4.2.23, 5.0.1, 5.1.2, 5.2.2 and 5.3.0. Nothing ran in a Blender window: no
   drawing, no real brush strokes, no real mouse. The release gate (HANDOFF, "Test guarantee") was NOT run:
   COVERAGE statuses and TEST_EVIDENCE are unchanged, and this build goes out on headless tests plus Cycles
@@ -401,11 +401,11 @@ Checklist items that were checked and are NOT the cause:
 
 ### Environment / research
 - The four reference URLs (80.lv, superhivemarket.com x2, the docs site on github.io) are blocked by this
-  cloud environment's network policy (proxy 403 / DNS). The docs site is a public GitHub repo, so its
+  cloud environment's network policy (proxy 403 / DNS: the gateway refused the connection; that is not the sites' own Cloudflare or bot check, which can still refuse a host once it is allowed). The docs site is a public GitHub repo, so its
   HTML source was read from a clone (behaviour text only; nothing copied). The product page and FAQ text
   came from that repo's landing page source and from web-search summaries. To let the agent read them
   directly, allow those hosts in the environment's network settings.
-- Blender binaries cannot be downloaded here (download.blender.org blocked). All headless tests run with
+- Blender binaries could not be downloaded here then (download.blender.org refused by the network policy (corrected 2026-11-19: since 2026-11-18 the "Hindsight" cloud environment allows download.blender.org; binaries 4.2.23 and 5.3.0 are downloaded and used for real-window runs, see DEVELOPMENT.md)). All headless tests run with
   Blender's `bpy` module from PyPI: bpy 4.2.23 (Python 3.11) and bpy 5.2.2 (Python 3.13), not
   `blender -b --python`. The runner (`tests/run_tests.py`) uses `$HINDSIGHT_PY` so the same tests can run
   under `blender -b --python`.

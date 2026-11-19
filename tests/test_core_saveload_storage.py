@@ -333,18 +333,15 @@ def test_packer_without_activity_recompresses_as_before():
         store.IDLE_S = saved
 
 
-class _CountingZlib:
-    """persist's zlib with crc32 calls counted (and their sizes)."""
+class _CountingCrc:
+    """persist's crc32 with the calls counted (and their sizes)."""
 
     def __init__(self, real):
         self._real, self.sizes = real, []
 
-    def crc32(self, b, *a):
+    def __call__(self, b, *a):
         self.sizes.append(len(b))
-        return self._real.crc32(b, *a)
-
-    def __getattr__(self, name):
-        return getattr(self._real, name)
+        return self._real(b, *a)
 
 
 def test_save_reuses_known_step_checksums():
@@ -361,23 +358,23 @@ def test_save_reuses_known_step_checksums():
     reg.histories = {"H": h}
     reg.by_object = {"obj": "H"}
     reg.next_seq = 41
-    real = persist.zlib
-    persist.zlib = cz = _CountingZlib(real)
+    real = persist.crc32
+    persist.crc32 = cz = _CountingCrc(real)
     try:
         data = persist.registry_to_bytes(reg)
     finally:
-        persist.zlib = real
+        persist.crc32 = real
     assert len(cz.sizes) <= 4 + 2, len(cz.sizes)          # the raw steps and the header, not all 40
     back = persist.registry_from_bytes(data)
     got = back.histories["H"].entries
     assert len(got) == 40 and all(stepmod.same_step(a.load(), b.load()) for a, b in zip(got, h.entries))
     assert not back.load_report["damaged"]
     # loaded steps carry the CRC read from the file: saving them again checks nothing twice
-    persist.zlib = cz = _CountingZlib(real)
+    persist.crc32 = cz = _CountingCrc(real)
     try:
         again = persist.registry_to_bytes(back)
     finally:
-        persist.zlib = real
+        persist.crc32 = real
     assert again == data and len(cz.sizes) <= 2, len(cz.sizes)
     # a step whose bytes are replaced (the packer's recompression) gets the new bytes' CRC
     e = back.histories["H"].entries[3]

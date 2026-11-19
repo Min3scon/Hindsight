@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-import zlib
+from .crc import crc32
 
 import numpy as np
 
@@ -223,7 +223,7 @@ class Entry:
         if blob is None:
             self._bc = _NO_BLOB
         else:
-            self._bc = (blob, crc if crc is not None else zlib.crc32(blob) & 0xFFFFFFFF)
+            self._bc = (blob, crc if crc is not None else crc32(blob) & 0xFFFFFFFF)
         self.meta = meta if meta is not None else (step.meta() if step else {})
         self._nbytes = None
 
@@ -233,7 +233,7 @@ class Entry:
 
     @blob.setter
     def blob(self, b: Optional[bytes]) -> None:
-        self._bc = _NO_BLOB if b is None else (b, zlib.crc32(b) & 0xFFFFFFFF)
+        self._bc = _NO_BLOB if b is None else (b, crc32(b) & 0xFFFFFFFF)
 
     def blob_crc(self):
         """(packed bytes, their CRC-32), read together; (None, None) while the step is raw."""

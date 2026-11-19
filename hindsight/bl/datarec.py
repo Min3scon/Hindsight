@@ -696,6 +696,7 @@ def finish_operation(label: str, select_only: bool = False, topology: bool = Tru
     refresh_mesh_users()
     adapters.forget_selected_values()     # D117
     adapters.forget_loose_groups()        # D133
+    adapters.forget_loose_data()          # D151
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
     try:
@@ -777,8 +778,10 @@ def _diff(old: dict, new: dict) -> dict:
             continue
         if k[1].startswith("body:"):
             continue        # stored with creation and deletion steps, never read back from Blender
-        if b is MISSING and not adapters.kind_on(adapters.kind_of(*k) or ""):
-            continue        # a kind switched off isn't read; that isn't a removal
+        if b is MISSING:
+            kd = adapters.kind_of(*k)
+            if kd is not None and not adapters.kind_on(kd):
+                continue    # a kind switched off isn't read; that isn't a removal (a path of no kind is always read: D152)
         if a is b:
             continue        # the same object: unchanged
         if exact and a is not MISSING and b is not MISSING:
@@ -1227,6 +1230,7 @@ def resolve_missing_refs() -> None:
     the recorded references in now, so Blender matches the history again. D55: then collections
     Hindsight made again that the jump took out and left empty are removed."""
     resolve_taken_names()
+    adapters.flush_loose_removals()           # D152: datablocks the jump went back over the making of
     if not adapters.MISSING_REFS:
         adapters.drop_recreated_orphans()
         return
