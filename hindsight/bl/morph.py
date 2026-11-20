@@ -71,26 +71,14 @@ def begin(obj) -> bool:
         hidden = None
     susp = runtime.suspended()
     susp.__enter__()   # keep the recorder from splitting the stroke into several steps
-    _SESSION[uid] = {"target": target, "start": start.copy(), "acc": np.zeros(nv, np.float64),
+    target = np.ascontiguousarray(target, dtype=np.float32)          # the engine's types (R083)
+    if mask is not None:
+        mask = np.ascontiguousarray(mask, dtype=np.float32)
+    if hidden is not None:
+        hidden = np.ascontiguousarray(hidden, dtype=np.bool_)
+    _SESSION[uid] = {"target": target, "start": np.array(start, dtype=np.float32), "acc": np.zeros(nv, np.float64),
                      "mask": mask, "hidden": hidden, "susp": susp, "moved": False}
     return True
-
-
-def in_box(co, c, r: float, hidden=None):
-    """Indices (ascending) of the vertices of co (N x 3, float32) within r of c on every axis, hidden ones left out.
-
-    R081: one axis at a time, each on the vertices still in, instead of all three axes of every vertex at once
-    (a float64 copy of the whole mesh and a reduce: 34 of the 40 ms of a dab at 1M vertices). The differences
-    are the same float64 numbers as before (the vertex in float64 minus the centre), so the same vertices pass.
-    """
-    cand = np.flatnonzero(np.abs(np.subtract(co[:, 0], c[0], dtype=np.float64)) <= r)
-    for ax in (1, 2):
-        if cand.size == 0:
-            return cand
-        cand = cand[np.abs(np.subtract(co[cand, ax], c[ax], dtype=np.float64)) <= r]
-    if hidden is not None and cand.size:
-        cand = cand[~hidden[cand]]
-    return cand
 
 
 def apply_morph_at(obj, center_local, radius_local: float, strength: float) -> int:
@@ -107,28 +95,14 @@ def apply_morph_at(obj, center_local, radius_local: float, strength: float) -> i
     cur = meshio.read_channel(me, POSITION_KEY)
     if cur is None or cur.size != s["start"].size:
         return 0
-    c = np.array(tuple(center_local)[:3], dtype=np.float64)
-    co = cur.reshape(-1, 3)
-    r = float(radius_local)
-    # cheap box test first, then exact distances on the candidates
-    cand = in_box(co, c, r, s["hidden"])
-    if cand.size == 0:
-        return 0
-    d = np.sqrt(((co[cand].astype(np.float64) - c) ** 2).sum(axis=1))
-    inside = d < r
-    idx = cand[inside]
-    if idx.size == 0:
-        return 0
-    w = M.falloff(d[inside], r) * float(strength)
-    if s["mask"] is not None:
-        w *= 1.0 - s["mask"][idx]
-    acc = s["acc"]
-    w = np.maximum(acc[idx], np.clip(w, 0.0, 1.0))
-    acc[idx] = w
-    before = co[idx].copy()
-    co[idx] = s["start"].reshape(-1, 3)[idx]
-    M.morph_blend(cur, s["target"], idx, w, 1.0)
-    moved = int(np.count_nonzero(np.any(co[idx] != before, axis=1)))
+    cur = np.ascontiguousarray(cur, dtype=np.float32)
+    cx, cy, cz = (float(v) for v in tuple(center_local)[:3])
+    # R083: the box test, the distances, the falloff, the mask, the stroke's strongest weight per vertex and the
+    # blend from the stroke's start toward the target, in one pass in the engine (numpy over the whole mesh was
+    # 14 ms of a dab at 1M vertices after R081; tests/reference/morph_dab.py is that code, the bit-exact oracle)
+    from ..core.native import ENGINE
+    moved = ENGINE.morph_dab(cur, s["start"], s["target"], s["acc"], s["mask"], s["hidden"], cx, cy, cz,
+                             float(radius_local), float(strength))
     if moved:
         with runtime.suspended():
             meshio.write_channel(me, POSITION_KEY, cur)
