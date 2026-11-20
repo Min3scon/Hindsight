@@ -1,11 +1,13 @@
 """Morph History brush: paint brushed areas back toward the morph target step."""
 from __future__ import annotations
 
+import weakref
+
 import bpy
 import numpy as np
 
 from ..core import morph as M
-from ..core.types import POSITION_KEY, MASK_KEY, HIDE_VERT_KEY
+from ..core.types import JOIN, TOPO, POSITION_KEY, MASK_KEY, HIDE_VERT_KEY
 from . import guard, log, meshio, runtime
 
 TOOL_ID = "hindsight.morph_history"
@@ -13,6 +15,7 @@ STROKE_LABEL = "Morph History"
 MSG_REMESH = "The mesh was remeshed since the morph target. Set a new one"
 
 _SESSION: dict = {}          # object uid -> stroke data (see begin)
+_TARGETS: dict = {}          # R084: object uid -> (weakref to its History, key, its positions at the morph target)
 last_message = [None]        # reason the last begin() refused
 _tool_registered = [False]
 
@@ -36,6 +39,40 @@ def _refuse(msg: str) -> bool:
     return False
 
 
+def _target_positions(h, st, uid):
+    """`core.morph.target_positions`, kept from one stroke to the next (R084).
+
+    The mesh at the morph target doesn't change while the steps up to it don't, so the walk back to it (every
+    step since the target, Morph History strokes included: about 19 of the 27 ms a stroke start took at 1M
+    vertices) is done once. Kept per object for the History object it was made from, the target index, the
+    steps at the target and at the start, and the vertex count. As the walk would, a topology step of this
+    object or a Join between the cursor and the target gives None. The array is read-only.
+    """
+    try:
+        mt = int(h.morph_target)
+        n = len(h.entries)
+        if mt < 0 or mt > n:
+            return None
+        key = (mt, h.entries[mt - 1].seq if mt else None, h.entries[0].seq if n else None,
+               int(st.counts.get("POINT", -1)) if st is not None else None)
+    except (TypeError, ValueError, AttributeError):
+        return M.target_positions(h, st, uid)
+    hit = _TARGETS.get(uid)
+    if hit is not None and hit[0]() is h and hit[1] == key:
+        cur = int(h.cursor)
+        lo, hi = (mt, cur) if mt < cur else (cur, mt)
+        if any(e.kind == JOIN or (e.kind == TOPO and e.target == uid) for e in h.entries[lo:hi]):
+            return None
+        return hit[2]
+    target = M.target_positions(h, st, uid)
+    _TARGETS.pop(uid, None)
+    if target is not None:
+        target = np.ascontiguousarray(target, dtype=np.float32)
+        target.flags.writeable = False
+        _TARGETS[uid] = (weakref.ref(h), key, target)
+    return target
+
+
 def begin(obj) -> bool:
     """Start a stroke: validate, record pending changes, compute the target once.
 
@@ -57,7 +94,7 @@ def begin(obj) -> bool:
     if h is None or h.morph_target is None:
         return _refuse("No morph target yet. Set one in the History Menu first")
     st = runtime.ensure_state(obj)
-    target = M.target_positions(h, st, uid)
+    target = _target_positions(h, st, uid)
     me = obj.data
     start = meshio.read_channel(me, POSITION_KEY)
     if target is None or start is None or target.size != start.size:
@@ -331,6 +368,7 @@ def register():
 
 
 def unregister():
+    _TARGETS.clear()
     for uid in list(_SESSION):
         s = _SESSION.pop(uid)
         try:
