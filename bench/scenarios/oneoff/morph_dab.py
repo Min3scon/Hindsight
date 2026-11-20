@@ -3,6 +3,7 @@ Usage: python morph_dab.py ROOT N [prof]. Prints AB {json}."""
 import os, sys, time, statistics, json, cProfile, pstats, io
 ROOT = sys.argv[1]; N = int(sys.argv[2]); PROF = len(sys.argv) > 3
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "tests"))
+if os.environ.get("HS_ENGINE"): sys.path.insert(0, os.environ["HS_ENGINE"])
 sys.argv = [sys.argv[0]]
 import bpy, numpy as np
 from mathutils import Vector

@@ -62,7 +62,7 @@ Faster and lighter:
 - Each recorded mesh needs less memory: while you pause, the mesh's connectivity that Hindsight keeps for comparison is packed. A 1.5M-vertex remeshed sculpt holds 87 MB instead of 140 MB, a 1M-vertex grid 12 MB instead of 61 MB.
 - Shape keys are read and written about 200 times faster. With Record everything on a 40k-vertex mesh with 100 shape keys, moving a shape key slider costs Hindsight 18 ms instead of 230 ms.
 - A topology change on a big mesh (Voxel Remesh, Dyntopo) hands control back sooner: its crash-recovery record is packed and written in the background. At 1M vertices Hindsight's share went from 0.76 s to 0.34 s.
-- The Morph History brush finds the vertices under it about 3 times faster. On a 1M-vertex mesh a dab costs 14 ms instead of 38 ms.
+- The Morph History brush is many times faster. On a 1M-vertex mesh a dab went from 38 ms to 14 ms by finding the vertices under the brush faster, then to about a quarter of that, worked out in one pass by the Rust engine.
 - Background recompression of steps waits while you sculpt or scrub. It also starts after a file is opened now, not only after the first new stroke was packed.
 - Redraws cost less. The on-screen slider keeps its drawing between redraws and rebuilds only the handle while you drag. The viewport warning and Collection Filtering do less work on each redraw: with 50 objects, global history and a filter list, a redraw went from 3.9 ms to 1.2 ms.
 - Scrubbing and Movie Mode are 2 to 3 times faster through packed history: a run of steps is checked, unpacked and applied in one call of the Rust engine. A jump over 3,000 steps of a 1M-vertex mesh went from 1.4 s to 0.5 s.
