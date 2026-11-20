@@ -17,6 +17,13 @@ fn f32s(b: &Buf) -> &[f32] {
     unsafe { std::slice::from_raw_parts(b.bytes().as_ptr() as *const f32, b.len() / 4) }
 }
 
+/// The array's numpy dtype is of this kind ('f', 'b', ...) and item size; false for anything else.
+fn is(o: &Bound<'_, PyAny>, kind: &str, size: usize) -> bool {
+    let k = o.getattr("dtype").and_then(|d| d.getattr("kind")).and_then(|k| k.extract::<String>());
+    let s = o.getattr("itemsize").and_then(|s| s.extract::<usize>());
+    matches!((k, s), (Ok(k), Ok(s)) if k == kind && s == size)
+}
+
 fn aligned(b: &Buf, a: usize) -> bool {
     b.len() == 0 || (b.bytes().as_ptr() as usize) % a == 0
 }
@@ -72,6 +79,12 @@ pub fn morph_dab(
             Some(h) if !h.is_none() => Some(Buf::new(h, false)?),
             _ => None,
         };
+        if !(is(co, "f", 4) && is(start, "f", 4) && is(target, "f", 4) && is(acc, "f", 8))
+            || mask.is_some_and(|m| !m.is_none() && !is(m, "f", 4))
+            || hidden.is_some_and(|h| !h.is_none() && !is(h, "b", 1))
+        {
+            return Err(PyValueError::new_err("morph_dab: co, start, target and mask must be float32, acc float64, hidden bool"));
+        }
         let n3 = cob.len() / 4;
         if cob.len() % 12 != 0 || sb.len() != cob.len() || tb.len() != cob.len() {
             return Err(PyValueError::new_err("morph_dab: co, start and target must be float32, 3 per vertex, all the same size"));

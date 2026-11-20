@@ -155,6 +155,11 @@ def test_refusals():
     assert bad(mask=np.zeros(n + 1, np.float32))
     assert bad(hidden=np.zeros(n + 1, bool))
     assert bad(co=np.zeros(n * 3 + 1, np.float32))
+    assert bad(start=np.zeros(n * 3 // 2, np.float64))                       # the same bytes, another type
+    assert bad(co=np.zeros(n * 3, np.int32))
+    assert bad(acc=np.zeros(n, np.int64))
+    assert bad(mask=np.zeros(n, np.int32))
+    assert bad(hidden=np.zeros(n, np.uint8))
     shared = np.zeros(n * 3 + n * 2, np.float32)
     assert bad(co=shared[:n * 3], acc=shared[n:].view(np.float64)[:n])         # co and acc share memory
     try:
