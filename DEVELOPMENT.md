@@ -276,10 +276,13 @@ DEFECTS.md).
 
 ## e. Test matrix
 
-Latest runs (2026-11-19):
+Latest runs (2026-11-19 and 20):
 
 | Level | Code | Result |
 |---|---|---|
+| bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine 0.9.0 required | main-session e0257e3 (R081, the R080 and same_values test fixes) | 119/121 each, only the two known failures (m098) |
+| Real Blender binaries, bpy modules and real windows on GitHub (Blender tests run 44607176687) | 9474c1c | all green: the suite in the 4.2, 5.0.1, 5.1.2, 5.2 and 5.3 binaries (only the known test_bl_t1_migrate), the Windows and macOS bpy modules, the window jobs on all five versions |
+| same (Blender tests run 44570506405, Native engine run 44570510722) | f95fc2f | Native engine green; Blender tests green except `test_core_same_values` in the 5.3 binary (hypothesis refuses subnormal floats where Blender flushes them to zero; fixed in e0257e3, DEFECTS test changes) |
 | bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine required | main line 7dc4853 (D111 to D118, Rust M1) | 84/86 each; the two failures are the known ones below |
 | same | main-session-3 45924a0 (D119 to D145, Multires, Dyntopo, journal lz4; merged as 9280a71) | 5.3: 103/105, 4.2: 103/105 (the 4.2 run's wrapper was killed after test_bl_warnings; the files after it were run one by one, all passing); the two failures are the known ones below |
 | same | main-session-4 4d856db (adds D119 to D134) | 5.3: 94/96; 4.2: the known two failures in the part that ran before the code moved on (a final run is pending) |
