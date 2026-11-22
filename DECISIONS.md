@@ -1,5 +1,17 @@
 # Decisions log
 
+## History inside the .blend (owner, 2026-11-22)
+
+The history lives inside the .blend itself, so the file alone carries all of it to any computer; nobody should
+need a separate folder to keep their work and its history. It must be made small enough to fit there, also at
+100,000 steps on a 1M-vertex mesh, rather than moved to disk outside the file. (Asked: keep old steps in files on
+disk and read them back when needed? Answer: no, inside the Blender file.)
+
+- What follows: embedded history becomes the default save mode (today the default is the history folder,
+  `save_mode` in hindsight/bl/prefs.py); "saves write only new steps" applies to Hindsight's own work in a save,
+  since Blender writes the whole .blend each time; the size of the history is the target of the work.
+- Still open: whether the history folder stays as an option; what happens when a history is still too big.
+
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
 The owner asked for Hindsight to be finished: every line of the site's Limitations page dealt with,

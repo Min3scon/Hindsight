@@ -99,7 +99,7 @@ The folder next to a .blend that holds its saved history.
 _Avoid_: sidecar (in anything a user reads)
 
 **Embedded history**:
-History saved inside the .blend itself.
+History saved inside the .blend itself, so the file alone carries it to another computer.
 _Avoid_: internal history
 
 **Crash journal**:
