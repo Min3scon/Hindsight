@@ -1,5 +1,4 @@
 {
-  "autoCompactWindow": 207500,
   "env": {
     "ENABLE_TOOL_SEARCH": "true"
   },
@@ -8,32 +7,6 @@
       "mcp__Gmail",
       "mcp__Coros",
       "mcp__Claude_Docs"
-    ]
-  },
-  "hooks": {
-    "PreCompact": [
-      {
-        "matcher": "auto|manual",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/precompact.sh",
-            "timeout": 20
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/after_compact.sh",
-            "timeout": 20
-          }
-        ]
-      }
     ]
   }
 }
