@@ -10,7 +10,7 @@ The five default labels: needs-triage, needs-info, ready-for-agent, ready-for-hu
 
 ### Domain docs
 
-Single context: `GLOSSARY.md` at the root, decisions as ADRs in `dev/adr/` (and `DECISIONS.md` before that). See `dev/agents/domain.md`.
+Single context: `GLOSSARY.md` at the root, decisions as ADRs in `docs/adr/` (and `DECISIONS.md` before that). See `dev/agents/domain.md`.
 
 ## Working a ticket
 
