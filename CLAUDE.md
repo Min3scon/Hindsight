@@ -57,8 +57,11 @@ unassigned ticket (blocked tickets start with a `Blocked by:` line).
 ## Handing off at 150,000 tokens
 
 Owner's rule (2026-11-22): a session never works past about 150,000 tokens of context; past that, the work moves to a
-fresh session automatically. `.claude/settings.json` sets `autoCompactWindow` to 150000, so a compaction runs there;
-its PreCompact hook (`.claude/hooks/precompact.sh`) makes the summary the handoff, and the SessionStart hook after it
+fresh session automatically. `.claude/settings.json` sets `autoCompactWindow` to 200000: cloud sessions compact at
+about 92% of that window less a reserve for the reply, so the compaction runs at about 150,000 (measured: 150000
+compacted at 104,000 to 107,000, and with about 90,000 of tools and instructions loaded before any work, a session
+compacted every minute). The same file defers MCP tool schemas (`ENABLE_TOOL_SEARCH`) and denies the connectors
+this repo never uses (Gmail, Coros, Claude Docs), so less of the 150,000 goes to tools. Its PreCompact hook (`.claude/hooks/precompact.sh`) makes the summary the handoff, and the SessionStart hook after it
 (`.claude/hooks/after_compact.sh`) says to hand off. Then, before any other work:
 
 1. **Commit and push** the ticket's branch (a work-in-progress commit with `[skip ci]` if it isn't finished), so

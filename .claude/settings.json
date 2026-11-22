@@ -1,5 +1,15 @@
 {
-  "autoCompactWindow": 150000,
+  "autoCompactWindow": 200000,
+  "env": {
+    "ENABLE_TOOL_SEARCH": "true"
+  },
+  "permissions": {
+    "deny": [
+      "mcp__Gmail",
+      "mcp__Coros",
+      "mcp__Claude_Docs"
+    ]
+  },
   "hooks": {
     "PreCompact": [
       {
