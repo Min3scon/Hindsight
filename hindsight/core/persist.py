@@ -42,7 +42,6 @@ from .types import Entry
 
 REG_MAGIC = b"HSR1"
 FORMAT_VERSION = 4
-REG_VERSION = FORMAT_VERSION   # kept for older imports
 TRAILER = b"HSRT"
 WRITER = "Hindsight"            # replaced with "Hindsight <version>" by the add-on at register time
 
@@ -691,8 +690,6 @@ def replay(reg, records: list) -> int:
             if "morph_target" in header and uid not in stopped:
                 mt = header["morph_target"]
                 h.morph_target = None if mt is None else int(mt) + skew.get(uid, 0)
-            if header.get("objects") is not None:
-                h.recovered_objects = header["objects"]
             _clamp_hist(h)
         else:
             continue

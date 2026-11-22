@@ -242,7 +242,7 @@ class Registry:
     def remove_object(self, obj_uid: str) -> None
     def all(self) -> list[History]
 # global timeline (core/globaltl.py, P3)
-def global_order(reg, visible: set[str] | None = None) -> list[tuple[int, str, int]]   # (seq, hist_uid, entry_index) sorted
+def global_groups(reg, visible: set[str] | None = None) -> list[list[tuple[int, str, int]]]   # one list of (seq, hist_uid, entry_index) per operation, in order of first step
 def global_position(reg, visible=None) -> int                  # number of applied entries in global order prefix
 def plan_global_goto(reg, g: int, visible=None) -> dict[str, int]   # hist_uid -> cursor for global position g
 ```
