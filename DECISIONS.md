@@ -17,7 +17,9 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - Size target (owner, 2026-11-22): about 2 bytes per vertex a step moves, measured on real brush strokes (about
   4.5 today on synthetic strokes), and smaller wherever it can be found: recording a sculpt to document it must not
   add an excessive amount to someone's already big .blend.
-- Still open: whether the history folder stays as an option.
+- The history folder goes as a save option (owner, 2026-11-22; asked: keep it as an option, off by default?): the
+  history always stays in the .blend, so the file can be moved to any PC and work continues there. Histories already
+  saved in a folder (beta 2's default) still open, and move into the .blend at the next save.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
