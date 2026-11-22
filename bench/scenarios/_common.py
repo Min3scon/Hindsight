@@ -169,7 +169,7 @@ def attempt(results, name, fn):
 def native_loaded():
     try:
         from hindsight.core import native
-        return native.lib is not None
+        return native.ENGINE is not None
     except Exception:
         return False
 

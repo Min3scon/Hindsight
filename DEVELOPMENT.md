@@ -47,7 +47,7 @@ Where a fact has no source, this page says "not measured" or "no report".
    - all: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py`
    - some: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py recovery` (a substring of the file name)
    - one file: `<venv>/bin/python tests/test_bl_recovery.py`; each test prints `PASS test_name` or `FAIL test_name`
-   - The engine is always used (no Python path ships; `HINDSIGHT_NATIVE` selects nothing any more, the
+   - The engine is always used (no Python path ships; the
      Python versions are in `tests/reference/`). The runner sets `HINDSIGHT_VERIFY=1` (every written step
      is read back and compared).
    - Sculpt brush operators crash headless; tests simulate strokes with `tests/harness.py`.
@@ -100,9 +100,6 @@ Where a fact has no source, this page says "not measured" or "no report".
   systems, Python 3.11 and 3.13; the run was of the 0.1.0 wheels, the 0.2.0 wheels were cross-built and
   have not been run on Windows or macOS). They have not run inside a real Blender on any platform.
 - Tests in `tests/`, UI tests in `tests_ui/`, benchmarks in `bench/`, tools in `tools/`.
-- `HINDSIGHT_NATIVE`: unset or `1` uses the module if it loads (any API from 1 to 2, per function
-  fallback), `0` forces Python, `require` demands API 2.
-
 ### What runs in Rust today
 
 Engine `hindsight_native` 0.11.0, API 10 (0.11.0: `extents_into`, the Movie Mode camera's extents of points in place, R085; `morph_dab` refuses arrays of the wrong type; 0.10.0: `morph_dab`, one Morph History dab in one pass, R083; 0.9.0: `same_values`, the recorder's strict "nothing changed" check, R070; `diff` on two threads from 4 MB per array, R071; idle recompression at zstd level 15 for data up to 1 MB and 19 above, R072; 0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
@@ -126,8 +123,7 @@ fails if anything under `hindsight/` imports them.
 | errors `CorruptStep`, `CorruptBlob`, `CorruptDelta`, `NewerFormatError`, `EngineMissing` | `core/native.py` |
 
 Still Python: history, store, persist, journal, registry, global timeline, framing, morph, and the whole
-Blender side (by design: it needs bpy). `HINDSIGHT_NATIVE=0` only switches `delta.py` to its Python paths
-for tests and A/B runs.
+Blender side (by design: it needs bpy). The Python paths of `delta.py` live in `tests/reference/` for tests and A/B runs.
 
 ### Migration plan to Rust (from the approved plan)
 

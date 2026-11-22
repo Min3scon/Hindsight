@@ -291,13 +291,28 @@ def test_global_timeline_is_built_once_until_it_changes():
 def test_diagnostics_say_which_engine_runs():
     """Copy diagnostics names the engine in use, so a bug report shows whether the Rust engine loaded."""
     from hindsight.bl import selfcheck
-    from hindsight.core import native
     H.fresh()
     line = next(x for x in selfcheck.diagnostics_text().splitlines() if x.startswith("Engine: "))
-    assert line == "Engine: Rust" if native.AVAILABLE else line.startswith("Engine: Python ("), line
+    assert line == "Engine: Rust", line
 
 
-for fn in (test_diagnostics_say_which_engine_runs, test_global_timeline_is_built_once_until_it_changes, test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
+def test_diagnostics_say_when_the_engine_is_missing():
+    """Without the engine the line reads "Engine: missing (...)", never "Engine: Python"."""
+    import sys
+    import hindsight.core as core
+    from hindsight.bl import selfcheck
+    saved, had = sys.modules["hindsight.core.native"], core.native
+    sys.modules["hindsight.core.native"] = None      # makes `from ..core import native` raise ImportError
+    del core.native
+    try:
+        line = selfcheck._engine_line()
+    finally:
+        sys.modules["hindsight.core.native"] = saved
+        core.native = had
+    assert line.startswith("Engine: missing ("), line
+
+
+for fn in (test_diagnostics_say_which_engine_runs, test_diagnostics_say_when_the_engine_is_missing, test_global_timeline_is_built_once_until_it_changes, test_crash_journal_knows_what_the_step_cap_dropped, test_crash_journal_knows_what_the_memory_limit_dropped,
            test_error_once_stays_once_after_many_errors, test_error_once_is_bounded_when_the_text_varies, test_jumps_kept_only_as_far_as_blender_can_undo,
            test_exclusion_check_is_free_without_collection_filtering, test_topology_undo_match_is_bit_exact,
            test_clamped_weights_note_goes_away):

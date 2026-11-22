@@ -190,9 +190,8 @@ names) moves the centre. Not seen in a real window: verify.
   number work in hindsight/core/delta.py: finding the changed elements (diff), applying a delta, and the
   transforms inside packing and unpacking a step (index coding, prediction, zigzag, byte planes). Crate
   in native/, PyO3 with abi3 (one binary per platform serves Python 3.11 and 3.13), loaded through
-  hindsight/core/native.py; `HINDSIGHT_NATIVE=0` forces the Python path, `=require` makes a missing
-  module an error (tests). The Python code stays as the fallback and the reference: tests compare the
-  two bit for bit.
+  hindsight/core/native.py. (Later: no Python path ships; the Python code is the reference in `tests/reference/`, and
+  tests compare the two bit for bit.)
 - Measured (PERF_LOG "Rust engine"): diff 0.39 to 0.08 ms at 100k and 5.0 to 1.2 ms at 1M; apply one
   step 0.47 to 0.17 ms at 1M; a 300-step jump about half the time; diff's temporary memory 17 MB to
   0.3 MB at 1M. Memory held by the history itself does not change: 95% of it is step data and arrays.
