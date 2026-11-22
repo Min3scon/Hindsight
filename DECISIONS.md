@@ -28,6 +28,9 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
   hindsight/bl/prefs.py). This settles the release decision L2 left open. What follows: the cost of recording
   everything in big scenes now reaches every user (each operation reads every recorded object again: measured
   2026-11-19 about 8.6 ms at 100 objects, 42 ms at 500, 227 ms at 2,000), so it becomes work to do, not an option.
+- The new layout of the history in the .blend (format 5) is accepted: a file saved by the new build opens in beta 2
+  or beta 3 without its history, which those builds keep untouched until the PC is updated (owner, 2026-11-22: "do
+  what's best"). The order of the work is the one in DEVELOPMENT.md section i (owner left it to the recommendation).
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 

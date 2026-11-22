@@ -421,16 +421,34 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Pushed: everything up to R080 as f95fc2f (engine 0.9.0; full suites on 5.3 and 4.2: only the two sandbox-only failures,
-   after the R080 test fix 8f14dc1). Both workflows were started on it (Blender tests on 4.2 to 5.3 with the window job, and
-   Native engine). Since then on main-session: R081 (Morph History dab 38 to 14 ms at 1M), R082 and R078 measured and
-   reverted; to push after the next full suites.
-2. The recorder's remaining overhead at 500 objects (about 40 to 48 ms per operation): capture 31 ms spread over many small parts (none over 1 ms per 500 objects in the object adapter), `_same_values` 7.5 ms (two marshal dumps per object). Reading plain rows at once (R062) and keying values in C (R063) were measured and reverted. The strict value comparison in the engine is R070 (7.4 to 3.2 ms inside the check).
-3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
-   (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
-4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
-   `docs/download/hindsight.zip`, push without `[skip ci]`.
-5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (82 logged: 69 kept, 13 reverted). Next candidates: the rest of R6 in Rust (Movie Mode's framing walk, 186 ms at 1,000 steps of 100k, half of it the projection math in `framing.extents`). The Morph History dab is R083 (17.7 to 4.6 ms at 1M). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; the native parse of the step table was R078, reverted: within the spread). Also left (2026-11-19): a stroke at 1M (2.7 ms: the diff and the read, 1 ms each), a Dyntopo step at 100k triangles after R079 (about 55 ms, 45 to 50 of them Blender's `ed.flush_edits`), long histories (a commit 0.14 ms at 1,000 steps and 0.17 ms at 50,000; every redraw path the same at 1,000 and 50,000 steps), Morph History's start of a stroke (22 to 31 ms at 1M, 3 to 33 steps from the target), Embed save at 6,000 steps (Hindsight 103 of 206 ms: building the 55 MB copy and Blender's own copy of it, both page faults), jumps and drags unchanged since dd9f35b (bench/results/ab_dd9f35b_vs_head.md). Memory over a long session (5,000 strokes at 100k with jumps and saves): the add-on's heap grows by the history and about 0.65 KB of objects per step, nothing else (tracemalloc); the process grows a little more, as it does with the same strokes unrecorded (bench/results/soak_2026-11-19.txt).
-8. Next measured candidates (2026-11-19): (a) done as R069 (a baseline's topology packed while idle); (b) done as R070 and R071 (engine 0.9.0): the recorder's strict compare (7.4 to 3.2 ms per operation at 500 objects) and the diff on two threads (a 2K texture stroke's diff 8.3 to 5.0 ms); R072 lowered idle recompression of strokes to zstd level 15 (packer CPU per step 0.53 to 0.61); (c) opening a history folder parses about 6 us per step in Python (1,000 steps: 16 ms of the 30 ms open).
-7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.
+Plan agreed with the owner on 2026-11-22 (the decisions are in DECISIONS.md, the words in CONTEXT.md):
+
+0. Prove beta 2 histories upgrade intact: files saved by the real beta 2 code (tag `v1.0.0-beta.2`) with the history
+   folder, Embed and Both, and a beta 2 crash journal, opened by this build; every step plays back exactly, and after
+   a save the history is inside the .blend. (Beta 1 and the format 3 build are tested; beta 2 itself is not yet.)
+1. Real brush strokes on a 1M-vertex mesh, recorded in a real Blender window with several brushes, kept as the data
+   every size and speed claim is measured on.
+2. Smaller steps: lossless, toward 2 bytes per moved vertex on that data (about 4.5 today on synthetic strokes).
+3. History always in the .blend: embedded the only save mode (the history folder option goes); old folders are read
+   and moved in at the next save; Blender's in-memory copy is dropped after opening and put back while saving.
+4. Saves do work only for new steps (a new format 5; older builds keep such a history untouched and open the .blend
+   without it).
+5. Record everything fast in big scenes, since it is the default now: 500 to 2,000 objects.
+6. Fast at 100,000 steps on a 1M-vertex mesh: commit, jumps, the slider, save, open and memory, measured at that size.
+7. The Rust moves (history, recording pipeline, packer, global timeline, save and load), each where 5 and 6 show it
+   pays, with bit-exact tests against the Python it replaces.
+8. Close the "everything" gaps (making and deleting images, actions, palettes and other file-level datablocks) and
+   test with real third-party add-ons.
+
+Every change aimed at speed or size is a measured round (85 so far: 72 kept, 13 reverted; the owner's target is at
+least 100).
+
+Still for the owner at release: the defaults of Record texture painting, Record Multires and Record Dyntopo; and
+releasing 1.0.0-beta.3 (bump the manifest, build the zip, install-test, update `docs/download/hindsight.zip`, push
+without `[skip ci]`).
+
+Older notes, kept:
+
+- Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
+- Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; the native parse of the step table was R078, reverted: within the spread). Also left (2026-11-19): a stroke at 1M (2.7 ms: the diff and the read, 1 ms each), a Dyntopo step at 100k triangles after R079 (about 55 ms, 45 to 50 of them Blender's `ed.flush_edits`), long histories (a commit 0.14 ms at 1,000 steps and 0.17 ms at 50,000; every redraw path the same at 1,000 and 50,000 steps), Morph History's start of a stroke (22 to 31 ms at 1M, 3 to 33 steps from the target), Embed save at 6,000 steps (Hindsight 103 of 206 ms: building the 55 MB copy and Blender's own copy of it, both page faults), jumps and drags unchanged since dd9f35b (bench/results/ab_dd9f35b_vs_head.md). Memory over a long session (5,000 strokes at 100k with jumps and saves): the add-on's heap grows by the history and about 0.65 KB of objects per step, nothing else (tracemalloc); the process grows a little more, as it does with the same strokes unrecorded (bench/results/soak_2026-11-19.txt).
+- Dyntopo memory: done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.
