@@ -20,6 +20,10 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - The history folder goes as a save option (owner, 2026-11-22; asked: keep it as an option, off by default?): the
   history always stays in the .blend, so the file can be moved to any PC and work continues there. Histories already
   saved in a folder (beta 2's default) still open, and move into the .blend at the next save.
+- Blender's own in-memory copy of the embedded history is dropped once the file is open, and put back only while
+  saving, so the history is held once instead of twice (owner, 2026-11-22: "Blender is memory intensive"). Known
+  cost, accepted: a file recovered from Blender's autosave opens without its history; after a crash the crash
+  journal brings everything back when the .blend itself is opened.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
