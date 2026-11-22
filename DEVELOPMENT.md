@@ -425,7 +425,9 @@ Plan agreed with the owner on 2026-11-22 (the decisions are in DECISIONS.md, the
 
 0. Prove beta 2 histories upgrade intact: files saved by the real beta 2 code (tag `v1.0.0-beta.2`) with the history
    folder, Embed and Both, and a beta 2 crash journal, opened by this build; every step plays back exactly, and after
-   a save the history is inside the .blend. (Beta 1 and the format 3 build are tested; beta 2 itself is not yet.)
+   a save the history is inside the .blend. Done 2026-11-22: tests/test_bl_beta2_upgrade.py (6 tests) on files made by
+   the real beta 2 code in Blender 4.2 (tests/fixtures/beta2, remade by its make_beta2_files.py), 6/6 on 5.3 and 4.2.
+   After crash recovery the unsaved strokes come back as steps after the cursor (the file holds the saved mesh).
 1. Real brush strokes on a 1M-vertex mesh, recorded in a real Blender window with several brushes, kept as the data
    every size and speed claim is measured on.
 2. Smaller steps: lossless, toward 2 bytes per moved vertex on that data (about 4.5 today on synthetic strokes).
