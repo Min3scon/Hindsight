@@ -421,33 +421,19 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-Plan agreed with the owner on 2026-11-22 (the decisions are in DECISIONS.md, the words in CONTEXT.md):
+The plan lives on GitHub as a wayfinder map: [Map: Hindsight V2](https://github.com/Min3scon/Hindsight/issues/3),
+18 tickets (2026-11-22). Its destination: V2 (2.0.0) ready to release, everything built first, then optimised until
+nothing more can be gained without losing function. Work the map, not this list: the next ticket is the first open,
+unblocked, unassigned one (each blocked ticket starts with a `Blocked by:` line). The decisions behind it are in
+DECISIONS.md, the words in CONTEXT.md.
 
-0. Prove beta 2 histories upgrade intact: files saved by the real beta 2 code (tag `v1.0.0-beta.2`) with the history
-   folder, Embed and Both, and a beta 2 crash journal, opened by this build; every step plays back exactly, and after
-   a save the history is inside the .blend. Done 2026-11-22: tests/test_bl_beta2_upgrade.py (6 tests) on files made by
-   the real beta 2 code in Blender 4.2 (tests/fixtures/beta2, remade by its make_beta2_files.py), 6/6 on 5.3 and 4.2.
-   After crash recovery the unsaved strokes come back as steps after the cursor (the file holds the saved mesh).
-1. Real brush strokes on a 1M-vertex mesh, recorded in a real Blender window with several brushes, kept as the data
-   every size and speed claim is measured on.
-2. Smaller steps: lossless, toward 2 bytes per moved vertex on that data (about 4.5 today on synthetic strokes).
-3. History always in the .blend: embedded the only save mode (the history folder option goes); old folders are read
-   and moved in at the next save; Blender's in-memory copy is dropped after opening and put back while saving.
-4. Saves do work only for new steps (a new format 5; older builds keep such a history untouched and open the .blend
-   without it).
-5. Record everything fast in big scenes, since it is the default now: 500 to 2,000 objects.
-6. Fast at 100,000 steps on a 1M-vertex mesh: commit, jumps, the slider, save, open and memory, measured at that size.
-7. The Rust moves (history, recording pipeline, packer, global timeline, save and load), each where 5 and 6 show it
-   pays, with bit-exact tests against the Python it replaces.
-8. Close the "everything" gaps (making and deleting images, actions, palettes and other file-level datablocks) and
-   test with real third-party add-ons.
-
-Every change aimed at speed or size is a measured round (85 so far: 72 kept, 13 reverted; the owner's target is at
-least 100).
-
-Still for the owner at release: the defaults of Record texture painting, Record Multires and Record Dyntopo; and
-releasing 1.0.0-beta.3 (bump the manifest, build the zip, install-test, update `docs/download/hindsight.zip`, push
-without `[skip ci]`).
+In order: the build phase (remove the website; check the codebase for slop and fix what it finds; design and build
+format 5, where saves only write new steps; history always inside the .blend; Blender's copy dropped after opening;
+Record everything by default; record making and deleting file-level datablocks; test with real third-party add-ons
+once the owner names them; call it V2 in the changelog), then the optimisation phase (real brush strokes at 1M as test
+data; smaller steps; Record everything fast in big scenes; fast and light at 100,000 steps on 1M vertices, with the
+Rust moves where they pay; shrink the code; keep optimising until nothing is left). Proving V1 histories upgrade
+intact is done.
 
 Older notes, kept:
 
