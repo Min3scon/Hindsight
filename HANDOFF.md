@@ -1,24 +1,8 @@
 # Handoff
 
-**TOP PRIORITY (owner, 2026-10-14): whenever work stops for any reason (everything finished,
-stop-loss, rate limit, low usage, an error that can't be got past), the LAST thing done is making the
-newest working site live:**
-1. **Before deploying, check the site is safe to show:** no placeholder or empty screenshot slots (hide
-   any section whose real media isn't captured yet); every claim matches what is actually tested and
-   shipped (COVERAGE.md supported rows only); `python tools/check_copy.py` and the link check pass on
-   the built site; version and release notes match. If it isn't all safe, deploy the parts that are and
-   report what was left out.
-2. **Deploy:** remove `[skip ci]` from the final commit (or run the Pages workflow), wait for the run
-   to finish.
-3. **Verify live:** the live URL serves the new site, and `download/hindsight.zip` is the new build
-   (compare its size and the manifest version with the local build).
-4. If this happens before all tiers are done, the report says plainly which tiers landed and labels
-   the rest as planned.
-Until then: keep the current order of work and keep `[skip ci]` on every commit.
-
 **Test guarantee (owner, 2026-10-14): what counts as finished.** Order of work unchanged. No time
 pressure: never cut tests, rounds or review loops to finish sooner. Stop early only on the usage
-stop-loss (then push, update evidence, make the newest working site live). Website last but mandatory.
+stop-loss (then push, update evidence).
 - Files: TEST_AUDIT.md (blunt inventory per tier and row: code written, tests by file and name,
   real Blender or headless only, what's missing; sculpt tests never count for other rows).
   COVERAGE.md statuses are `supported`, `partial` (says exactly what works and what doesn't) or
@@ -58,9 +42,6 @@ stop-loss (then push, update evidence, make the newest working site live). Websi
   from primitives, parented hierarchy, modifier-heavy object, big GN graph, shader tree, painted
   weights and textures, animated rig with NLA, every object type, 20+ object scene). Owner's model
   copies run through the new rows too; delete the copies at the end.
-- Website v2 matches COVERAGE exactly (supported as supported, partial with limits, the rest planned);
-  check_copy fails on any data type that isn't a supported or partial row; "What it records" page
-  generated from COVERAGE and TEST_EVIDENCE with real media captured during the gates.
 - Final report adds: per tier rows supported / partial / not covered, tests per layer, defects by
   severity and open count, per-adapter cost and memory per step, reviewer findings, MANUAL_TESTS
   items, and a table of all rows with their evidence lines.
@@ -86,7 +67,7 @@ steps, ticks, counters, thumbnails, labels or progress.
   what changed where known ("3 objects changed, topology changed"). No unmeasured speed or time
   estimates, no result before the background read finishes, Cancel leaves no steps. Uncertain
   matching is said to be uncertain.
-- Site, docs, FAQ, README, release notes and add-on strings follow the same rule; check_copy fails on
+- README, release notes and add-on strings follow the same rule; check_copy fails on
   wording implying recovery of unsaved work, individual strokes, "go back on any file", and on any
   caption showing a populated timeline for a file with no saved versions.
 - Tests (in the tier gate and TEST_EVIDENCE): untouched generated file, no siblings, all four modes,
@@ -94,7 +75,7 @@ steps, ticks, counters, thumbnails, labels or progress.
   files written anywhere, original byte-identical, no sidecar. Same with one .blend1, only an
   autosave, only a git commit, and an unrelated similarly named file (not offered unless added).
   Cancel before, during and after the read: zero steps, no temp files. Screenshots of every empty
-  state, looked at. A scan of add-on strings and the built site for the banned phrases.
+  state, looked at. A scan of add-on strings for the banned phrases.
 - METADATA.md (audit now): everything Hindsight writes into or next to a .blend (properties, custom
   properties, scene and object data, files and folders) with name, type, when written, what removes
   it; generated from the registered property names by a script, plus a test that fails when the
@@ -105,9 +86,9 @@ steps, ticks, counters, thumbnails, labels or progress.
   settings, the sidecar folder only if ticked, never geometry), tested. Docs and FAQ: "What does
   Hindsight add to my file?" and "What happens if I only have one file?" (the one-file case first on
   the "Using it on an existing file" page, with a real screenshot of the empty-state dialog).
-- Order: importer after the Tier 1 gate; website pieces with website v2; never delays tier gates.
+- Order: importer after the Tier 1 gate; never delays tier gates.
 
-Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, SITE_PLAN.md, STYLE.md.
+Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, STYLE.md.
 
 ## Beta 3 job (owner, 2026-11-18, cloud sandbox: no Blender binary, no GPU)
 Read DECISIONS.md "Beta 3 job" first. Owner's instruction for this job: "don't edit site, just get the
@@ -300,14 +281,13 @@ importer.py, ui_empty_state.py).
 
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
-adapter records, migration from 1-3) -> Tiers 1..6 -> website v2 -> final test passes -> ship.
+adapter records, migration from 1-3) -> Tiers 1..6 -> final test passes -> ship.
 Since the test guarantee: Tier 2 code is parked on the local branch `tier2` (worktree `.tmp/wt3b`,
 commit 2ac7e45, also `.tmp/tier2_wip.patch`). Now: audit (TEST_AUDIT.md, COVERAGE statuses, evidence
 tooling), then the full gate for sculpting (existing rows) and Tier 1, including D14 (Object Mode mesh
 changes on recorded objects weren't recorded: Apply Scale, Apply Modifier, Set Origin; the fix is in
 the tier2 commit and gets ported), then Tier 2 resumes from that branch.
-Branches: gated commits go to the default branch with [skip ci] until the site is ready to deploy;
-WIP goes to `hindsight-wip`.
+Branches: see CLAUDE.md ("Working a ticket"): every ticket is a pull request, every commit ends with `[skip ci]`.
 
 ### How to run things
 - List Blenders: `python tests_ui/hs_ui.py list`
@@ -315,19 +295,16 @@ WIP goes to `hindsight-wip`.
 - Real-UI scenario: `python tests_ui/hs_ui.py run <name> --blender all [--fresh]`
 - Full test pass: `python tests_ui/rounds.py --pass N [--big]` (about 75 minutes on three Blenders)
 - Headless suite inside real Blender: `python tests/run_tests.py --blender all`
-- Site: `python scripts/build_zip.py --blender-ext ""` then `python site/build.py`, preview with
-  `node tools/serve_site.js` (http://127.0.0.1:8765/Hindsight/), QA with `node tests/site/site_qa.js`,
-  Lighthouse with `node tests/site/lighthouse.js`, copy check with `python tools/check_copy.py`.
+- Copy check: `python tools/check_copy.py`.
 - Pre-commit hook runs `tools/precommit_check.py`: blocks big files, secrets and personal paths.
 
 ### Safety rules for this job
 - Never touch the owner's Blender prefs or add-ons: always go through the sandbox env in hs_ui.py.
 - Owner's .blend files: only copies in `my_models_copies/` (git-ignored, made by
   `tests_ui/copy_own_models.py` from `.tmp/own/list.txt`). Delete the folder at the end.
-- Nothing from `.tmp/`, `test_models/`, `my_models_copies/` goes into git. Site media come only from
-  generated models.
+- Nothing from `.tmp/`, `test_models/`, `my_models_copies/` goes into git.
 
 ## Map
 - Contracts: INTERFACES.md. Parity: PARITY.md. Decisions and known issues: DECISIONS.md.
 - Core (no bpy): hindsight/core. Blender layer: hindsight/bl. Headless tests: tests/. Real-UI tests:
-  tests_ui/. Benchmarks: bench/. Website source: site/ (output: docs/). Tools: tools/.
+  tests_ui/. Benchmarks: bench/. Tools: tools/. ADRs: docs/adr/.
