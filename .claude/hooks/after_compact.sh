@@ -8,8 +8,8 @@ import json, sys
 branch = sys.argv[1]
 text = ("The context reached the 150,000-token limit and was just compacted. Do not continue the work in this "
         "session. Hand off now, following CLAUDE.md, \"Handing off at 150,000 tokens\": commit and push branch "
-        f"{branch}, post the handoff on the ticket, start the new session with create_session, tell the owner "
-        "its title, then stop.")
+        f"{branch}, write the handoff as Matt Pocock's handoff skill does, start the new session with it "
+        "(create_session), tell the owner its title, then stop.")
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}}))
 PY
 exit 0

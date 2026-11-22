@@ -62,14 +62,16 @@ its PreCompact hook (`.claude/hooks/precompact.sh`) makes the summary the handof
 (`.claude/hooks/after_compact.sh`) says to hand off. Then, before any other work:
 
 1. **Commit and push** the ticket's branch (a work-in-progress commit with `[skip ci]` if it isn't finished), so
-   nothing lives only in this container. A draft PR for it may say what is still to come.
-2. **Post the handoff** as a comment on the ticket: what is done, what is half done, the next concrete step, anything
-   running and its last result (a run in this container is lost: the new session runs it again), questions waiting on
-   the owner, and numbers not yet logged.
-3. **Start the new session** with `create_session` (claude-code-remote tools): `source_url`
-   `https://github.com/Min3scon/Hindsight`, `source_revision` the pushed branch, `title` "Hindsight V2: <ticket name>",
-   `prompt`: "Continue the Hindsight V2 map. Read CLAUDE.md, then the handoff on <ticket link>, and carry on from
-   it." followed by the handoff text.
+   nothing lives only in this container: the handoff points at commits, and a new session gets a fresh container.
+2. **Write the handoff** the way Matt Pocock's `handoff` skill does: a document summarising the conversation so a
+   fresh agent can continue, saved to the OS temp directory (not the repo), with a "suggested skills" section naming
+   the skills the next agent should call; it references what other artifacts already hold (the map and its tickets,
+   DECISIONS.md, commits, PRs) by path or URL instead of repeating it, and leaves out anything sensitive. Say what is
+   half done, the next concrete step, anything that was running and its last result (a run in this container is lost:
+   the new session runs it again), and questions waiting on the owner.
+3. **Start the new session** the way his `claude-handoff` skill does, with the handoff as its prompt: in a cloud
+   session that is `create_session` (claude-code-remote tools) with `source_url` `https://github.com/Min3scon/Hindsight`,
+   `source_revision` the pushed branch and a descriptive `title` ("Hindsight V2: <what it continues>").
 4. **Tell the owner** the new session's title, then **stop**: no more work in this one.
 
 A new session's container is set up by the "Hindsight" environment's setup script (`tools/dev_env.sh --all --blender
