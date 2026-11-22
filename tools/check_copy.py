@@ -125,46 +125,6 @@ def check_yaml_text(path):
             check_text(f"{path.relative_to(ROOT)}:{i}", text, MAX_WORDS_TEXT)
 
 
-# --------------------------------------------------------------------------- coverage
-# Ran on the website's text; since the website was removed (#5) main() runs it on nothing. Kept, with its
-# tests, until the owner decides which public text it should cover (README and CHANGELOG fail it as written).
-# A data type that COVERAGE.md doesn't list as supported or partial may only be named in a sentence
-# that says it isn't recorded (or is planned).
-NEGATIONS = ("not recorded", "isn't recorded", "aren't recorded", "not record", "doesn't record",
-             "don't record", "doesn't work with", "don't work with", "planned", "paused", "not yet",
-             "not supported", "aren't part of", "isn't part of", "not part of")
-
-
-def _coverage_terms(text=None):
-    if str(Path(__file__).resolve().parent) not in sys.path:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import coverage_md as cov
-    rows = cov.parse(text) if text is not None else cov.rows(ROOT / "COVERAGE.md")
-    terms = []
-    for row in rows:
-        if row.get("status", "").lower() not in cov.CLAIMABLE:
-            terms += cov.terms(row)
-    return sorted(set(terms), key=len, reverse=True)
-
-
-COVERAGE_TERMS = _coverage_terms()
-_COVERAGE_SEEN = set()
-
-
-def check_coverage(where, text):
-    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(text.split())):
-        low = sentence.lower()
-        if any(n in low for n in NEGATIONS):
-            continue
-        for term in COVERAGE_TERMS:
-            if re.search(r"(?<![\w-])" + re.escape(term) + r"(?![\w-])", low):
-                key = (where.split(" ")[0], sentence)
-                if key not in _COVERAGE_SEEN:
-                    _COVERAGE_SEEN.add(key)
-                    report(where, "coverage", f"names \"{term}\", which COVERAGE.md doesn't list as supported: {sentence}")
-                break
-
-
 # --------------------------------------------------------------------------- add-on strings
 def _docstring_ids(tree):
     ids = set()

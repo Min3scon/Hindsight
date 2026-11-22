@@ -1,9 +1,7 @@
 # Coverage
 
 What Hindsight records, and how sure we are. This file is the source for what the add-on, the README
-and the release notes may claim. `tools/check_copy.py` has the rule (a data type from a row that isn't
-`supported` or `partial` may only be named in a sentence that says it isn't recorded or is planned), but
-since the website was removed it runs on no file.
+and the release notes may claim. The copy checker no longer enforces this (its coverage rule ran on the website, which is gone); keep to it by hand.
 
 **Status** comes only from the tier gate (HANDOFF.md, "Test guarantee"): a row may be `supported` only
 when every gate item has a passing run on Blender 5.0.1, 5.1.1 and 5.1.2. Nothing checks this column

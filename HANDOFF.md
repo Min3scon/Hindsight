@@ -191,7 +191,7 @@ each tier, nothing starts until the previous tier passes:
 6. Tier 5: curves, text, metaballs, lattices, grease pencil, lights, cameras, empties.
 7. Tier 6 (only if everything above is solid): scene, world, render settings, collection structure.
 COVERAGE.md is the honesty source (status, test, limits, measured cost per row); UI, docs and site read
-from it and check_copy fails if the site names a data type that isn't a supported row. Scrubbers in the
+from it. Scrubbers in the
 Shader Editor, Geometry Nodes editor, Image Editor, Dope Sheet and Graph Editor; a step list popover.
 Testing extends Step 4 (property-based, mutation, real operators, cross-feature, undo interplay, soak,
 fault injection, test models per COVERAGE row). Website repositioned ("from sculpts to whole scenes"),
