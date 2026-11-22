@@ -86,7 +86,7 @@ Where a fact has no source, this page says "not measured" or "no report".
   lz4, zlib), `history.py` (one object's history, cursor, `goto`), `store.py` (caps, memory tiers, the
   background `Packer`), `registry.py`, `persist.py` (file formats 1 to 4, journal replay), `journal.py`
   (crash journal), `globaltl.py` (global timeline), `framing.py` (camera framing for Movie Mode),
-  `morph.py`, `importer.py`, `native.py` (loader of the Rust module).
+  `morph.py`, `native.py` (loader of the Rust module).
 - `hindsight/bl/`: the Blender side. `runtime.py` (recording, jumps, timers), `meshio.py` (mesh reads and
   writes), `datarec.py` and `adapters.py` (Record everything: objects, constraints, collections, RNA
   values), `idmap.py`, `persistence.py` (save, load, recovery), `scrubber.py` (on-screen slider),
