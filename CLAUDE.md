@@ -71,7 +71,9 @@ its PreCompact hook (`.claude/hooks/precompact.sh`) makes the summary the handof
    the new session runs it again), and questions waiting on the owner.
 3. **Start the new session** the way his `claude-handoff` skill does, with the handoff as its prompt: in a cloud
    session that is `create_session` (claude-code-remote tools) with `source_url` `https://github.com/Min3scon/Hindsight`,
-   `source_revision` the pushed branch and a descriptive `title` ("Hindsight V2: <what it continues>").
+   `source_revision` the pushed branch, a descriptive `title` ("Hindsight V2: <what it continues>") and
+   `tags: ["remote-agents-project:hindsight-v2"]`, so every Hindsight V2 session stays in one group; check with
+   `get_session` that the new session has the tag.
 4. **Tell the owner** the new session's title, then **stop**: no more work in this one.
 
 A new session's container is set up by the "Hindsight" environment's setup script (`tools/dev_env.sh --all --blender
