@@ -53,3 +53,25 @@ unassigned ticket (blocked tickets start with a `Blocked by:` line).
    Also say in it anything the owner must check or decide. Then watch the PR: fix failing checks and answer review
    comments.
 5. **After the owner merges**, add the ticket's one-line result to the map's "Decisions so far".
+
+## Handing off at 150,000 tokens
+
+Owner's rule (2026-11-22): a session never works past about 150,000 tokens of context; past that, the work moves to a
+fresh session automatically. `.claude/settings.json` sets `autoCompactWindow` to 150000, so a compaction runs there;
+its PreCompact hook (`.claude/hooks/precompact.sh`) makes the summary the handoff, and the SessionStart hook after it
+(`.claude/hooks/after_compact.sh`) says to hand off. Then, before any other work:
+
+1. **Commit and push** the ticket's branch (a work-in-progress commit with `[skip ci]` if it isn't finished), so
+   nothing lives only in this container. A draft PR for it may say what is still to come.
+2. **Post the handoff** as a comment on the ticket: what is done, what is half done, the next concrete step, anything
+   running and its last result (a run in this container is lost: the new session runs it again), questions waiting on
+   the owner, and numbers not yet logged.
+3. **Start the new session** with `create_session` (claude-code-remote tools): `source_url`
+   `https://github.com/Min3scon/Hindsight`, `source_revision` the pushed branch, `title` "Hindsight V2: <ticket name>",
+   `prompt`: "Continue the Hindsight V2 map. Read CLAUDE.md, then the handoff on <ticket link>, and carry on from
+   it." followed by the handoff text.
+4. **Tell the owner** the new session's title, then **stop**: no more work in this one.
+
+A new session's container is set up by the "Hindsight" environment's setup script (`tools/dev_env.sh --all --blender
+4.2,5.3`: all five bpy test modules, Blender 4.2 and 5.3, the Rust tools). It starts by reading this file, the map and
+the handoff.
