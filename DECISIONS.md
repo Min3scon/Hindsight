@@ -51,6 +51,13 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - The code itself is optimised too (owner, 2026-11-22): as small as possible while keeping every function. A check
   for slop (project-triage) comes early in the build phase, right after the website goes, and its fixes come before
   the rest of the build; shrinking the code is also part of the optimisation phase, alongside speed and memory.
+- Add-on testing (owner, 2026-11-22): V2 must work with basically every add-on people use. Tested with the 1,000
+  most-downloaded add-ons on Blender's extensions platform (5,000 would mostly add add-ons with very few users), plus
+  the most popular paid ones where a copy is provided; after everything else is built, before any optimisation.
+- Pull requests (owner, 2026-11-22): the work of every ticket goes up as a pull request in the shape of Matt Pocock's
+  `pr` skill (Summary, Evidence, Merge Danger), so the owner can review it quickly; never as a plain commit. Matt
+  Pocock's skills are used for the work (`implement` with `tdd` and `code-review`, `research`, `diagnosing-bugs`). The
+  steps are in CLAUDE.md, "Working a ticket". The glossary is `GLOSSARY.md`, the name his current skills use.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 

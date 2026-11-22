@@ -425,7 +425,7 @@ The plan lives on GitHub as a wayfinder map: [Map: Hindsight V2](https://github.
 18 tickets (2026-11-22). Its destination: V2 (2.0.0) ready to release, everything built first, then optimised until
 nothing more can be gained without losing function. Work the map, not this list: the next ticket is the first open,
 unblocked, unassigned one (each blocked ticket starts with a `Blocked by:` line). The decisions behind it are in
-DECISIONS.md, the words in CONTEXT.md.
+DECISIONS.md, the words in GLOSSARY.md.
 
 In order: the build phase (remove the website; check the codebase for slop and fix what it finds; design and build
 format 5, where saves only write new steps; history always inside the .blend; Blender's copy dropped after opening;
