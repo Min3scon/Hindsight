@@ -169,12 +169,8 @@ Pages source). WIP commits that must not deploy carry `[skip ci]`.
 - [~] Step 4: rounds A-G written (tests_ui/rounds.py). Pass 1 ran; see TEST_ROUNDS.md. Still to do:
   pass 2 and 3 (need two clean passes in a row), the 10,000-step 100k session (`--big`) in the final pass,
   the new round_b_features scenario, and delete `my_models_copies/` at the very end.
-- [~] Step 5: site rebuilt from scratch in `site/` (built into `docs/` by `python site/build.py`).
-  Done: SITE_PLAN, STYLE, check_copy, design system, demo (passes in 3 browsers), docs, changelog, 404,
-  OG cards, icons, Lighthouse runner (all pages 99-100). To do: run `tests_ui/scenarios/s_capture.py`
-  (real Blender media), `python tools/encode_media.py`, tune crops in `tools/media_crops.json`, sculpt
-  art for the OG card (`site/og/art.png`, then `node site/render_assets.js`), benchmarks
-  (`python tools/bench_table.py`), design review rounds at 6 widths x 3 browsers.
+- [x] Step 5: the V1 website was built and published from `site/` into `docs/`; V2 removed it (ticket #5;
+  the last commit with it is tagged `website-final`).
 - [ ] Step 6: bump to 1.0.0-beta.2, release notes, push, verify live, pre-release, repo settings.
 
 ## v2 scope (owner's update, 2026-10-14, replaces the earlier "all of Blender" and "objects only" notes)
