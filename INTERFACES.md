@@ -373,7 +373,7 @@ def merge(a, b)                                        # union of two extents (N
 def fit(ext, basis, tan_x, tan_y, min_distance=1e-3) -> dict | None   # location, near, far, center, depth
 def bounds(points); def merge_bounds(a, b)             # min xyz, max xyz
 def light_rig(basis, center, radius) -> list[dict]     # key, fill, rim: direction, location, strength, angle, color
-def history_extents(h, state, target_uid, basis, tan_x, tan_y)   # extents over every other history position
+def history_extents_multi(h, state, target_uid, bases, tans)   # (k, 6) extents over every other history position, one row per basis
 
 # hindsight/bl/camrig.py
 NAMES; MARGIN

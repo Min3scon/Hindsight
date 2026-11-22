@@ -1,10 +1,40 @@
 """Reference for the engine's `morph_dab` (R083): one dab of the Morph History brush as hindsight/bl/morph.py
-did it in numpy up to R081/R082 (the box test `in_box`, then the distances, the falloff of core.morph, the mask,
-the stroke's strongest weight and core.morph.morph_blend from the stroke's start). The engine must give the
-same co, acc and count, bit for bit (NaN aside: any NaN)."""
+did it in numpy up to R081/R082 (the box test `in_box`, then the distances, `falloff`, the mask, the stroke's
+strongest weight and `morph_blend` from the stroke's start; those two were in hindsight/core/morph.py). The engine
+must give the same co, acc and count, bit for bit (NaN aside: any NaN)."""
 import numpy as np
 
-from hindsight.core import morph as M
+
+def falloff(dist, radius) -> np.ndarray:
+    """Smooth brush falloff: (1 - (d/r)^2)^2, 1 at the centre, 0 at and beyond r."""
+    d = np.asarray(dist, dtype=np.float64)
+    if radius is None or radius <= 0:
+        return np.zeros(d.shape, np.float64)
+    w = 1.0 - (d / float(radius)) ** 2
+    np.clip(w, 0.0, 1.0, out=w)
+    return w * w
+
+
+def morph_blend(cur: np.ndarray, target: np.ndarray, idx, weights, strength: float, mask=None) -> None:
+    """In place: move vertices `idx` of `cur` toward `target`.
+
+    cur/target: flat float32 arrays (N*3). idx: vertex indices. weights: one per idx.
+    Factor f = weights * strength * (1 - mask[idx]) clipped to [0, 1]; the lerp is
+    written as cur*(1-f) + target*f so f == 1 lands exactly on the target and
+    f == 0 leaves the vertex bit-identical.
+    """
+    idx = np.asarray(idx, dtype=np.int64)
+    if idx.size == 0:
+        return
+    f = np.asarray(weights, dtype=np.float64) * float(strength)
+    if mask is not None:
+        f = f * (1.0 - np.asarray(mask, dtype=np.float64)[idx])
+    f = np.clip(f, 0.0, 1.0)[:, None]
+    c = cur.reshape(-1, 3)
+    t = target.reshape(-1, 3)
+    a = c[idx].astype(np.float64)
+    b = t[idx].astype(np.float64)
+    c[idx] = (a * (1.0 - f) + b * f).astype(cur.dtype)
 
 
 def in_box(co, c, r: float, hidden=None):
@@ -41,12 +71,12 @@ def morph_dab(cur, start, target, acc, mask, hidden, cx, cy, cz, r, strength, bo
     idx = cand[inside]
     if idx.size == 0:
         return 0
-    w = M.falloff(d[inside], r) * float(strength)
+    w = falloff(d[inside], r) * float(strength)
     if mask is not None:
         w *= 1.0 - mask[idx]
     w = np.maximum(acc[idx], np.clip(w, 0.0, 1.0))
     acc[idx] = w
     before = co[idx].copy()
     co[idx] = start.reshape(-1, 3)[idx]
-    M.morph_blend(cur, target, idx, w, 1.0)
+    morph_blend(cur, target, idx, w, 1.0)
     return int(np.count_nonzero(np.any(co[idx] != before, axis=1)))

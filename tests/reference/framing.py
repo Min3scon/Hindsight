@@ -156,3 +156,10 @@ def old_history_extents_multi(h, state, target_uid: str, bases, tans, batch: int
     return out[0]
 
 
+def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
+    """F.history_extents_multi for one basis: (6,) or None. It was hindsight/core/framing.py's single-basis
+    form, used only by the tests (the add-on calls the `_multi` form)."""
+    out = F.history_extents_multi(h, state, target_uid, np.asarray(basis, np.float64)[None], [(tan_x, tan_y)])
+    return None if out is None else out[0]
+
+

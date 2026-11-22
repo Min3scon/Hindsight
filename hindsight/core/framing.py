@@ -537,23 +537,17 @@ def history_vertex_reach(h, state, target_uid: str):
     return out
 
 
-def history_extents(h, state, target_uid: str, basis, tan_x, tan_y):
+def history_extents_multi(h, state, target_uid: str, bases, tans, batch: int = 65536):
     """Extents (as `extents` gives them) of the mesh of `target_uid` over every position of History
-    `h` other than the cursor's, or None when it has none.
+    `h` other than the cursor's, for k bases at once ((k,3,3) bases, k (tan_x, tan_y) pairs): (k, 6),
+    or None when it has none.
 
     Merged with the extents of the mesh at the cursor, a camera fitted to the result has every step
     of the timelapse in frame, exactly. One walk over the history that looks only at the vertices
     each step moves, so it costs about as much as one scrub from end to end, whatever the mesh
     size. Works on private copies: the history, its entries and `state` are left unchanged; a
     direction stops at a JOIN or at a step that can't be applied.
-    """
-    out = history_extents_multi(h, state, target_uid, np.asarray(basis, np.float64)[None],
-                                [(tan_x, tan_y)])
-    return None if out is None else out[0]
 
-
-def history_extents_multi(h, state, target_uid: str, bases, tans, batch: int = 65536):
-    """`history_extents` for k bases at once ((k,3,3) bases, k (tan_x, tan_y) pairs): (k, 6) or None.
     R085: the vertices each step moves are measured by the engine where they are, right after the
     step (`extents_into` with the step's indices), into one running result: no copies of them are
     gathered (`batch` is unused, kept for callers)."""
