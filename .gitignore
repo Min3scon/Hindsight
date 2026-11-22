@@ -14,7 +14,6 @@ node_modules/
 /.tmp/
 /test_models/
 /test_models
-/test_rounds/pass*/
 /my_models_copies/
 /test_screens_raw/
 /logs/

@@ -15,7 +15,6 @@ import bpy
 import tests.harness as H
 from tests import oracle as O
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import adapters, datarec, guard, idmap, runtime, selfcheck
 
 C = bpy.context
@@ -114,27 +113,21 @@ def check_fault(aid, where):
     assert len(hist("A").entries) == n_before["A"] + 1, "recording works again"
 
 
-@covers("obj.transforms", "FAULT")
-@covers("obj.parenting", "FAULT")
 def test_rna_adapter_faults():
     for where in ("capture", "diff", "apply"):
         check_fault("rna", where)
 
 
-@covers("obj.constraints", "FAULT")
-@covers("obj.collections", "FAULT")
 def test_object_adapter_faults():
     for where in ("capture", "diff", "apply"):
         check_fault("object", where)
 
 
-@covers("obj.addremove", "FAULT")
 def test_scene_adapter_faults():
     for where in ("capture", "diff", "apply"):
         check_fault("scene", where)
 
 
-@covers("obj.editsteps", "FAULT")
 def test_edit_steps_fault():
     """Edit Mode step by step raising: only it switches off; the object's other data and sculpting
     still record; the history plays back."""
@@ -168,7 +161,6 @@ def test_edit_steps_fault():
     assert not guard.failed()
 
 
-@covers("obj.transforms", "FAULT")
 def test_object_mode_mesh_check_fault():
     """The Object Mode mesh check (Apply, Shade Smooth) raising: only it switches off; transforms
     still record."""
@@ -190,7 +182,6 @@ def test_object_mode_mesh_check_fault():
     assert not guard.failed()
 
 
-@covers("obj.transforms", "STEPS")
 def test_mesh_change_without_an_operator_is_recorded():
     """D32: a change to a recorded mesh in Object Mode that comes without an operator (a script, or
     an operator's update that arrives after the timer saw it finish) reaches the recorder through the
@@ -218,7 +209,6 @@ def test_mesh_change_without_an_operator_is_recorded():
     assert O.object_state(a) == after
 
 
-@covers("obj.constraints", "STEPS")
 def test_animated_constraint_settings_are_not_steps():
     """D15: keyframed or driven constraint settings change with the frame: never a step."""
     setup()

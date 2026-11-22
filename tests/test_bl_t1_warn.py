@@ -13,7 +13,6 @@ import bpy
 import tests.harness as H
 from tests import t1_ops as T
 from tests import t1_gate_lib as L
-from tests.gate import covers
 from hindsight.bl import datarec, runtime, ui_panel
 from hindsight.bl import warnings as W
 
@@ -70,7 +69,6 @@ def setup(scene_on=True):
         datarec.set_tracked(C.scene, True)
 
 
-@covers(["obj.transforms", "obj.constraints"], "WARN")
 def test_animated_values():
     setup()
     a = bpy.data.objects["A"]
@@ -84,7 +82,6 @@ def test_animated_values():
     assert not shows("C", W.TXT_EV_ANIMATED)
 
 
-@covers("obj.constraints", "WARN")
 def test_lists_in_constraint_settings():
     setup()
     c = bpy.data.objects["A"].constraints.new("ARMATURE")
@@ -95,7 +92,6 @@ def test_lists_in_constraint_settings():
     assert not shows("B", W.TXT_EV_LISTS)
 
 
-@covers("obj.parenting", "WARN")
 def test_parenting_with_deform():
     """Ctrl+P > Lattice Deform adds a Lattice modifier to the child. D110: it is recorded with the
     parenting (going back takes it off again), so the note that said it wasn't is gone."""
@@ -120,7 +116,6 @@ def test_parenting_with_deform():
     assert any(m.type == "LATTICE" for m in a.modifiers), [m.type for m in a.modifiers]
 
 
-@covers("obj.addremove", "WARN")
 def test_physics_and_particles_note():
     """D49: physics and particle systems don't come back with a deleted object: said on such objects."""
     setup()
@@ -131,7 +126,6 @@ def test_physics_and_particles_note():
     assert not shows("B", W.TXT_EV_PHYSICS)
 
 
-@covers(["obj.addremove", "obj.transforms"], "WARN")
 def test_objects_not_switched_on_and_other_types():
     setup()
     T.add_primitive("cube", (0, -5, 0)).run()
@@ -155,7 +149,6 @@ def test_objects_not_switched_on_and_other_types():
     assert not shows("Cube", W.TXT_EV_NOT_ON), "nothing about this object is recorded: nothing to say"
 
 
-@covers("obj.editsteps", "WARN")
 def test_big_mesh_edit_mode():
     setup()
     big = H.make_mesh(runtime.SETTINGS.edit_steps_max + 20_000, name="Big")
@@ -164,7 +157,6 @@ def test_big_mesh_edit_mode():
     assert not shows("A", W.TXT_EV_EDIT_BIG)
 
 
-@covers("obj.collections", "WARN")
 def test_new_collections_need_the_scene():
     setup(scene_on=False)
     assert shows("A", W.TXT_EV_NEW_COLLECTIONS)
@@ -172,7 +164,6 @@ def test_new_collections_need_the_scene():
     assert not shows("A", W.TXT_EV_NEW_COLLECTIONS)
 
 
-@covers(["obj.transforms", "obj.addremove"], "WARN")
 def test_linked_objects():
     setup()
     path = os.path.join(tempfile.mkdtemp(prefix="hs_warn_"), "lib.blend")
@@ -183,7 +174,6 @@ def test_linked_objects():
     assert shows("A", W.TXT_EV_LINKED)
 
 
-@covers("obj.transforms", "WARN")
 def test_recorded_data_not_called_unrecorded():
     """D113: modifiers, vertex groups, shape keys and materials are recorded on an object Record
     everything is on for (D108, D110 to D112): the notes saying they aren't are not shown there."""
@@ -208,7 +198,6 @@ def test_recorded_data_not_called_unrecorded():
         assert t in flat, t
 
 
-@covers(["obj.transforms", "obj.constraints", "obj.addremove", "obj.editsteps", "obj.collections"], "WARN")
 def test_nothing_said_with_sculpting_only():
     setup()
     bpy.data.objects["A"].keyframe_insert("location", frame=1)

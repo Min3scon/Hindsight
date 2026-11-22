@@ -22,7 +22,6 @@ import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import datarec, idmap, runtime
 
 C = bpy.context
@@ -73,7 +72,6 @@ SCENES = (("small", 6, 6), ("medium", 60, 20), ("heavy", 500, 50))
 RESULTS = {}
 
 
-@covers(ROWS, "PERF")
 def test_recording_and_restoring_cost():
     bad = []
     for label, n, tracked in SCENES:
@@ -105,7 +103,6 @@ def test_recording_and_restoring_cost():
     assert not bad, bad
 
 
-@covers(ROWS, "PERF")
 def test_memory_per_step():
     scene(6, 6)
     T.translate("A", (1, 0, 0)).run()
@@ -123,7 +120,6 @@ def test_memory_per_step():
         (move, con, add)
 
 
-@covers(["obj.transforms", "obj.editsteps"], "PERF")
 def test_object_mode_mesh_check_cost():
     bad, got = [], {}
     for n, limit in OBJECT_MESH_MS.items():

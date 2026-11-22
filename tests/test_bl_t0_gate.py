@@ -16,39 +16,32 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import tests.harness as H
 from tests import t0_gate_lib as L
 from tests import t0_ops as T0
-from tests.gate import covers
 
 
 def gate(row):
     L.gate(row, T0.sequences()[row])
 
 
-@covers("sculpt.positions", "EXACT", "ORACLE", "REPLAY", "STEPS")
 def test_gate_positions():
     gate("sculpt.positions")
 
 
-@covers("sculpt.masks", "EXACT", "ORACLE", "REPLAY", "STEPS")
 def test_gate_masks():
     gate("sculpt.masks")
 
 
-@covers("sculpt.colors", "OPS", "EXACT", "ORACLE", "REPLAY", "STEPS")
 def test_gate_colors():
     gate("sculpt.colors")
 
 
-@covers("sculpt.topology", "OPS", "EXACT", "ORACLE", "REPLAY", "STEPS")
 def test_gate_topology():
     gate("sculpt.topology")
 
 
-@covers("sculpt.joinsep", "OPS", "EXACT", "ORACLE", "REPLAY", "STEPS")
 def test_gate_joinsep():
     gate("sculpt.joinsep")
 
 
-@covers("sculpt.editvisit", "OPS", "EXACT", "ORACLE", "REPLAY", "STEPS")
 def test_gate_editvisit():
     gate("sculpt.editvisit")
 
