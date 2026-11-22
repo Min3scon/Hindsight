@@ -37,10 +37,17 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
   ("not 100 rounds for the sake of it").
 - The next release is V2, not "beta 3" (owner, 2026-11-22): the version out now is V1, no longer a beta (the
   owner's teacher has it on his website), though its files say 1.0.0-beta.2. V2's version number is 2.0.0.
-- The work's end point (owner, 2026-11-22): V2 ready to release, everything built first, then optimised until a fresh
-  profile of every benchmark scenario at the target sizes leaves no cost where Hindsight's own code is more than about
-  10% of the time and the last attempts found nothing worth keeping (at least 100 rounds), tested on Blender 4.2 to
-  5.3. The release itself stays the owner's call.
+- The work's end point (owner, 2026-11-22): V2 ready to release, everything built first, then optimised, tested on
+  Blender 4.2 to 5.3. The release itself stays the owner's call.
+- When optimising stops (owner, 2026-11-22, replacing a proposed "no Hindsight cost above 10%" rule): there is no
+  fixed target, for time or for memory ("I can't just say make it use 1 gigabyte of RAM"). If it can be optimised,
+  optimise it; if it can be optimised again, keep going; stop only when nothing more can be gained without taking
+  away some of what the add-on does. The aim is that it runs very well on any PC and uses little RAM. In practice:
+  the phase ends when a full profiling pass over every scenario finds nothing left to try, every remaining cost
+  having been attempted and the attempts reverted, or being Blender's own. At least 100 rounds in all.
+- The website is no longer needed (owner, 2026-11-22): V1 is not hosted there any more. Deleting it, hiding it or
+  keeping it is left to the recommendation. This replaces the rule that `docs/` and `site/` are only changed for a
+  release.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
