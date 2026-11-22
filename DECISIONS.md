@@ -31,6 +31,10 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - The new layout of the history in the .blend (format 5) is accepted: a file saved by the new build opens in beta 2
   or beta 3 without its history, which those builds keep untouched until the PC is updated (owner, 2026-11-22: "do
   what's best"). The order of the work is the one in DEVELOPMENT.md section i (owner left it to the recommendation).
+- Build first, then optimise (owner, 2026-11-22): everything is built before the optimisation work starts, instead of
+  optimising midway, which wastes time when later building changes the code again. The optimisation phase is at
+  least 100 measured rounds and does not stop at 100: it keeps going until optimising no longer finds real gains
+  ("not 100 rounds for the sake of it").
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
