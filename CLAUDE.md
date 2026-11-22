@@ -54,31 +54,35 @@ unassigned ticket (blocked tickets start with a `Blocked by:` line).
    comments.
 5. **After the owner merges**, add the ticket's one-line result to the map's "Decisions so far".
 
-## Handing off at 150,000 tokens
+## One session, helper agents, 150,000 tokens
 
-Owner's rule (2026-11-22): a session never works past about 150,000 tokens of context; past that, the work moves to a
-fresh session automatically. `.claude/settings.json` sets `autoCompactWindow` to 200000: cloud sessions compact at
-about 92% of that window less a reserve for the reply, so the compaction runs at about 150,000 (measured: 150000
-compacted at 104,000 to 107,000, and with about 90,000 of tools and instructions loaded before any work, a session
-compacted every minute). The same file defers MCP tool schemas (`ENABLE_TOOL_SEARCH`) and denies the connectors
-this repo never uses (Gmail, Coros, Claude Docs), so less of the 150,000 goes to tools. Its PreCompact hook (`.claude/hooks/precompact.sh`) makes the summary the handoff, and the SessionStart hook after it
-(`.claude/hooks/after_compact.sh`) says to hand off. Then, before any other work:
+Owner's rules (2026-11-22): no context past about 150,000 tokens, and no time lost to new sessions. So the work runs
+in **one long session** that leads, and **helper agents** (the Agent tool) do the long pieces.
 
-1. **Commit and push** the ticket's branch (a work-in-progress commit with `[skip ci]` if it isn't finished), so
-   nothing lives only in this container: the handoff points at commits, and a new session gets a fresh container.
-2. **Write the handoff** the way Matt Pocock's `handoff` skill does: a document summarising the conversation so a
-   fresh agent can continue, saved to the OS temp directory (not the repo), with a "suggested skills" section naming
-   the skills the next agent should call; it references what other artifacts already hold (the map and its tickets,
-   DECISIONS.md, commits, PRs) by path or URL instead of repeating it, and leaves out anything sensitive. Say what is
-   half done, the next concrete step, anything that was running and its last result (a run in this container is lost:
-   the new session runs it again), and questions waiting on the owner.
-3. **Start the new session** the way his `claude-handoff` skill does, with the handoff as its prompt: in a cloud
-   session that is `create_session` (claude-code-remote tools) with `source_url` `https://github.com/Min3scon/Hindsight`,
-   `source_revision` the pushed branch, a descriptive `title` ("Hindsight V2: <what it continues>") and
-   `tags: ["remote-agents-project:hindsight-v2"]`, so every Hindsight V2 session stays in one group; check with
-   `get_session` that the new session has the tag.
-4. **Tell the owner** the new session's title, then **stop**: no more work in this one.
+- **The lead session** picks the next ticket on the map, briefs helpers, checks what they bring back (re-runs their
+  tests), opens the pull requests and talks to the owner. It keeps its own context small: no file dumps, no whole
+  logs, only helpers' short reports.
+- **Helpers** each get one narrow job (build one ticket's change test-first, research a question, find why a test
+  fails) and a brief that names the files and the rules that apply. Each starts with an empty context and returns a
+  short report: what changed (commits), the test results, what is left. At most 3 helpers at once (usage limits);
+  never two on the same file.
+- **150,000 tokens**: `.claude/settings.json` sets `autoCompactWindow` to 207500. Cloud sessions compact at 80% of
+  that window less 20,000 (measured on 2026-11-22: 150000 gave a compaction point of 104,000), so the compaction
+  runs at 150,000, for the lead session and for helpers alike. The PreCompact hook (`.claude/hooks/precompact.sh`)
+  makes the summary a handoff note, and the session **continues in place** from it: same machine, running tests
+  keep running, nothing to set up again. The hook after it (`.claude/hooks/after_compact.sh`) says so.
+- About 55,000 to 90,000 tokens are instructions and tools loaded before any work. The same settings file defers
+  MCP tool schemas (`ENABLE_TOOL_SEARCH`) and denies the connectors this repo never uses (Gmail, Coros, Claude Docs).
+- **Talking to the owner**: a few short lines on what is being done and what is next; no tool output, no ids or
+  codes. Tool output stays short too (`head`, `tail`, `grep`; never a whole log).
 
-A new session's container is set up by the "Hindsight" environment's setup script (`tools/dev_env.sh --all --blender
-4.2,5.3`: all five bpy test modules, Blender 4.2 and 5.3, the Rust tools). It starts by reading this file, the map and
-the handoff.
+**Only if this session's machine is gone** (the container was reclaimed and the session can't resume) does the work
+move to a new session: commit and push the branch, write a handoff the way Matt Pocock's `handoff` skill does (the
+OS temp directory, a "suggested skills" section, references to the map, DECISIONS.md, commits and PRs instead of
+copies, what is half done, the next step, questions for the owner), then `create_session` (claude-code-remote) with
+`source_url` `https://github.com/Min3scon/Hindsight`, `source_revision` the pushed branch, a `title` "Hindsight V2:
+<what it continues>" and `tags: ["remote-agents-project:hindsight-v2"]`, and tell the owner its title.
+
+A new session's machine is set up by the "Hindsight" environment's setup script (`tools/dev_env.sh --all --blender
+4.2,5.3`: all five bpy test modules, Blender 4.2 and 5.3, the Rust tools, installed side by side). The platform saves
+that setup and reuses it, so a new session usually starts in under a minute.
