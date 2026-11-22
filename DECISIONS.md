@@ -58,6 +58,10 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
   `pr` skill (Summary, Evidence, Merge Danger), so the owner can review it quickly; never as a plain commit. Matt
   Pocock's skills are used for the work (`implement` with `tdd` and `code-review`, `research`, `diagnosing-bugs`). The
   steps are in CLAUDE.md, "Working a ticket". The glossary is `GLOSSARY.md`, the name his current skills use.
+- Movie Mode framing (owner, 2026-11-22: "the perfect position for the camera and light to get everything in
+  frame"): with Record everything on, the camera and the lights are placed so everything the history plays back is
+  in frame and well lit at every step, every object type that renders, not only meshes, and objects moved, added
+  or deleted during the history. Ticket #23, after #10 and #13 and before add-on testing (#15).
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
