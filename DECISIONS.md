@@ -35,6 +35,12 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
   optimising midway, which wastes time when later building changes the code again. The optimisation phase is at
   least 100 measured rounds and does not stop at 100: it keeps going until optimising no longer finds real gains
   ("not 100 rounds for the sake of it").
+- The next release is V2, not "beta 3" (owner, 2026-11-22): the version out now is V1, no longer a beta (the
+  owner's teacher has it on his website), though its files say 1.0.0-beta.2. V2's version number is 2.0.0.
+- The work's end point (owner, 2026-11-22): V2 ready to release, everything built first, then optimised until a fresh
+  profile of every benchmark scenario at the target sizes leaves no cost where Hindsight's own code is more than about
+  10% of the time and the last attempts found nothing worth keeping (at least 100 rounds), tested on Blender 4.2 to
+  5.3. The release itself stays the owner's call.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
