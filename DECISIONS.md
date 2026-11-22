@@ -1,5 +1,37 @@
 # Decisions log
 
+## History inside the .blend (owner, 2026-11-22)
+
+The history lives inside the .blend itself, so the file alone carries all of it to any computer; nobody should
+need a separate folder to keep their work and its history. It must be made small enough to fit there, also at
+100,000 steps on a 1M-vertex mesh, rather than moved to disk outside the file. (Asked: keep old steps in files on
+disk and read them back when needed? Answer: no, inside the Blender file.)
+
+- What follows: embedded history becomes the default save mode (today the default is the history folder,
+  `save_mode` in hindsight/bl/prefs.py); "saves write only new steps" applies to Hindsight's own work in a save,
+  since Blender writes the whole .blend each time; the size of the history is the target of the work.
+- Every step is kept, exactly, whatever the size: the user can go back to any step, and a timelapse shows every
+  step they made (5,000 steps: 5,000 frames' worth). No merging or dropping of old steps to save space (owner,
+  2026-11-22; asked: merge old steps, drop the oldest, or keep all?). So the work is lossless compression of each
+  step, "down to about a kilobyte, or something reasonable", and it must all work at 1M vertices.
+- Size target (owner, 2026-11-22): about 2 bytes per vertex a step moves, measured on real brush strokes (about
+  4.5 today on synthetic strokes), and smaller wherever it can be found: recording a sculpt to document it must not
+  add an excessive amount to someone's already big .blend.
+- The history folder goes as a save option (owner, 2026-11-22; asked: keep it as an option, off by default?): the
+  history always stays in the .blend, so the file can be moved to any PC and work continues there. Histories already
+  saved in a folder (beta 2's default) still open, and move into the .blend at the next save.
+- Blender's own in-memory copy of the embedded history is dropped once the file is open, and put back only while
+  saving, so the history is held once instead of twice (owner, 2026-11-22: "Blender is memory intensive"). Known
+  cost, accepted: a file recovered from Blender's autosave opens without its history; after a crash the crash
+  journal brings everything back when the .blend itself is opened.
+- Record defaults to "Everything in this file" (owner, 2026-11-22), not "Sculpting only" (`record_scope` in
+  hindsight/bl/prefs.py). This settles the release decision L2 left open. What follows: the cost of recording
+  everything in big scenes now reaches every user (each operation reads every recorded object again: measured
+  2026-11-19 about 8.6 ms at 100 objects, 42 ms at 500, 227 ms at 2,000), so it becomes work to do, not an option.
+- The new layout of the history in the .blend (format 5) is accepted: a file saved by the new build opens in beta 2
+  or beta 3 without its history, which those builds keep untouched until the PC is updated (owner, 2026-11-22: "do
+  what's best"). The order of the work is the one in DEVELOPMENT.md section i (owner left it to the recommendation).
+
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
 The owner asked for Hindsight to be finished: every line of the site's Limitations page dealt with,
