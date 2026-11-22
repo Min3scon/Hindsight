@@ -14,7 +14,10 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
   step they made (5,000 steps: 5,000 frames' worth). No merging or dropping of old steps to save space (owner,
   2026-11-22; asked: merge old steps, drop the oldest, or keep all?). So the work is lossless compression of each
   step, "down to about a kilobyte, or something reasonable", and it must all work at 1M vertices.
-- Still open: whether the history folder stays as an option; the size target in numbers.
+- Size target (owner, 2026-11-22): about 2 bytes per vertex a step moves, measured on real brush strokes (about
+  4.5 today on synthetic strokes), and smaller wherever it can be found: recording a sculpt to document it must not
+  add an excessive amount to someone's already big .blend.
+- Still open: whether the history folder stays as an option.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
