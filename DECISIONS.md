@@ -24,6 +24,10 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
   saving, so the history is held once instead of twice (owner, 2026-11-22: "Blender is memory intensive"). Known
   cost, accepted: a file recovered from Blender's autosave opens without its history; after a crash the crash
   journal brings everything back when the .blend itself is opened.
+- Record defaults to "Everything in this file" (owner, 2026-11-22), not "Sculpting only" (`record_scope` in
+  hindsight/bl/prefs.py). This settles the release decision L2 left open. What follows: the cost of recording
+  everything in big scenes now reaches every user (each operation reads every recorded object again: measured
+  2026-11-19 about 8.6 ms at 100 objects, 42 ms at 500, 227 ms at 2,000), so it becomes work to do, not an option.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
