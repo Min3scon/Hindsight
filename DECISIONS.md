@@ -48,6 +48,9 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - The website is no longer needed (owner, 2026-11-22): V1 is not hosted there any more. Deleting it, hiding it or
   keeping it is left to the recommendation. This replaces the rule that `docs/` and `site/` are only changed for a
   release.
+- The code itself is optimised too (owner, 2026-11-22): as small as possible while keeping every function. A check
+  for slop (project-triage) comes early in the build phase, right after the website goes, and its fixes come before
+  the rest of the build; shrinking the code is also part of the optimisation phase, alongside speed and memory.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
