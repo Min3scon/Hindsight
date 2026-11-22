@@ -58,10 +58,21 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
   `pr` skill (Summary, Evidence, Merge Danger), so the owner can review it quickly; never as a plain commit. Matt
   Pocock's skills are used for the work (`implement` with `tdd` and `code-review`, `research`, `diagnosing-bugs`). The
   steps are in CLAUDE.md, "Working a ticket". The glossary is `GLOSSARY.md`, the name his current skills use.
-- Movie Mode framing (owner, 2026-11-22: "the perfect position for the camera and light to get everything in
-  frame"): with Record everything on, the camera and the lights are placed so everything the history plays back is
-  in frame and well lit at every step, every object type that renders, not only meshes, and objects moved, added
-  or deleted during the history. Ticket #23, after #10 and #13 and before add-on testing (#15).
+- Time lapse framing (owner, 2026-11-22: "the perfect position for the camera and light to get everything in
+  frame"): no Hindsight camera or lights exist or run until the user creates the time lapse; then they are placed
+  once for the whole history (nothing has to follow the work as it is made, and nothing costs memory before it is
+  needed). The camera stays still for the whole movie, with everything the history plays back (every object type
+  that renders, and objects moved, added or deleted during it) inside a small margin at every step, as close as
+  that allows, and lit. Proved by render-based tests in the real 4.2 and 5.3 binaries at every step: tiny to huge
+  and 1M-vertex models, models changed halfway, every object type, image shapes and lenses, random histories.
+  Ticket #23, after #10 and #13 and before add-on testing (#15).
+- Rust rewrite (owner, 2026-11-22): everything that does not need Blender's Python API is rewritten in Rust after
+  the build tickets, before add-on testing and all optimisation (#24). Order: build, then rewrite in Rust, then
+  optimise; new code that does not need Blender's API is written in Rust from the start, so nothing is written
+  twice.
+- Test gates (owner, 2026-11-22): everything is tested before optimising (#25, after #15, before #16) and again
+  after it (#26, after #21). An optimisation round is kept only if the whole suite still passes after it (5.3 and
+  4.2); each pull request of rounds runs all five versions.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
