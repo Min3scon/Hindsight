@@ -10,7 +10,11 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - What follows: embedded history becomes the default save mode (today the default is the history folder,
   `save_mode` in hindsight/bl/prefs.py); "saves write only new steps" applies to Hindsight's own work in a save,
   since Blender writes the whole .blend each time; the size of the history is the target of the work.
-- Still open: whether the history folder stays as an option; what happens when a history is still too big.
+- Every step is kept, exactly, whatever the size: the user can go back to any step, and a timelapse shows every
+  step they made (5,000 steps: 5,000 frames' worth). No merging or dropping of old steps to save space (owner,
+  2026-11-22; asked: merge old steps, drop the oldest, or keep all?). So the work is lossless compression of each
+  step, "down to about a kilobyte, or something reasonable", and it must all work at 1M vertices.
+- Still open: whether the history folder stays as an option; the size target in numbers.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
