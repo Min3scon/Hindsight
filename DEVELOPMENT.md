@@ -109,7 +109,7 @@ Where a fact has no source, this page says "not measured" or "no report".
 
 ### What runs in Rust today
 
-Engine `hindsight_native` 0.10.0, API 9 (0.10.0: `morph_dab`, one Morph History dab in one pass, R083; 0.9.0: `same_values`, the recorder's strict "nothing changed" check, R070; `diff` on two threads from 4 MB per array, R071; idle recompression at zstd level 15 for data up to 1 MB and 19 above, R072; 0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
+Engine `hindsight_native` 0.11.0, API 10 (0.11.0: `extents_into`, the Movie Mode camera's extents of points in place, R085; `morph_dab` refuses arrays of the wrong type; 0.10.0: `morph_dab`, one Morph History dab in one pass, R083; 0.9.0: `same_values`, the recorder's strict "nothing changed" check, R070; `diff` on two threads from 4 MB per array, R071; idle recompression at zstd level 15 for data up to 1 MB and 19 above, R072; 0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
 diff, apply, pack and unpack, its numpy code is `tests/reference/delta.py`; `record_step` exists and is
 tested but `runtime.commit` doesn't use it, since the stroke is already diffed once). The engine is required: if it
 can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
@@ -126,6 +126,7 @@ fails if anything under `hindsight/` imports them.
 | step container: formats 1 to 4 read, 3 and 4 written, all step kinds, recompress, CRC | `core/step.py` (facade) |
 | `same_values` (strict equality: exact types at every level, floats by bits, dicts in the same key order; API 8) | `bl/datarec._same_values`: the "nothing changed" check of every recorded object at every operation (R070); False leaves the marshal compare deciding |
 | `morph_dab` (one Morph History dab: box test, distance, falloff, mask, the stroke's strongest weight and the blend, in place; API 9) | `bl/morph.apply_morph_at` (R083); its numpy code is `tests/reference/morph_dab.py` |
+| `extents_into` (extents of points, or of the rows an index names, for k camera bases, merged in place; the product written out left to right; API 10) | `core/framing.extents`, `extents_multi`, `history_extents_multi` (R085); their numpy code is `tests/reference/framing.py` |
 | errors `CorruptStep`, `CorruptBlob`, `CorruptDelta`, `NewerFormatError`, `EngineMissing` | `core/native.py` |
 
 Still Python: history, store, persist, journal, registry, global timeline, framing, morph, and the whole
@@ -150,9 +151,9 @@ interface design (module layout, buffer ownership, error mapping, threading, mil
 | R3 | History engine: a `History` pyclass owning entries, cursor, goto planning and application through borrowed numpy buffers, caps, eviction and tier accounting, drop, truncate and join bookkeeping; Python keeps a thin facade | done as far as it pays: measured first, Python glue is about 3% of a jump (OPTIMISATION_LOG "Tried"), so no pyclass; `History.goto` crosses packed steps only through the engine's `apply_steps`, the Python loop is `tests/reference/history.py` |
 | R4 | Recording pipeline: one native `record()` per stroke (diff, pack, compress, journal append, GIL released, reusing the `foreach_get` buffers); fingerprints from arrays already read | partial: `record_step` exists in the engine (API 4) but commit doesn't use it (it would diff twice; saving below 4%, see "Tried"); the journal blob is lz4 (R043) |
 | R5 | Background packer as a Rust thread (zstd 19 off the GIL, idle policy kept) | not started |
-| R6 | Global timeline (incremental groups, transition), `framing.history_extents`, morph blending | partial: the Morph History dab (R083, engine 0.10.0); the global timeline and `framing.history_extents` not started |
+| R6 | Global timeline (incremental groups, transition), `framing.history_extents`, morph blending | partial: the Morph History dab (R083, engine 0.10.0), the camera extents and the history walk's measuring (R085, 0.11.0; the walk itself, stepping through the history, stays Python); the global timeline not started |
 | Rust required | Python copies to `tests/reference/`, clear error panel if the module cannot load, never record with a broken engine | done: no Python path ships (`tests/reference/`), `EngineMissing` and the panel's engine message (`test_bl_engine_missing`), HINDSIGHT_NATIVE selects nothing any more |
-| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.10.0 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
+| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.11.0 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
 
 Stays Python (needs `bpy`): `foreach_get` and `foreach_set`, RNA capture in datarec and adapters,
 vertex group weight reads, handlers, UI and drawing, operators. Their cost is attacked by doing less
