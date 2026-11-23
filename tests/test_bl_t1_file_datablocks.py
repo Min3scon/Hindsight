@@ -133,8 +133,55 @@ def test_digest_leaves_out_what_custom_properties_hold():
     assert loose._digest(bytes(raw), blocks, info) == before, "a custom property's text changed the digest"
 
 
+def test_digest_leaves_out_the_runtime_fields_of_an_id():
+    """D156: an ID's session number and depsgraph tags are written, but given again when it is read (a file
+    opened again, a snapshot loaded): they are left out of the digest."""
+    from hindsight.bl import multires
+    from hindsight.bl.adapters import loose
+    img = D.images.new("Digest", 4, 4)
+    raw = bytearray(multires.snapshot_bytes(img))
+    blocks = multires.blend_blocks(bytes(raw))
+    info = loose._dna_info(bytes(raw), blocks)
+    hs, _so = loose._heads(raw)
+    p = next(p for p, c, _ in blocks if c == b"IM\0\0")
+    at = raw.find(img.session_uid.to_bytes(4, "little"), p + hs + 48, p + hs + 400)     # past "IMDigest"
+    if at < 0:              # 5.x doesn't write it
+        assert bpy.app.version >= (5, 0), "4.2 writes the session number"
+        return
+    before = loose._digest(bytes(raw), blocks, info)
+    raw[at] ^= 1
+    assert loose._digest(bytes(raw), blocks, info) == before, "the session number changed the digest"
+
+
+def test_going_back_over_a_duplicate_takes_its_action_away():
+    """D155: going back over duplicating an animated object takes away the copy of its action the duplicate
+    made, as Blender's undo does (no position had it as data nothing uses); forward, it is back."""
+    from tests import t1_gate_lib as L, t1_ops as T
+    from tests.test_bl_t1_loose_data import datarec_resolve
+    L.fresh_scene()
+    L.track_all()
+    L.tick_like("baseline")
+    T.select("A")
+    D.objects["A"].keyframe_insert("color", frame=1)
+    L.tick_like("key")
+    T.duplicate("A").fn()
+    L.tick_like("dup")
+    acts = lambda: sorted((a.name, a.users) for a in D.actions)
+    after = acts()
+    assert len(after) == 2, after
+    h = runtime.history_of(bpy.context.scene)
+    runtime._goto_history(h, len(h.entries) - 1, True)
+    datarec_resolve()
+    assert acts() == [after[0]], acts()
+    runtime._goto_history(h, len(h.entries), True)
+    datarec_resolve()
+    assert acts() == after, (acts(), after)
+
+
 if __name__ == "__main__":
     for t in TESTS + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
-                      test_digest_leaves_out_what_custom_properties_hold]:
+                      test_digest_leaves_out_what_custom_properties_hold,
+                      test_going_back_over_a_duplicate_takes_its_action_away,
+                      test_digest_leaves_out_the_runtime_fields_of_an_id]:
         H.run(t)
     H.finish()

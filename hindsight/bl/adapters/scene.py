@@ -12,7 +12,7 @@ from .idprops import anim_of, id_props, write_anim_of, write_id_props
 from .keys import (
     ANIMATED, COLL_SETTINGS, COMP_TREE, INV_GROUPS, LOOSE_PREFIXES, META_PREFIX, NGA_PREFIX, NG_PREFIX,
     WORLDP_PREFIX, WORLD_PREFIX)
-from .loose import _make_loose_again, _queue_loose_removals, _snapshots_back, scene_loose, write_loose
+from .loose import _make_loose_again, _queue_left_action, _queue_loose_removals, _snapshots_back, scene_loose, write_loose
 from .materials import capture_tree, group_owner_map, group_record, write_group, write_material, write_tree
 from .objects import _recreate_object, _remove_object
 
@@ -86,6 +86,7 @@ class SceneAdapter(Adapter):
         want = set(values["objects"])
         have = {idmap.uid_of(o): o for o in idb.objects if not rigmark.is_rig(o)}   # never removes those
         for uid in sorted(set(have) - want):
+            _queue_left_action(have[uid], recorded)
             _remove_object(have[uid])
         made = []
         for uid in sorted(want - set(have)):

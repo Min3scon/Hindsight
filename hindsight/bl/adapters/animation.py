@@ -184,7 +184,7 @@ def action_record(action, ident) -> dict:
             continue                    # Hindsight's own keys (Movie Mode's step) are never recorded
         r = {"path": fc.data_path, "index": int(fc.array_index),
              "group": fc.group.name if fc.group is not None else "", "mute": bool(fc.mute),
-             "extrapolation": fc.extrapolation, "lock": bool(fc.lock)}
+             "extrapolation": fc.extrapolation, "lock": bool(fc.lock), "color_mode": fc.color_mode}   # D157
         r.update(_keys_of(fc))
         rows.append(r)
     rec = {"name": action.name, "fcurves": rows}
@@ -278,6 +278,8 @@ def write_action(key: str, rec) -> None:
             fc.lock = r.get("lock", False)
             if fc.extrapolation != r.get("extrapolation", fc.extrapolation):
                 fc.extrapolation = r["extrapolation"]
+            if fc.color_mode != r.get("color_mode", fc.color_mode):
+                fc.color_mode = r["color_mode"]
             _set_keys(fc, r)
         _ACT_CACHE.pop(a.session_uid, None)
     except Exception as e:

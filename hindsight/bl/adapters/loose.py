@@ -35,7 +35,10 @@ _SNAPS: dict = {}          # uid -> [session_uid, record, digest of its blocks, 
 _DNA: dict = {}            # DNA id -> the record of that DNA block (DNA_PREFIX)
 _DINFO: dict = {}          # DNA id -> _dna_info of that DNA block
 _SNAP_TURN = [0]
+_UNMATCHED: set = set()    # D156: uids snapshotted since the file was opened, not yet compared with their record
 _SNAP_READ = [False]
+# D156: written, but given again when the datablock is read (a file opened, a snapshot loaded)
+_ID_RUNTIME = (b"recalc", b"recalc_after_undo_push", b"session_uid")
 _NOT_OWN = (b"REND", b"TEST", b"GLOB", b"DNA1", b"ENDB", b"USER")    # a .blend's file blocks, not the datablock's
 
 
@@ -71,7 +74,8 @@ def _heads(raw: bytes):
 
 def _dna_info(raw: bytes, blocks: list) -> tuple:
     """From the snapshot's DNA block: (the SDNA number of IDProperty, -1 when it isn't found; {SDNA number:
-    (struct size, byte offsets of its pointers)}); (-1, {}) when it isn't read."""
+    (struct size, byte offsets of its pointers, byte offsets of its IDs' _ID_RUNTIME fields)}); (-1, {}) when it
+    isn't read."""
     try:
         hs = _heads(raw)[0]
         pos, n = next((p, n) for p, c, n in blocks if c == b"DNA1")
@@ -102,7 +106,7 @@ def _dna_info(raw: bytes, blocks: list) -> tuple:
 
     def ptr_offsets(t):             # byte offsets of the pointers in struct type t, its embedded structs' too
         if t not in offs:
-            out, at = [], 0
+            out, run, at = [], [], 0
             for ft, fn in strc[t][1]:
                 nm = names[fn]
                 dims = 1
@@ -112,12 +116,16 @@ def _dna_info(raw: bytes, blocks: list) -> tuple:
                     out += range(at, at + 8 * dims, 8)
                     at += 8 * dims
                     continue
+                if types[t] == b"ID" and nm in _ID_RUNTIME:
+                    run += range(at, at + tlen[ft] * dims)
                 if ft in strc:
-                    out += [at + e * tlen[ft] + o for e in range(dims) for o in ptr_offsets(ft)]
+                    sub = ptr_offsets(ft)
+                    out += [at + e * tlen[ft] + o for e in range(dims) for o in sub[0]]
+                    run += [at + e * tlen[ft] + o for e in range(dims) for o in sub[1]]
                 at += tlen[ft] * dims
-            offs[t] = out
+            offs[t] = out, run
         return offs[t]
-    ptrs = {k: (tlen[t], np.array(ptr_offsets(t), dtype=np.int64))
+    ptrs = {k: (tlen[t], *(np.array(x, dtype=np.int64) for x in ptr_offsets(t)))
             for t, (k, _) in strc.items()}
     idp = types.index(b"IDProperty") if b"IDProperty" in types else -1
     return (strc[idp][0] if idp in strc else -1), ptrs
@@ -125,7 +133,7 @@ def _dna_info(raw: bytes, blocks: list) -> tuple:
 
 def _ptr_words(n: int, info: tuple, sdna: int):
     """The numbers of the 8-byte words that are pointers in n bytes of struct sdna (info: _dna_info)."""
-    size, offs = info[1].get(sdna, (0, ()))
+    size, offs = info[1].get(sdna, (0, ()))[:2]
     if not len(offs) or not size:
         return np.zeros(0, dtype=np.int64)
     b = (offs[None, :] + size * np.arange(n // size)[:, None]).ravel()
@@ -166,8 +174,22 @@ def _digest(raw: bytes, blocks: list, info: tuple = (-1, {})) -> bytes:
         b = _ptr_words(n - hs, info, s)
         words[b[~hit[b]]] = 0
         words[hit] = num[order[at[hit]]]
+        size, _p, run = info[1].get(s, (0, (), ()))
+        if len(run) and size:
+            r = (run[None, :] + size * np.arange((n - hs) // size)[:, None]).ravel()
+            words.view(np.uint8)[r[r < 8 * k]] = 0
         h.update(words.tobytes() + raw[pos + hs + 8 * k:pos + n])
     return h.digest()
+
+
+def _dna_digest(raw: bytes, blocks: list) -> tuple:
+    """(DNA block, its id, _digest) of a snapshot written with its DNA."""
+    mv = memoryview(raw)
+    dna = b"".join(mv[p:p + n] for p, c, n in blocks if c == b"DNA1")
+    did = hashlib.blake2b(dna, digest_size=8).hexdigest() if blocks else ""
+    if did and did not in _DINFO:
+        _DINFO[did] = _dna_info(raw, blocks)
+    return dna, did, _digest(raw, blocks, _DINFO.get(did, (-1, {})))
 
 
 def _take(name, idb, prev, new) -> list:
@@ -178,11 +200,7 @@ def _take(name, idb, prev, new) -> list:
     raw = multires.snapshot_bytes(idb)
     blocks = multires.blend_blocks(raw)
     mv = memoryview(raw)
-    dna = b"".join(mv[p:p + n] for p, c, n in blocks if c == b"DNA1")
-    did = hashlib.blake2b(dna, digest_size=8).hexdigest() if blocks else ""
-    if did and did not in _DINFO:
-        _DINFO[did] = _dna_info(raw, blocks)
-    digest = _digest(raw, blocks, _DINFO.get(did, (-1, {})))
+    dna, did, digest = _dna_digest(raw, blocks)
     if prev is not None and prev[2] == digest:
         return [idb.session_uid, prev[1], digest, new]
     if blocks:                 # (did is "" when the bytes aren't read as blocks: the record is the whole file)
@@ -192,7 +210,7 @@ def _take(name, idb, prev, new) -> list:
     return [idb.session_uid, [name, did, _b64(raw), idb.name, bool(idb.use_fake_user)], digest, new]
 
 
-def _file_snapshots(out: dict, inv: list) -> None:
+def _file_snapshots(out: dict, inv: list, recorded=None) -> None:
     """D154: a record of every file-level datablock, to make it again when going back over its deletion
     (nothing lighter is exact). New datablocks are snapshotted at once and at every operation after;
     those there were at the first read SNAP_READ_MAX per operation, in turn.
@@ -209,6 +227,8 @@ def _file_snapshots(out: dict, inv: list) -> None:
             c = _SNAPS.get(u)
             if c is None or c[0] != idb.session_uid or c[3]:
                 try:
+                    if c is None:
+                        _UNMATCHED.add(u)
                     c = _take(name, idb, c, c[3] if c is not None else _SNAP_READ[0])
                 except Exception as e:
                     log.error_once(("snap", name, str(e)), f"could not record {idb.name}: {e}", e)
@@ -222,6 +242,12 @@ def _file_snapshots(out: dict, inv: list) -> None:
             with contextlib.suppress(Exception):
                 seen[u] = _take(name, idb, seen[u], False)
         _SNAP_TURN[0] = k + SNAP_READ_MAX
+    for u in list(_UNMATCHED.intersection(seen)) if recorded is not None else ():
+        rec = recorded(SNAP_PREFIX + u)
+        if isinstance(rec, list):
+            _UNMATCHED.discard(u)
+            if len(rec) >= 5 and rec != seen[u][1] and _same_as_recorded(u, seen[u], rec, recorded):
+                seen[u][1] = rec
     _SNAP_READ[0] = True
     _SNAPS.clear()
     _SNAPS.update(seen)
@@ -234,24 +260,68 @@ def _file_snapshots(out: dict, inv: list) -> None:
 
 def forget_snapshots() -> None:
     _SNAPS.clear()
+    _UNMATCHED.clear()
     _SNAP_READ[0] = False
+
+
+def _with_dna(rec, values, recorded):
+    """The recorded snapshot as a .blend (its DNA block put back), or None when that DNA wasn't recorded."""
+    from .. import multires
+    raw = _unb64(rec[2])
+    if rec[1]:
+        dna = _DNA.get(rec[1]) or values.get(DNA_PREFIX + rec[1])
+        if dna is None and recorded is not None:
+            dna = recorded(DNA_PREFIX + rec[1])
+        if not isinstance(dna, str):
+            return None
+        end = multires.blend_blocks(raw)[-1][0]
+        raw = raw[:end] + _unb64(dna) + raw[end:]
+    return raw
+
+
+def _same_as_recorded(uid, c, rec, recorded) -> bool:
+    """D156: after a file is opened, a datablock is unchanged when its digest is its recorded snapshot's, or
+    that snapshot's once Blender reads it (4.2 gives a brush with no cavity curve one; another Blender's
+    snapshot is read with its own DNA): loaded into a separate main and written again from there."""
+    from .. import multires
+    raw = _unb64(rec[2])
+    if _digest(raw, multires.blend_blocks(raw), _DINFO.get(rec[1], (-1, {}))) == c[2]:
+        return True
+    raw = _with_dna(rec, {}, recorded)
+    if raw is None or not hasattr(bpy.data, "temp_data"):
+        return False
+    src_path, out = multires._tmp_path(), multires._tmp_path()
+    try:
+        with open(src_path, "wb") as fh:
+            fh.write(raw)
+        with bpy.data.temp_data() as td:
+            with td.libraries.load(src_path, link=False) as (src, dst):
+                setattr(dst, rec[0], list(getattr(src, rec[0])))
+            x = next((i for i in getattr(td, rec[0]) if i.get(idmap.UID_PROP) == uid), None)
+            if x is None:
+                return False
+            td.libraries.write(out, {x}, fake_user=False)
+        with open(out, "rb") as fh:
+            w = fh.read()
+    except Exception as e:      # then it reads as changed: a step, never a lost change
+        log.error_once(("snap_reread", str(e)), f"could not compare {rec[3]} with its snapshot: {e}", e)
+        return False
+    finally:
+        for f in (src_path, out):
+            with contextlib.suppress(OSError):
+                os.remove(f)
+    return _dna_digest(w, multires.blend_blocks(w))[2] == c[2]
 
 
 def _load_snapshot(uid, rec, values, recorded):
     """D154: load a recorded snapshot (libraries.load). What it brought along that is in the file already
     (by id) is replaced by that; what nothing uses is removed. Returns the loaded datablock or None."""
     from .. import multires
-    name, did = rec[0], rec[1]
-    raw = _unb64(rec[2])
-    if did:
-        dna = _DNA.get(did) or values.get(DNA_PREFIX + did)
-        if dna is None and recorded is not None:
-            dna = recorded(DNA_PREFIX + did)
-        if not isinstance(dna, str):
-            log.warn(f"{rec[3]} can't be made again: the snapshot's DNA wasn't recorded")
-            return None
-        end = multires.blend_blocks(raw)[-1][0]
-        raw = raw[:end] + _unb64(dna) + raw[end:]
+    name = rec[0]
+    raw = _with_dna(rec, values, recorded)
+    if raw is None:
+        log.warn(f"{rec[3]} can't be made again: the snapshot's DNA wasn't recorded")
+        return None
     colls = _SNAP_COLLS + ("materials", "node_groups", "texts", "worlds")
     before = {c: set(getattr(bpy.data, c)) for c in colls}
     path = multires._tmp_path()
@@ -326,7 +396,7 @@ def scene_loose(sc) -> dict:
     name: texts, materials and worlds nothing uses, and every other datablock's custom properties and
     add-on data (where any are set). They aren't in the depsgraph: texts and properties are read
     again at each operation, unused materials and worlds in turn (forget_loose_data)."""
-    from .. import datarec
+    from .. import datarec, runtime
     from ..persistence import TEXT_NAME
     scenes = sorted(x.name for x in bpy.data.scenes if x.library is None and datarec.is_tracked(x))
     if scenes and scenes[0] != sc.name:
@@ -363,7 +433,8 @@ def scene_loose(sc) -> dict:
             u = idmap.claim(idb)
             if u:
                 out[LPROPS_PREFIX + u] = p
-    _file_snapshots(out, inv)
+    st = runtime._STATES.get(suid)
+    _file_snapshots(out, inv, (lambda k: st.values.get(("scene", k))) if st is not None else None)
     out[INV_LOOSE] = sorted(inv)
     return out
 
@@ -466,6 +537,15 @@ def _queue_loose_removals(sc, values: dict) -> None:
                 if u and u not in want:
                     _LOOSE_GONE[u] = "lw" if isinstance(idb, bpy.types.World) else kind
 
+
+
+def _queue_left_action(ob, recorded) -> None:
+    """D155: an object a jump takes out leaves its action unused (a duplicate's copy of it): it goes after the
+    jump too, unless the position the jump went to had it as data nothing uses."""
+    a = getattr(ob.animation_data, "action", None)
+    inv = recorded(INV_LOOSE) if a is not None else None
+    if isinstance(inv, list) and (u := idmap.claim(a)) and u not in inv:
+        _LOOSE_GONE[u] = "actions"
 
 def _kept_by_record(idb, kind) -> bool:
     """Used by something Hindsight records (an object, a scene): not a datablock to say anything about,
