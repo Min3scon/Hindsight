@@ -12,6 +12,8 @@ import contextlib
 import time
 
 import bpy
+
+from . import reg
 from mathutils import Matrix
 
 from ..core.history import MeshState, TOPO_MARK
@@ -358,31 +360,15 @@ _keymaps = []
 
 
 def _add_keymaps():
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.addon if wm else None
-    if kc is None:
-        return
-    km = kc.keymaps.new(name="Object Mode", space_type='EMPTY')
     for mods in ({"ctrl": True}, {"oskey": True}):
-        k = km.keymap_items.new("hindsight.join", 'J', 'PRESS', **mods)
-        _keymaps.append((km, k))
+        reg.add_keymap(_keymaps, "Object Mode", "hindsight.join", 'J', **mods)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     _add_keymaps()
 
 
 def unregister():
-    for km, k in _keymaps:
-        try:
-            km.keymap_items.remove(k)
-        except Exception:
-            pass
-    _keymaps.clear()
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.remove_keymaps(_keymaps)
+    reg.unregister_classes(classes)

@@ -7,6 +7,8 @@ Blender's F3 search finds anything that is in a menu.
 import contextlib
 import bpy
 
+from . import reg
+
 from . import guard
 from .ui_panel import _FAIL, _call, _operator, draw_history_options, draw_main, draw_step_list
 from .ctx import active_object as _ctx_active
@@ -76,8 +78,7 @@ classes = (VIEW3D_PT_hindsight_popover, VIEW3D_MT_hindsight)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     # After the mode menus (View, Sculpt, Mask...): always on screen, unlike the far right end
     # of the header, which is cut off at common window widths.
     bpy.types.VIEW3D_MT_editor_menus.append(draw_header_button)
@@ -97,8 +98,4 @@ def unregister():
                 pass
     with contextlib.suppress(Exception):
         bpy.types.VIEW3D_MT_editor_menus.remove(draw_header_button)
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

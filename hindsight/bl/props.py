@@ -2,6 +2,8 @@
 import contextlib
 import bpy
 
+from . import reg
+
 
 def _upd_global(self, context):
     from . import runtime
@@ -93,16 +95,11 @@ classes = (HINDSIGHT_PG_coll_item, HINDSIGHT_PG_scene)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     bpy.types.Scene.hindsight = bpy.props.PointerProperty(type=HINDSIGHT_PG_scene)
 
 
 def unregister():
     with contextlib.suppress(AttributeError):
         del bpy.types.Scene.hindsight
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

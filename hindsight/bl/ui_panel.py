@@ -13,6 +13,8 @@ import textwrap
 
 import bpy
 
+from . import reg
+
 from . import guard
 from .beta import ISSUES_URL
 from .prefs import draw_scrubber_props, get_prefs
@@ -702,13 +704,8 @@ classes = (
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    reg.register_classes(classes)
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

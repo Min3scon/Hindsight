@@ -20,7 +20,7 @@ from types import SimpleNamespace
 
 import bpy
 
-from . import guard
+from . import guard, reg
 from .ctx import active_object as _ctx_active
 from .prefs import SCRUB_DEFAULTS
 
@@ -843,9 +843,7 @@ def _on_load_post(*_a):
 
 
 def register():
-    for cls in classes:
-        if "bl_rna" not in cls.__dict__:
-            bpy.utils.register_class(cls)
+    reg.register_classes([c for c in classes if "bl_rna" not in c.__dict__])
     ensure_draw_handler()
     if _on_load_post not in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.append(_on_load_post)
@@ -863,12 +861,7 @@ def unregister():
         with contextlib.suppress(Exception):
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
         _draw_handle = None
-    for cls in reversed(classes):
-        if "bl_rna" in cls.__dict__:
-            try:
-                bpy.utils.unregister_class(cls)
-            except Exception:
-                pass
+    reg.unregister_classes([c for c in classes if "bl_rna" in c.__dict__])
     with contextlib.suppress(ValueError):
         bpy.app.handlers.load_post.remove(_on_load_post)
     _forget_cache()

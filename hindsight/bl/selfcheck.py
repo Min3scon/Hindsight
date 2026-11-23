@@ -11,6 +11,8 @@ import platform
 import time
 
 import bpy
+
+from . import reg
 import numpy as np
 
 from . import guard, log
@@ -429,8 +431,7 @@ classes = (HINDSIGHT_OT_self_check, HINDSIGHT_OT_copy_diagnostics, HINDSIGHT_OT_
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
 
 
 def unregister():
@@ -439,8 +440,4 @@ def unregister():
     if bpy.app.timers.is_registered(_clear_status):
         bpy.app.timers.unregister(_clear_status)
     _clear_status()
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)
