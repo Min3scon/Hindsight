@@ -8,7 +8,7 @@ file (a changed one is found within a few operations).
 D152: making or deleting a text, an unused material or world or a node group (D133) is taken back too: going
 back over the making removes the datablock (when nothing uses it), going back over its deletion makes it
 again with what was recorded; forward the other way round. Images, actions, palettes, brushes... are made
-again from a snapshot (D153, test_bl_t1_file_datablocks); their properties are recorded as before."""
+again from a snapshot (D154, test_bl_t1_file_datablocks); their properties are recorded as before."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bpy
 import tests.harness as H

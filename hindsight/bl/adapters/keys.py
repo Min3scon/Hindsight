@@ -113,7 +113,7 @@ LOOSE_PREFIXES = (TEXT_PREFIX, LMAT_PREFIX, LWORLD_PREFIX, LPROPS_PREFIX)
 META_PREFIX = "@lx:"       # [kind "tx" | "lm" | "lw" | "ng", name, fake user, node tree bl_idname]
 INV_LOOSE = "@inv:loose"   # the ids of the texts, unused materials and worlds there are (sorted); [] when none
 INV_GROUPS = "@inv:groups"  # the same for the node groups no object uses (D133)
-# D153: file-level datablocks (images, palettes, actions nothing uses...) as .blend snapshots, made again from them
+# D154: file-level datablocks (images, palettes, actions nothing uses...) as .blend snapshots, made again from them
 SNAP_PREFIX = "@ls:"       # [collection, DNA id, the snapshot's blocks but its DNA (zstd, base64), name, fake user]
 DNA_PREFIX = "@dna:"       # DNA id -> the DNA block those snapshots were written with (zstd, base64): kept once
 

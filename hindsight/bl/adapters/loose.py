@@ -5,6 +5,7 @@ import base64
 import contextlib
 import hashlib
 import os
+import re
 
 import bpy
 import numpy as np
@@ -29,10 +30,10 @@ _SNAP_COLLS = ("images", "actions", "palettes", "brushes", "linestyles", "masks"
                "fonts", "cache_files", "paint_curves", "textures")
 _PROP_COLLS = _SNAP_COLLS + ("texts",)
 _LOOSE_TURN = [0]
-SNAP_READ_MAX = 2          # D153: datablocks there were at the first read, snapshotted again per operation, in turn
+SNAP_READ_MAX = 2          # D154: datablocks there were at the first read, snapshotted again per operation, in turn
 _SNAPS: dict = {}          # uid -> [session_uid, record, digest of its blocks, made after the first read]
 _DNA: dict = {}            # DNA id -> the record of that DNA block (DNA_PREFIX)
-_IDP: dict = {}            # DNA id -> the SDNA number of IDProperty in it
+_DINFO: dict = {}          # DNA id -> _dna_info of that DNA block
 _SNAP_TURN = [0]
 _SNAP_READ = [False]
 _NOT_OWN = (b"REND", b"TEST", b"GLOB", b"DNA1", b"ENDB", b"USER")    # a .blend's file blocks, not the datablock's
@@ -48,7 +49,7 @@ def _loose_mats():
 
 
 def _snappable(name, idb) -> bool:
-    """A file-level datablock D153 snapshots: local; not Blender's render and viewer images; not an action
+    """A file-level datablock D154 snapshots: local; not Blender's render and viewer images; not an action
     something uses (its object records it)."""
     if idb.library is not None or getattr(idb, "type", "") in ("RENDER_RESULT", "COMPOSITING"):
         return False
@@ -68,48 +69,93 @@ def _heads(raw: bytes):
     return (32, 4) if raw[7:9] == b"17" else (24, 16)
 
 
-def _idprop_sdna(raw: bytes, blocks: list) -> int:
-    """The SDNA number of IDProperty in the snapshot's DNA block; -1 when it isn't found."""
+def _dna_info(raw: bytes, blocks: list) -> tuple:
+    """From the snapshot's DNA block: (the SDNA number of IDProperty, -1 when it isn't found; {SDNA number:
+    (struct size, byte offsets of its pointers)}); (-1, {}) when it isn't read."""
     try:
         hs = _heads(raw)[0]
         pos, n = next((p, n) for p, c, n in blocks if c == b"DNA1")
         d = raw[pos + hs:pos + n]
-        i = d.index(b"NAME") + 8
-        for _ in range(int.from_bytes(d[i - 4:i], "little")):
-            i = d.index(b"\0", i) + 1
-        i = d.index(b"TYPE", i) + 8
-        types = []
-        for _ in range(int.from_bytes(d[i - 4:i], "little")):
-            j = d.index(b"\0", i)
-            types.append(d[i:j])
-            i = j + 1
-        t = types.index(b"IDProperty")
-        i = d.index(b"STRC", i) + 8
+
+        def strings(tag, i):
+            i = d.index(tag, i) + 8
+            out = []
+            for _ in range(int.from_bytes(d[i - 4:i], "little")):
+                j = d.index(b"\0", i)
+                out.append(d[i:j])
+                i = j + 1
+            return out, i
+        names, i = strings(b"NAME", 0)
+        types, i = strings(b"TYPE", i)
+        i = d.index(b"TLEN", i) + 4
+        tlen = np.frombuffer(d, np.uint16, len(types), i).tolist()
+        i = d.index(b"STRC", i + 2 * len(types)) + 8
+        strc = {}
         for k in range(int.from_bytes(d[i - 4:i], "little")):
-            if int.from_bytes(d[i:i + 2], "little") == t:
-                return k
-            i += 4 + 4 * int.from_bytes(d[i + 2:i + 4], "little")
+            m = int.from_bytes(d[i + 2:i + 4], "little")
+            fields = np.frombuffer(d, np.uint16, 2 * m, i + 4).reshape(-1, 2).tolist()
+            strc[int.from_bytes(d[i:i + 2], "little")] = (k, fields)
+            i += 4 + 4 * m
     except (StopIteration, ValueError):
-        pass
-    return -1
+        return -1, {}
+    offs: dict = {}
+
+    def ptr_offsets(t):             # byte offsets of the pointers in struct type t, its embedded structs' too
+        if t not in offs:
+            out, at = [], 0
+            for ft, fn in strc[t][1]:
+                nm = names[fn]
+                dims = 1
+                for x in re.findall(rb"\[(\d+)\]", nm):
+                    dims *= int(x)
+                if nm[:1] == b"*" or nm[:2] == b"(*":
+                    out += range(at, at + 8 * dims, 8)
+                    at += 8 * dims
+                    continue
+                if ft in strc:
+                    out += [at + e * tlen[ft] + o for e in range(dims) for o in ptr_offsets(ft)]
+                at += tlen[ft] * dims
+            offs[t] = out
+        return offs[t]
+    ptrs = {k: (tlen[t], np.array(ptr_offsets(t), dtype=np.int64))
+            for t, (k, _) in strc.items()}
+    idp = types.index(b"IDProperty") if b"IDProperty" in types else -1
+    return (strc[idp][0] if idp in strc else -1), ptrs
 
 
-def _digest(raw: bytes, blocks: list, idprop: int = -1) -> bytes:
+def _ptr_words(n: int, info: tuple, sdna: int):
+    """The numbers of the 8-byte words that are pointers in n bytes of struct sdna (info: _dna_info)."""
+    size, offs = info[1].get(sdna, (0, ()))
+    if not len(offs) or not size:
+        return np.zeros(0, dtype=np.int64)
+    b = (offs[None, :] + size * np.arange(n // size)[:, None]).ravel()
+    return b[(b % 8 == 0) & (b < n - n % 8)] // 8
+
+
+def _digest(raw: bytes, blocks: list, info: tuple = (-1, {})) -> bytes:
     """The hash of a snapshot's own blocks (not the file's: GLOB holds the .blend's path), with every
     block address (memory addresses, which change when Blender allocates the data again) and every
-    pointer to one replaced by the block's number. idprop: the SDNA number of the custom property
-    blocks, left out (an empty group where there was none is the same; the D151 writer puts them back)."""
+    pointer to one replaced by the block's number, and every pointer to nothing written by 0 (Blender reads
+    it as null; 5.0 writes an image's runtime pointer as an address from the blocks' counter). info
+    (_dna_info): the custom property blocks and the data they point to are left out (an empty group where
+    there was none is the same; the D151 writer puts them back; 4.2 leaves a text's byte after its end)."""
     if not blocks:
         return hashlib.blake2b(raw, digest_size=16).digest()
     hs, so = _heads(raw)
+    idprop = info[0]
     addr = np.array([int.from_bytes(raw[p + 8:p + 16], "little") for p, _, _ in blocks], dtype=np.uint64)
-    left = [c in _NOT_OWN or int.from_bytes(raw[p + so:p + so + 4], "little", signed=True) == idprop
-            for p, c, _ in blocks]
+    sdna = [int.from_bytes(raw[p + so:p + so + 4], "little", signed=True) for p, _, _ in blocks]
+    held = set()
+    for (p, _, n), s in zip(blocks, sdna):
+        if s == idprop >= 0:
+            held.update(np.frombuffer(raw, np.uint64, (n - hs) // 8, p + hs)[_ptr_words(n - hs, info, s)].tolist())
+    left = [c in _NOT_OWN or s == idprop or (c == b"DATA" and int(a) in held)
+            for (p, c, _), s, a in zip(blocks, sdna, addr)]
     num = np.cumsum([not x for x in left], dtype=np.uint64) * np.array([not x for x in left], dtype=np.uint64)
     order = np.argsort(addr)
     keys = addr[order]
     h = hashlib.blake2b(digest_size=16)
-    for (pos, code, n), skip in zip(blocks, left):
+    for (pos, code, n), s, skip in zip(blocks, sdna, left):
         if skip:
             continue
         h.update(raw[pos:pos + 8] + raw[pos + 16:pos + hs])
@@ -117,13 +163,15 @@ def _digest(raw: bytes, blocks: list, idprop: int = -1) -> bytes:
         words = np.frombuffer(raw, dtype=np.uint64, count=k, offset=pos + hs).copy()
         at = np.minimum(np.searchsorted(keys, words), len(keys) - 1)
         hit = (keys[at] == words) & (words != 0)
+        b = _ptr_words(n - hs, info, s)
+        words[b[~hit[b]]] = 0
         words[hit] = num[order[at[hit]]]
         h.update(words.tobytes() + raw[pos + hs + 8 * k:pos + n])
     return h.digest()
 
 
 def _take(name, idb, prev, new) -> list:
-    """D153: snapshot the datablock (multires.snapshot_bytes: it and what it uses, as a .blend). Its DNA
+    """D154: snapshot the datablock (multires.snapshot_bytes: it and what it uses, as a .blend). Its DNA
     block, most of the bytes and the same for every snapshot this Blender writes, is kept once in _DNA.
     An unchanged snapshot (its own blocks, not the file's, hash the same) keeps its record."""
     from .. import multires
@@ -132,9 +180,9 @@ def _take(name, idb, prev, new) -> list:
     mv = memoryview(raw)
     dna = b"".join(mv[p:p + n] for p, c, n in blocks if c == b"DNA1")
     did = hashlib.blake2b(dna, digest_size=8).hexdigest() if blocks else ""
-    if did and did not in _IDP:
-        _IDP[did] = _idprop_sdna(raw, blocks)
-    digest = _digest(raw, blocks, _IDP.get(did, -1))
+    if did and did not in _DINFO:
+        _DINFO[did] = _dna_info(raw, blocks)
+    digest = _digest(raw, blocks, _DINFO.get(did, (-1, {})))
     if prev is not None and prev[2] == digest:
         return [idb.session_uid, prev[1], digest, new]
     if blocks:                 # (did is "" when the bytes aren't read as blocks: the record is the whole file)
@@ -145,7 +193,7 @@ def _take(name, idb, prev, new) -> list:
 
 
 def _file_snapshots(out: dict, inv: list) -> None:
-    """D153: a record of every file-level datablock, to make it again when going back over its deletion
+    """D154: a record of every file-level datablock, to make it again when going back over its deletion
     (nothing lighter is exact). New datablocks are snapshotted at once and at every operation after;
     those there were at the first read SNAP_READ_MAX per operation, in turn.
     shortcut: a change of one of those is found within a few operations (as D151's materials), so deleting
@@ -190,7 +238,7 @@ def forget_snapshots() -> None:
 
 
 def _load_snapshot(uid, rec, values, recorded):
-    """D153: load a recorded snapshot (libraries.load). What it brought along that is in the file already
+    """D154: load a recorded snapshot (libraries.load). What it brought along that is in the file already
     (by id) is replaced by that; what nothing uses is removed. Returns the loaded datablock or None."""
     from .. import multires
     name, did = rec[0], rec[1]
@@ -231,7 +279,7 @@ def _load_snapshot(uid, rec, values, recorded):
 
 
 def _snapshots_back(values: dict, recorded=None, replace: bool = False) -> None:
-    """D153: a file-level datablock deleted since is made again from its snapshot, with its id (before the
+    """D154: a file-level datablock deleted since is made again from its snapshot, with its id (before the
     other writers). replace: after them, one that still differs from its snapshot is replaced by it (what
     uses it uses the loaded one); a change the other writers put back (custom properties) keeps it."""
     from .. import multires
@@ -248,7 +296,7 @@ def _snapshots_back(values: dict, recorded=None, replace: bool = False) -> None:
             if old is not None:
                 now = _take(rec[0], old, None, bool(c is not None and c[3]))
                 raw = _unb64(rec[2])
-                if now[2] == _digest(raw, multires.blend_blocks(raw), _IDP.get(rec[1], -1)):
+                if now[2] == _digest(raw, multires.blend_blocks(raw), _DINFO.get(rec[1], (-1, {}))):
                     now[1] = rec
                     _SNAPS[uid] = now
                     continue

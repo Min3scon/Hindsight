@@ -63,7 +63,7 @@ class SceneAdapter(Adapter):
         for path, v in values.items():          # D151: data no object or scene uses
             if path.startswith(LOOSE_PREFIXES):
                 write_loose(path, v)
-        _snapshots_back(values, recorded, replace=True)     # D153: what still differs from its snapshot
+        _snapshots_back(values, recorded, replace=True)     # D154: what still differs from its snapshot
         for path, v in values.items():          # D146: and their animation
             if path.startswith(NGA_PREFIX) and isinstance(v, dict):
                 ng = idmap.find(path[len(NGA_PREFIX):])

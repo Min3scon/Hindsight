@@ -1,4 +1,4 @@
-"""D153 (#13): with Record everything, making and deleting a file-level datablock (an image, action, palette,
+"""D154 (#13): with Record everything, making and deleting a file-level datablock (an image, action, palette,
 brush, line style, mask, texture...) is taken back like a text's (D152): going back over the making removes
 it (when nothing uses it), going back over its deletion makes it again, exactly, from a snapshot of it (the
 datablock written and loaded with Blender's library functions); forward the other way round. A change of its
@@ -95,7 +95,46 @@ def test_made_again_keeps_its_id_and_users():
     assert "UsesIt" not in D.textures and "Made" not in D.images, (list(D.textures), list(D.images))
 
 
+def test_digest_reads_a_pointer_to_data_not_written_as_null():
+    """Blender reads a pointer to data the snapshot doesn't hold as null. 5.0 writes such a pointer (an
+    image's runtime data) as an address from the counter the blocks' addresses come from, so a custom
+    property block before it changes it: two snapshots that differ only there have one digest, and a
+    changed data word changes it."""
+    from hindsight.bl import multires
+    from hindsight.bl.adapters import loose
+    raw = bytearray(multires.snapshot_bytes(D.images.new("Digest", 4, 4)))
+    blocks = multires.blend_blocks(bytes(raw))
+    info = loose._dna_info(bytes(raw), blocks)
+    hs, so = loose._heads(raw)
+    p = next(p for p, c, _ in blocks if c == b"IM\0\0")
+    ptrs = set(info[1][int.from_bytes(raw[p + so:p + so + 4], "little")][1].tolist())
+    word = lambda o: raw[p + hs + o:p + hs + o + 8]
+    at = p + hs + next(o for o in sorted(ptrs) if o % 8 == 0 and not any(word(o)))         # a null pointer
+    data = p + hs + next(o for o in range(64, 1600, 8) if o not in ptrs and any(word(o)))   # a set data word
+    before = loose._digest(bytes(raw), blocks, info)
+    raw[at:at + 8] = (0x76387C9A9BBE7070).to_bytes(8, "little")
+    assert loose._digest(bytes(raw), blocks, info) == before, "a pointer to nothing in the snapshot changed the digest"
+    raw[data] ^= 1
+    assert loose._digest(bytes(raw), blocks, info) != before, "a changed data word kept the digest"
+
+
+def test_digest_leaves_out_what_custom_properties_hold():
+    """Custom property blocks are left out of the digest (the D151 writer puts them back), and so is the data
+    they point to: 4.2 writes a text property's buffer with its byte after the end left as it was in memory."""
+    from hindsight.bl import multires
+    from hindsight.bl.adapters import loose
+    img = D.images.new("Digest", 4, 4)
+    img["note"] = "walk cycle"
+    raw = bytearray(multires.snapshot_bytes(img))
+    blocks = multires.blend_blocks(bytes(raw))
+    info = loose._dna_info(bytes(raw), blocks)
+    before = loose._digest(bytes(raw), blocks, info)
+    raw[raw.index(b"walk cycle\0")] ^= 1
+    assert loose._digest(bytes(raw), blocks, info) == before, "a custom property's text changed the digest"
+
+
 if __name__ == "__main__":
-    for t in TESTS + [test_made_again_keeps_its_id_and_users]:
+    for t in TESTS + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
+                      test_digest_leaves_out_what_custom_properties_hold]:
         H.run(t)
     H.finish()
