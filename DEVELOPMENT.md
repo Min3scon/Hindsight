@@ -88,7 +88,7 @@ Where a fact has no source, this page says "not measured" or "no report".
   (crash journal), `globaltl.py` (global timeline), `framing.py` (camera framing for Movie Mode),
   `morph.py`, `native.py` (loader of the Rust module).
 - `hindsight/bl/`: the Blender side. `runtime.py` (recording, jumps, timers), `meshio.py` (mesh reads and
-  writes), `datarec.py` and `adapters.py` (Record everything: objects, constraints, collections, RNA
+  writes), `datarec.py` and the `adapters/` package (Record everything: objects, constraints, collections, RNA
   values), `idmap.py`, `persistence.py` (save, load, recovery), `scrubber.py` (on-screen slider),
   `ui_panel.py`, `ui_menu.py`, `header.py`, `warnings.py`, `prefs.py`, `props.py`, `filtering.py`,
   `movie.py`, `camrig.py`, `rigmark.py` (Movie Mode), `dupsep.py`, `joinsep.py`, `morph.py`, `log.py`,
