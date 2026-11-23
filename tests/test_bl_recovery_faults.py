@@ -9,6 +9,7 @@ Each test records strokes and keeps the mesh after (and before) every step by it
 session had there, and the position the history opens at with the file.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import contextlib
 import errno
 import random
 import shutil
@@ -184,6 +185,26 @@ def test_embed_save_out_of_memory_keeps_the_history():
     check(book, file_state, "embedded again")
 
 
+def test_first_save_out_of_memory_keeps_the_history():
+    """#48: every save stores the history in the .blend, whatever Save history says. When the first
+    one can't (out of memory, no copy in the .blend yet), the history still isn't lost: it goes into
+    the history folder, as a save with the default preference did, and the .blend points there."""
+    setup()
+    obs = make(("A",))
+    book = Book()
+    for s in range(3):
+        book.stroke(obs["A"], s)
+    path = os.path.join(TMP, "first_oom.blend")
+    with _no_room_in_blend():
+        file_state = save(path)
+    assert persistence.EMBED_FALLBACK_TEXT in notes(), "the user is told where the history went"
+    SETTINGS.crash_recovery = "LAST_SAVED"
+    interrupt(path)
+    h = runtime.history_of(bpy.data.objects["A"])
+    assert h is not None and len(h.entries) == 3, h
+    check(book, file_state, "first save out of memory")
+
+
 def test_embed_save_fails_before_the_old_copy_is_touched():
     """Building the history fails before the stored copy is removed: the .blend keeps the history of
     the save before, with the meshes of this one. Opening it must not play that history onto them."""
@@ -299,11 +320,26 @@ class _Fail:
         persist.save_sidecar = self.real_save
 
 
+@contextlib.contextmanager
+def _no_room_in_blend():
+    """Building the history to store in the .blend runs out of memory."""
+    real = persist.parts_to_bytes
+
+    def boom(parts):
+        raise MemoryError("test: out of memory building the stored history")
+    persist.parts_to_bytes = boom
+    try:
+        yield
+    finally:
+        persist.parts_to_bytes = real
+
+
 def test_sidecar_save_failing_at_each_step():
     """The history folder's write fails at each step in turn (the file's write, its fsync, the rename,
     out of memory, and the index after the history). The folder holds either the history of the save
     before, byte for byte, or the new one complete; opening the file gives a history that matches it,
-    with steps recorded after the failed save brought back where they fit."""
+    with steps recorded after the failed save brought back where they fit.
+    #48: a save writes the folder only when the history can't go in the .blend, so both saves here can't."""
     for what, nth in (("write", 1), ("fsync", 1), ("replace", 1), ("memory", 1), ("replace", 2)):
         setup("SIDECAR")
         obs = make(("A", "B"))
@@ -312,12 +348,13 @@ def test_sidecar_save_failing_at_each_step():
             book.stroke(obs["A"], s)
             book.stroke(obs["B"], 20 + s)
         path = os.path.join(TMP, f"side_{what}{nth}.blend")
-        save(path)
+        with _no_room_in_blend():
+            save(path)
         hsr = persist.sidecar_file(path)
         with open(hsr, "rb") as fh:
             before = fh.read()
         book.stroke(obs["A"], 10)
-        with _Fail(what, nth):
+        with _no_room_in_blend(), _Fail(what, nth):
             file_state = save(path)
         with open(hsr, "rb") as fh:
             now = fh.read()
@@ -373,7 +410,8 @@ def test_save_with_recording_paused_after_changes():
 def test_blend1_renamed_back():
     """After a crash the user puts back the previous save (the .blend1 Blender keeps), with the journal
     of the newer save still there. Its records are positions in the newer history: replaying them onto
-    the older one gave shapes that never existed. They belong to another save and are left alone."""
+    the older one gave shapes that never existed. They belong to another save and are left alone.
+    #48: the history is in the .blend (and its .blend1) whatever Save history says."""
     for mode in ("EMBED", "SIDECAR"):
         setup(mode)
         obs = make(("A",))
@@ -382,11 +420,6 @@ def test_blend1_renamed_back():
             book.stroke(obs["A"], s)
         path = os.path.join(TMP, f"backup_{mode}.blend")
         old_state = save(path)
-        old_folder = None
-        if mode == "SIDECAR":
-            old_folder = os.path.join(TMP, f"backup_{mode}_old_hindsight")
-            shutil.rmtree(old_folder, ignore_errors=True)
-            shutil.copytree(persist.sidecar_dir(path), old_folder)
         for s in range(3):
             book.stroke(obs["A"], 10 + s)
         runtime.goto(C, 2)
@@ -397,9 +430,6 @@ def test_blend1_renamed_back():
         to_object_mode()
         persistence._close_journal()
         shutil.copyfile(path + "1", path)                   # the .blend1 put back
-        if old_folder:
-            shutil.rmtree(persist.sidecar_dir(path))
-            shutil.copytree(old_folder, persist.sidecar_dir(path))
         bpy.ops.wm.open_mainfile(filepath=path)
         h = runtime.history_of(bpy.data.objects["A"])
         assert h is not None and len(h.entries) == 3 and h.cursor == 3, (mode, h)
@@ -580,6 +610,20 @@ def _resave_without_hindsight(path, change):
         H._registered[0] = True
 
 
+def _as_v1_folder(path):
+    """The history stored in a saved .blend moved into a history folder next to it, as V1 saved it with
+    Save history next to the .blend (its default): the folder holds the same bytes, the .blend points there."""
+    def change():
+        t = bpy.data.texts[persistence.TEXT_NAME]
+        data = bytes(t[persistence.DATA_BIN_PROP])
+        del t[persistence.DATA_BIN_PROP]
+        t[persistence.SIDECAR_PROP] = True
+        os.makedirs(persist.sidecar_dir(path), exist_ok=True)
+        with open(persist.sidecar_file(path), "wb") as fh:
+            fh.write(data)
+    _resave_without_hindsight(path, change)
+
+
 def test_damaged_saved_history():
     """The saved history damaged on disk (a bit flipped, the end cut off, a tail of zeros), in the
     history folder and inside the .blend. Opening the file never fails and never plays damaged steps:
@@ -594,6 +638,7 @@ def test_damaged_saved_history():
             path = os.path.join(TMP, f"damaged_{mode.lower()}_{kind}.blend")
             file_state = save(path)
             if mode == "SIDECAR":
+                _as_v1_folder(path)         # #48: no save writes a folder; V1's still opens
                 f = persist.sidecar_file(path)
                 with open(f, "rb") as fh:
                     data = fh.read()

@@ -1,7 +1,7 @@
 """Tier 1 gate, damaged history files (gate item FAULT.CORRUPT), headless.
 
-For every Tier 1 row: record the row's operations, save with a sidecar, flip one byte inside one
-step of one history, reopen.
+For every Tier 1 row: record the row's operations, save (the history goes in the .blend, #48), flip
+one byte inside one step of one history, reopen.
   - Damage before the step the history was saved at: a clear message in the sidebar, that history is
     dropped (D27: nothing before the damage can be reached exactly any more), the object is exactly as
     saved, and every other history still plays back exactly.
@@ -22,9 +22,9 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from hindsight.bl import idmap, runtime
+import hindsight
+from hindsight.bl import idmap, persistence, runtime
 from hindsight.bl import prefs
-from hindsight.core import persist
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -33,10 +33,9 @@ TMP = tempfile.mkdtemp(prefix="hs_t1_corrupt_")
 U32, U64 = struct.Struct("<I"), struct.Struct("<Q")
 
 
-def damage(path, hist_uid, index):
-    """Flip one byte in the middle of step `index` of history `hist_uid` in the sidecar file."""
-    f = persist.sidecar_file(path)
-    blob = bytearray(open(f, "rb").read())
+def flip(blob, hist_uid, index):
+    """Flip one byte in the middle of step `index` of history `hist_uid` in a saved history."""
+    blob = bytearray(blob)
     (jlen,) = U32.unpack_from(blob, 4)
     doc = json.loads(bytes(blob[8:8 + jlen]))
     pos = 8 + jlen
@@ -45,10 +44,26 @@ def damage(path, hist_uid, index):
             (n,) = U64.unpack_from(blob, pos)
             if hd["uid"] == hist_uid and i == index:
                 blob[pos + 8 + n // 2] ^= 0xFF
-                open(f, "wb").write(bytes(blob))
-                return
+                return bytes(blob)
             pos += 8 + n
     raise AssertionError("step not found")
+
+
+def damage(path, hist_uid, index):
+    """flip() in the history stored in the .blend, saved again with Hindsight off (its save handler
+    would write the history again)."""
+    hindsight.unregister()
+    H._registered[0] = False
+    try:
+        bpy.ops.wm.open_mainfile(filepath=path)
+        t = bpy.data.texts[persistence.TEXT_NAME]
+        blob = flip(t[persistence.DATA_BIN_PROP], hist_uid, index)
+        del t[persistence.DATA_BIN_PROP]      # Blender cuts bytes at a zero when it replaces them
+        t[persistence.DATA_BIN_PROP] = blob
+        bpy.ops.wm.save_mainfile()
+    finally:
+        hindsight.register()
+        H._registered[0] = True
 
 
 def target_history(r):

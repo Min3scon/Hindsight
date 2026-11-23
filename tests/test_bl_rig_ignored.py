@@ -256,7 +256,7 @@ def test_rig_ignored_after_reload():
     SETTINGS.save_mode = "SIDECAR"
     T.select()
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    assert os.path.isdir(persist.sidecar_dir(path))
+    assert not os.path.isdir(persist.sidecar_dir(path))      # #48: the history is in the .blend
     bpy.ops.wm.open_mainfile(filepath=path)
     prefs.FORCE["record_scope"] = "EVERYTHING"
     assert glen() == n_before, "the history came back with the file"

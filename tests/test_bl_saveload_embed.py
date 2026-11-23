@@ -1,7 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 """Embedded history (Save Mode Embed and Both): the stored bytes are exactly the history file (R061:
 earlier builds wrote its base64 as text), saving again replaces them, the packer is told when the user
-works, and an embedded history and a history folder written by the same save hold the same bytes."""
+works. #48: Save history Both writes no history folder."""
 import shutil
 import tempfile
 
@@ -37,8 +37,7 @@ def test_embed_bytes_are_the_history_file():
         assert persistence.DATA_PROP not in text, "the base64 text of earlier builds is written again"
         want = persist.registry_to_bytes(runtime.reg(), SETTINGS.compression)
         assert stored == want, round_
-        with open(persist.sidecar_file(path), "rb") as fh:
-            assert fh.read() == stored, "history folder and embedded copy differ"
+        assert not os.path.isdir(persist.sidecar_dir(path)), "a history folder was written"
         H.enter(ob, "SCULPT")
         _record(ob, [40 + round_])
         H.enter(ob, "OBJECT")

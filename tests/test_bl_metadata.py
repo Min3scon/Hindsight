@@ -29,6 +29,7 @@ from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.bl import camrig, cleanup, persistence, rigmark, runtime
+from hindsight.core import persist
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -143,9 +144,10 @@ def test_session_writes_only_what_is_listed():
     files = files_next_to(path)
     unlisted = sorted(n for n in blend | files if not matches(n, want))
     assert not unlisted, f"written but not in METADATA.md: {unlisted}"
+    # #48: no save writes the history folder any more, Save history Both included
+    assert not any(n.startswith("<file>_hindsight/") for n in files), files
     for must in ("_hindsight_uid", "Scene.hindsight", ".hindsight_history", ".hindsight_history[sidecar]",
-                 ".hindsight_history[hindsight_data_bin]", "keyframes on hindsight.movie_step",
-                 "<file>_hindsight/", "<file>_hindsight/history.hsr", "<file>_hindsight/index.json"):
+                 ".hindsight_history[hindsight_data_bin]", "keyframes on hindsight.movie_step"):
         assert matches(must, blend | files) or must in blend | files, f"the session didn't write {must}"
     j = persistence.journal_path(path)
     assert matches("journal/" + os.path.basename(j), want)
@@ -228,6 +230,7 @@ def test_remove_hindsight_data():
         path = os.path.join(TMP, f"remove_{int(delete_folder)}", "scene.blend")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         full_session(path, mode="BOTH")
+        persist.save_sidecar(runtime.reg(), path)    # #48: no save writes a folder; V1's Both did
         geometry = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
         r = cleanup.report()
         assert r["ids"] and r["text"] and r["keyframes"] and r["folder"], r

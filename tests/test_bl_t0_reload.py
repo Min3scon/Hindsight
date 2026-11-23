@@ -1,14 +1,13 @@
 """Tier 0 gate, save and reload (gate items RELOAD.*), headless.
 
-Each sculpting row's recorded run is saved with its history in a sidecar folder, embedded in the
-.blend, or both; reopened; and checked again exactly like right after recording (every object's
+Each sculpting row's recorded run is saved under each Save history value (the history always goes in
+the .blend, #48); reopened; and checked again exactly like right after recording (every object's
 history at every position, the global timeline). A renamed object keeps its history, also after a
 reload.
 
 Run: blender -b --factory-startup --python tests/test_bl_t0_reload.py (or tests/run_tests.py).
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import shutil
 import tempfile
 
 import bpy
@@ -28,11 +27,10 @@ TMP = tempfile.mkdtemp(prefix="hs_t0_reload_")
 def save_and_reopen(path, mode):
     SETTINGS.save_mode = mode
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    side = persist.sidecar_dir(path)
-    assert os.path.isdir(side) == (mode in ("SIDECAR", "BOTH")), (mode, os.path.isdir(side))
+    assert not os.path.isdir(persist.sidecar_dir(path)), f"{mode}: #48: a save writes no history folder"
     bpy.ops.wm.open_mainfile(filepath=path)
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    assert text is not None and ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
+    assert text is not None and "hindsight_data_bin" in text, mode
     assert "hindsight_data" not in text           # R061: the base64 copy is never written
 
 
@@ -46,10 +44,6 @@ def reload_all_rows(mode):
         r = L.Run(T0.sequences()[row])
         path = os.path.join(TMP, f"{row.replace('.', '_')}_{mode.lower()}.blend")
         save_and_reopen(path, mode)
-        if mode == "BOTH":
-            # either copy alone is enough: the sidecar is preferred, the embedded copy is the backup
-            shutil.rmtree(persist.sidecar_dir(path))
-            bpy.ops.wm.open_mainfile(filepath=path)
         recheck(r)
     SETTINGS.save_mode = "SIDECAR"
 

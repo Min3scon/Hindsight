@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Save / load glue: sidecar folder, embedded Text datablock and the crash journal.
 
-Save Mode (Add-on Preferences, ``SETTINGS.save_mode``):
-  SIDECAR  history folder ``<stem>_hindsight`` beside the .blend (fastest saves)
-  EMBED    stored inside the .blend (Text ``.hindsight_history``, bytes ID property ``hindsight_data_bin``;
-           files saved by 1.0.0-beta.2 and earlier hold base64 text in ``hindsight_data``, still read)
-  BOTH     both of the above
+Every save stores the history inside the .blend (Text ``.hindsight_history``, bytes ID property
+``hindsight_data_bin``; files saved by 1.0.0-beta.2 and earlier hold base64 text in ``hindsight_data``, still
+read), whatever Save Mode (``SETTINGS.save_mode``) says (#48). A history folder ``<stem>_hindsight`` left by V1
+(Save Mode SIDECAR or BOTH) is still read.
 
 Crash Recovery (``SETTINGS.crash_recovery``):
   LAST_SAVED   loading a file restores only what was saved
@@ -358,18 +357,18 @@ def on_save_pre(*args) -> None:
     except Exception as e:
         log.error_once(("saved_prints", str(e)), f"could not note the recorded objects for saving: {e}", e)
     text = None
-    removed = False
     try:
-        mode = _mode()
         _drain_packer()
         text = bpy.data.texts.get(TEXT_NAME)
         if text is None:
             text = bpy.data.texts.new(TEXT_NAME)
         text.use_fake_user = True
-        text[SIDECAR_PROP] = mode in ("SIDECAR", "BOTH")
+        # #48: whatever Save history says, the history goes in the .blend. A folder from a newer
+        # Hindsight stays pointed at, so that Hindsight still finds it.
+        text[SIDECAR_PROP] = _PROTECT["sidecar"]
         if _PROTECT["embed"]:
             pass   # history from a newer Hindsight: keep it exactly as it was
-        elif mode in ("EMBED", "BOTH"):
+        else:
             # The parts are the step blobs themselves (no copy); anything that can go wrong in
             # putting them together happens here, before the stored copy is touched.
             parts = persist.registry_parts(reg, _codec())
@@ -378,33 +377,27 @@ def on_save_pre(*args) -> None:
                     # Blender's copy of the last saved history goes before the new one is built:
                     # otherwise the old copy, the new bytes and Blender's new copy are all held at once.
                     del text[key]
-                    removed = True
             # R061: the bytes themselves (base64 cost time and a third more). Both keys are gone by now, which
             # matters: Blender cuts bytes at the first zero when it replaces an existing bytes property.
             data = persist.parts_to_bytes(parts)
             del parts
             text[DATA_BIN_PROP] = data
             del data
-        else:
-            for key in (DATA_PROP, DATA_BIN_PROP):
-                if key in text:
-                    del text[key]
         if not _PROTECT["embed"]:
             text[SAVE_ID_PROP] = reg.save_id
     except Exception as e:
         guard.fail("saving", e, "could not store undo history in the .blend")
-        if removed and text is not None:
-            # The copy from the last save is gone and the new one couldn't be made (out of memory,
-            # most likely): the .blend would be saved with no history at all. The history folder
-            # gets it instead, and the .blend says so.
+        if text is not None and not _PROTECT["embed"]:
+            # The new copy couldn't be made (out of memory, most likely). A copy of the last save still in
+            # the .blend stays; without one (removed first, or never there) the .blend would be saved with
+            # no history at all: the history folder gets it instead, and the .blend says so.
+            # shortcut: the last path that writes a folder, until the owner picks its replacement (#48)
             try:
-                for key in (DATA_PROP, DATA_BIN_PROP):
-                    if key in text:
-                        del text[key]
-                text[SIDECAR_PROP] = True
-                text[SAVE_ID_PROP] = reg.save_id
-                _FALLBACK["sidecar"] = True
-                _note("ERROR", EMBED_FALLBACK_TEXT)
+                if DATA_PROP not in text and DATA_BIN_PROP not in text:
+                    text[SIDECAR_PROP] = True
+                    text[SAVE_ID_PROP] = reg.save_id
+                    _FALLBACK["sidecar"] = True
+                    _note("ERROR", EMBED_FALLBACK_TEXT)
             except Exception as e2:
                 guard.fail("saving", e2, "could not point the .blend at its history folder")
 
@@ -415,8 +408,7 @@ def on_save_post(*args) -> None:
     path = _handler_path(args)
     if not path or not _writes_anything(path):
         return
-    mode = _mode()
-    folder = mode in ("SIDECAR", "BOTH") or _FALLBACK["sidecar"]
+    folder = _FALLBACK["sidecar"]      # #48: only when the history couldn't go in the .blend
     _FALLBACK["sidecar"] = False
     folder_failed = False
     if folder and _PROTECT["sidecar"] and os.path.isfile(persist.sidecar_file(path)):
@@ -427,9 +419,8 @@ def on_save_post(*args) -> None:
             persist.save_sidecar(runtime.reg(), path)
         except Exception as e:
             guard.fail("saving", e, "could not write the undo history folder")
-            folder_failed = mode == "SIDECAR" or mode == "EMBED"     # BOTH: the .blend has it
-            if folder_failed:
-                _note("ERROR", SIDECAR_FAILED_TEXT)
+            folder_failed = True
+            _note("ERROR", SIDECAR_FAILED_TEXT)
     current = _current_blend()
     if current and not _same_path(path, current):
         return   # "Save Copy": the session file itself did not change

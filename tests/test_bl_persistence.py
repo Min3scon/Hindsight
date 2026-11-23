@@ -10,6 +10,7 @@ from hindsight.core.types import SETTINGS
 
 C = bpy.context
 TMP = tempfile.mkdtemp(prefix="hindsight_persist_")
+V1_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "beta2", "folder", "scene.blend")
 NAME = "Sculpty"
 
 
@@ -57,14 +58,12 @@ def roundtrip(mode):
     setup(mode)
     path = os.path.join(TMP, f"rt_{mode.lower()}.blend")
     states = sculpt_and_save(path, 4, mode)
-    side = persist.sidecar_dir(path)
-    assert os.path.isdir(side) == (mode in ("SIDECAR", "BOTH")), (mode, os.path.isdir(side))
+    assert not os.path.isdir(persist.sidecar_dir(path)), f"{mode}: #48: a save writes no history folder"
     ob = reopen(path)
     assert runtime.missing_message[0] is None
     text = bpy.data.texts.get(persistence.TEXT_NAME)
     assert text is not None and text.use_fake_user
-    assert bool(text.get("sidecar")) == (mode in ("SIDECAR", "BOTH"))
-    assert ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
+    assert not text.get("sidecar") and "hindsight_data_bin" in text, mode     # #48: whatever the mode
     assert "hindsight_data" not in text           # R061: the base64 copy is never written
     h = runtime.history_of(ob)
     assert h is not None, "history not restored"
@@ -99,7 +98,7 @@ def test_embed_survives_without_sidecar():
     setup("BOTH")
     path = os.path.join(TMP, "both_nofolder.blend")
     states = sculpt_and_save(path, 4)
-    shutil.rmtree(persist.sidecar_dir(path))
+    assert not os.path.isdir(persist.sidecar_dir(path))     # #48: Both writes no folder either
     ob = reopen(path)
     assert runtime.missing_message[0] is None
     h = runtime.history_of(ob)
@@ -108,12 +107,14 @@ def test_embed_survives_without_sidecar():
 
 
 def test_missing_sidecar_message():
+    # #48: no save writes a folder any more; a .blend V1 saved with its history in one (Save history:
+    # next to the .blend, its default) still says when the folder is missing
     setup("SIDECAR")
-    path = os.path.join(TMP, "orig.blend")
-    sculpt_and_save(path, 2)
     moved = os.path.join(TMP, "renamed.blend")
-    os.rename(path, moved)            # .blend moved without its folder
-    ob = reopen(moved)
+    shutil.copy2(V1_FOLDER, moved)            # .blend renamed; its folder keeps the old name
+    shutil.copytree(os.path.join(os.path.dirname(V1_FOLDER), "scene_hindsight"), os.path.join(TMP, "scene_hindsight"))
+    bpy.ops.wm.open_mainfile(filepath=moved)
+    ob = bpy.data.objects["S"]
     msg = runtime.missing_message[0]
     assert msg and "History folder missing" in msg, msg
     assert "renamed_hindsight" in msg, msg
@@ -123,8 +124,8 @@ def test_missing_sidecar_message():
     path2 = os.path.join(TMP, "deleted.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path2)
     assert runtime.missing_message[0] is None, "saving clears the message"
-    shutil.rmtree(persist.sidecar_dir(path2))
-    reopen(path2)
+    shutil.copy2(V1_FOLDER, path2)            # the V1 file again, its folder gone
+    bpy.ops.wm.open_mainfile(filepath=path2)
     assert "History folder missing" in (runtime.missing_message[0] or "")
     # a file that never had a sidecar shows nothing
     setup("EMBED")
