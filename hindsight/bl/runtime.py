@@ -9,14 +9,18 @@ import bpy
 import numpy as np
 from bpy.app.handlers import persistent
 
-from ..core import globaltl
+from ..core import delta as D, globaltl, store, topopack
+from ..core.delta import view_bits
 from ..core.history import MeshState
 from ..core.registry import Registry, new_uid
+from ..core.store import Packer
 from ..core.types import (
     JOURNAL_CODEC, SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
-from . import filtering, guard, log, meshio, multires, rigmark
+from . import adapters, datarec, filtering, guard, idmap, log, meshio, multires, rigmark
+from .prefs import get_prefs
 from . import warnings as _warn
+from .selfcheck import flash_status
 from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
@@ -31,7 +35,6 @@ def texture_on() -> bool:
     if FORCE_TEXTURE[0] is not None:
         return FORCE_TEXTURE[0]
     try:
-        from .prefs import get_prefs
         p = get_prefs()
         return p is not None and bool(getattr(p, "record_texture_painting", False))
     except Exception:
@@ -48,7 +51,6 @@ def dyntopo_on() -> bool:
     if FORCE_DYNTOPO[0] is not None:
         return FORCE_DYNTOPO[0]
     try:
-        from .prefs import get_prefs
         p = get_prefs()
         return p is not None and bool(getattr(p, "record_dyntopo", False))
     except Exception:
@@ -194,7 +196,6 @@ def set_registry(r: Registry) -> None:
     WEIGHTS_CLAMPED.clear()
     _TRACK.update(name=None, uid=None, mode=None)
     with contextlib.suppress(Exception):
-        from . import datarec, idmap
         datarec.forget()
         idmap.forget(session=True)
 
@@ -221,7 +222,7 @@ def step_payload(entry):
     def fn():
         if blob is not None:
             return blob
-        from ..core.step import step_to_bytes
+        from ..core.step import step_to_bytes  # local: tests patch core.step.step_to_bytes
         return step_to_bytes(st, JOURNAL_CODEC, 0)
     fn.size = entry.nbytes()
     return fn
@@ -263,7 +264,6 @@ def obj_uid(obj, create: bool = False):
         obj[UID_PROP] = u
         _FRESH_UIDS.add(u)
     if u is not None:
-        from . import idmap
         idmap.note(obj, u)
     return u
 
@@ -274,7 +274,6 @@ def drop_unused_uids() -> int:
     recorded data), take it off again, so saving a file without recording adds nothing to it."""
     if not _FRESH_UIDS:
         return 0
-    from . import idmap
     used = set(_REG.everything) | set(_REG.disabled) | set(idmap._owner)
     for h in _REG.histories.values():
         used.update(h.members)
@@ -335,7 +334,6 @@ def any_uid(obj):
     Empties and other object types have one once Record everything has recorded them."""
     u = obj_uid(obj)
     if u is None and obj is not None:
-        from . import idmap
         u = idmap.uid_of(obj)
     return u
 
@@ -400,7 +398,6 @@ def extras_on(obj) -> bool:
     """D43: vertex group weights and shape keys are part of the mesh state of objects recorded with
     Record everything."""
     try:
-        from . import datarec
         return datarec.is_tracked(obj)
     except Exception:
         return False
@@ -620,12 +617,10 @@ def _visible_uids() -> set:
         if u is not None and not excluded(ob):
             out.add(u)
     with contextlib.suppress(Exception):
-        from . import datarec
         out |= {u for u in datarec.tracked_uids() if datarec._is_scene_uid(u)}
         if any(datarec._is_scene_uid(u) for u in datarec.tracked_uids()):
             # with the scene recorded, a deleted object can come back: its history stays on the
             # global timeline (so the timeline doesn't change length when objects come and go)
-            from . import idmap
             for h in _REG.histories.values():
                 for m in h.members:
                     if m not in out and idmap.find(m) is None:
@@ -644,7 +639,6 @@ def prime_states() -> None:
 # ----------------------------------------------------------------------------- recording
 def _deltas_match(seen: Step, rec: Step, st: MeshState, inverse: bool) -> bool:
     """True if the change `seen` (diffed from `st`) is exactly `rec` undone (inverse) or redone."""
-    from ..core import delta as D
     if seen.kind != DELTA or rec.kind != DELTA or len(seen.deltas) != len(rec.deltas):
         return False
     by_key = {d.key: d for d in rec.deltas}
@@ -665,7 +659,6 @@ def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool
     if new.kind == DELTA:
         return _deltas_match(new, old, st, inverse)
     if new.kind == TOPO and old.kind == TOPO and old.before is not None:
-        from ..core.delta import view_bits
 
         def same(s1, s2):
             if s1.counts != s2.counts:
@@ -685,7 +678,6 @@ def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool
 def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, deep=True):
     """Diff the mesh (or `me`, a copy of it) against the state. Returns an unsaved Step (seq=0) or None.
     With full, every attribute is compared, and the topology too (deep: see meshio.topology_equal)."""
-    from ..core import delta as D
     me = me if me is not None else obj.data
     uid = obj_uid(obj)
     c = meshio.counts(me)
@@ -833,7 +825,6 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
 
 def _refresh_toggle() -> bool:
     try:
-        from .prefs import get_prefs
         p = get_prefs()
         return bool(getattr(p, "sculpt_refresh_toggle", False)) if p else False
     except Exception:
@@ -867,7 +858,6 @@ def commit_edit(obj, label: str = "Edit", deep: bool = True):
 
 def _mesh_owned_elsewhere(obj) -> bool:
     try:
-        from . import datarec
         return datarec.mesh_owned_elsewhere(obj)
     except Exception:
         return False
@@ -875,7 +865,6 @@ def _mesh_owned_elsewhere(obj) -> bool:
 
 def edit_steps_on(obj) -> bool:
     try:
-        from . import adapters, datarec
         return (datarec.is_tracked(obj) and adapters.kind_on("edit_steps")
                 and len(obj.data.vertices) <= SETTINGS.edit_steps_max and not datarec.mesh_owned_elsewhere(obj))
     except Exception:
@@ -1080,7 +1069,6 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     _journal("STEP", {"hist": h.uid, "at": at}, step_payload(entry))
     _enforce(h)
     with contextlib.suppress(Exception):
-        from . import datarec
         datarec.drop_undone_jumps()
     tag_redraw_all()
     return step
@@ -1105,7 +1093,6 @@ def _put_back_after_native_undo(obj, st: MeshState, step: Step, text: str = NATI
         bpy.app.timers.register(_later, first_interval=0.0)
     log.warn(text)
     with contextlib.suppress(Exception):
-        from .selfcheck import flash_status
         flash_status("Hindsight: " + text, 10.0)
 
 
@@ -1161,7 +1148,6 @@ def _note_eviction(n: int) -> None:
         text = MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
         log.warn(text)
         with contextlib.suppress(Exception):
-            from .selfcheck import flash_status
             flash_status("Hindsight: " + text, 15.0)
 
 
@@ -1184,7 +1170,6 @@ def _enforce(h=None) -> None:
     """Keep caps and tiers. Incremental per commit (O(1)); full rescans every 64 commits or when
     the memory estimate crosses the limit, so recording cost does not grow with history length."""
     try:
-        from ..core import store
         global _CAPS_MEMO
         if _CAPS_MEMO is None:
             _CAPS_MEMO = store.CapsMemo()
@@ -1303,7 +1288,6 @@ def _on_depsgraph(scene, depsgraph=None) -> None:
         return
     guard.mark_ok("recorder")
     try:
-        from . import datarec
         datarec.on_update(depsgraph)
     except Exception as e:
         log.error_once(("datarec_update", str(e)), f"data recorder error: {e}", e)
@@ -1378,7 +1362,6 @@ def _pack_job(st):
 def pack_idle_states(wait: bool = False) -> int:
     """Swap in the packed topology of finished jobs and start the next one (one at a time). wait
     (tests): pack every baseline that can be before returning. Returns how many were swapped in."""
-    from ..core import topopack
     done = 0
     for uid, (st, job, fut) in list(_PACKING.items()):
         if not (wait or fut.done()):
@@ -1431,7 +1414,6 @@ def tick() -> float:
         except Exception as e:
             log.error_once(("topo_pack_tick", str(e)), f"could not pack a mesh's topology: {e}", e)
     try:
-        from . import datarec
         datarec.tick()
         busy = busy or bool(datarec._DIRTY)
     except Exception as e:
@@ -1468,7 +1450,6 @@ def _after_native_undo() -> None:
     """Compare the mesh with our state (commit() detects the match)."""
     _GEN[0] += 1
     try:
-        from . import idmap
         idmap.restore_after_undo()        # D42: ids set after Blender's undo push come back first
     except Exception as e:
         log.error_once(("restore_ids", str(e)), f"could not restore ids after undo: {e}", e)
@@ -1478,7 +1459,6 @@ def _after_native_undo() -> None:
     # is where it belongs and isn't compared again (in Edit Mode that compare would undo the undo)
     moved = set()
     try:
-        from . import datarec
         moved = datarec.on_undo(UNDO_DIRECTION[0]) or set()
     except Exception as e:
         log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
@@ -1541,7 +1521,6 @@ def _find_any(uid):
     if ob is not None:
         return ob
     try:
-        from . import idmap
         return idmap.find(uid)
     except Exception:
         return None
@@ -1549,7 +1528,6 @@ def _find_any(uid):
 
 def _after_mesh_write(ob) -> None:
     try:
-        from . import adapters
         adapters.after_mesh_write(ob)      # D108: UV map flags, once the UV maps exist again
     except Exception as e:
         log.error_once(("after_mesh_write", str(e)), f"could not finish restoring {ob.name}: {e}", e)
@@ -1558,7 +1536,6 @@ def _after_mesh_write(ob) -> None:
 def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     """Move one history to pos and write what changed to Blender. With acc (a global jump), the
     move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
-    from . import datarec
     multires.flush()
     states = {}
     for m in list(h.members):
@@ -1702,7 +1679,6 @@ def _leave_edit_for_push(context, final: bool):
     would keep only the edit mesh, and Blender's undo would later put back stale data for every
     other object. The edit is kept as a step first (as when a jump leaves Edit Mode). Returns the
     object to put back into Edit Mode after the push, or None."""
-    from . import datarec
     ob = _ctx_active(context)
     if not final or IN_HANDLER[0] or not datarec.can_push() or ob is None or ob.mode != "EDIT":
         return None
@@ -1852,7 +1828,6 @@ def _position(vis, groups) -> int:
 def global_goto(context, g: int, final: bool = True) -> None:
     """Move the global timeline to position g. Steps are undone and redone across histories in
     step-number order (globaltl.transition), and the whole jump is one entry on Blender's undo."""
-    from . import datarec
     if _PAUSED:
         end_paused(now=True)                 # D153
     vis = _visible_uids()
@@ -1889,7 +1864,6 @@ def global_goto(context, g: int, final: bool = True) -> None:
 def _recorded_values() -> dict:
     """datarec.recorded_values in one id frame (its look-ups use the frame's index: 7.2 -> 1.4 ms with
     500 recorded objects). Nothing is made or removed while it reads."""
-    from . import datarec, idmap
     with idmap.frame():
         return datarec.recorded_values()
 
@@ -1933,7 +1907,6 @@ def _scrub_key(context):
         filt = (p.filter_mode, tuple(it.collection.as_pointer() if it.collection is not None else 0
                                      for it in p.filter_collections), bool(p.movie_mode), bool(p.use_global))
     try:
-        from . import datarec
         tracked = frozenset(datarec.tracked_uids())
     except Exception:
         tracked = None
@@ -2094,7 +2067,6 @@ def _override_key(idb):
     lib = getattr(ref, "library", None) if ref is not None else None
     if lib is None:
         return None
-    from . import idmap
     return [type(idb).__name__, idmap.lib_path(lib), ref.name]
 
 
@@ -2119,7 +2091,6 @@ def restamp_overrides(saved) -> int:
     """D109: Blender builds library overrides again from their library when a file is opened, and the
     id Hindsight gave one is gone. Each override saved with an id gets it back, found by its type,
     library file and the name of the datablock it overrides. Returns how many."""
-    from . import idmap
     m = (saved or {}).get(OVERRIDES_KEY)
     if not isinstance(m, dict) or not m:
         return 0
@@ -2145,7 +2116,6 @@ def restamp_overrides(saved) -> int:
 def saved_prints() -> dict:
     """D46: every recorded object as it is saved (a fingerprint of its mesh, its recorded values), so
     opening the file can tell whether it was changed in a session without Hindsight."""
-    from . import adapters, datarec, idmap
     tracked = datarec.tracked_uids()
     uids = set(tracked)
     for h in _REG.histories.values():
@@ -2234,7 +2204,6 @@ def check_outside_changes(saved: dict) -> None:
     """D46: after opening a file, compare every recorded object with how Hindsight saved it. Values
     changed in a session without Hindsight become one step; a changed mesh can't be rebuilt from
     the history, so that object's history is left out with a message (never played back onto it)."""
-    from . import datarec, idmap
     outside = set()
     for u, rec in (saved or {}).items():
         ob = idmap.find(u) or find_object(u)
@@ -2288,7 +2257,6 @@ def _restore_missing_refs(u, miss) -> None:
     """D57: references that were waiting for a deleted object to come back when the file was saved
     wait again (the sidebar says so, the global history puts them in). One changed without Hindsight
     meanwhile stops waiting when that change is recorded, right after this."""
-    from . import adapters
     for item in miss if isinstance(miss, list) else ():
         try:
             path, ref, aid, apath, value = item[:5]
@@ -2321,7 +2289,6 @@ def turn_on(context, obj) -> None:
         h.enabled = True
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": True,
                           "morph_target": h.morph_target})
-        from . import datarec
         if datarec.is_tracked(obj) and obj.mode != "EDIT":
             # D46: values and mesh changed while off become one step together
             datarec.catch_up(obj, "Changes While Off")
@@ -2358,7 +2325,6 @@ def _history_bytes(h, gkey) -> int:
     (store._sig) and no step changed size: gkey holds the packer's counters (it packs and
     recompresses in the background) and _ENFORCE_COUNT (packing on the main thread only happens in
     _enforce)."""
-    from ..core import store
     sig = store._sig(h)
     c = _HIST_BYTES.get(h.uid)
     if c is not None and c[0] == sig and c[1] == gkey:
@@ -2370,7 +2336,6 @@ def _history_bytes(h, gkey) -> int:
 
 def memory_stats() -> dict:
     """The Memory panel's numbers (drawn on every redraw while it is open)."""
-    from ..core import store
     total = 0
     steps = 0
     active_b = 0
@@ -2402,8 +2367,7 @@ def warnings_for(context, obj) -> list:
         out.append(("WARNING", MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
                     + f". Dropped so far: {MEMORY['evicted']} steps"))
     with contextlib.suppress(Exception):
-        from .warnings import collect
-        out.extend(collect(context, obj))
+        out.extend(_warn.collect(context, obj))
     return out
 
 
@@ -2416,7 +2380,6 @@ def register() -> None:
         bpy.app.timers.register(tick, first_interval=0.5, persistent=True)
     global packer
     try:
-        from ..core.store import Packer
         packer = Packer()
     except Exception as e:
         log.warn(f"background packing unavailable, packing inline: {e}")
