@@ -15,7 +15,6 @@
 args: variant = default | globaloff (Global Undo off) | undomin | undomax (undo steps at the
       preference's minimum or maximum). Run each with --out-tag <version>-<variant>.
 """
-import os
 import sys
 
 import bpy

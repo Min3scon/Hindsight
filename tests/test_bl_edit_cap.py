@@ -6,7 +6,7 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
-from hindsight.bl import datarec, prefs, runtime
+from hindsight.bl import prefs, runtime
 from hindsight.bl import warnings as W
 from hindsight.core.types import SETTINGS, Settings
 

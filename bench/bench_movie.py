@@ -1,7 +1,7 @@
 """Movie Mode playback cost: time scene.frame_set(f) over every frame of a Quick auto key movie
 (what a render does before drawing each frame), split by cProfile into where the time goes.
 
-    /home/user/venvs/bpy53/bin/python bench/bench_movie.py [--quick] [--render-only]
+    <venv>/bin/python bench/bench_movie.py [--quick] [--render-only]
 
 Writes bench/results_movie.json. Histories are built as tests/test_bl_movie.py does (meshes made
 with numpy + foreach_set, strokes of about 2% of the vertices written to the mesh, then commit).
@@ -32,7 +32,7 @@ if "--root" in sys.argv:            # time another checkout's add-on (A/B runs)
 import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 import tests.harness as H  # noqa: E402
-from hindsight.bl import runtime, movie  # noqa: E402
+from hindsight.bl import runtime
 
 C = bpy.context
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -164,7 +164,6 @@ def split(prof):
         if c is not None:
             out[c] += tt
             continue
-        name = func[2]
         tot = sum(v[2] for v in callers.values()) or 1.0
         for cf, v in callers.items():
             cc = _cat(cf) or "other"

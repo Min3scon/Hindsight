@@ -4,6 +4,10 @@ Usage:
     python tools/precommit_check.py          # check the staged changes (what the next commit will contain)
     python tools/precommit_check.py --all    # check every tracked file
 
+Python files under tests, tests_ui, tools and bench are also run through pyflakes (unused imports and locals);
+the "syntax error in forward annotation" and "undefined name" reports Blender's annotations cause are skipped.
+Without pyflakes installed (`pip install pyflakes`) that step is skipped with a note.
+
 Exit code 0 = clean, 1 = something must be fixed before committing.
 
 Extra private patterns (one regex per line, e.g. your OS username) can be listed in
@@ -22,6 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 MAX_BYTES = 5 * 1024 * 1024
 PRIVATE_PATTERNS = ROOT / ".tools" / "precheck_private.txt"
 ALLOW_MARKER = "precheck: allow"
+LINT_DIRS = ("tests/", "tests_ui/", "tools/", "bench/")
+PYFLAKES_SKIP = ("syntax error in forward annotation", "undefined name")
 
 # Folders that must never be committed, even if someone force-adds them.
 FORBIDDEN_DIRS = (".tools/", ".venv/", "node_modules/", ".blender_profiles/", "test_models/",
@@ -102,6 +108,25 @@ def scan_text(path: str, text: str, private: list) -> list[str]:
     return problems
 
 
+def lintable(path: str) -> bool:
+    return path.endswith(".py") and path.startswith(LINT_DIRS)
+
+
+def keep_pyflakes_reports(lines: list[str]) -> list[str]:
+    return [l for l in lines if l.strip() and not any(s in l for s in PYFLAKES_SKIP)]
+
+
+def pyflakes_problems(files: list[str]) -> list[str] | None:
+    """pyflakes reports on the working copy of `files`; None when pyflakes is not installed."""
+    files = [f for f in files if lintable(f) and (ROOT / f).is_file()]
+    if not files:
+        return []
+    run = subprocess.run([sys.executable, "-m", "pyflakes", *files], cwd=ROOT, capture_output=True, text=True)
+    if "No module named pyflakes" in run.stderr:
+        return None
+    return keep_pyflakes_reports((run.stdout + run.stderr).splitlines())
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--all", action="store_true", help="check every tracked file instead of the staged ones")
@@ -123,6 +148,12 @@ def main() -> int:
         if path == self_path:
             continue  # this file holds the patterns themselves
         problems.extend(scan_text(path, data.decode("utf-8", errors="replace"), private))
+
+    flakes = pyflakes_problems(files)
+    if flakes is None:
+        print("precommit_check: pyflakes is not installed, lint step skipped (pip install pyflakes)")
+    else:
+        problems.extend(flakes)
 
     scope = "tracked" if args.all else "staged"
     if problems:

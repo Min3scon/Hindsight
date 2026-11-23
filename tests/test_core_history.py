@@ -342,7 +342,6 @@ def test_reset_and_morph_target():
     states = {UID: st}
     h.goto(50, states)
     h.morph_target = 50
-    rng = np.random.default_rng(2)
     old = st.arrays[FACE_SET_KEY]
     new = old.copy(); new[:5] += 1
     d = make_delta(FACE_SET_KEY, old, new)

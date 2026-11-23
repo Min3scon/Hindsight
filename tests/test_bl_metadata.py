@@ -28,7 +28,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from hindsight.bl import camrig, cleanup, datarec, persistence, rigmark, runtime
+from hindsight.bl import camrig, cleanup, persistence, rigmark, runtime
 from hindsight.core.types import SETTINGS
 
 C = bpy.context

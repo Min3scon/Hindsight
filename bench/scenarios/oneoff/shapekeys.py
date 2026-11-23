@@ -1,6 +1,6 @@
 """Record everything on a 40k-vertex mesh with K shape keys: moving one shape key's slider (Object Mode), then the
 operator's end (finish_operation): ms, and cProfile."""
-import os, sys, time, statistics, cProfile, pstats, io
+import sys, time, statistics, cProfile
 ROOT = sys.argv[1]; K = int(sys.argv[2]); sys.path.insert(0, ROOT)
 import bpy, numpy as np
 import tests.harness as H

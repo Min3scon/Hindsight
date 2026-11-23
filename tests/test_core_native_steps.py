@@ -17,7 +17,6 @@ import json
 import struct
 import subprocess
 import traceback
-import zlib
 
 import numpy as np
 
@@ -260,7 +259,7 @@ def test_mixed_histories():
             part = {"A": start["A"]}
             run_twins(entries, part, 0, [n] + plan_for(rng, n, 20), f"seed {seed} A only")
         assert twins[0][2].cursor == twins[-1][2].cursor
-    print(f"PASS test_mixed_histories (12 histories, every engine agrees)")
+    print("PASS test_mixed_histories (12 histories, every engine agrees)")
 
 
 def test_ends_are_exact():
@@ -408,7 +407,7 @@ def test_empty_records_count_as_changed():
             ds.append(ChannelDelta(KEYS[4], np.zeros(0, np.uint32), np.zeros((0, w), np.uint32), (True, True), ADD))
         st = Step(i + 1, "Stroke", "SCULPT", "A", 0.0, DELTA, ds)
         entries.append(Entry(blob=stepmod.step_to_bytes(st, "zstd"), meta=st.meta()))
-    twins = run_twins(entries, start, 0, [6, 0, 4, 3, 2, 6], "empty record")
+    run_twins(entries, start, 0, [6, 0, 4, 3, 2, 6], "empty record")
     h, states = twin(entries, start, 0)
     assert set(h.goto(6, states)["A"]) == {KEYS[0], KEYS[4]}
     print("PASS test_empty_records_count_as_changed")
@@ -503,7 +502,6 @@ def test_hostile_calls():
 def test_threads_agree():
     """Any helper thread count gives the same arrays, and a step that isn't taken stops every
     thread count at the same place."""
-    rng = np.random.default_rng(8)
     entries, start, cur = build(21, n_steps=150, n=3000, targets=("A",), mix=False)
     blobs = [e.blob for e in entries]
     stop = 97
