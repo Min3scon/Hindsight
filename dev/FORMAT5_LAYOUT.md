@@ -162,7 +162,8 @@ before. In the folder and both modes the build wrote its own history folder and 
 
 What this leaves for #45: a file V2 saved, then saved again by an older build that recorded in it, has the format 5
 parts beside the older build's own history folder (or, in the embedded mode, its new steps nowhere, as V1 does for any
-newer history). Which one V2 opens is #45's to settle; the parts themselves are always intact. "Remove Hindsight data"
+newer history). Which one V2 opens is #45's to settle; the parts themselves are always intact. #45 settles it in
+`dev/FORMAT5_V1.md`: V2 opens the parts, and D46 handles what the older build changed. "Remove Hindsight data"
 in an older build deletes the whole Text (V1 `cleanup.py` 128 to 130), as the user asked.
 
 ## Alternatives considered
