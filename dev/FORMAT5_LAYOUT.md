@@ -58,7 +58,8 @@ Text ".hindsight_history"   fake user; V1's container, kept as it is
 
 How each part is checked when the file opens, what survives a damaged one, and what that adds to this layout (a
 second copy of the index part, and a CRC-32 on each step part's step table and metas) is in `dev/FORMAT5_DAMAGE.md`
-(#43).
+(#43). How the crash journal fits around saving and opening, and what a file recovered from Blender's autosave does,
+is in `dev/FORMAT5_JOURNAL.md` (#44).
 
 ### How a history is split into step parts
 
