@@ -99,7 +99,8 @@ In format 5:
 - **Opening** (`load_post`): Hindsight reads the index part, then reads each step part and deletes Blender's copy of it
   straight away, then deletes the group. The stub and `sidecar` stay. Reading part by part, the memory above the
   opened file peaked at 4 MB (one part), against 257 MB when every part is read first and the group deleted after
-  (256 MB in 64 parts, 4.2 and 5.3). What opening costs at 100,000 steps is #46.
+  (256 MB in 64 parts, 4.2 and 5.3). What opening costs at 100,000 steps is in
+  `dev/FORMAT5_OPENING.md` (#46).
 - **Between saves**: Blender holds only the stub and `sidecar`. Blender's autosave therefore writes a file without
   the history parts (the accepted cost in `DECISIONS.md`); V2 knows such a file by the stub without a
   `hindsight_parts` group.
