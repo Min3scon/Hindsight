@@ -107,10 +107,11 @@ def test_digest_reads_a_pointer_to_data_not_written_as_null():
     info = loose._dna_info(bytes(raw), blocks)
     hs, so = loose._heads(raw)
     p = next(p for p, c, _ in blocks if c == b"IM\0\0")
-    ptrs = set(info[1][int.from_bytes(raw[p + so:p + so + 4], "little")][1].tolist())
+    ptrs, run = (set(x.tolist()) for x in info[1][int.from_bytes(raw[p + so:p + so + 4], "little")][1:3])
     word = lambda o: raw[p + hs + o:p + hs + o + 8]
     at = p + hs + next(o for o in sorted(ptrs) if o % 8 == 0 and not any(word(o)))         # a null pointer
-    data = p + hs + next(o for o in range(64, 1600, 8) if o not in ptrs and any(word(o)))   # a set data word
+    data = p + hs + next(o for o in range(64, 1600, 8) if o not in ptrs and any(word(o))   # a set data word
+                         and not run.intersection(range(o, o + 8)))     # (not an ID's runtime field: D156)
     before = loose._digest(bytes(raw), blocks, info)
     raw[at:at + 8] = (0x76387C9A9BBE7070).to_bytes(8, "little")
     assert loose._digest(bytes(raw), blocks, info) == before, "a pointer to nothing in the snapshot changed the digest"
