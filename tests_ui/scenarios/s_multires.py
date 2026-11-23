@@ -29,6 +29,7 @@ def _hash(d):
 def run(d):
     yield 1.0
     C.dismiss_splash(d)
+    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only
     yield 0.3
     ob = C.fresh_sphere(d, segments=32, rings=16)
     C.frame_view(d)

@@ -50,6 +50,7 @@ def _engines():
 def run(d):
     yield 1.0
     C.dismiss_splash(d)
+    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only
     yield 0.3
     with d.override():
         for ob in list(bpy.data.objects):

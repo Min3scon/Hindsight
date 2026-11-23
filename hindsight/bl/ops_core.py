@@ -86,8 +86,8 @@ class HINDSIGHT_OT_confirm_truncate(bpy.types.Operator):
 class HINDSIGHT_OT_record_everything(bpy.types.Operator):
     bl_idname = "hindsight.record_everything"
     bl_label = "Record Everything on This Object"
-    bl_description = ("Also record changes other than sculpting on this object, such as moving it. "
-                      "Needs Record set to Everything in the preferences")
+    bl_description = ("Record changes other than sculpting on this object, such as moving it. "
+                      "On by default when Record is set to Everything in the preferences")
     bl_options = {'REGISTER'}
 
     on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})
@@ -148,7 +148,7 @@ class HINDSIGHT_OT_record_file(bpy.types.Operator):
     bl_idname = "hindsight.record_file"
     bl_label = "Record Everything in This File"
     bl_description = ("Record everything on every object in this file, and objects being added and deleted. "
-                      "Objects added later are recorded too. Needs Record set to Everything")
+                      "Objects added later are recorded too. On by default when Record is set to Everything")
     bl_options = {'REGISTER'}
 
     on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})

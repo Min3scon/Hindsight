@@ -35,6 +35,7 @@ def _packed(d):
 def run(d):
     yield 1.0
     C.dismiss_splash(d)
+    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only
     yield 0.3
     rt = C.mod("runtime")
     rt.TOPO_PACK_MIN[0] = 0

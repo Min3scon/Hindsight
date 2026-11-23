@@ -63,6 +63,7 @@ def run(d):
     os.makedirs(work, exist_ok=True)
     yield 1.0
     C.dismiss_splash(d)
+    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only
     yield 0.3
 
     # ============================================================ part 1: awkward objects

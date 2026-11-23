@@ -138,6 +138,7 @@ def check(d, folder):
 
 
 def run(d, topo=False):
+    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only (both phases)
     folder = os.path.abspath(d.args.get("dir") or os.path.join(d.out, "files"))
     if d.args.get("phase") == "check":
         yield from check(d, folder)
