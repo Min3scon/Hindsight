@@ -1450,6 +1450,7 @@ def forget() -> None:
     _RECENT.clear()
     _CLOCK.update(last=None, gap=0.0, batch=None)
     adapters.forget_materials()
+    adapters.loose.forget_snapshots()
     _BODIES.clear()
     _BODY_DIRTY.clear()
     _SCENE_UIDS.clear()

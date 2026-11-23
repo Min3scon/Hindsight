@@ -12,7 +12,7 @@ from .idprops import anim_of, id_props, write_anim_of, write_id_props
 from .keys import (
     ANIMATED, COLL_SETTINGS, COMP_TREE, INV_GROUPS, LOOSE_PREFIXES, META_PREFIX, NGA_PREFIX, NG_PREFIX,
     WORLDP_PREFIX, WORLD_PREFIX)
-from .loose import _make_loose_again, _queue_loose_removals, scene_loose, write_loose
+from .loose import _make_loose_again, _queue_loose_removals, _snapshots_back, scene_loose, write_loose
 from .materials import capture_tree, group_owner_map, group_record, write_group, write_material, write_tree
 from .objects import _recreate_object, _remove_object
 
@@ -63,6 +63,7 @@ class SceneAdapter(Adapter):
         for path, v in values.items():          # D151: data no object or scene uses
             if path.startswith(LOOSE_PREFIXES):
                 write_loose(path, v)
+        _snapshots_back(values, recorded, replace=True)     # D153: what still differs from its snapshot
         for path, v in values.items():          # D146: and their animation
             if path.startswith(NGA_PREFIX) and isinstance(v, dict):
                 ng = idmap.find(path[len(NGA_PREFIX):])
