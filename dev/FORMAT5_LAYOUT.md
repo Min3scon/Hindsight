@@ -52,7 +52,8 @@ Text ".hindsight_history"   fake user; V1's container, kept as it is
 - **A step part** holds a header and then its packed steps back to back. The header gives the number of the first step,
   and for each step its length, its CRC-32 and the step's meta (label, kind, sequence number and so on). In V1 the metas
   of every step sit in the one JSON header and are written again at every save; here each meta is written with its
-  step and stays there. What a step's bytes look like, and how their encoding is versioned, is #42.
+  step and stays there. What a step's bytes look like, and how their encoding is versioned, is in
+  `dev/FORMAT5_ENCODINGS.md` (#42).
 
 ### How a history is split into step parts
 
