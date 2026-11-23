@@ -5,6 +5,7 @@ traceback is logged once, that one feature is switched off, and everything else 
 Sculpting, Blender's own undo and the existing history are never touched by a failure.
 The sidebar lists switched-off features; Run Self-check can switch them back on.
 """
+import contextlib
 import functools
 import time
 
@@ -111,7 +112,7 @@ def guarded(name, default=None, where=None):
 
 
 def _redraw():
-    try:
+    with contextlib.suppress(Exception):
         import bpy
         wm = bpy.context.window_manager
         if wm is None:
@@ -120,5 +121,3 @@ def _redraw():
             for area in win.screen.areas:
                 if area.type in ("VIEW_3D", "PREFERENCES"):
                     area.tag_redraw()
-    except Exception:
-        pass

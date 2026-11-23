@@ -1,6 +1,7 @@
 """Morph History brush: paint brushed areas back toward the morph target step."""
 from __future__ import annotations
 
+import contextlib
 import weakref
 
 import bpy
@@ -156,18 +157,14 @@ def end(obj, commit: bool = True):
     s = _SESSION.pop(uid, None) if uid is not None else None
     if s is None:
         return None
-    try:
+    with contextlib.suppress(Exception):
         s["susp"].__exit__(None, None, None)
-    except Exception:
-        pass
     if not commit or not s["moved"]:
         return None
     step = runtime.commit(obj, label=STROKE_LABEL, mode=obj.mode)
     if step is not None and not bpy.app.background:
-        try:
+        with contextlib.suppress(Exception):
             bpy.ops.ed.undo_push(message=STROKE_LABEL)
-        except Exception:
-            pass
     runtime.tag_redraw_all()
     return step
 
@@ -202,10 +199,8 @@ def _brush_settings(context):
     strength = float(pick("use_unified_strength", "strength", 0.5))
     locked = pick("use_unified_size", "use_locked_size", "VIEW")
     unproj = float(pick("use_unified_size", "unprojected_size" if half < 1 else "unprojected_radius", 0.0)) * half
-    try:
+    with contextlib.suppress(Exception):
         size *= context.preferences.system.ui_scale
-    except Exception:
-        pass
     return size, strength, (unproj if locked == "SCENE" and unproj > 0 else None)
 
 
@@ -304,10 +299,8 @@ class HINDSIGHT_OT_morph_stroke(bpy.types.Operator):
             guard.fail("morph", exc, "stroke")
             ob = bpy.data.objects.get(getattr(self, "_obj_name", ""))
             if ob is not None:
-                try:
+                with contextlib.suppress(Exception):
                     end(ob)   # keep what was painted so far as one step
-                except Exception:
-                    pass
             return {'CANCELLED'}
 
     def _modal(self, context, event):
@@ -376,10 +369,8 @@ def unregister():
         except Exception:
             pass
     if _tool_registered[0]:
-        try:
+        with contextlib.suppress(Exception):
             bpy.utils.unregister_tool(HINDSIGHT_TOOL_morph_history)
-        except Exception:
-            pass
         _tool_registered[0] = False
     for c in reversed(classes):
         try:

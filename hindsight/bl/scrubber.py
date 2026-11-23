@@ -13,6 +13,7 @@ The layout helpers (``layout``, ``pos_from_x``, ``x_from_pos``, ``hit_test``, ``
 are pure and testable headless. Nothing touches ``gpu`` until the draw callback runs.
 """
 
+import contextlib
 import math
 import time
 
@@ -386,10 +387,8 @@ class _Drag:
     def _remove_timer(self, context):
         if self.timer is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             context.window_manager.event_timer_remove(self.timer)
-        except Exception:
-            pass
         self.timer = None
 
 
@@ -519,10 +518,8 @@ def _hover_for(region, ptr=None):
 
 def _set_hover(region, part):
     global _hover
-    try:
+    with contextlib.suppress(Exception):
         _hover = (region.as_pointer(), part)
-    except Exception:
-        pass
 
 
 def _lighten(c, k=0.5):
@@ -680,11 +677,9 @@ def draw_callback():
     try:
         _draw(bpy.context)
     except Exception as exc:
-        try:
+        with contextlib.suppress(Exception):
             import gpu
             gpu.state.blend_set('NONE')
-        except Exception:
-            pass
         guard.fail("slider", exc, "draw")
 
 
@@ -692,10 +687,8 @@ def _remove_draw_handler():
     """Called once if drawing fails: only the slider goes away, nothing else."""
     global _draw_handle
     if _draw_handle is not None:
-        try:
+        with contextlib.suppress(Exception):
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
-        except Exception:
-            pass
         _draw_handle = None
 
 
@@ -874,10 +867,8 @@ def ensure_draw_handler():
 def unregister():
     global _draw_handle, _shader
     if _draw_handle is not None:
-        try:
+        with contextlib.suppress(Exception):
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
-        except Exception:
-            pass
         _draw_handle = None
     for cls in reversed(classes):
         if "bl_rna" in cls.__dict__:
@@ -885,9 +876,7 @@ def unregister():
                 bpy.utils.unregister_class(cls)
             except Exception:
                 pass
-    try:
+    with contextlib.suppress(ValueError):
         bpy.app.handlers.load_post.remove(_on_load_post)
-    except ValueError:
-        pass
     _forget_cache()
     _shader = None

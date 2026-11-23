@@ -4,6 +4,7 @@ It needs no custom drawing, so it works even if the on-screen slider can't draw.
 per-object range for a property, so the range is redefined whenever the history length changes.
 That happens from a timer, never while drawing.
 """
+import contextlib
 import bpy
 
 from . import guard, log
@@ -82,8 +83,6 @@ def register():
 def unregister():
     if bpy.app.timers.is_registered(_timer):
         bpy.app.timers.unregister(_timer)
-    try:
+    with contextlib.suppress(Exception):
         delattr(bpy.types.WindowManager, PROP)
-    except Exception:
-        pass
     _RANGE[0] = None

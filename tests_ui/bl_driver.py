@@ -11,6 +11,7 @@ reads top to bottom like a user session:
 
 Results go to <out>/result.json; screenshots to <out>/shots/. Blender quits at the end.
 """
+import contextlib
 import bpy
 import importlib.util
 import io
@@ -33,19 +34,15 @@ class _Tee(io.TextIOBase):
         self.sink = sink
 
     def write(self, s):
-        try:
+        with contextlib.suppress(Exception):
             self.real.write(s)
             self.real.flush()
-        except Exception:
-            pass
         self.sink.append(s)
         return len(s)
 
     def flush(self):
-        try:
+        with contextlib.suppress(Exception):
             self.real.flush()
-        except Exception:
-            pass
 
 
 CAPTURED = []
@@ -270,10 +267,8 @@ def _finish(error=None):
         return
 
     def _quit():
-        try:
+        with contextlib.suppress(Exception):
             bpy.context.preferences.view.use_save_prompt = False
-        except Exception:
-            pass
         try:
             win = bpy.context.window_manager.windows[0]
             with bpy.context.temp_override(window=win):

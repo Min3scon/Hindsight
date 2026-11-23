@@ -1,3 +1,4 @@
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import tests.runner as R
 """Build the extension zip with Blender's own tool, validate it, and install + enable it in bpy.
@@ -69,10 +70,8 @@ def _op_exists(name):
 def _install_operator():
     """Real path: Blender's extension installer. Returns the module name or raises."""
     import addon_utils
-    try:
+    with contextlib.suppress(Exception):
         bpy.ops.preferences.addon_enable(module="bl_pkg")
-    except Exception:
-        pass
     repos = [r.module for r in bpy.context.preferences.extensions.repos]
     assert "user_default" in repos, f"no user_default repo: {repos}"
     if not hasattr(bpy.ops.extensions, "package_install_files"):

@@ -4,6 +4,7 @@
 so `register(base_package)` sets it before registering the class.
 """
 
+import contextlib
 import dataclasses
 
 import bpy
@@ -46,11 +47,9 @@ def sync_settings(prefs) -> None:
 
 
 def _redraw() -> None:
-    try:
+    with contextlib.suppress(Exception):
         from . import runtime
         runtime.tag_redraw_all()
-    except Exception:
-        pass
 
 
 def _update(self, context):
@@ -71,11 +70,9 @@ _KIND_DEFAULT = {k for k, _l, _d in _KIND_ITEMS}
 
 
 def _update_kinds(self, context):
-    try:
+    with contextlib.suppress(Exception):
         from . import datarec
         datarec.rebaseline()
-    except Exception:
-        pass
 
 
 RECORD_SCOPE_ITEMS = (
@@ -269,10 +266,8 @@ def register(base_package: str = None):
     HINDSIGHT_AP_prefs.bl_idname = _base_package
     for cls in classes:
         bpy.utils.register_class(cls)
-    try:
+    with contextlib.suppress(Exception):
         sync_settings(get_prefs())
-    except Exception:
-        pass
 
 
 def unregister():

@@ -1,4 +1,5 @@
 """Scene-level Hindsight settings (saved in the .blend)."""
+import contextlib
 import bpy
 
 
@@ -14,11 +15,9 @@ def _upd_preserve(self, context):
 
 
 def _upd_movie_step(self, context):
-    try:
+    with contextlib.suppress(ImportError):
         from . import movie
         movie.on_step_changed(context)
-    except ImportError:
-        pass
 
 
 def _upd_redraw(self, context):
@@ -28,11 +27,9 @@ def _upd_redraw(self, context):
 
 def _upd_movie_rig(self, context):
     """Movie Mode or one of its camera and lighting settings changed."""
-    try:
+    with contextlib.suppress(ImportError):
         from . import camrig
         camrig.on_settings_changed(context)
-    except ImportError:
-        pass
     _upd_redraw(self, context)
 
 
@@ -102,10 +99,8 @@ def register():
 
 
 def unregister():
-    try:
+    with contextlib.suppress(AttributeError):
         del bpy.types.Scene.hindsight
-    except AttributeError:
-        pass
     for c in reversed(classes):
         try:
             bpy.utils.unregister_class(c)

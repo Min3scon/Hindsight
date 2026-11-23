@@ -16,6 +16,7 @@ The 300-frame grid (100k and 1M vertices, Object and Sculpt Mode, Steps per fram
 --root times another checkout's `hindsight` (an A/B against an older commit: run the two
 alternately, at least five rounds, and compare min and median).
 """
+import contextlib
 import cProfile
 import json
 import math
@@ -360,13 +361,11 @@ def stroke_patch(ob, rng, share=0.02):
 
 
 def _vmhwm_mb():
-    try:
+    with contextlib.suppress(OSError):
         with open("/proc/self/status") as fh:
             for line in fh:
                 if line.startswith("VmHWM"):
                     return round(int(line.split()[1]) / 1024, 1)
-    except OSError:
-        pass
     return None
 
 
