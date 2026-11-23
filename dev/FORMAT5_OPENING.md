@@ -75,8 +75,9 @@ Hindsight's work: the work on the mesh (1.5 to 1.7 s) and the steps (0.8 to 1.1 
 - **At open, everything.** Blender reads the whole .blend, every step part included, before Hindsight's `load_post`
   runs; an add-on can't leave part of a .blend unread. Then Hindsight reads the index part, and for each step part
   copies it, checks its length and CRC-32 against the index part, deletes Blender's copy, and reads its step table
-  and metas, each with its CRC-32 (#43). That gives the list of steps, each found by its offset in its step part
-  (#41). Then comes the work that doesn't depend on the history, as today: reading the meshes and comparing the file
+  and metas (#43). That gives the list of steps, each found by its offset in its step part (#41), and each step's
+  encoding from its first bytes (#42). The step table's and metas' own CRC-32s are checked only in a part whose
+  CRC-32 failed (#43). The prototype below checked them in every part, and did not read each step's encoding. Then comes the work that doesn't depend on the history, as today: reading the meshes and comparing the file
   with its history (D46).
 - **Later, only when needed**: a step is decoded, and its own prefix CRC checked (#42), only when a jump reaches it.
   Nothing else is read later, and nothing more is read from disk.

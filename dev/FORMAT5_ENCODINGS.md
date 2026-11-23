@@ -44,6 +44,12 @@ The prefix CRC covers byte 10, so a changed encoding byte is caught as damage an
 Damage and an unknown encoding are told apart from the step's bytes alone, so the same rule works for a step outside
 any step part: in the crash journal (#44), or held in memory.
 
+When each check runs: at open and at a journal replay, the step part's CRC-32 (#43) or the journal record's (#44)
+already vouches for every byte of the step, so the reader takes the encoding from the first 4 bytes and byte 10 without
+the prefix CRC. That is how unknown steps are known at open. A step that passes its part's CRC-32 but starts with
+neither `HSS1` nor `HSS3` was written wrong and counts as damaged at open. The prefix CRC is checked when a jump decodes
+the step, as `dev/FORMAT5_DAMAGE.md` and `dev/FORMAT5_OPENING.md` say.
+
 An encoding number names the whole recipe, fixed on the day it ships: every codec, delta record coding, index coding
 and predictor tag it may use. A build that knows encoding 3 can decode every encoding 3 step. A new codec, record
 coding or tag comes with a new encoding number, never inside an old one; so an unknown codec id inside a known encoding

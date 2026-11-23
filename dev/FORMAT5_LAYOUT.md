@@ -5,7 +5,7 @@ Design for #41, part of #7 ("Design the history's new layout inside the .blend")
 exactly, Blender's in-memory copy is dropped after opening and put back while saving (#9), and V1 keeps a format 5
 history untouched and opens the .blend without it. Other parts of #7 build on this one: how a step's encoding carries a
 version (#42), how a damaged part is found and what survives it (#43), the crash journal (#44), moving V1's formats 1
-to 4 in (#45), and what opening costs at 100,000 steps (#46).
+to 4 in (#45), and what opening costs at 100,000 steps (#46). `dev/FORMAT5.md` (#47) puts them together.
 
 Every number below was measured, and "How it was measured" at the end says how, or it is marked as an estimate or a
 choice.
