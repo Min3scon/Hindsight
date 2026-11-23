@@ -135,10 +135,11 @@ def set_file_tracked(on: bool) -> int:
 
 def record_file_default() -> None:
     """#10: "Everything in this file" is on in a file where nobody switched anything on or off (its
-    history has nothing switched on): called when a file is loaded. It is no choice of the user's, so
-    it isn't journaled and alone it saves nothing (D29); loading the file applies it again."""
+    history has nothing switched on and keeps no choice, #61): called when a file is loaded. It is no
+    choice of the user's, so it isn't journaled and alone it saves nothing (D29); loading the file
+    applies it again."""
     r = _rt().reg()
-    if r.everything or not scope_everything():
+    if r.everything or r.everything_chosen or not scope_everything():
         return
     r.file_default = True
     with idmap.frame():
@@ -163,6 +164,7 @@ def set_tracked(idb, on: bool, _refresh: bool = True) -> None:
     if uid is None:
         return
     rt.reg().file_default = False         # someone chose: no longer the default (#10)
+    rt.reg().everything_chosen = True     # and the file keeps that choice (#61)
     if on:
         was_on = uid in rt.reg().everything
         rt.reg().everything.add(uid)

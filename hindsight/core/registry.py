@@ -20,6 +20,7 @@ class Registry:
         self.disabled: set = set()     # object uids with "Reset and Turn Off" applied
         self.everything: set = set()   # datablock uids with "Record everything" on (data adapters)
         self.file_default = False      # everything was switched on by default at load, untouched since (#10)
+        self.everything_chosen = False  # Record everything was switched on or off here: no default (#61)
         self.load_report = None        # set by persist.registry_from_bytes
         self.saved: dict = {}          # uid -> {"mesh": fingerprint, "values": [[adapter, path, value]]}
                                        # as last saved (D46: changes made without Hindsight)

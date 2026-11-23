@@ -267,11 +267,11 @@ def _codec() -> str:
 
 # ----------------------------------------------------------------------------- handlers
 def has_data(reg=None) -> bool:
-    """Something to keep: a step, or an object switched on or paused."""
+    """Something to keep: a step, an object switched on or paused, or Record everything switched off by choice (#61)."""
     reg = reg or runtime.reg()
     return (any(h.entries for h in reg.histories.values())
             or (bool(getattr(reg, "everything", ())) and not getattr(reg, "file_default", False))
-            or bool(getattr(reg, "disabled", ())))
+            or bool(getattr(reg, "disabled", ())) or getattr(reg, "everything_chosen", False))
 
 
 def _writes_anything(path: str) -> bool:

@@ -5,7 +5,7 @@ it writes with). Do not edit by hand. `tests/test_bl_metadata.py` fails if Hinds
 into a .blend or next to it that isn't listed here.
 
 - Opening a file with Hindsight doesn't change it. Nothing is written until recording starts on an
-  object (entering Sculpt or Vertex Paint Mode on it, or switching on Record everything) or you change
+  object (entering Sculpt or Vertex Paint Mode on it, or switching Record everything on or off) or you change
   a Hindsight setting, and nothing reaches the disk until you save.
 - While Movie Mode is on, Hindsight keeps a camera and, when the scene has no light of its own, three
   sun lamps in the scene. They are ordinary objects, never recorded, and go again when Movie Mode is
