@@ -22,7 +22,8 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from hindsight.bl import datarec, runtime
+from hindsight.bl import runtime
+from hindsight.bl import prefs
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -135,7 +136,7 @@ def migrate(tag):
         T.select()
         bpy.ops.wm.save_as_mainfile(filepath=out)
         bpy.ops.wm.open_mainfile(filepath=out)
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         L.recheck(r)
         if bpy.data.objects.get("B") is not None:
             h = runtime.history_of(bpy.data.objects["B"])

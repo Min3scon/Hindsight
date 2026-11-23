@@ -20,6 +20,7 @@ from tests import t1_ops as T
 from tests.t1_real_undo import RealUndo
 from hindsight.core import globaltl
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps")
@@ -30,7 +31,7 @@ def setup(track=True):
     if track:
         L.track_all()
     else:
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
     runtime.reg().preserve_modes = False
 
 

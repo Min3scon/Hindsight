@@ -19,6 +19,7 @@ from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.bl import datarec, idmap, persistence, runtime
+from hindsight.bl import prefs
 from hindsight.core import persist
 from hindsight.core.types import SETTINGS
 
@@ -36,7 +37,7 @@ def save_and_reopen(path, mode):
     if mode == "EMBED":
         assert not os.path.isdir(side)
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     text = bpy.data.texts.get(persistence.TEXT_NAME)
     assert text is not None and ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
     assert "hindsight_data" not in text           # R061: the base64 copy is never written
@@ -145,7 +146,7 @@ def test_copy_paste_same_and_other_file():
         T.select(name)
         assert bpy.ops.view3d.copybuffer() == {"FINISHED"}
         H.fresh()
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         assert bpy.ops.view3d.pastebuffer() == {"FINISHED"}
         ob = bpy.data.objects[name]
         assert all(runtime.history_of(o) is None for o in bpy.data.objects), "a history came along"
@@ -171,7 +172,7 @@ def test_append_and_link_from_a_recorded_file():
         path = os.path.join(TMP, f"append_{row.replace('.', '_')}.blend")
         save_and_reopen(path, "SIDECAR")
         H.fresh()
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         directory = os.path.join(path, "Object")
         assert bpy.ops.wm.append(filepath=os.path.join(directory, names[0]), directory=directory,
                                  filename=names[0]) == {"FINISHED"}

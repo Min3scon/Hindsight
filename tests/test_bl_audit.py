@@ -7,6 +7,7 @@ import numpy as np
 
 import tests.harness as H
 from hindsight.bl import datarec, idmap, log, runtime
+from hindsight.bl import prefs
 from hindsight.core.types import POSITION_KEY, TOPO, Snapshot, Step
 
 C = bpy.context
@@ -78,7 +79,7 @@ def test_exclusion_check_is_free_without_collection_filtering():
     """The timer asked Collection Filtering about every recorded object 10 times a second, with the
     filter off."""
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     obs = [H.make_mesh(60, name=f"O{i}", location=(i * 3, 0, 0)) for i in range(4)]
     for ob in obs:
         datarec.set_tracked(ob, True)
@@ -109,7 +110,7 @@ def test_exclusion_check_is_free_without_collection_filtering():
         assert not calls
     finally:
         idmap.find = real
-        datarec.FORCE_SCOPE[0] = None
+        prefs.FORCE["record_scope"] = None
 
 
 def _topo(before, after):

@@ -11,6 +11,7 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests.addons import hs_fake_addon as FAKE
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 clock = [0.0]
@@ -171,7 +172,7 @@ def _interrupted_after(drag_values, tag):
     live = [(e.seq, e.meta.get("label")) for e in steps_of(ob)]
     datarec._now = lambda: __import__("time").time()
     bpy.ops.wm.open_mainfile(filepath=path)          # interrupted: the journal is replayed
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = bpy.data.objects["A"]
     h = runtime.reg().history_for(idmap.uid_of(ob))
     return ob, h, live, saved

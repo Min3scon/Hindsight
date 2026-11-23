@@ -18,7 +18,7 @@ from ..core.types import (
     JOURNAL_CODEC, SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
 from . import adapters, datarec, filtering, guard, idmap, log, meshio, multires, rigmark
-from .prefs import get_prefs
+from .prefs import get_prefs, value as _pref
 from . import warnings as _warn
 from .selfcheck import flash_status
 from .ctx import active_object as _ctx_active
@@ -27,34 +27,18 @@ UID_PROP = "_hindsight_uid"
 RECORD_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT")
 TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT", "EDIT")
 DEBOUNCE = 0.15
-FORCE_TEXTURE = [None]      # tests: True or False when the preferences aren't registered
-
-
 def texture_on() -> bool:
     """Record texture painting (preference, off by default)."""
-    if FORCE_TEXTURE[0] is not None:
-        return FORCE_TEXTURE[0]
-    try:
-        p = get_prefs()
-        return p is not None and bool(getattr(p, "record_texture_painting", False))
-    except Exception:
-        return False
+    return bool(_pref("record_texture_painting", False))
 
 
-FORCE_DYNTOPO = [None]     # tests: True or False when the preferences aren't registered
 DYNTOPO_TRIS_MAX = 200_000  # D145: a Dyntopo stroke's step holds the whole mesh (LIMITS-A 1.5: about 250 ms
                             # per stroke at 100k triangles, 1.4 s and 32 to 64 MB at 1M)
 
 
 def dyntopo_on() -> bool:
     """Record Dyntopo (preference, off by default)."""
-    if FORCE_DYNTOPO[0] is not None:
-        return FORCE_DYNTOPO[0]
-    try:
-        p = get_prefs()
-        return p is not None and bool(getattr(p, "record_dyntopo", False))
-    except Exception:
-        return False
+    return bool(_pref("record_dyntopo", False))
 
 
 def dyntopo_active(obj) -> bool:

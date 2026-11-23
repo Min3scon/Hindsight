@@ -11,6 +11,7 @@ import tempfile
 import bpy
 import tests.harness as H
 from hindsight.bl import runtime, persistence, joinsep
+from hindsight.bl import prefs
 from hindsight.core.types import SETTINGS, JOIN
 
 C = bpy.context
@@ -413,7 +414,6 @@ def test_steps_after_values_changed_without_hindsight():
     from tests import oracle as O
     from tests import t1_gate_lib as L
     from tests import t1_ops as T
-    from hindsight.bl import datarec
 
     def state():
         return O.object_state(bpy.data.objects["A"], derived=False)
@@ -446,7 +446,7 @@ def test_steps_after_values_changed_without_hindsight():
     H._registered[0] = True
     configure()
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     states.append(state())
     op(T.translate("A", (0, 0, 2)))              # not saved
     states.append(state())
@@ -455,7 +455,7 @@ def test_steps_after_values_changed_without_hindsight():
     assert len(live) == 4 and h.entries[2].meta.get("label") == runtime.OUTSIDE_LABEL
 
     bpy.ops.wm.open_mainfile(filepath=path)      # interrupted
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     h = runtime.history_of(bpy.data.objects["A"])
     assert [e.seq for e in h.entries] == live and h.cursor == 3, ([e.seq for e in h.entries], h.cursor)
     assert state() == states[3], "the file's state"

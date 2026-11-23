@@ -16,11 +16,13 @@ are pure and testable headless. Nothing touches ``gpu`` until the draw callback 
 import contextlib
 import math
 import time
+from types import SimpleNamespace
 
 import bpy
 
 from . import guard
 from .ctx import active_object as _ctx_active
+from .prefs import SCRUB_DEFAULTS
 
 MENU_NAME = "HINDSIGHT_MT_history"
 THROTTLE = 1.0 / 60.0      # min seconds between live (final=False) gotos during a drag
@@ -32,16 +34,7 @@ LOCKED_COLOR = (0.55, 0.55, 0.55, 0.7)
 _clock = time.perf_counter  # patched by tests
 
 
-class _Defaults:
-    scrub_height = 6
-    scrub_margin = 18
-    scrub_width_pct = 60
-    scrub_color = (1.0, 0.6, 0.24, 1.0)
-    scrub_bg_color = (0.1, 0.1, 0.1, 0.6)
-    scrub_show_counter = True
-
-
-DEFAULTS = _Defaults()
+DEFAULTS = SimpleNamespace(**SCRUB_DEFAULTS)
 
 
 # ---------------------------------------------------------------------------------------------

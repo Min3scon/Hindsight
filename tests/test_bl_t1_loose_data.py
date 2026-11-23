@@ -15,6 +15,7 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests.addons import hs_fake_addon as FAKE
 from hindsight.bl import adapters, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 _on = [False]
@@ -166,7 +167,6 @@ def test_loose_making_on_the_global_timeline():
 
 def test_loose_making_survives_save_reload_and_recovery():
     import shutil, tempfile
-    from hindsight.bl import datarec
     from hindsight.core.types import SETTINGS
     tmp = tempfile.mkdtemp(prefix="hs_loose152_")
     try:
@@ -194,7 +194,7 @@ def test_loose_making_survives_save_reload_and_recovery():
             if reopen_how == "saved":
                 bpy.ops.wm.save_as_mainfile(filepath=path)
             bpy.ops.wm.open_mainfile(filepath=path)
-            datarec.FORCE_SCOPE[0] = "EVERYTHING"
+            prefs.FORCE["record_scope"] = "EVERYTHING"
             h = runtime.history_of(C.scene)
             assert h is not None and len(h.entries) >= 3, (reopen_how, h and len(h.entries))
             for pos in list(range(len(h.entries), -1, -1)) + list(range(len(h.entries) + 1)):

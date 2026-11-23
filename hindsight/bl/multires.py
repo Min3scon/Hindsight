@@ -23,9 +23,9 @@ import numpy as np
 
 from ..core import codec
 from ..core.types import TOPO, Snapshot, Step, make_key
+from .prefs import value as _pref
 
 MR_KEY = make_key("multires:blob", "POINT", "INT8")
-FORCE = [None]            # tests: True or False when the preferences aren't registered
 _BASE: dict = {}          # object uid -> (raw blob digest, compressed blob array) at the start of the visit
 _LEVEL: dict = {}         # object uid -> (levels, sculpt_levels, render_levels) seen while sculpting
 _PENDING: dict = {}       # uid -> time the visit began; its baseline is read again at the first tick after SETTLE
@@ -35,14 +35,7 @@ SETTLE = [0.25]           # (tests set 0: no timer runs there)
 
 
 def enabled() -> bool:
-    if FORCE[0] is not None:
-        return FORCE[0]
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        return p is not None and bool(getattr(p, "record_multires", False))
-    except Exception:
-        return False
+    return bool(_pref("record_multires", False))
 
 
 def modifier(obj):

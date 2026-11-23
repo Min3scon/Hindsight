@@ -36,6 +36,7 @@ import numpy as np
 import tests.harness as H          # beta 2's own test helpers
 import hindsight
 from hindsight.bl import datarec, persistence, runtime
+from hindsight.bl import prefs
 from hindsight.core.types import SETTINGS
 
 H.fresh()
@@ -69,7 +70,7 @@ for s in range(2):
     states.append(pos(ob))
 H.enter(ob, "OBJECT")
 o2 = H.make_mesh(100, name="O", location=(3.0, 0.0, 0.0))
-datarec.FORCE_SCOPE[0] = "EVERYTHING"
+prefs.FORCE["record_scope"] = "EVERYTHING"
 datarec.set_tracked(o2, True)
 datarec.finish_operation("baseline")
 locs = [list(o2.location)]
