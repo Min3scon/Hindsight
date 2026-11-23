@@ -164,7 +164,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
     record_scope: EnumProperty(
         name="Record",
         items=RECORD_SCOPE_ITEMS,
-        default='SCULPT',
+        default='EVERYTHING',
     )
     record_kinds: EnumProperty(
         name="Data kinds",

@@ -2,6 +2,7 @@
 in one click (objects added later follow, D36), shows as on only when all of them are, and switches
 them all off again. Hindsight's own Movie Mode objects are never switched on."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tempfile
 import time
 import bpy
 import tests.harness as H
@@ -98,8 +99,30 @@ def test_collections_made_and_deleted_with_the_file_switch():
     print("PASS test_collections_made_and_deleted_with_the_file_switch")
 
 
+def test_a_fresh_install_records_everything_in_a_file():
+    """#60: with the default preferences Record is Everything and "Everything in this file" is on in
+    a file where nobody switched it off: a change outside sculpting becomes a step, no switch turned on."""
+    L.fresh_scene()
+    assert prefs.HINDSIGHT_AP_prefs.__annotations__["record_scope"].keywords["default"] == "EVERYTHING"
+    path = os.path.join(tempfile.gettempdir(), "fresh_install", "plain.blend")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert datarec.scope_everything()
+    assert datarec.file_tracked(), "Everything in this file is on"
+    a = bpy.data.objects["A"]
+    a.location.x += 1
+    L.tick_like("move")
+    h = runtime.history_of(a)
+    assert h is not None and h.entries, "moving an object is a step"
+    a.modifiers.new("Bevel", "BEVEL")
+    L.tick_like("add modifier")
+    assert len(h.entries) == 2, len(h.entries)
+
+
 if __name__ == "__main__":
     H.run(test_one_switch_for_the_file)
     H.run(test_switch_is_quick_with_many_objects)
     H.run(test_collections_made_and_deleted_with_the_file_switch)
+    H.run(test_a_fresh_install_records_everything_in_a_file)
     H.finish()
