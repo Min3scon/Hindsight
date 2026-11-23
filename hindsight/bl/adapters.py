@@ -2382,16 +2382,7 @@ def _stroke_sizes(d) -> list:
 
 def _drawing_record(d) -> dict:
     sizes = _stroke_sizes(d)
-    attrs = {}
-    for a in d.attributes:
-        kw = _ATTR_KEY.get(a.data_type)
-        if kw is None or a.name.startswith("."):
-            continue
-        key, width = kw
-        kind = float if a.data_type in ("FLOAT", "FLOAT_VECTOR", "FLOAT2", "FLOAT_COLOR", "BYTE_COLOR",
-                                        "QUATERNION", "FLOAT4X4") else int
-        attrs[a.name] = [a.domain, a.data_type, _bulk(a.data, key, len(a.data), width, kind)]
-    return {"sizes": sizes, "attrs": attrs}
+    return {"sizes": sizes, "attrs": _attrs_of(d)}
 
 
 def _write_drawing(d, rec) -> None:
@@ -2401,24 +2392,7 @@ def _write_drawing(d, rec) -> None:
             d.remove_strokes()
         if sizes:
             d.add_strokes(sizes)
-    want = rec.get("attrs") or {}
-    for a in [a for a in d.attributes if a.name not in want and not a.name.startswith(".")]:
-        try:
-            d.attributes.remove(a)
-        except Exception:
-            pass
-    for name, (domain, dtype, vals) in want.items():
-        a = d.attributes.get(name)
-        if a is None or a.data_type != dtype or a.domain != domain:
-            if a is not None:
-                try:
-                    d.attributes.remove(a)
-                except Exception:
-                    pass
-            a = d.attributes.new(name, dtype, domain)
-        key, width = _ATTR_KEY[dtype]
-        if len(a.data) * width == len(vals):
-            a.data.foreach_set(key, vals)
+    _write_attrs(d, rec.get("attrs") or {})
     with contextlib.suppress(Exception):
         d.tag_positions_changed()
 
