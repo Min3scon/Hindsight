@@ -10,9 +10,9 @@ of them with the checksum patched so the inner decoder sees the damage too. Deco
 raise one of the expected errors or return a step; nothing else may escape, and nothing may hang.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import struct
 import time
-import traceback
 import zlib
 
 import numpy as np
@@ -121,7 +121,7 @@ def test_round_trips():
                 assert moves(d2, old, new), (key, effort)
                 assert rdelta.packed_size(rec) == len(rec)
                 count += 1
-    print(f"PASS test_round_trips ({count} records)")
+    print(f"  test_round_trips ({count} records)")
 
 
 def test_steps_through_every_codec():
@@ -152,7 +152,7 @@ def test_steps_through_every_codec():
     empty = Step(99, "", "", "", 0.0, DELTA, [])
     for name in CODECS:
         assert stepmod.same_step(empty, stepmod.step_from_bytes(stepmod.step_to_bytes(empty, name)))
-    print(f"PASS test_steps_through_every_codec ({count} blobs, codecs {CODECS})")
+    print(f"  test_steps_through_every_codec ({count} blobs, codecs {CODECS})")
 
 
 def test_encoder_refuses_unsorted_or_repeated_indices():
@@ -164,7 +164,6 @@ def test_encoder_refuses_unsorted_or_repeated_indices():
         except ValueError:
             continue
         raise AssertionError(f"accepted indices {idx}")
-    print("PASS test_encoder_refuses_unsorted_or_repeated_indices")
 
 
 def test_prediction_pays_off():
@@ -183,7 +182,7 @@ def test_prediction_pays_off():
     assert min(tags) >= 1, list(tags)
     packed = len(codec.compress(best, "zlib"))
     assert packed < 0.7 * raw, (packed, raw)
-    print(f"PASS test_prediction_pays_off ({raw} -> {packed} bytes, orders {list(tags)})")
+    print(f"  test_prediction_pays_off ({raw} -> {packed} bytes, orders {list(tags)})")
 
 
 def test_same_change_matches_undo_and_redo():
@@ -204,7 +203,6 @@ def test_same_change_matches_undo_and_redo():
     other = b.copy()
     other[12] += np.float32(1.0)
     assert not delta.same_change(delta.diff(key, other, a), rec, other, inverse=True)
-    print("PASS test_same_change_matches_undo_and_redo")
 
 
 def test_recompress_refuses_a_bad_result():
@@ -220,7 +218,6 @@ def test_recompress_refuses_a_bad_result():
     finally:
         native.ENGINE._test_fault(False)
     assert stepmod.recompress(blob) is not None
-    print("PASS test_recompress_refuses_a_bad_result")
 
 
 def test_apply_refuses_indices_past_the_end():
@@ -236,7 +233,6 @@ def test_apply_refuses_indices_past_the_end():
         else:
             raise AssertionError(f"applied indices {idx} to 10 elements")
         assert arr.tobytes() == before.tobytes(), "array changed by a refused delta"
-    print("PASS test_apply_refuses_indices_past_the_end")
 
 
 def _rewrite_v3(blob, body_fn=None, raw_len_fn=None):
@@ -274,7 +270,6 @@ def test_inner_checks_without_the_checksum():
         except stepmod.CorruptStep:
             continue
         raise AssertionError(f"accepted a step with {what}")
-    print("PASS test_inner_checks_without_the_checksum")
 
 
 EXPECTED = (stepmod.CorruptStep, delta.CorruptDelta, codec.CorruptBlob, ValueError)
@@ -360,23 +355,16 @@ def test_damaged_input_fails_cleanly():
             stats["refused"] += 1
         assert time.perf_counter() - t < 2.0
     print(f"  records: {stats}")
-    print("PASS test_damaged_input_fails_cleanly")
 
 
 def main():
-    ok = True
     for t in (test_round_trips, test_steps_through_every_codec, test_encoder_refuses_unsorted_or_repeated_indices,
               test_prediction_pays_off, test_same_change_matches_undo_and_redo, test_recompress_refuses_a_bad_result,
               test_apply_refuses_indices_past_the_end, test_inner_checks_without_the_checksum,
               test_damaged_input_fails_cleanly):
-        try:
-            t()
-        except Exception:
-            ok = False
-            print("FAIL", t.__name__)
-            traceback.print_exc()
-    return ok
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main() else 1)
+    main()

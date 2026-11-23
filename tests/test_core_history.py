@@ -1,7 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Tests for hindsight.core.history (restore engine). Plain script, no bpy."""
 import time
-import traceback
 
 import numpy as np
 
@@ -508,14 +508,6 @@ TESTS = [test_random_goto_exact, test_full_jumps, test_topo_vertex_count, test_r
 
 
 if __name__ == "__main__":
-    failed = 0
     for fn in TESTS:
-        try:
-            fn()
-            print(f"PASS {fn.__name__}")
-        except Exception:
-            failed += 1
-            print(f"FAIL {fn.__name__}")
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(fn)
+    R.finish()

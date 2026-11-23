@@ -1,7 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Preferences sync, collection filtering logic/operators, sidebar panel registration and drawing."""
 
-import traceback
 from types import SimpleNamespace
 
 import bpy
@@ -9,7 +9,6 @@ import bpy
 from hindsight.core import types as T
 from hindsight.bl import filtering, prefs, ui_panel
 
-ok = True
 _tests = []
 
 
@@ -451,7 +450,6 @@ def test_record_everything_switches_and_other_objects():
 
 
 def main():
-    global ok
     ensure_scene_props()
     from hindsight.bl import ops_core, selfcheck, ui_menu
     extra = (ops_core, ui_menu, selfcheck)
@@ -461,13 +459,7 @@ def main():
     ui_panel.register()
     try:
         for fn in _tests:
-            try:
-                fn()
-                print("PASS", fn.__name__)
-            except Exception:
-                ok = False
-                print("FAIL", fn.__name__)
-                traceback.print_exc()
+            R.run(fn)
     finally:
         ui_panel.unregister()
         filtering.unregister()
@@ -476,4 +468,4 @@ def main():
 
 
 main()
-sys.stdout.flush(); os._exit(0 if ok else 1)
+R.finish()

@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """LIMITS-A 1.6, the TOPO chain: each TOPO step holds the whole mesh before and after, and its `before`
 is the previous TOPO step's `after`.
 
@@ -7,7 +8,6 @@ same (one copy of the mesh per link of the chain, not two), and nothing ever wri
 Packed: a body over 1 MB is compressed with a window as large as itself plus long distance matching,
 so the second mesh of a step costs only its differences from the first (the default window of zstd
 level 3, 2 MB, never saw the first one). Same format, any reader of zstd frames reads it. Pure Python."""
-import traceback
 
 import numpy as np
 
@@ -122,7 +122,7 @@ def test_the_chain_shares_arrays_and_halves_memory():
         if e0.step.kind == TOPO and e1.step.kind == TOPO:
             for k in e1.step.before.arrays:
                 assert e1.step.before.arrays[k] is e0.step.after.arrays[k], k
-    print(f"PASS test_the_chain_shares_arrays_and_halves_memory ({len(topos)} TOPO steps: {plain/1e6:.2f} MB held, "
+    print(f"  test_the_chain_shares_arrays_and_halves_memory ({len(topos)} TOPO steps: {plain/1e6:.2f} MB held, "
           f"{shared/1e6:.2f} MB with sharing)")
 
 
@@ -143,7 +143,7 @@ def test_goto_is_exact_with_shared_arrays_and_nothing_is_written_into_them():
     after = [(id(a), a.tobytes()) for e in hs.entries if e.step.kind == TOPO
              for sn in (e.step.before, e.step.after) for a in sn.arrays.values()]
     assert before == after, "a jump wrote into a step's arrays"
-    print(f"PASS test_goto_is_exact_with_shared_arrays_and_nothing_is_written_into_them ({n} steps, 12 jumps)")
+    print(f"  test_goto_is_exact_with_shared_arrays_and_nothing_is_written_into_them ({n} steps, 12 jumps)")
 
 
 def test_caps_truncate_save_and_reload():
@@ -173,7 +173,6 @@ def test_caps_truncate_save_and_reload():
     nxt = edit(a.arrays)
     h.push(topo(99, {k: v.copy() for k, v in a.arrays.items()}, nxt))
     assert len(h.entries) == 3 and h.cursor == 3
-    print("PASS test_caps_truncate_save_and_reload")
 
 
 def test_a_big_body_compresses_its_two_meshes_as_one():
@@ -201,7 +200,7 @@ def test_a_big_body_compresses_its_two_meshes_as_one():
         assert len(raw) > 10_000_000
     small = stepmod.step_to_bytes(topo(2, mesh(300, 200), edit(mesh(300, 200))), "zstd")
     assert stepmod.step_from_bytes(small).kind == TOPO
-    print(f"PASS test_a_big_body_compresses_its_two_meshes_as_one (blob {len(blob)/1e6:.2f} MB, one mesh alone "
+    print(f"  test_a_big_body_compresses_its_two_meshes_as_one (blob {len(blob)/1e6:.2f} MB, one mesh alone "
           f"{only_after/1e6:.2f} MB, raw {2*sum(x.nbytes for x in a.values())/1e6:.1f} MB)")
 
 
@@ -213,23 +212,16 @@ def test_strong_and_recompress_keep_the_gain():
     strong = stepmod.recompress(quick)
     assert strong is not None and len(strong) <= len(quick)
     assert stepmod.same_step(st, stepmod.step_from_bytes(strong))
-    print(f"PASS test_strong_and_recompress_keep_the_gain (quick {len(quick)/1e6:.2f} MB, strong {len(strong)/1e6:.2f} MB)")
+    print(f"  test_strong_and_recompress_keep_the_gain (quick {len(quick)/1e6:.2f} MB, strong {len(strong)/1e6:.2f} MB)")
 
 
 def main():
     tests = [test_the_chain_shares_arrays_and_halves_memory, test_goto_is_exact_with_shared_arrays_and_nothing_is_written_into_them,
              test_caps_truncate_save_and_reload, test_a_big_body_compresses_its_two_meshes_as_one,
              test_strong_and_recompress_keep_the_gain]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":
