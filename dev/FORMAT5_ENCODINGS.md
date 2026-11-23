@@ -31,7 +31,8 @@ has no encoding field: the step's bytes alone say how to read them.
 
 ### How a reader picks its decoder
 
-1. The step's CRC-32 in its step part must match its bytes; otherwise the step is damaged (#43).
+1. The step's CRC-32 in its step part must match its bytes; otherwise the step is damaged (#43, in
+   `dev/FORMAT5_DAMAGE.md`).
 2. Its first 4 bytes:
    - `HSS1`: encoding 1.
    - `HSS3`: the CRC-32 in the prefix must match bytes 8 to the end, or the step is damaged. The encoding number is

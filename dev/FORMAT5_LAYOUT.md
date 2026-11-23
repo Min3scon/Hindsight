@@ -29,6 +29,7 @@ Text ".hindsight_history"   fake user; V1's container, kept as it is
 ├─ sidecar                  False                                         always in the file and in memory
 └─ hindsight_parts          group                                         in the saved file, and in memory only
    ├─ index                 bytes: the index part                         while a save runs
+   ├─ index_copy            bytes: the same index part again (#43)
    ├─ <history uid>         group, one per history (a uid is 16 hex characters)
    │  ├─ "0"                bytes: full step part (about 4 MiB)
    │  ├─ "1"                bytes: full step part
@@ -54,6 +55,10 @@ Text ".hindsight_history"   fake user; V1's container, kept as it is
   of every step sit in the one JSON header and are written again at every save; here each meta is written with its
   step and stays there. What a step's bytes look like, and how their encoding is versioned, is in
   `dev/FORMAT5_ENCODINGS.md` (#42).
+
+How each part is checked when the file opens, what survives a damaged one, and what that adds to this layout (a
+second copy of the index part, and a CRC-32 on each step part's step table and metas) is in `dev/FORMAT5_DAMAGE.md`
+(#43).
 
 ### How a history is split into step parts
 
