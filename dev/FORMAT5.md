@@ -126,8 +126,10 @@ things change around it:
   Hindsight held the history) opens without history and with a note, and leaves the journal of its path untouched.
   Today's rule would empty it, and the steps since the last save would be gone before the user opens the .blend itself.
 
-The doc walks through a crash before, during and after a save: every step comes back in each case, with Crash recovery
-set to "Unsaved steps".
+The doc walks through a crash before, during and after a save, with Crash recovery set to "Unsaved steps": every step
+comes back in each case, with one exception. A crash between saves can lose the newest big records (steps held at 4 MB
+or more, such as a Voxel Remesh on a big mesh) still waiting for the helper thread (R079). The journal stays a prefix,
+so every step before them comes back. A save waits for the helper first, so a crash during a save loses none.
 
 ## 5. How V1's formats 1 to 4 are read and moved in (#45)
 
