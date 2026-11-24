@@ -6,6 +6,7 @@ import contextlib
 import os
 
 import bpy
+import numpy as np
 from ...core import codec
 from ...core.types import MISSING
 from .. import idmap, log
@@ -36,6 +37,7 @@ _DNA: dict = {}            # DNA id -> the record of that DNA block (DNA_PREFIX)
 _SNAP_TURN = [0]
 _UNMATCHED: set = set()    # D156: uids snapshotted since the file was opened, not yet compared with their record
 _SNAP_READ = [False]
+_LEFT: dict = {}           # uid -> snapshot record of an action a jump took away (D162, D155)
 
 
 def _unused(idb) -> bool:
@@ -91,9 +93,10 @@ def _file_snapshots(out: dict, inv: list, recorded=None) -> None:
     """D154: a record of every file-level datablock, to make it again when going back over its deletion
     (nothing lighter is exact). New datablocks are snapshotted at once and at every operation after;
     those there were at the first read SNAP_READ_MAX per operation, in turn.
-    shortcut: a change of one of those is found within a few operations (as D151's materials), so deleting
-    it right after a change makes the older state again; a cheap per-type check would find it at once."""
-    seen, old = {}, []
+    shortcut: a change of one of those is found within len/SNAP_READ_MAX operations (as D151's materials;
+    on 4.2 dozens, for its local default brushes), so deleting it right after a change makes the older
+    state again; a cheap per-type check would find it at once."""
+    seen, old, failed = {}, [], []
     # every id first: a snapshot holds the ids of what its datablock uses (a brush's paint curve made with it)
     todo = [(name, idb, u) for name in _SNAP_COLLS for idb in getattr(bpy.data, name, ())
             if _snappable(name, idb) and (u := idmap.claim(idb))]
@@ -106,7 +109,9 @@ def _file_snapshots(out: dict, inv: list, recorded=None) -> None:
                 c = _take(name, idb, c, c[3] if c is not None else _SNAP_READ[0])
             except Exception as e:
                 log.error_once(("snap", name, str(e)), f"could not record {idb.name}: {e}", e)
-                continue
+                if c is None:
+                    failed.append(u)        # in the inventory all the same: no jump takes it away
+                    continue
         else:
             old.append((u, name, idb))
         seen[u] = c
@@ -127,13 +132,19 @@ def _file_snapshots(out: dict, inv: list, recorded=None) -> None:
     _SNAPS.update(seen)
     for u, c in seen.items():
         out[SNAP_PREFIX + u] = c[1]
-        if c[1][1]:
-            out[DNA_PREFIX + c[1][1]] = _DNA[c[1][1]]
+        did = c[1][1]
+        if did and did not in _DNA and recorded is not None and isinstance(dna := recorded(DNA_PREFIX + did), str):
+            _DNA[did] = dna             # a record kept as another Blender wrote it (D156)
+        if did in _DNA:
+            out[DNA_PREFIX + did] = _DNA[did]
         inv.append(u)
+    # the kinds this inventory holds: a jump to one recorded before a kind was snapshotted removes none of it
+    inv += failed + ["@" + k for k in _SNAP_COLLS]
 
 
 def forget_snapshots() -> None:
     _SNAPS.clear()
+    _LEFT.clear()
     _UNMATCHED.clear()
     _SNAP_READ[0] = False
 
@@ -148,6 +159,7 @@ def _with_dna(rec, values, recorded):
             dna = recorded(DNA_PREFIX + rec[1])
         if not isinstance(dna, str):
             return None
+        _DNA.setdefault(rec[1], dna)
         end = multires.blend_blocks(raw)[-1][0]
         raw = raw[:end] + _unb64(dna) + raw[end:]
     return raw
@@ -196,7 +208,10 @@ def _load_snapshot(uid, rec, values, recorded):
     if raw is None:
         log.warn(f"{rec[3]} can't be made again: the snapshot's DNA wasn't recorded")
         return None
-    colls = _SNAP_COLLS + ("materials", "node_groups", "texts", "worlds")
+    colls = _SNAP_COLLS + ("materials", "node_groups", "texts", "worlds", "objects", "collections", "meshes",
+                           "curves", "metaballs", "lattices", "armatures", "cameras", "lights", "lightprobes",
+                           "speakers", "volumes", "pointclouds", "hair_curves", "grease_pencils")
+    colls = tuple(dict.fromkeys(c for c in colls if hasattr(bpy.data, c)))
     before = {c: set(getattr(bpy.data, c)) for c in colls}
     path = multires._tmp_path()
     try:
@@ -208,18 +223,31 @@ def _load_snapshot(uid, rec, values, recorded):
         with contextlib.suppress(OSError):
             os.remove(path)
     got = None
-    for c in colls:
-        for x in [x for x in getattr(bpy.data, c) if x not in before[c]]:
-            xu = x.get(idmap.UID_PROP)
-            if xu == uid and c == name and got is None:
-                got = x
-                continue
-            have = idmap.find(xu) if xu else None
-            if have is not None and have != x:
-                x.user_remap(have)
-            if x.users == 0:
-                _remove(c, x)
+    new = [(c, x) for c in colls for x in getattr(bpy.data, c) if x not in before[c]]
+    for c, x in new:
+        xu = x.get(idmap.UID_PROP)
+        if xu == uid and c == name and got is None:
+            got = x
+            continue
+        have = idmap.find(xu) if xu else None
+        if have is not None and have != x:
+            x.user_remap(have)
+    while True:         # an object copy goes first, then its data
+        left = {i for i, (c, x) in enumerate(new) if x != got and x.users == 0}
+        if not left:
+            break
+        for i in left:
+            _remove(*new[i])
+        new = [p for i, p in enumerate(new) if i not in left]
     return got
+
+
+def _keep_paint(old, new) -> None:
+    """A snapshot holds no pixels of an image painted and not saved: its copy gets them."""
+    if isinstance(old, bpy.types.Image) and old.is_dirty and len(old.pixels) == len(new.pixels) > 0:
+        px = np.empty(len(old.pixels), np.float32)
+        old.pixels.foreach_get(px)
+        new.pixels.foreach_set(px)
 
 
 def _snapshots_back(values: dict, recorded=None, replace: bool = False) -> None:
@@ -248,6 +276,7 @@ def _snapshots_back(values: dict, recorded=None, replace: bool = False) -> None:
             if new is None:
                 continue
             if old is not None:
+                _keep_paint(old, new)
                 old.user_remap(new)
                 idmap.unnote(old)
                 _remove(rec[0], old)
@@ -395,7 +424,8 @@ def _queue_loose_removals(sc, values: dict) -> None:
     and only if nothing uses it then (objects a later step of the same jump brings back may)."""
     todo = []
     if isinstance(values.get(INV_LOOSE), list):
-        todo.append((values[INV_LOOSE], ("tx", "lm", "lw") + _SNAP_COLLS))
+        inv = values[INV_LOOSE]
+        todo.append((inv, ("tx", "lm", "lw") + tuple(k for k in _SNAP_COLLS if "@" + k in inv)))
     if isinstance(values.get(INV_GROUPS), list):
         todo.append((values[INV_GROUPS], ("ng",)))
     if not todo or not _loose_owner(sc):
@@ -455,6 +485,13 @@ def _kept_by_record(idb, kind) -> bool:
     return False
 
 
+def made_again(uid: str):
+    """An action a jump took away (D162, D155), made again intact from its snapshot: with the F-Curve
+    modifiers, pose markers and frame range no action record holds. None when there is none."""
+    rec = _LEFT.pop(uid, None)
+    return _load_snapshot(uid, rec, {}, None) if rec else None
+
+
 def flush_loose_removals() -> None:
     """D152: end of a jump: remove the datablocks it went back (or forward) over the making of, unless
     something uses them now (never a datablock an object or scene uses: it is said in a note)."""
@@ -473,6 +510,9 @@ def flush_loose_removals() -> None:
                 continue
             if kind in ("actions", "lm") and ((inv := _recorded_loose()) is None or uid in inv):
                 continue          # D162: data nothing uses where the jump went (or no inventory recorded)
+            if kind == "actions":
+                with contextlib.suppress(Exception):
+                    _LEFT[uid] = _take(kind, idb, None, False)[1]
             idmap.unnote(idb)
             _remove(_LOOSE_COLL.get(kind, kind), idb)
         except Exception as e:

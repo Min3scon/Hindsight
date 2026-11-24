@@ -425,10 +425,11 @@ def _make_material_again(muid: str, rec: dict):
         return None
 
 
-def write_material(muid: str, rec: dict) -> None:
+def write_material(muid: str, rec: dict, make: bool = False) -> None:
+    """make: a material slot's (D163); a world's record (scene, loose) never makes a Material."""
     m = idmap.find(muid)
     if m is None:
-        m = _make_material_again(muid, rec)
+        m = _make_material_again(muid, rec) if make else None
         if m is None:
             return
     _MAT_CACHE.pop(m.session_uid, None)

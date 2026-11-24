@@ -252,8 +252,9 @@ def write_action(key: str, rec) -> None:
     a = idmap.find(au)
     try:
         if a is None:
-            # gone from the file (nothing used it when it was saved): made again under its id
-            a = bpy.data.actions.new(rec.get("name") or "Action")
+            # gone from the file (nothing used it when it was saved, a jump took it away): made again under its id
+            from .loose import made_again
+            a = made_again(au) or bpy.data.actions.new(rec.get("name") or "Action")
             a[idmap.UID_PROP] = au
             idmap.note(a, au)
         _ACT_CACHE.pop(a.session_uid, None)

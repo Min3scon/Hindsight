@@ -226,7 +226,9 @@ def test_no_extra_work_without_loose_datablocks():
     L.track_all()
     L.tick_like("baseline")
     sc = C.scene
-    assert adapters.scene_loose(sc) == {adapters.INV_LOOSE: []}, adapters.scene_loose(sc)
+    from hindsight.bl.adapters import loose
+    kinds = sorted("@" + k for k in loose._SNAP_COLLS)      # #102 review 7: the kinds the inventory holds
+    assert adapters.scene_loose(sc) == {adapters.INV_LOOSE: kinds}, adapters.scene_loose(sc)
     assert adapters.scene_groups(sc).get(adapters.INV_GROUPS) == [] and \
         not [k for k in adapters.scene_groups(sc) if k.startswith(("@ng:", "@lx:"))]
     calls = [0]

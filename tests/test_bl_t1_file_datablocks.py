@@ -124,7 +124,8 @@ KINDS = {
     "fonts": (lambda: setattr(D.fonts.load(os.path.join(bpy.utils.system_resource("DATAFILES", path="fonts"),
                                                          "DejaVuSansMono.woff2")), "name", "Made"),
               lambda f: (os.path.basename(f.filepath), f.get("note")),
-              lambda f: f.__setitem__("note", "changed")),
+              lambda f: (f.__setitem__("note", "changed"),
+                         setattr(f, "filepath", os.path.join(os.path.dirname(f.filepath), "Inter.woff2")))),
     "movieclips": (_movie_clip,
                    lambda m: (os.path.basename(m.filepath), m.frame_start),
                    lambda m: setattr(m, "frame_start", 7)),
@@ -138,8 +139,8 @@ def _fake_gp():
     return g
 
 
-KINDS["grease_pencils"] = (_fake_gp, lambda g: (len(g.layers), g.get("note"), g.use_fake_user),
-                           lambda g: g.__setitem__("note", "changed"))
+KINDS["grease_pencils"] = (_fake_gp, lambda g: (len(g.layers), _r(g.layers[0].opacity), g.get("note"), g.use_fake_user),
+                           lambda g: (g.__setitem__("note", "changed"), setattr(g.layers[0], "opacity", 0.5)))
 
 
 def walk(kind):
@@ -359,7 +360,7 @@ def _back_and_forth(op, read):
 def test_going_back_over_keying_takes_its_action_away():
     """D162: going back over the first keyframe takes away the action it made, as Blender's undo does; forward,
     it is back with its id and keys."""
-    read = lambda: sorted((a.name, idmap.uid_of(a), a.users, len(a.fcurves) if hasattr(a, "fcurves") else 0)
+    read = lambda: sorted((a.name, idmap.uid_of(a), a.users, len(_fcurves(a)))
                           for a in D.actions)
     after, back, fwd = _back_and_forth(lambda ob: ob.keyframe_insert("color", frame=1), read)
     assert len(after) == 1 and back == [] and fwd == after, (after, back, fwd)
@@ -410,8 +411,163 @@ def test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again():
     assert not adapters.MISSING_REFS.get(idmap.uid_of(b)), adapters.MISSING_REFS    # D60: forgotten once written
 
 
+def _fcurves(a):
+    """An action's F-Curves (5.0 on: in its layers' channel bags)."""
+    if hasattr(a, "fcurves"):
+        return list(a.fcurves)
+    return [fc for ly in a.layers for st in ly.strips for cb in st.channelbags for fc in cb.fcurves]
+
+
+def _scene_ops(ops, read, setup=None):
+    """A fresh recorded scene (setup() first), then ops (one step each): (states, the scene's history)."""
+    from tests import t1_gate_lib as L
+    from tests.test_bl_t1_loose_data import run_ops
+    L.fresh_scene()
+    if setup is not None:
+        setup()
+    L.track_all()
+    L.tick_like("baseline")
+    return run_ops(ops, read), runtime.history_of(bpy.context.scene)
+
+
+def _goto(h, pos):
+    from tests.test_bl_t1_loose_data import datarec_resolve
+    runtime._goto_history(h, pos, True)
+    datarec_resolve()
+
+
+def test_going_back_over_an_image_setting_keeps_its_paint():
+    """#102 review 4: going back over a change of an image's settings replaces it with its snapshot, which
+    holds no pixels of an image painted and not saved: the paint is kept."""
+    def make():
+        D.images.new("Painted", 4, 4).pixels.foreach_set([0.25, 0.5, 0.75, 1.0] * 16)
+    read = lambda: (lambda i: i and (i.alpha_mode, _r(tuple(i.pixels[:4]))))(D.images.get("Painted"))
+    states, h = _scene_ops([("make", make), ("alpha", lambda: setattr(D.images["Painted"], "alpha_mode", "PREMUL"))],
+                           read)
+    for pos in (1, 2):
+        _goto(h, pos)
+        assert read() == states[pos], (pos, read(), states[pos])
+
+
+def test_going_back_over_keying_keeps_what_no_action_record_holds():
+    """#102 review 5: going back over the first keyframe takes its action away (D162); forward, it is made
+    again intact, with the F-Curve modifiers, pose markers and frame range no action record holds."""
+    def op(ob):
+        ob.keyframe_insert("color", frame=1)
+        a = ob.animation_data.action
+        _fcurves(a)[0].modifiers.new("NOISE")
+        a.pose_markers.new("Pose")
+        a.use_frame_range, a.frame_end = True, 42.0
+    read = lambda: sorted((idmap.uid_of(a), [m.type for fc in _fcurves(a) for m in fc.modifiers],
+                           [m.name for m in a.pose_markers], a.use_frame_range, _r(a.frame_end)) for a in D.actions)
+    after, back, fwd = _back_and_forth(op, read)
+    assert after and after[0][1] == ["NOISE"] and back == [] and fwd == after, (after, back, fwd)
+
+
+def test_a_datablock_that_cant_be_snapshotted_is_kept():
+    """#102 review 2: a datablock whose snapshot fails stays in the inventory, so no jump takes it away
+    (there is no snapshot to make it again)."""
+    from hindsight.bl import multires
+    real = multires.snapshot_bytes
+
+    def snap(idb, *a, **k):
+        if idb.name == "Broken":
+            raise RuntimeError("can't be written")
+        return real(idb, *a, **k)
+    multires.snapshot_bytes = snap
+    try:
+        read = lambda: sorted(i.name for i in D.images if i.name in ("Broken", "Other"))
+        _states, h = _scene_ops([("broken", lambda: setattr(D.images.new("Broken", 4, 4), "use_fake_user", True)),
+                                 ("other", lambda: setattr(D.images.new("Other", 4, 4), "use_fake_user", True))], read)
+        _goto(h, len(h.entries) - 1)
+        assert read() == ["Broken"], read()
+    finally:
+        multires.snapshot_bytes = real
+
+
+def test_an_inventory_from_before_snapshots_takes_nothing_away():
+    """#102 review 7: an inventory recorded before a kind was snapshotted (an older build: texts, materials and
+    worlds only) doesn't hold that kind's datablocks; a jump to it takes none of them away."""
+    from hindsight.bl.adapters import loose
+    from tests import t1_gate_lib as L
+    L.fresh_scene()
+    D.images.new("Kept", 4, 4).use_fake_user = True
+    idmap.claim(D.images["Kept"])
+    L.track_all()
+    kinds = loose._SNAP_COLLS
+    loose._SNAP_COLLS = ()                  # recorded as an older build does
+    try:
+        L.tick_like("baseline")
+        D.texts.new("one")
+        L.tick_like("text one")
+    finally:
+        loose._SNAP_COLLS = kinds
+    D.texts.new("two")
+    L.tick_like("text two")
+    h = runtime.history_of(bpy.context.scene)
+    _goto(h, len(h.entries) - 1)
+    assert "Kept" in D.images and "two" not in D.texts, (list(D.images), list(D.texts))
+
+
+def test_going_back_over_deleting_a_world_makes_no_material():
+    """#102 review 6: write_material makes a material again for an id it doesn't find (D163), and the scene
+    writes its world's record with it: a world gone from the file came back as a Material with its id."""
+    from hindsight.bl import adapters
+    from hindsight.bl.adapters import materials
+    from hindsight.bl.adapters.keys import WORLD_PREFIX
+    from tests import t1_gate_lib as L
+    L.fresh_scene()
+    w = D.worlds.new("Sky")
+    u = idmap.claim(w)
+    rec = materials.material_record(w, "")
+    D.worlds.remove(w)
+    adapters.ADAPTERS["scene"].write(bpy.context.scene, {WORLD_PREFIX + u: rec})
+    assert idmap.find(u) is None and "Sky" not in D.materials, (idmap.find(u), list(D.materials))
+
+
+def test_made_again_uses_the_objects_it_used():
+    """#102 review 3: a snapshot holds the objects its datablock uses (particle settings' instance object):
+    made again, it uses the scene's object, not a copy carrying its id."""
+    def make():
+        p = D.particles.new("Made")
+        p.use_fake_user = True
+        p.render_type = "OBJECT"
+        p.instance_object = D.objects["A"]
+    read = lambda: ((lambda p: p and p.instance_object and p.instance_object.name)(D.particles.get("Made")),
+                    sorted(o.name for o in D.objects))
+    texts_walk(read, [("make", make), ("delete", lambda: D.particles.remove(D.particles["Made"]))])
+
+
+def test_a_record_from_another_blender_keeps_the_loose_read_going():
+    """#102 review 1: a snapshot record kept as it was recorded by another Blender (D156) has a DNA id this
+    Blender never wrote: reading the loose data raised KeyError at every operation."""
+    from hindsight.bl.adapters import loose
+    from hindsight.bl.adapters.keys import DNA_PREFIX, SNAP_PREFIX
+    _states, _h = _scene_ops([("make", lambda: setattr(D.images.new("Made", 4, 4), "use_fake_user", True))],
+                             lambda: "Made" in D.images)
+    sc = bpy.context.scene
+    st = runtime._STATES[idmap.uid_of(sc)]
+    u = idmap.uid_of(D.images["Made"])
+    rec = list(st.values[("scene", SNAP_PREFIX + u)])
+    st.values[("scene", DNA_PREFIX + "other")] = st.values[("scene", DNA_PREFIX + rec[1])]
+    rec[1] = "other"
+    st.values[("scene", SNAP_PREFIX + u)] = rec
+    loose.forget_snapshots()                # as when the file is opened (in another Blender)
+    loose._DNA.clear()
+    loose._DINFO.pop("other", None)
+    out = loose.scene_loose(sc)
+    assert u in out[loose.INV_LOOSE] and out.get(DNA_PREFIX + out[SNAP_PREFIX + u][1]), sorted(out)[:6]
+
+
+REVIEW = [test_going_back_over_deleting_a_world_makes_no_material, test_made_again_uses_the_objects_it_used,
+          test_a_record_from_another_blender_keeps_the_loose_read_going,
+          test_going_back_over_an_image_setting_keeps_its_paint,
+          test_going_back_over_keying_keeps_what_no_action_record_holds,
+          test_a_datablock_that_cant_be_snapshotted_is_kept, test_an_inventory_from_before_snapshots_takes_nothing_away]
+
+
 if __name__ == "__main__":
-    for t in TESTS + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
+    for t in TESTS + REVIEW + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
                       test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again,
                       test_going_back_over_keying_takes_its_action_away,
                       test_going_back_over_a_slot_takes_the_material_it_made_away,
