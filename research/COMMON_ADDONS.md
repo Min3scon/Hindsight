@@ -39,7 +39,6 @@ Tally of the 1,000: 842 keep or make some data a scan can see, 130 show none, 28
 ## Free add-ons: top 1,000 on extensions.blender.org
 
 | Rank | Name | Id | Source | Downloads | Licence | Blender | Data kept in the .blend (scan) |
-|---|---|---|---|---|---|---|---|
 | 1 | LoopTools | `looptools` | [looptools](https://extensions.blender.org/add-ons/looptools/) | 2355990 | GPL-2.0-or-later | 4.2.0+ | props on WindowManager |
 | 2 | Extra Mesh Objects | `extra_mesh_objects` | [extra-mesh-objects](https://extensions.blender.org/add-ons/extra-mesh-objects/) | 1276455 | GPL-3.0-or-later | 4.2.0+ | makes meshes/objects/textures; disk files |
 | 3 | Bool Tool | `bool_tool` | [bool-tool](https://extensions.blender.org/add-ons/bool-tool/) | 1261621 | GPL-3.0-or-later | 4.5.0+ | props on Object; makes collections/libraries/meshes/objects |
@@ -1042,35 +1041,38 @@ Tally of the 1,000: 842 keep or make some data a scan can see, 130 show none, 28
 | 1000 | Print Prep | `print_prep` | [print-prep](https://extensions.blender.org/add-ons/print-prep/) | 993 | GPL-3.0-or-later | 5.1.1+ | not scanned (download failed) |
 ## Paid add-ons (can only be tested if a copy is provided)
 
-Marked **PAID**. Order is the order on the sources, not a measured rank. "Data" is from general knowledge of how each add-on works
-and the vendor's own descriptions; no copy was available to inspect, so every row is **unverified**. Prices from the storefronts that day.
+Marked **PAID**. Order is the order on the sources, not a measured rank. Id, licence, Blender versions and source page were read from
+public storefront pages (mostly Superhive, looked up 2026-11-24); they move with each release. No page showed the add-on id
+(Python module name), so every id is **unknown** (it would show in a purchased copy). A licence marked "snippet only" came from a
+search result, not a fetched page. "Data" is still from general knowledge and the vendor's descriptions; no copy was available, so every Data cell is **unverified**.
+Prices from the storefronts that day.
 
-| # | Name | Vendor | Price | Seen in | Data it likely keeps in the .blend (unverified) |
-|---|---|---|---|---|---|
-| P1 | Auto-Rig Pro | Artell | $25 to $227 | Superhive top sellers; learn-blender | Armature and bone custom properties, shape keys, scene props, drivers, rig-ui data |
-| P2 | Hard Ops / BoxCutter Ultimate Bundle | TeamC | $38 | Superhive top sellers; learn-blender | Props on Object and Scene, boolean modifier stacks, bevel data, collections of cutters |
-| P3 | MACHIN3tools | MACHIN3 | $2 to $20 | learn-blender | Scene and Object props, collections, group/empty setups |
-| P4 | MESHmachine | MACHIN3 | $44.99 to $344.99 | Superhive top sellers; learn-blender | Mesh attributes and custom data layers, stash objects, props on Object |
-| P5 | DECALmachine | MACHIN3 | $54.99 to $454.99 | learn-blender | Decal objects and materials, node groups, image datablocks, atlases on disk |
-| P6 | UVPackmaster | glukoz | $55 to $349 | Superhive top sellers; learn-blender | Scene props and per-object UV state; packing runs in a separate engine |
-| P7 | FLIP Fluids | RLGUY | $79 to $299 | Superhive top sellers; learn-blender | Many scene and object property groups, cache files on disk (simulation data not in the .blend) |
-| P8 | Geo-Scatter | bd3d | $99 to $899 | learn-blender | Geometry node groups, particle-like system data in scene props, materials, collections |
-| P9 | Faceit | not named | $78 to $289 | Superhive weekly | Armature, shape keys, drivers, scene and object props |
-| P10 | Human Generator Ultimate | Oliver J Post | $68 to $128 | Superhive weekly; learn-blender | Meshes, shape keys, materials, node groups, object props |
-| P11 | RetopoFlow 4 | not named | $59.99 | Superhive weekly | Mostly session state; meshes it edits |
-| P12 | Cleave | not named | $23 to $28 | Superhive weekly | Meshes and boolean data; connector objects |
-| P13 | Adaptive Auto Skinning | not named | $29.75 to $38.25 | Superhive weekly | Vertex groups and armature weights |
-| P14 | Nitro Retopo | not named | $25 | Superhive weekly | Meshes; scene props |
-| P15 | Botaniq (Trees) | polygoniq | $1.99 to $299.99 | learn-blender | Asset-pack collections, linked or appended objects and materials, scene props |
-| P16 | Poly Haven Asset Browser | Poly Haven | $69 | learn-blender | Appended datablocks, images, materials; files on disk |
-| P17 | Simply Cloth | VjaceslavT | $0 to $270 | learn-blender | Cloth modifier settings, object props, pinning vertex groups |
-| P18 | SimpleBake | HaughtyGrayAlien | $20 to $80 | learn-blender | Scene props, baked images and materials |
-| P19 | OCD (One Click Damage) | vfxguide | $2.99 to $180 | learn-blender | Node groups, materials, object props |
-| P20 | Physical Starlight and Atmosphere | Physical Addons | $70 to $350 | learn-blender | World node tree, scene props, lights |
-| P21 | Cablerator | Sergey Kritskiy | $15 to $100 | Superhive top 40; learn-blender | Curve and mesh objects, object props |
-| P22 | Fluent 4 (Hard Surface) | CG Thoughts | $20 to $57 | learn-blender | Props on Object and Scene, modifier stacks, helper objects |
-| P23 | Zen UV | Sergey Tyapkin | $39 to $499 | learn-blender | Scene props, UV data and attributes on meshes |
-| P24 | Better FBX Importer and Exporter | Mesh Online | $25 to $750 | learn-blender | Imported datablocks; exporter state in scene props |
+| # | Name | Vendor | Price | Seen in | Id | Licence | Blender versions | Source page | Data it likely keeps in the .blend (unverified) |
+|---|---|---|---|---|---|---|---|---|---|
+| P1 | Auto-Rig Pro | Artell | $25 to $227 | Superhive top sellers; learn-blender | unknown (no page read shows the module name) | GPL in the details table; page also says "multiple licenses" | 2.93 to 5.3 | <https://superhivemarket.com/products/auto-rig-pro> | Armature and bone custom properties, shape keys, scene props, drivers, rig-ui data |
+| P2 | Hard Ops / BoxCutter Ultimate Bundle | TeamC | $38 | Superhive top sellers; learn-blender | unknown (no page read shows the module name) | GPL (search snippet only) | 3.5 to 5.2 | <https://superhivemarket.com/products/hard-ops--boxcutter-ultimate-bundle> | Props on Object and Scene, boolean modifier stacks, bevel data, collections of cutters |
+| P3 | MACHIN3tools | MACHIN3 | $2 to $20 | learn-blender | unknown (no page read shows the module name) | GPL (search snippet only) | 4.2 to 5.2 | <https://superhivemarket.com/products/machin3tools> | Scene and Object props, collections, group/empty setups |
+| P4 | MESHmachine | MACHIN3 | $44.99 to $344.99 | Superhive top sellers; learn-blender | unknown (no page read shows the module name) | GPL (search snippet only) | 4.2 to 5.2 | <https://superhivemarket.com/products/meshmachine> | Mesh attributes and custom data layers, stash objects, props on Object |
+| P5 | DECALmachine | MACHIN3 | $54.99 to $454.99 | learn-blender | unknown (no page read shows the module name) | GPL (search snippet only) | 4.3 to 5.2 | <https://superhivemarket.com/products/decalmachine> | Decal objects and materials, node groups, image datablocks, atlases on disk |
+| P6 | UVPackmaster | glukoz | $55 to $349 | Superhive top sellers; learn-blender | unknown (no page read shows the module name) | Blender add-on GPL, engine under the vendor EULA (UVPackmaster 4 listing) | unknown (fetched page gave no range; the old v3 listing said 2.83+) | <https://superhivemarket.com/products/uvpackmaster/> | Scene props and per-object UV state; packing runs in a separate engine |
+| P7 | FLIP Fluids | RLGUY | $79 to $299 | Superhive top sellers; learn-blender | unknown (no page read shows the module name) | GPL on the storefront; GitHub says add-on GPL, engine MIT, some content royalty-free | 4.5 to 5.3 | <https://superhivemarket.com/products/flipfluids> | Many scene and object property groups, cache files on disk (simulation data not in the .blend) |
+| P8 | Geo-Scatter | bd3d | $99 to $899 | learn-blender | unknown (no page read shows the module name) | Split: add-on code GPL v3; scatter output under a royalty-free style EULA | 2.83 to 5.2 | <https://superhivemarket.com/products/scatter> | Geometry node groups, particle-like system data in scene props, materials, collections |
+| P9 | Faceit | not named | $78 to $289 | Superhive weekly | unknown (no page read shows the module name) | GPL (version not stated) | 3.0 to 5.2 | <https://superhivemarket.com/products/faceit> | Armature, shape keys, drivers, scene and object props |
+| P10 | Human Generator Ultimate | Oliver J Post | $68 to $128 | Superhive weekly; learn-blender | unknown (no page read shows the module name) | GPL on the storefront; the older listing said Royalty Free with a separate commercial-use version (conflict, unresolved) | 3.6 to 5.2 | <https://superhivemarket.com/products/humgen3d> | Meshes, shape keys, materials, node groups, object props |
+| P11 | RetopoFlow 4 | not named | $59.99 | Superhive weekly | unknown (no page read shows the module name) | GPL on the storefront; GitHub: code GPL 3.0, non-code assets other terms | 4.2 to 5.2 | <https://superhivemarket.com/products/retopoflow> | Mostly session state; meshes it edits |
+| P12 | Cleave | not named | $23 to $28 | Superhive weekly | unknown (no page read shows the module name) | GPL-3.0-or-later (add-on only, not your models) | 4.2 LTS and newer; tested on 4.2 and 5.2 LTS | <https://superhivemarket.com/products/cleave> | Meshes and boolean data; connector objects |
+| P13 | Adaptive Auto Skinning | not named | $29.75 to $38.25 | Superhive weekly | unknown (no page read shows the module name) | GPL | 4.2 to 5.3 | <https://superhivemarket.com/products/adaptive-auto-skinning> | Vertex groups and armature weights |
+| P14 | Nitro Retopo | not named | $25 | Superhive weekly | unknown (no page read shows the module name) | GPL | 5.2 to 5.3 | <https://superhivemarket.com/products/nitro-retopo> | Meshes; scene props |
+| P15 | Botaniq (Trees) | polygoniq | $1.99 to $299.99 | learn-blender | unknown (no page read shows the module name) | Royalty Free (storefront licence; text not read) | 4.2 to 5.3 | <https://superhivemarket.com/products/botaniq-trees> | Asset-pack collections, linked or appended objects and materials, scene props |
+| P16 | Poly Haven Asset Browser | Poly Haven | $69 | learn-blender | unknown (no page read shows the module name) | GPL-3.0 per its GitHub repo; storefront licence field not read | unknown (README gives none; docs say 5.2 needs add-on 1.2.2+) | <https://github.com/Poly-Haven/polyhavenassets> | Appended datablocks, images, materials; files on disk |
+| P17 | Simply Cloth | VjaceslavT | $0 to $270 | learn-blender | unknown (no page read shows the module name) | MIT per the details table; paid tiers sold as commercial licences | 4.0 to 5.2 | <https://superhivemarket.com/products/simply-cloth> | Cloth modifier settings, object props, pinning vertex groups |
+| P18 | SimpleBake | HaughtyGrayAlien | $20 to $80 | learn-blender | unknown (no page read shows the module name) | GPL | 5.0 to 5.2 | <https://superhivemarket.com/products/simplebake---simple-pbr-and-other-baking-in-blender-2> | Scene props, baked images and materials |
+| P19 | OCD (One Click Damage) | vfxguide | $2.99 to $180 | learn-blender | unknown (no page read shows the module name) | GPL | 4.5 to 5.2 | <https://superhivemarket.com/products/ocd> | Node groups, materials, object props |
+| P20 | Physical Starlight and Atmosphere | Physical Addons | $70 to $350 | learn-blender | unknown (no page read shows the module name) | GPL | 2.81 to 5.2 in the details table; developer text says 2.81 to 4.5 | <https://superhivemarket.com/products/physical-starlight-and-atmosphere> | World node tree, scene props, lights |
+| P21 | Cablerator | Sergey Kritskiy | $15 to $100 | Superhive top 40; learn-blender | unknown (no page read shows the module name) | unknown (storefront page returned HTTP 429; docs show no licence) | 2.8+ per docs (separate steps for 4.2+) | <https://cablerator.readthedocs.io/> | Curve and mesh objects, object props |
+| P22 | Fluent 4 (Hard Surface) | CG Thoughts | $20 to $57 | learn-blender | unknown (no page read shows the module name) | GPL | 3.6 to 5.1 in the details table; version history says 5.2 LTS added in 4.3.1 | <https://superhivemarket.com/products/fluent/versions> | Props on Object and Scene, modifier stacks, helper objects |
+| P23 | Zen UV | Sergey Tyapkin | $39 to $499 | learn-blender | unknown (no page read shows the module name) | GPL | 4.2 to 5.2 | <https://superhivemarket.com/products/zen-uv> | Scene props, UV data and attributes on meshes |
+| P24 | Better FBX Importer and Exporter | Mesh Online | $25 to $750 | learn-blender | unknown (no page read shows the module name) | GPL (from its FAQ) | 3.6 to 5.3; ships as two add-ons, importer and exporter (ids unknown) | <https://superhivemarket.com/products/better-fbx-importer--exporter/faq> | Imported datablocks; exporter state in scene props |
 
 Not found in any source read: Hair Tool, Archipack, Scatter (the older one). They were left out rather than guessed.
 
