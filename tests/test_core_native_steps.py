@@ -524,8 +524,7 @@ def test_property():
     try:
         from hypothesis import given, settings, strategies as hs, HealthCheck
     except ImportError:
-        print("SKIP test_property: hypothesis not installed")
-        return
+        raise R.Skip("hypothesis not installed")
 
     @settings(max_examples=60, deadline=None, suppress_health_check=list(HealthCheck))
     @given(hs.integers(0, 2 ** 31), hs.integers(1, 40), hs.integers(1, 120), hs.booleans(),

@@ -165,8 +165,7 @@ def test_hypothesis():
     try:
         from hypothesis import given, settings, strategies as hs, HealthCheck
     except ImportError:
-        print("SKIP test_hypothesis: hypothesis not installed (test_random_pairs checks the same rule)")
-        return
+        raise R.Skip("hypothesis not installed (test_random_pairs checks the same rule)")
     # The Blender program runs with denormals flushed to zero (its CPU mode, as test_bl_t1_prop notes); hypothesis then
     # refuses to make subnormal floats. Where they exist (the bpy module) they are drawn; test_cases has some from their bits.
     sub = float.fromhex('0x1p-1060') * float.fromhex('0x1p-10') > 0.0   # False when flushed to zero

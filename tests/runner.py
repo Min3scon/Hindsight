@@ -12,10 +12,16 @@ failures = []
 on_finish = []      # callables run by finish() before it exits (harness.py removes its temporary folders)
 
 
+class Skip(Exception):
+    """Raise from a test that cannot run here: prints `SKIP name: reason`, counted neither as PASS nor FAIL."""
+
+
 def run(fn):
     try:
         fn()
         print("PASS", fn.__name__)
+    except Skip as e:
+        print(f"SKIP {fn.__name__}: {e}")
     except Exception:
         traceback.print_exc()
         print("FAIL", fn.__name__)
