@@ -18,7 +18,7 @@ from ..core.types import (
     JOURNAL_CODEC, SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
 from . import adapters, datarec, filtering, guard, idmap, log, meshio, multires, rigmark
-from .prefs import get_prefs, value as _pref
+from .prefs import value as _pref
 from . import warnings as _warn
 from .selfcheck import flash_status
 from .ctx import active_object as _ctx_active
@@ -808,11 +808,7 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
 
 
 def _refresh_toggle() -> bool:
-    try:
-        p = get_prefs()
-        return bool(getattr(p, "sculpt_refresh_toggle", False)) if p else False
-    except Exception:
-        return False
+    return bool(_pref("sculpt_refresh_toggle", False))
 
 
 def _sculpt_refresh(obj) -> None:
