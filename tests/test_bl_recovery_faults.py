@@ -10,8 +10,10 @@ session had there, and the position the history opens at with the file.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import errno
+import json
 import random
 import shutil
+import struct
 import tempfile
 
 import bpy
@@ -23,6 +25,7 @@ from hindsight.core.types import SETTINGS
 
 C = bpy.context
 TMP = tempfile.mkdtemp(prefix="hindsight_recovery_faults_")
+U32 = struct.Struct("<I")
 
 
 def setup(mode="SIDECAR", recovery="INTERRUPTED"):
@@ -281,6 +284,57 @@ def test_embed_save_as_new_path_both_fail():
             f"{rec}: A's history from the save before is never played onto this mesh"
         hb = runtime.history_of(bpy.data.objects["B"])
         assert hb is not None and len(hb.entries) >= 3, (rec, hb)
+        check(book, file_state, rec)
+
+
+def test_embed_save_fails_and_the_folder_is_from_a_newer_hindsight():
+    """#56: the history can't be built for the .blend and its folder was saved by a newer Hindsight, so nothing
+    is written there. The .blend must not point at that folder: it keeps the history of the save before, the
+    user is told the history was not stored, and the folder is left as it was."""
+    setup("BOTH")
+    obs = make(("A", "B"))
+    book = Book()
+    for s in range(3):
+        book.stroke(obs["A"], s)
+        book.stroke(obs["B"], 20 + s)
+    path = os.path.join(TMP, "both_newer.blend")
+    save(path)
+    hsr = persist.sidecar_file(path)
+    with open(hsr, "rb") as fh:
+        blob = fh.read()
+    (jlen,) = U32.unpack_from(blob, 4)
+    doc = json.loads(blob[8:8 + jlen])
+    doc["format"] = doc["version"] = persist.FORMAT_VERSION + 1
+    js = json.dumps(doc).encode()
+    newer = persist.REG_MAGIC + U32.pack(len(js)) + js + blob[8 + jlen:]
+    with open(hsr, "wb") as fh:
+        fh.write(newer)
+    interrupt(path)                      # the folder is newer: the history comes from the .blend
+    assert persistence._PROTECT["sidecar"], "the folder is taken for a newer Hindsight's"
+    stored = H.stored_text(path)[persistence.SAVE_ID_PROP]
+    book.stroke(bpy.data.objects["A"], 10)
+    real = persist.parts_to_bytes
+
+    def boom(parts):
+        raise MemoryError("test: out of memory building the stored history")
+    persist.parts_to_bytes = boom
+    try:
+        file_state = save(path)
+    finally:
+        persist.parts_to_bytes = real
+    with open(hsr, "rb") as fh:
+        assert fh.read() == newer, "the newer Hindsight's folder is left as it was"
+    text = H.stored_text(path)
+    assert text[persistence.SAVE_ID_PROP] == stored, "the .blend doesn't name a save the folder doesn't hold"
+    assert persistence.DATA_BIN_PROP in text, "the .blend keeps the history of the save before"
+    assert persistence.EMBED_FALLBACK_TEXT not in notes(), "the user isn't told the history is in the folder"
+    assert persistence.KEPT_LAST_SAVE_TEXT in notes(), "the user is told the history was not stored"
+    book.stroke(bpy.data.objects["B"], 30)
+    for rec in ("INTERRUPTED", "LAST_SAVED"):
+        SETTINGS.crash_recovery = rec
+        interrupt(path)
+        hb = runtime.history_of(bpy.data.objects["B"])
+        assert hb is not None and len(hb.entries) == (4 if rec == "INTERRUPTED" else 3), (rec, hb)
         check(book, file_state, rec)
 
 

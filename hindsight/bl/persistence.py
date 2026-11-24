@@ -406,15 +406,15 @@ def on_save_pre(*args) -> None:
 def _store_elsewhere(text, reg, path) -> None:
     """#56: the history couldn't be built for the .blend (out of memory, most likely), and Blender holds no copy
     of the last save's (#55): without this the .blend would be saved with no history at all. The history folder
-    gets it now, before the .blend is written, and the .blend points there; if the folder fails too, the .blend
-    keeps the last save's history."""
+    gets it now, before the .blend is written, and the .blend points there; if the folder fails too (or is a
+    newer Hindsight's), the .blend keeps the last save's history and its crash journal stays."""
     _FALLBACK["sidecar"] = True          # on_save_post leaves the folder alone: it was written (or tried) here
     try:
         if _PROTECT["sidecar"] and os.path.isfile(persist.sidecar_file(path)):
-            runtime.log.warn("history folder left untouched: it was saved by a newer Hindsight")
-        else:
-            _drain_packer()
-            persist.save_sidecar(reg, path)
+            # nothing is written there, so the .blend mustn't point at it: the same as a folder that fails
+            raise RuntimeError("history folder left untouched: it was saved by a newer Hindsight")
+        _drain_packer()
+        persist.save_sidecar(reg, path)
     except Exception as e:
         guard.fail("saving", e, "could not write the undo history folder")
         _FALLBACK["kept"] = True         # on_save_post keeps the journal: it goes with the last save
