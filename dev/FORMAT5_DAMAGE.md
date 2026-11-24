@@ -30,7 +30,7 @@ In this order, while #41's opening reads the parts one by one:
 
 | Part | Check | Cost |
 |---|---|---|
-| The stub (`hindsight_data`) and `sidecar` | not read: V2 knows a format 5 file by its `hindsight_parts` group | none |
+| The stub (`hindsight_data`) and `sidecar` | not checked: V2 knows a format 5 file by its `hindsight_parts` group. The stub is not read; `sidecar` is read only for #45's note when it is True (an older build saved the file after V2) | none |
 | The index part | its CRC-32; `index_copy` is read only when `index` fails | tens of KB: not measurable |
 | Each step part | it is there, and its length and CRC-32 match the index part's | 0.028 to 0.035 s per 256 MB (engine `crc32`) |
 | A step part that failed | the CRC-32 of its step table and of its metas, then each step's CRC-32 against the table | one more pass over that part: under 1 ms per 4 MiB |
@@ -60,7 +60,7 @@ step without a meta. An unknown step (#42) whose meta is lost is listed as a ste
 
 | Damaged | Lost | Kept |
 |---|---|---|
-| The stub or `sidecar` | nothing: V2 doesn't read them | everything |
+| The stub or `sidecar` | nothing: V2 doesn't read the stub, and reads `sidecar` only to show #45's note, so a wrong value shows or hides that note | everything |
 | One copy of the index part | nothing | everything, from the other copy |
 | Both copies | the use of every history in the file: their cursors, members and settings are only there | every step part, untouched and set aside; the objects as they were saved |
 | A step part's metas | nothing: each meta is read from its step | everything |
