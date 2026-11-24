@@ -257,6 +257,17 @@ def test_a_collection_only_an_instance_uses_is_made_again():
     assert states[0][0] == ["InInst"], states
 
 
+def test_a_collection_holding_a_scene_object_leaves_it_to_the_object():
+    """D177: a collection no scene holds but holding a scene's object (light linking does that) isn't
+    snapshotted: going back over the object's deletion brings the object back into the scene, not a copy."""
+    def setup():
+        c = D.collections.new("Holds")
+        c.use_fake_user = True
+        c.objects.link(D.objects["A"])
+    read = lambda: ("A" in bpy.context.scene.objects, sorted(o.name for o in D.objects if o.name.startswith("A")))
+    texts_walk(read, [("delete A", lambda: D.objects.remove(D.objects["A"]))], setup)
+
+
 def test_made_again_keeps_its_id_and_users():
     """What uses a datablock deleted and made again (a texture's image) uses it again, with its id."""
     def make():
@@ -662,6 +673,7 @@ if __name__ == "__main__":
                       test_object_data_its_object_left_with_no_user_is_not_snapshotted,
                       test_object_data_with_no_user_stays_over_a_jump,
                       test_a_collection_only_an_instance_uses_is_made_again,
+                      test_a_collection_holding_a_scene_object_leaves_it_to_the_object,
                       test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again,
                       test_going_back_over_keying_takes_its_action_away,
                       test_going_back_over_a_slot_takes_the_material_it_made_away,

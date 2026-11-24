@@ -63,7 +63,13 @@ def _ids(name: str):
     coll = getattr(bpy.data, name, ())
     if name == "collections":       # D175: those no scene holds, kept by a fake user or a collection instance
         held = {c.as_pointer() for sc in bpy.data.scenes for c in sc.collection.children_recursive}
-        return [c for c in coll if c.users and c.as_pointer() not in held]
+        held.update(c.as_pointer() for sc in bpy.data.scenes if (rb := sc.rigidbody_world) is not None
+                    for c in (rb.collection, rb.constraints) if c is not None)
+        out = [c for c in coll if c.users and c.as_pointer() not in held]
+        if out:     # D177: nor one holding a scene's object (that object records it; made again, it would hold a copy)
+            obs = {o.as_pointer() for sc in bpy.data.scenes for o in sc.objects}
+            out = [c for c in out if not any(o.as_pointer() in obs for o in c.all_objects)]
+        return out
     if name not in _WHEN_UNUSED or not len(coll):
         return coll
     users, fake = np.empty(len(coll), np.int32), np.empty(len(coll), bool)
