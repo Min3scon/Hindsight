@@ -287,6 +287,7 @@ def write_action(key: str, rec) -> None:
 
 
 def write_anim(ob, want) -> None:
+    old = getattr(ob.animation_data, "action", None)
     try:
         if want is None:
             if ob.animation_data is not None:      # animated later than this: it had none then
@@ -309,3 +310,7 @@ def write_anim(ob, want) -> None:
             _write_nla(ad, want.get("nla") or [])
     except Exception as e:
         log.error_once(("anim", str(e)), f"could not restore which animation {ob.name} plays: {e}", e)
+    finally:
+        if old is not None and getattr(ob.animation_data, "action", None) != old:
+            from .loose import queue_left
+            queue_left(old, "actions")

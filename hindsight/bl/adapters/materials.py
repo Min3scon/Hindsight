@@ -407,10 +407,30 @@ def _write_items(node, items: dict) -> None:
             set_struct_values(it, {k: x for k, x in w.items() if k not in ("socket_type", "data_type")})
 
 
+def _make_material_again(muid: str, rec: dict):
+    """D163: a material made with a slot that a jump took away going back: made again under its id (the
+    record, written next, holds its name and settings)."""
+    name = (rec.get("values") or {}).get("name")
+    if not isinstance(name, str):
+        return None
+    try:
+        m = bpy.data.materials.new(name)
+        if rec.get("tree") is not None and getattr(m, "node_tree", None) is None:
+            m.use_nodes = True              # Blender 4.2: a new material has no node tree
+        m[idmap.UID_PROP] = muid
+        idmap.note(m, muid)
+        return m
+    except Exception as e:
+        log.error_once(("mat_new", str(e)), f"could not make the material {name} again: {e}", e)
+        return None
+
+
 def write_material(muid: str, rec: dict) -> None:
     m = idmap.find(muid)
     if m is None:
-        return
+        m = _make_material_again(muid, rec)
+        if m is None:
+            return
     _MAT_CACHE.pop(m.session_uid, None)
     _OBMAT_CACHE.clear()
     try:

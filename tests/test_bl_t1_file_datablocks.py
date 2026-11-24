@@ -278,8 +278,52 @@ def test_going_back_over_a_duplicate_takes_its_action_away():
     assert acts() == after, (acts(), after)
 
 
+def _back_and_forth(op, read):
+    """Run op on object A, then go back over its step and forward again: [read() after, back, forward]."""
+    from tests import t1_gate_lib as L, t1_ops as T
+    from tests.test_bl_t1_loose_data import datarec_resolve
+    L.fresh_scene()
+    L.track_all()
+    L.tick_like("baseline")
+    T.select("A")
+    op(D.objects["A"])
+    L.tick_like("op")
+    out = [read()]
+    h = runtime.history_of(D.objects["A"])
+    for pos in (len(h.entries) - 1, len(h.entries)):
+        runtime._goto_history(h, pos, True)
+        datarec_resolve()
+        out.append(read())
+    return out
+
+
+def test_going_back_over_keying_takes_its_action_away():
+    """D162: going back over the first keyframe takes away the action it made, as Blender's undo does; forward,
+    it is back with its id and keys."""
+    read = lambda: sorted((a.name, idmap.uid_of(a), a.users, len(a.fcurves) if hasattr(a, "fcurves") else 0)
+                          for a in D.actions)
+    after, back, fwd = _back_and_forth(lambda ob: ob.keyframe_insert("color", frame=1), read)
+    assert len(after) == 1 and back == [] and fwd == after, (after, back, fwd)
+
+
+def test_going_back_over_a_slot_takes_the_material_it_made_away():
+    """D163: going back over giving an object a new material takes the material away, as Blender's undo does;
+    forward, it is back with its id, name and settings."""
+    def op(ob):
+        m = D.materials.new("Made")
+        m.diffuse_color = (0.25, 0.5, 0.75, 1.0)
+        m.roughness = 0.125
+        ob.data.materials.append(m)
+    read = lambda: (lambda m: m and (idmap.uid_of(m), tuple(_r(x) for x in m.diffuse_color), _r(m.roughness),
+                                     [s.material == m for s in D.objects["A"].material_slots]))(D.materials.get("Made"))
+    after, back, fwd = _back_and_forth(op, read)
+    assert after and back is None and fwd == after, (after, back, fwd)
+
+
 if __name__ == "__main__":
     for t in TESTS + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
+                      test_going_back_over_keying_takes_its_action_away,
+                      test_going_back_over_a_slot_takes_the_material_it_made_away,
                       test_digest_leaves_out_what_custom_properties_hold,
                       test_going_back_over_a_duplicate_takes_its_action_away,
                       test_digest_leaves_out_the_runtime_fields_of_an_id,

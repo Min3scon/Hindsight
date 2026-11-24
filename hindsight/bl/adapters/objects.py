@@ -23,6 +23,7 @@ from .materials import (
     _owned_refs, material_props, material_slots, owned_materials, write_group, write_material,
     write_material_slots)
 from .membership import _coll_from_ref, _coll_ref, _write_constraints, users_collection
+from .loose import queue_left
 from .meshlists import mesh_lists, write_mesh_lists
 from .modifiers import modifier_values, write_modifiers
 from .particles import _particles, _physics, _set_physics, _set_physics_modifier
@@ -130,6 +131,8 @@ class ObjectAdapter(Adapter):
         for path, v in values.items():          # D112: materials before the slots that hold them
             if path.startswith(MAT_PREFIX) and isinstance(v, dict):
                 write_material(path[len(MAT_PREFIX):], v)
+            elif path.startswith(MAT_PREFIX) and v is MISSING and (m := idmap.find(path[len(MAT_PREFIX):])):
+                queue_left(m, "lm")             # D163: back over the slot that made it
             elif path.startswith(MATP_PREFIX) and isinstance(v, dict):
                 m = idmap.find(path[len(MATP_PREFIX):])
                 if m is not None:

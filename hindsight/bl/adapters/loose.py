@@ -419,6 +419,23 @@ def _queue_left_action(ob, recorded) -> None:
     if isinstance(inv, list) and (u := idmap.claim(a)) and u not in inv:
         _LOOSE_GONE[u] = "actions"
 
+
+def queue_left(idb, kind: str) -> None:
+    """D162/D163: a jump back over the keying that made an action, or the slot that made a material, leaves
+    it unused: it goes after the jump too, as with Blender's undo (its record makes it again going forward)."""
+    if (u := idmap.uid_of(idb)) and not idb.use_fake_user:
+        _LOOSE_GONE.setdefault(u, kind)
+
+
+def _recorded_loose():
+    """The loose inventory the scene that records it is at (None when none is recorded)."""
+    from .. import datarec, runtime
+    scenes = sorted((x for x in bpy.data.scenes if x.library is None and datarec.is_tracked(x)), key=lambda x: x.name)
+    st = runtime._STATES.get(idmap.uid_of(scenes[0])) if scenes else None
+    inv = st.values.get(("scene", INV_LOOSE)) if st is not None else None
+    return inv if isinstance(inv, list) else None
+
+
 def _kept_by_record(idb, kind) -> bool:
     """Used by something Hindsight records (an object, a scene): not a datablock to say anything about,
     its own history has it."""
@@ -452,6 +469,8 @@ def flush_loose_removals() -> None:
                 if not _kept_by_record(idb, kind):
                     log.warn(f"{idb.name} was made after this point but can't be taken away: something uses it now")
                 continue
+            if kind in ("actions", "lm") and ((inv := _recorded_loose()) is None or uid in inv):
+                continue          # D162: data nothing uses where the jump went (or no inventory recorded)
             idmap.unnote(idb)
             _remove(_LOOSE_COLL.get(kind, kind), idb)
         except Exception as e:
