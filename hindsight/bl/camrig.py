@@ -5,7 +5,9 @@ scene has no light of its own, three sun lamps. They are ordinary objects marked
 with bpy.data only (works from a timer, a property update and in any mode). Objects without the mark
 are never moved, hidden or deleted. Nothing here records or moves history.
 
-What the camera holds (the model as a render shows it, at every step of the history):
+What the camera holds (the model as a render shows it, at every step of the history): every
+object with a history that renders (renders()), of any type; other types than meshes as they render
+now (_shape: exact, a bound for volumes and 4.2's Grease Pencil). For meshes:
 - the shape now: exact, from the evaluated object; when the viewport doesn't evaluate it the way a
   render does (render-only modifiers, other render levels, disabled in viewports) from a temporary
   copy set up for rendering, unless that copy would pass COPY_BUDGET vertices;
@@ -176,16 +178,28 @@ def needs_attention(scene) -> bool:
     return "camera" in want and scene.camera is None
 
 
+_RENDERS = {"MESH", "CURVE", "SURFACE", "FONT", "META", "GPENCIL", "GREASEPENCIL", "CURVES", "POINTCLOUD", "VOLUME"}
+
+
+def renders(ob) -> bool:
+    """The object shows in a render: a type with geometry, or an empty instancing a collection."""
+    if ob.hide_render or rigmark.is_rig(ob):
+        return False
+    if ob.type == "EMPTY":
+        return ob.instance_type == "COLLECTION" and ob.instance_collection is not None
+    return ob.type in _RENDERS
+
+
 def model_objects(scene) -> list:
-    """Mesh objects with a Hindsight history; else meshes that render; else anything else that renders
-    (never cameras, lights or Hindsight's own objects)."""
+    """Objects with a Hindsight history that render, of any type; else meshes that render; else
+    anything else that renders (never cameras, lights or Hindsight's own objects)."""
     members = set()
     for h in runtime.reg().all():
         members.update(h.members)
     obs = [ob for ob in scene.objects if not rigmark.is_rig(ob)]
     out = []
     if members:
-        out = [ob for ob in obs if ob.type == "MESH" and runtime.obj_uid(ob) in members]
+        out = [ob for ob in obs if renders(ob) and runtime.any_uid(ob) in members]
     if not out:
         out = [ob for ob in obs if ob.type == "MESH" and not ob.hide_render]
     if not out:
@@ -781,11 +795,96 @@ def _entry_positions(ob) -> np.ndarray:
     return np.asarray(pos, np.float32).reshape(-1) if pos is not None else np.empty(0, np.float32)
 
 
+DEFAULT_RADIUS = 0.01      # Blender's radius for curves, point clouds and Grease Pencil points that store none
+
+
+def _shape(ev):
+    """(points (n, 3) float32 in the object's own space, radius) of what renders of an evaluated
+    object: the evaluated mesh of meshes, curves, text, surfaces and metaballs; the points of point
+    clouds, hair curves and Grease Pencil (each visible layer's current drawing) with their largest
+    radius; else (volumes, 4.2's Grease Pencil) the corners of the evaluated box, a safe bound."""
+    t = ev.type
+    if t in ("CURVES", "POINTCLOUD"):
+        return _positions(ev.data).reshape(-1, 3), _radius(ev.data)
+    if t == "GREASEPENCIL":
+        pts, r = [np.empty((0, 3), np.float32)], 0.0
+        for layer in ev.data.layers:
+            fr = None if layer.hide else layer.current_frame()
+            dr = getattr(fr, "drawing", None)
+            if dr is None:
+                continue
+            p = _positions(dr).reshape(-1, 3)
+            m = getattr(layer, "matrix_local", None)
+            if m is not None and len(p):
+                m = _np_matrix(m)
+                p = (p @ m[:3, :3].T + m[:3, 3]).astype(np.float32)
+                r = max(r, _radius(dr) * float(max(np.linalg.norm(m[:3, :3], axis=0))))
+            elif len(p):
+                r = max(r, _radius(dr))
+            pts.append(p)
+        return np.vstack(pts), r
+    if t in ("MESH", "CURVE", "SURFACE", "FONT", "META"):
+        try:
+            me = ev.to_mesh()
+            return _positions(me).reshape(-1, 3), 0.0
+        except RuntimeError:
+            return np.empty((0, 3), np.float32), 0.0
+        finally:
+            ev.to_mesh_clear()
+    return np.array([c[:] for c in ev.bound_box], np.float32), 0.0
+
+
+def _radius(data) -> float:
+    rad = data.attributes.get("radius")
+    if rad is None or not len(rad.data):
+        return DEFAULT_RADIUS
+    rr = np.empty(len(rad.data), np.float32)
+    rad.data.foreach_get("value", rr)
+    return float(rr.max())
+
+
+def _measure_other(ob, basis, tx, ty, dg):
+    """(extents in camera axes, world bounds) of an object that isn't a mesh, as a render shows it now
+    (see _shape); an instancing empty: its instances. Points with a radius are grown by it exactly
+    (the largest radius stands for all: a bound when they differ)."""
+    if dg is None:
+        parts = [((np.array([c[:] for c in ob.bound_box], np.float32), 0.0), _np_matrix(ob.matrix_world))]
+    elif ob.type == "EMPTY":
+        found = [(i.object.original, _np_matrix(i.matrix_world)) for i in dg.object_instances
+                 if i.is_instance and i.parent is not None and i.parent.original == ob]
+        shapes = {}
+        for src, _m in found:
+            if src.name_full not in shapes:
+                shapes[src.name_full] = _shape(src.evaluated_get(dg))
+        parts = [(shapes[src.name_full], m) for src, m in found]
+    else:
+        parts = [(_shape(ob.evaluated_get(dg)), _np_matrix(ob.matrix_world))]
+    ext = bnd = None
+    for (pts, r), m in parts:
+        if not len(pts):
+            continue
+        e = framing.shifted(framing.extents(pts, m[:3, :3].T @ basis, tx, ty), m[:3, 3] @ basis, tx, ty)
+        w = np.asarray(pts, np.float64) @ m[:3, :3].T + m[:3, 3]
+        if r > 0 and e is not None:
+            r *= float(max(np.linalg.norm(m[:3, :3], axis=0)))       # in world units (the largest scale)
+            gx, gy = r * math.sqrt(1 + tx * tx), r * math.sqrt(1 + ty * ty)
+            e = e + np.array([gx, gx, gy, gy, -r, r])
+            w = np.vstack([w.min(0) - r, w.max(0) + r])
+        ext = framing.merge(ext, e)
+        bnd = framing.merge_bounds(bnd, framing.bounds(w))
+    return ext, bnd
+
+
 def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
     """(extents in camera axes, world bounds) of one model object: what renders of it now and, for
-    a mesh with a history, every earlier and later shape. The mesh is measured in its own space, so
+    a mesh with a history, every earlier and later shape; other types: _measure_other. The mesh is measured in its own space, so
     no world-space copy of it is made. `depsgraph`: a callable (refresh=False) that gives the
     evaluated depsgraph (only asked for when the mesh has modifiers or shape keys)."""
+    if ob.type != "MESH":
+        if depsgraph is None:
+            sc = scene if scene is not None else (ob.users_scene[0] if ob.users_scene else None)
+            return _measure_other(ob, basis, tx, ty, _depsgraph(sc) if sc is not None else None)
+        return _measure_other(ob, basis, tx, ty, depsgraph())
     mw = _np_matrix(ob.matrix_world)
     local_basis = mw[:3, :3].T @ basis                 # local points @ local_basis == world @ basis
     pts = None
