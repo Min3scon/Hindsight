@@ -25,8 +25,9 @@ _TEXT_PROPS = ("filepath", "use_module", "indentation")
 # (Object data, particle settings and materials an object uses are recorded with the object; node
 # groups with D133.)
 _SNAP_COLLS = ("images", "actions", "palettes", "brushes", "linestyles", "masks", "movieclips", "sounds",
-               "fonts", "cache_files", "paint_curves", "textures", "particles")
-_USED_BY_OBJECTS = ("actions", "particles")   # recorded with the object that uses them; snapshotted when none does
+               "fonts", "cache_files", "paint_curves", "textures", "particles", "grease_pencils")
+# recorded with what uses them; snapshotted when nothing does (grease_pencils: 4.2 annotations, 5.0 on objects' data)
+_WHEN_UNUSED = ("actions", "particles", "grease_pencils")
 _PROP_COLLS = _SNAP_COLLS + ("texts",)
 _LOOSE_TURN = [0]
 SNAP_READ_MAX = 2          # D154: datablocks there were at the first read, snapshotted again per operation, in turn
@@ -54,10 +55,10 @@ def _loose_mats():
 
 def _snappable(name, idb) -> bool:
     """A file-level datablock D154 snapshots: local; not Blender's render and viewer images; not an action
-    or particle settings something uses (its object records it)."""
+    particle settings or Grease Pencil data something uses (what uses it records it)."""
     if idb.library is not None or getattr(idb, "type", "") in ("RENDER_RESULT", "COMPOSITING"):
         return False
-    return name not in _USED_BY_OBJECTS or _unused(idb)
+    return name not in _WHEN_UNUSED or _unused(idb)
 
 
 def _b64(raw: bytes) -> str:
@@ -449,7 +450,7 @@ def _kept_by_record(idb, kind) -> bool:
                 for sc in bpy.data.scenes)
         if kind == "lw":
             return any(sc.world == idb for sc in bpy.data.scenes)
-        if kind == "actions":
+        if kind in _WHEN_UNUSED:
             return True               # an object uses it: the object records it
     return False
 

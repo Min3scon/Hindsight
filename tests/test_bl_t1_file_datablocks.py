@@ -131,6 +131,17 @@ KINDS = {
 }
 
 
+def _fake_gp():
+    g = D.grease_pencils.new("Made")      # 4.2: an annotation; 5.0 on: Grease Pencil data with no object
+    g.use_fake_user = True
+    g.layers.new("Notes")
+    return g
+
+
+KINDS["grease_pencils"] = (_fake_gp, lambda g: (len(g.layers), g.get("note"), g.use_fake_user),
+                           lambda g: g.__setitem__("note", "changed"))
+
+
 def walk(kind):
     make, state, change, *setup = KINDS[kind]
     coll = lambda: getattr(bpy.data, kind)
