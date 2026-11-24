@@ -8,7 +8,8 @@ import re
 import numpy as np
 
 _DINFO: dict = {}          # DNA id -> _dna_info of that DNA block
-# D156: written, but given again when the datablock is read (a file opened, a snapshot loaded)
+# D156: written, but given again when the datablock is read (a file opened, a snapshot loaded); and every
+# padding field (`_pad...`, D158: 5.0 writes an action channel bag's as it was in memory)
 _ID_RUNTIME = (b"recalc", b"recalc_after_undo_push", b"session_uid")
 _NOT_OWN = (b"REND", b"TEST", b"GLOB", b"DNA1", b"ENDB", b"USER")    # a .blend's file blocks, not the datablock's
 
@@ -20,8 +21,8 @@ def _heads(raw: bytes):
 
 def _dna_info(raw: bytes, blocks: list) -> tuple:
     """From the snapshot's DNA block: (the SDNA number of IDProperty, -1 when it isn't found; {SDNA number:
-    (struct size, byte offsets of its pointers, byte offsets of its IDs' _ID_RUNTIME fields)}); (-1, {}) when it
-    isn't read."""
+    (struct size, byte offsets of its pointers, byte offsets of its IDs' _ID_RUNTIME fields and padding)});
+    (-1, {}) when it isn't read."""
     try:
         hs = _heads(raw)[0]
         pos, n = next((p, n) for p, c, n in blocks if c == b"DNA1")
@@ -62,7 +63,7 @@ def _dna_info(raw: bytes, blocks: list) -> tuple:
                     out += range(at, at + 8 * dims, 8)
                     at += 8 * dims
                     continue
-                if types[t] == b"ID" and nm in _ID_RUNTIME:
+                if (types[t] == b"ID" and nm in _ID_RUNTIME) or nm.startswith(b"_pad"):
                     run += range(at, at + tlen[ft] * dims)
                 if ft in strc:
                     sub = ptr_offsets(ft)
