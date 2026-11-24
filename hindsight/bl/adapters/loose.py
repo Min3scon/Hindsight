@@ -25,10 +25,13 @@ _TEXT_PROPS = ("filepath", "use_module", "indentation")
 # Datablocks whose custom properties and add-on data no object records: their own, file-level data.
 # (Object data, particle settings and materials an object uses are recorded with the object; node
 # groups with D133.)
+# object data: recorded with its object; snapshotted when it has none (kept with a fake user)
+_DATA_COLLS = ("meshes", "curves", "metaballs", "lattices", "armatures", "cameras", "lights", "lightprobes",
+               "speakers", "volumes", "pointclouds", "hair_curves")
 _SNAP_COLLS = ("images", "actions", "palettes", "brushes", "linestyles", "masks", "movieclips", "sounds",
-               "fonts", "cache_files", "paint_curves", "textures", "particles", "grease_pencils")
+               "fonts", "cache_files", "paint_curves", "textures", "particles", "grease_pencils") + _DATA_COLLS
 # recorded with what uses them; snapshotted when nothing does (grease_pencils: 4.2 annotations, 5.0 on objects' data)
-_WHEN_UNUSED = ("actions", "particles", "grease_pencils")
+_WHEN_UNUSED = ("actions", "particles", "grease_pencils") + _DATA_COLLS
 _PROP_COLLS = _SNAP_COLLS + ("texts",)
 _LOOSE_TURN = [0]
 SNAP_READ_MAX = 2          # D154: datablocks there were at the first read, snapshotted again per operation, in turn
@@ -49,6 +52,20 @@ def _remove(coll: str, idb) -> None:
     """Remove a datablock from the file (cache files and paint curves have no remove(): batch_remove)."""
     c = getattr(bpy.data, coll)
     c.remove(idb) if hasattr(c, "remove") else bpy.data.batch_remove([idb])
+
+
+def _ids(name: str):
+    """bpy.data.<name>; of a kind recorded with what uses it, only those nothing uses (object data: but a fake
+    user), found without a Python loop over the rest (foreach_get: a file has a mesh per object)."""
+    coll = getattr(bpy.data, name, ())
+    if name not in _WHEN_UNUSED or not len(coll):
+        return coll
+    users, fake = np.empty(len(coll), np.int32), np.empty(len(coll), bool)
+    coll.foreach_get("users", users)
+    coll.foreach_get("use_fake_user", fake)
+    unused = users <= fake
+    # D174: object data with no user at all is what deleting its object leaves (Blender drops it at save)
+    return [coll[int(i)] for i in np.flatnonzero(unused & fake if name in _DATA_COLLS else unused)]
 
 
 def _loose_mats():
@@ -98,7 +115,7 @@ def _file_snapshots(out: dict, inv: list, recorded=None) -> None:
     state again; a cheap per-type check would find it at once."""
     seen, old, failed = {}, [], []
     # every id first: a snapshot holds the ids of what its datablock uses (a brush's paint curve made with it)
-    todo = [(name, idb, u) for name in _SNAP_COLLS for idb in getattr(bpy.data, name, ())
+    todo = [(name, idb, u) for name in _SNAP_COLLS for idb in _ids(name)
             if _snappable(name, idb) and (u := idmap.claim(idb))]
     for name, idb, u in todo:
         c = _SNAPS.get(u)
@@ -327,7 +344,7 @@ def scene_loose(sc) -> dict:
             if p is not _ID_EMPTY4 and p is not _ID_EMPTY5:
                 out[LPROPS_PREFIX + mu] = p
     for name in _PROP_COLLS:
-        for idb in getattr(bpy.data, name, ()):
+        for idb in _ids(name) if name in _DATA_COLLS else getattr(bpy.data, name, ()):
             if idb.library is not None or (name == "texts" and idb.name == TEXT_NAME):
                 continue
             p = id_props(idb)
@@ -508,6 +525,8 @@ def flush_loose_removals() -> None:
                 if not _kept_by_record(idb, kind):
                     log.warn(f"{idb.name} was made after this point but can't be taken away: something uses it now")
                 continue
+            if kind in _DATA_COLLS and not idb.use_fake_user:
+                continue          # D174: object data with no user isn't recorded (Blender drops it at save)
             if kind in ("actions", "lm") and ((inv := _recorded_loose()) is None or uid in inv):
                 continue          # D162: data nothing uses where the jump went (or no inventory recorded)
             if kind == "actions":

@@ -143,6 +143,35 @@ KINDS["grease_pencils"] = (_fake_gp, lambda g: (len(g.layers), _r(g.layers[0].op
                            lambda g: (g.__setitem__("note", "changed"), setattr(g.layers[0], "opacity", 0.5)))
 
 
+def _fake(coll, *args):
+    """Object data no object uses, kept with a fake user."""
+    d = getattr(D, coll).new("Made", *args)
+    d.use_fake_user = True
+    return d
+
+
+def _tri():
+    _fake("meshes").from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+
+
+def _data_kind(coll, args, attr, value):
+    return (lambda: _fake(coll, *args), lambda d: (_r(getattr(d, attr)) if isinstance(value, float)
+                                                   else getattr(d, attr), d.use_fake_user),
+            lambda d: setattr(d, attr, value))
+
+
+KINDS["meshes"] = (_tri, lambda m: (len(m.polygons), _r(m.vertices[0].co), m.use_fake_user),
+                   lambda m: setattr(m.vertices[0], "co", (0.0, 0.0, 1.0)))
+KINDS["pointclouds"] = (lambda: _fake("pointclouds"), lambda p: (p.get("note"), p.use_fake_user),
+                        lambda p: p.__setitem__("note", "changed"))
+for _k in [("curves", ("CURVE",), "bevel_depth", 0.25), ("metaballs", (), "resolution", 0.5),
+           ("lattices", (), "points_u", 4), ("armatures", (), "display_type", "STICK"),
+           ("cameras", (), "lens", 85.0), ("lights", ("POINT",), "energy", 250.0),
+           ("lightprobes", ("VOLUME",), "influence_distance", 3.0), ("speakers", (), "volume", 0.5),
+           ("volumes", (), "frame_offset", 3), ("hair_curves", (), "surface_uv_map", "UV")]:
+    KINDS[_k[0]] = _data_kind(*_k)
+
+
 def walk(kind):
     make, state, change, *setup = KINDS[kind]
     coll = lambda: getattr(bpy.data, kind)
@@ -165,6 +194,46 @@ def _test(kind):
 
 
 TESTS = [_test(k) for k in KINDS]
+
+
+def test_object_data_its_object_left_with_a_fake_user():
+    """A mesh kept with a fake user is snapshotted once its object is deleted: going back over the mesh's
+    deletion makes it again, and going back over the object's gives the object that mesh again (one mesh,
+    with its id); forward the other way round."""
+    def setup():
+        D.objects["A"].data.name = "AMesh"
+        D.objects["A"].data.use_fake_user = True
+
+    def read():
+        ob, m = D.objects.get("A"), D.meshes.get("AMesh")
+        return (ob is not None and ob.data == m, m and len(m.vertices), m and idmap.uid_of(m),
+                sorted(x.name for x in D.meshes if x.name.startswith("AMesh")))
+    states = texts_walk(read, [("delete A", lambda: D.objects.remove(D.objects["A"])),
+                               ("delete mesh", lambda: D.meshes.remove(D.meshes["AMesh"]))], setup)
+    assert [s[0] for s in states] == [True, False, False] and states[1][1] == 8, states
+
+
+def test_object_data_its_object_left_with_no_user_is_not_snapshotted():
+    """D174: deleting an object leaves its mesh with no user (Blender drops it at save); only object data
+    kept with a fake user is snapshotted, or every operation after would write that mesh again."""
+    from hindsight.bl.adapters.keys import SNAP_PREFIX
+    _states, h = _scene_ops([("delete A", lambda: D.objects.remove(D.objects["A"]))],
+                            lambda: "A" in D.objects, lambda: setattr(D.objects["A"].data, "name", "AMesh"))
+    snaps = [v[3] for k, v in runtime._STATES[idmap.uid_of(bpy.context.scene)].values.items()
+             if k[1].startswith(SNAP_PREFIX) and v[0] == "meshes"]
+    assert len(h.entries) == 1 and D.meshes["AMesh"].users == 0 and snaps == [], (len(h.entries), snaps)
+
+
+def test_object_data_with_no_user_stays_over_a_jump():
+    """D174: object data with no user isn't recorded, so no jump takes it away either: it stays until Blender
+    drops it at save (going back over its object's deletion gives the object that mesh again)."""
+    def read():
+        ob, m = D.objects.get("A"), D.meshes.get("AMesh")
+        return (ob is not None and ob.data == m, m and len(m.vertices), "Img" in D.images,
+                sorted(x.name for x in D.meshes if x.name.startswith("AMesh")))
+    texts_walk(read, [("delete A", lambda: D.objects.remove(D.objects["A"])),
+                      ("make image", lambda: setattr(D.images.new("Img", 4, 4), "use_fake_user", True))],
+               lambda: setattr(D.objects["A"].data, "name", "AMesh"))
 
 
 def test_made_again_keeps_its_id_and_users():
@@ -568,6 +637,9 @@ REVIEW = [test_going_back_over_deleting_a_world_makes_no_material, test_made_aga
 
 if __name__ == "__main__":
     for t in TESTS + REVIEW + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
+                      test_object_data_its_object_left_with_a_fake_user,
+                      test_object_data_its_object_left_with_no_user_is_not_snapshotted,
+                      test_object_data_with_no_user_stays_over_a_jump,
                       test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again,
                       test_going_back_over_keying_takes_its_action_away,
                       test_going_back_over_a_slot_takes_the_material_it_made_away,
