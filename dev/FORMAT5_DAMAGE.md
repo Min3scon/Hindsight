@@ -118,9 +118,10 @@ Nothing is written before the user saves: a damaged file that is opened and clos
 | Steps | drops them, with the steps that could be reached only through them, and saves the reachable steps as the history | no build can repair a damaged step or reach past it, so keeping them would carry bytes nobody can use into every later save and show the note at every open |
 
 For the last row the save rebuilds the step parts that hold the first and the last reachable step and drops the step
-parts wholly outside them, as when the step cap drops a history's oldest steps and a new recording cuts its newest.
-The build settles whether the step parts in between are reused untouched or rebuilt once: that depends on how a step
-part numbers its first step after the oldest steps go, which the step cap needs settled too.
+parts wholly outside them, as when Delete earlier steps drops a history's oldest steps and a new recording cuts its
+newest. The build settles whether the step parts in between are reused untouched or rebuilt once: that depends on how a
+step part numbers its first step after the oldest steps go, which Delete earlier steps needs settled too (and the step
+cap, if `FORMAT5.md`'s owner point 8 keeps it).
 
 Unknown steps (#42) are not damage: they are kept and saved as they are.
 

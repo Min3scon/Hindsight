@@ -30,7 +30,7 @@ The same as today: every change to the history since the last save, one record p
 | STEP | a step is recorded | the history's uid, the step's position, the step's bytes: a packed step as it is, a raw step in the quick encoding (on a helper thread when it is big, R079) |
 | CURSOR | a jump | the history's uid and its cursor |
 | TRUNC | recording after going back cuts the steps ahead | the history's uid and how many steps it keeps |
-| DROP | the step cap, the memory limit or Delete earlier steps drops the oldest steps | the history's uid and how many |
+| DROP | the step cap, the memory limit or Delete earlier steps drops the oldest steps (the first two only if `FORMAT5.md`'s owner point 8 keeps them) | the history's uid and how many |
 | RESET | a history is cleared or rewritten (a join) | the history's uid and the cursor it was cleared at, or the meshes' fingerprints |
 | META | a history's members or settings change; with no history, a session going on after a recovery (`resync`) | the history's uid and what changed |
 | META_EVERYTHING | Record everything is turned on or off for something | its uid and on or off |

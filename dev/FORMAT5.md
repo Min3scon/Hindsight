@@ -46,7 +46,7 @@ steps change. A save after N new steps:
 - encodes only the N new steps (raw steps in the quick encoding, packed steps as they are);
 - builds the open step part of each history that changed (its older steps copied, not encoded), the full step parts
   it filled, and the step parts whose steps changed since the last save (the packer packed them smaller, the user went
-  back and recorded, the step cap dropped the oldest steps);
+  back and recorded, Delete earlier steps dropped the oldest steps);
 - rebuilds the index part, whose size grows with histories and step parts, not with steps;
 - hands every other step part to Blender as the bytes Hindsight already holds.
 
@@ -233,6 +233,13 @@ Each comes with a recommendation; none blocks the others.
    20,000 vertices. Recommended: treat it as a first stop and keep going towards about a kilobyte per step in the
    optimisation tickets, plus a round on the opening work that doesn't depend on the history (1.5 to 1.7 s on a
    1M-vertex mesh).
+8. **The step cap and the memory limit** (`DECISIONS.md`): today both drop a history's oldest steps on their own
+   (`max_steps`, 10,000 steps per object by default; `memory_limit_mb`, 4096 MB in all; `enforce_caps` in
+   `hindsight/core/store.py`). `DECISIONS.md` still lists the step cap (up to 100,000, default 10,000), but the
+   owner's later givens (2026-11-22) keep every step ("No merging or dropping of old steps"), and the design's target
+   of 100,000 steps is past the cap's default. Recommended: in V2 neither drops steps. The step cap goes, and the
+   memory limit warns instead of dropping. Steps then go only when the user asks: Delete earlier steps, or recording
+   after going back. No byte of format 5 changes either way, so #11 need not wait for it.
 
 ## What the build ticket does
 
@@ -247,8 +254,9 @@ Left to other tickets:
   deleting the parts after a save leaves the file unchanged in a real 4.2 window, and whether changing the Text at open
   marks the file as changed.
 - **#8**: removing what writes a history folder, and the Save history preference.
-- **The build**: how a step part numbers its first step after the step cap drops the oldest steps, which decides
-  whether the step parts after a drop are reused or rebuilt once (#43); and removing what writes formats 1 to 4.
+- **The build**: how a step part numbers its first step after the oldest steps go (Delete earlier steps, and the step
+  cap and the memory limit if point 8 keeps them), which decides whether the step parts after a drop are reused or
+  rebuilt once (#43); and removing what writes formats 1 to 4.
 
 With the owner's answer to point 4 above, #11 can start (its other blocker is #8): no question for the owner is left
 that changes the bytes of a format 5 file. The other points change later sub-issues only.
