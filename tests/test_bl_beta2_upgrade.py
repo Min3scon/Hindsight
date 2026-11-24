@@ -18,7 +18,7 @@ import bpy
 import numpy as np
 
 import tests.harness as H
-from hindsight.bl import persistence, runtime
+from hindsight.bl import persistence, prefs, runtime
 from hindsight.core.types import SETTINGS
 
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "beta2")
@@ -65,6 +65,7 @@ def check(want_s, want_o, what, opened_at=None):
 
 def open_file(blend):
     H.fresh()
+    prefs.FORCE["record_scope"] = "SCULPT"      # beta 2's default; with Everything, D46 adds a step on opening
     bpy.ops.wm.open_mainfile(filepath=blend)
 
 

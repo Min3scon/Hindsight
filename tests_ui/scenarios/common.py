@@ -146,3 +146,26 @@ def keymap_hits(idname):
     kc = bpy.context.window_manager.keyconfigs.addon
     return [(km.name, kmi.type, kmi.ctrl, kmi.shift) for km in kc.keymaps for kmi in km.keymap_items
             if kmi.idname == idname]
+
+
+def step_detail(st):
+    """A step (or its packed bytes) as (label, mesh channels, [(adapter, target, {path: (old, new)})]): what a
+    failed check prints, so a CI log says which step came and why."""
+    try:
+        if not hasattr(st, "records"):
+            st = importlib.import_module(f"{PKG}.core.step").step_from_bytes(st)
+        recs = [(r.adapter, r.target, {p: (repr(o)[:40], repr(n)[:40]) for p, (o, n) in sorted(r.changes.items())[:6]})
+                for r in st.records[:6]]
+        return st.label, [c.key for c in st.deltas][:6], recs
+    except Exception as e:      # only a check's detail: never the reason a check fails
+        return repr(e)
+
+
+def steps_detail(d, ob=None):
+    """The steps of the object's history (the active object's by default), each as step_detail gives it."""
+    try:
+        with d.override():
+            h = mod("runtime").history_of(ob or bpy.context.active_object)
+        return None if h is None else [step_detail(e.step if e.step is not None else e.blob) for e in h.entries]
+    except Exception as e:
+        return repr(e)

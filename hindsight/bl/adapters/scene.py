@@ -39,8 +39,9 @@ class SceneAdapter(Adapter):
             # settings aren't read then (their coming and going is no step, datarec._owner_moves)
             out["settings"] = scene_settings(idb)
             out.update(owned_world(idb))
-            _upd(out, "node groups", scene_groups, idb)          # D133
-            _upd(out, "data no object uses", scene_loose, idb)   # D151
+        # #104: read with Movie Mode on too: data that stopped being read would count as deleted
+        _upd(out, "node groups", scene_groups, idb)              # D133
+        _upd(out, "data no object uses", scene_loose, idb)       # D151
         return out
 
     def write(self, idb, values: dict, recorded=None) -> None:

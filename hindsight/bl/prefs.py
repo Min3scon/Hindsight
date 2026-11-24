@@ -81,9 +81,9 @@ def _update_kinds(self, context):
 
 
 RECORD_SCOPE_ITEMS = (
-    ('SCULPT', "Sculpting only", "Record sculpt and paint strokes, as before"),
-    ('EVERYTHING', "Everything", "Also record other changes on objects you switch on with Record everything "
-                                 "on this object (in the Undo History tab)"),
+    ('SCULPT', "Sculpting only", "Record sculpt and paint strokes only"),
+    ('EVERYTHING', "Everything", "Record sculpting and other changes in a file. To leave out an object "
+                                 "or a whole file, switch it off under Record in the Undo History tab"),
 )
 
 SAVE_MODE_ITEMS = (
@@ -164,7 +164,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
     record_scope: EnumProperty(
         name="Record",
         items=RECORD_SCOPE_ITEMS,
-        default='SCULPT',
+        default='EVERYTHING',
     )
     record_kinds: EnumProperty(
         name="Data kinds",

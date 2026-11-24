@@ -53,6 +53,9 @@ def make(d, folder, topo=False):
     C.dismiss_splash(d)
     yield 0.3
     C.fresh_sphere(d, segments=48, rings=24)
+    if topo:                # with the new sphere: with Record on Everything a later change is a step (#104)
+        with d.override():
+            bpy.context.active_object.data.remesh_voxel_size = 0.012
     C.frame_view(d)
     _set_recovery("INTERRUPTED")
     C.set_mode(d, "SCULPT")
@@ -68,7 +71,6 @@ def make(d, folder, topo=False):
         yield from C.real_stroke(d, 3)
         states.append(_state(d))
         with d.override():
-            bpy.context.active_object.data.remesh_voxel_size = 0.012
             bpy.ops.object.voxel_remesh()
         yield 1.5
         states.append(_state(d))
@@ -134,7 +136,8 @@ def check(d, folder):
     jr.close()
     d.check("Last saved: the three saved steps, the file's mesh, the journal started again",
             i is not None and i["len"] == saved and i["pos"] == saved and _state(d) == states[saved]
-            and recs is not None and not [r for r in recs if r[0] == "STEP"], (i, None if recs is None else [r[0] for r in recs]))
+            and recs is not None and not [r for r in recs if r[0] == "STEP"], (i, None if recs is None else [r[0] for r in recs],
+             [(r[1], C.step_detail(r[2])) for r in recs or () if r[0] == "STEP"]))
 
 
 def run(d, topo=False):

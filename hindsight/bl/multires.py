@@ -87,9 +87,11 @@ def restore(obj, arr) -> None:
     """Put the snapshot's mesh on the object: libraries.load, then user_remap. The object keeps its
     mesh's name, its materials (the load brings copies of them: they are put back and dropped) and its
     modifiers. Not in Sculpt Mode (the caller leaves it first)."""
+    from . import idmap
     raw = unpack(arr)
     old = obj.data
     name = old.name
+    uid = old.get(idmap.UID_PROP)
     mats = list(old.materials)
     before = {c: set(getattr(bpy.data, c)) for c in ("materials", "images", "meshes", "shape_keys")}
     path = _tmp_path()
@@ -108,6 +110,8 @@ def restore(obj, arr) -> None:
     old.user_remap(new)
     bpy.data.meshes.remove(old)
     new.name = name
+    if uid is not None:     # #104: and its id (one from an older snapshot is another mesh to Record everything)
+        new[idmap.UID_PROP] = uid
     for cat in ("materials", "images", "shape_keys"):
         coll = getattr(bpy.data, cat)
         for idb in [x for x in coll if x not in before[cat] and x.users == 0]:

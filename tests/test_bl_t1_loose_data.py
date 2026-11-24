@@ -211,6 +211,32 @@ def test_loose_making_survives_save_reload_and_recovery():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_material_nothing_keeps_is_left_out():
+    """#104: a material with no user, not even a fake one, isn't kept: a save leaves it out of the file.
+    It was recorded all the same, so a reopen found it gone and recorded "Changes Outside Hindsight"
+    (window scenario crash: a STEP in the journal right after a reopen with Last saved)."""
+    import shutil, tempfile
+    from hindsight.core.types import SETTINGS
+    tmp = tempfile.mkdtemp(prefix="hs_orphan104_")
+    try:
+        SETTINGS.save_mode = "SIDECAR"
+        L.fresh_scene()
+        L.track_all()
+        bpy.data.materials.new("Orphan")        # as the startup file's unused Grease Pencil materials
+        L.tick_like("baseline")
+        labels = lambda: [(e.meta or {}).get("label") for e in getattr(runtime.history_of(C.scene), "entries", [])]
+        before = labels()
+        path = os.path.join(tmp, "f.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        prefs.FORCE["record_scope"] = "EVERYTHING"
+        L.tick_like("after the reopen")
+        assert "Orphan" not in bpy.data.materials, "Blender left it out of the file"
+        assert labels() == before, (before, labels())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def test_no_extra_work_without_loose_datablocks():
     """D152 costs nothing when the file has none of these datablocks: capture reads two empty inventories
     and nothing else, and a jump that doesn't change an inventory looks at no datablock."""
@@ -367,7 +393,8 @@ def test_many_unused_materials_bounded_cost():
 if __name__ == "__main__":
     for t in (test_text_made_and_deleted, test_unused_material_made_and_deleted, test_unused_world_made_and_deleted,
               test_going_back_over_a_making_keeps_what_is_used_now, test_loose_making_on_the_global_timeline,
-              test_loose_making_survives_save_reload_and_recovery, test_no_extra_work_without_loose_datablocks,
+              test_loose_making_survives_save_reload_and_recovery, test_a_material_nothing_keeps_is_left_out,
+              test_no_extra_work_without_loose_datablocks,
               test_text_content_and_settings, test_unused_material_and_world, test_addon_data_on_any_datablock,
               test_material_an_object_uses_stays_with_the_object, test_many_unused_materials_bounded_cost):
         H.run(t)

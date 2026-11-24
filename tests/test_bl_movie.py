@@ -494,10 +494,81 @@ def test_visibility_change_on_the_same_frame():
     check(a, b, states, 3)
 
 
+def test_quick_auto_key_with_data_no_object_uses():
+    """#104: with Record on Everything, a file with data no object uses (a material library; in the
+    window the startup file's unused Grease Pencil materials) lost its timelapse. Movie Mode stopped
+    reading that data, so it counted as deleted: a step at each jump's position, and after Quick auto
+    key's jump to step 0 every later step was thrown away and every frame showed step 0 (window
+    scenario movie_mode)."""
+    from hindsight.bl import datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    loose = bpy.data.materials.new("Loose")     # no object uses it: kept with a fake user
+    loose.use_fake_user = True
+    datarec.record_file_default()               # what opening a file does: Everything in this file
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 1); assert H.commit(a) is not None
+    H.fake_stroke(a, 2); assert H.commit(a) is not None
+    end = H.snapshot(a)
+    H.enter(a, "OBJECT")
+    runtime.set_global(C, True)
+    sc, n = C.scene, runtime.scrub_info(C)["len"]
+    sc.hindsight.movie_mode = True
+    L.tick_like("Movie Mode on")
+    assert runtime.scrub_info(C)["len"] == n, ("turning Movie Mode on is no step", n, runtime.scrub_info(C))
+    sc.hindsight.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert "A" not in sc.objects, "step 0: before A was added"
+    L.tick_like("Quick auto key")               # what the timer does once the operator has finished
+    assert runtime.scrub_info(C)["len"] == n, ("no step at step 0, none lost", n, runtime.scrub_info(C))
+    sc.frame_set(sc.frame_start + n)
+    assert "A" in sc.objects, "the last frame shows the last step"
+    H.assert_same(H.snapshot(bpy.data.objects["A"]), end, "A as it was at the end")
+    assert loose.name in bpy.data.materials
+
+
+def test_lamps_follow_the_users_light_on_every_frame():
+    """#104: with Record on Everything a timelapse can bring the user's deleted light back (step 0) and
+    take it away again. Movie lighting's lamps follow in the same frame: before, only the timer put
+    them back, and it waits for a render to end, so every frame after the light's deletion rendered
+    without any light (window scenario movie_mode)."""
+    from hindsight.bl import camrig, datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    sc = C.scene
+    light = bpy.data.objects.new("Light", bpy.data.lights.new("Light", "POINT"))
+    sc.collection.objects.link(light)
+    datarec.record_file_default()
+    bpy.data.objects.remove(light)
+    L.tick_like("Delete")
+    H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    runtime.set_global(C, True)
+    sh = sc.hindsight
+    sh.movie_camera = sh.movie_lighting = True
+    sh.movie_mode = True
+    sh.movie_step = runtime.scrub_info(C)["len"]
+    camrig.ensure(sc)
+    lamps = set(camrig.LIGHT_ROLES)
+    assert lamps <= set(camrig.rig(sc)), camrig.rig(sc)
+    sh.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    for f, own in ((sc.frame_start, True), (sc.frame_start + 2, False), (sc.frame_start, True),
+                   (sc.frame_start + 1, False)):
+        sc.frame_set(f)
+        assert camrig.scene_has_own_light(sc) == own, (f, own)
+        assert (lamps & set(camrig.rig(sc))) == (set() if own else lamps), (f, sorted(camrig.rig(sc)))
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
-          test_frame_lists_objects_once, test_visibility_change_on_the_same_frame]:
+          test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
+          test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame]:
     H.run(f)
 H.finish()

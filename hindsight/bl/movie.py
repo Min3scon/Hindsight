@@ -108,8 +108,24 @@ def _apply(context, value) -> bool:
         runtime.goto._movie = prev
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
+    _lamps_follow(context.scene)
     _SHOWN.update(want=want, histories=_histories_key(vis))
     return True
+
+
+def _lamps_follow(scene) -> None:
+    """#104: a jump can bring the user's light back or take it away. Movie lighting's lamps follow in
+    the same frame, in a render too (the timer waits for it to end); one lamp the user deleted is left
+    to the timer."""
+    try:
+        from . import camrig
+    except ImportError:
+        return
+    if not scene.hindsight.movie_lighting:
+        return
+    roles = set(camrig.LIGHT_ROLES)
+    if bool(camrig.wanted(scene) & roles) != bool(set(camrig.rig(scene)) & roles):
+        camrig.ensure(scene, reframe=False)
 
 
 @guard.guarded("movie")

@@ -179,6 +179,8 @@ def registry_parts(reg, codec: str = "auto") -> list:
         "saved": getattr(reg, "saved", None) or {},
         "histories": hjson,
     }
+    if getattr(reg, "everything_chosen", False):
+        doc["everything_chosen"] = True  # the file keeps it, so the default stays off (#61; older builds ignore it)
     sid = getattr(reg, "save_id", None)
     if sid:
         doc["save_id"] = str(sid)       # ties the crash journal to this save (ignored by older builds)
@@ -261,6 +263,7 @@ def registry_from_bytes(b):
         reg.disabled = set(doc.get("disabled", []))
     if hasattr(reg, "everything"):
         reg.everything = set(doc.get("everything", []))
+    reg.everything_chosen = bool(doc.get("everything_chosen", False))
     max_seq = 0
     strings = {}                     # per load: label, mode, target and kind values shared between steps
     truncated = False
@@ -661,6 +664,8 @@ def replay(reg, records: list) -> int:
             t = header.get("uid")
             if t and hasattr(reg, "everything"):
                 (reg.everything.add if header.get("on") else reg.everything.discard)(t)
+                if not header.get("on"):        # #104: switched off is a choice the file keeps (#61)
+                    reg.everything_chosen = True
         elif rtype == "META":
             if not uid:
                 if header.get("resync"):

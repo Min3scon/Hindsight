@@ -384,6 +384,29 @@ def test_panel_draw_with_fake_layout():
 
 
 @test
+def test_record_texts_follow_the_everything_default():
+    """#62: what the user reads matches Record's default, Everything (#60). No preference, tooltip or
+    public page calls Sculpting only the default or Everything an extra to switch on."""
+    items = prefs.HINDSIGHT_AP_prefs.__annotations__["record_scope"].keywords["items"]
+    # the stored choice is the item's position: the order must never change (#61)
+    assert [i[0] for i in items] == ["SCULPT", "EVERYTHING"], items
+    everything = dict((i[0], i[2]) for i in items)["EVERYTHING"]
+    assert "switch it off" in everything and "Undo History tab" in everything, everything
+    from hindsight.bl import ops_core
+    root = os.path.join(os.path.dirname(__file__), "..")
+    texts = {"Record choices": " ".join(i[2] for i in items),
+             "Record Everything on This Object": ops_core.HINDSIGHT_OT_record_everything.bl_description,
+             "Record Everything in This File": ops_core.HINDSIGHT_OT_record_file.bl_description}
+    for name in ("README.md", "GLOSSARY.md", "COVERAGE.md"):
+        with open(os.path.join(root, name), encoding="utf-8") as f:
+            texts[name] = f.read()
+    old = ("strokes, as before", "Also record", "opt-in", "off until you switch it on", "default is Sculpting only",
+           "Sculpting only (the default)", "Needs Record set to Everything")
+    found = [(name, o) for name, t in texts.items() for o in old if o in t]
+    assert not found, found
+
+
+@test
 def test_record_everything_switches_and_other_objects():
     """V1-V3 (Tier 1 visual review): with Record set to Everything the two switches are in the part
     the sidebar and the popover share (not inside the collapsed History options), an empty that is
