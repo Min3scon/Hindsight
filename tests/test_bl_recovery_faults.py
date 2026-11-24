@@ -16,7 +16,7 @@ import tempfile
 
 import bpy
 import tests.harness as H
-from hindsight.bl import runtime, persistence, joinsep, prefs
+from hindsight.bl import runtime, persistence, joinsep
 from hindsight.core import persist
 from hindsight.core.journal import Journal
 from hindsight.core.types import SETTINGS
@@ -27,7 +27,6 @@ TMP = tempfile.mkdtemp(prefix="hindsight_recovery_faults_")
 
 def setup(mode="SIDECAR", recovery="INTERRUPTED"):
     H.fresh()
-    prefs.FORCE["record_scope"] = "SCULPT"      # the oracle keeps sculpt strokes only (Book)
     SETTINGS.save_mode = mode
     SETTINGS.crash_recovery = recovery
     SETTINGS.max_steps = 10000
