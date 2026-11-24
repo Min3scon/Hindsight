@@ -307,12 +307,12 @@ def test_custom_node_tree():
     walk(h, states, read)
 
 
-def test_a_save_on_blender_4_is_no_change_to_a_camera():
-    """#104: Blender 4 writes a camera's panorama settings into a "cycles" group of its data's custom
-    properties at each save (for older versions) and keeps the group when the file is read. Record
-    everything took that for a change made outside Hindsight: a step on the first reopen of a file with a
-    camera (window scenario crash on 4.2: a STEP in the journal right after a reopen with Last saved).
-    The group copies settings recorded anyway, so it isn't recorded."""
+def test_a_save_is_no_change_to_a_camera():
+    """#104: Blender writes a camera's panorama settings into a "cycles" group of its data's custom
+    properties (Blender 5: of its add-on data) at each save, for older versions, and keeps the group when
+    the file is read. Record everything took that for a change made outside Hindsight: a step on the first
+    reopen of a file with a new camera (window scenario crash on 4.2: a STEP in the journal right after a
+    reopen with Last saved). The group copies settings recorded anyway, so it isn't recorded."""
     import shutil, tempfile
     from hindsight.bl import prefs
     from hindsight.core.types import SETTINGS
@@ -331,7 +331,8 @@ def test_a_save_on_blender_4_is_no_change_to_a_camera():
         bpy.ops.wm.open_mainfile(filepath=path)
         prefs.FORCE["record_scope"] = "EVERYTHING"
         L.tick_like("after the reopen")
-        assert labels() == before, (before, labels(), list(bpy.data.cameras["Cam"].keys()))
+        assert labels() == before, (before, labels(), list(bpy.data.cameras["Cam"].keys()),
+                                     [e.step.records for e in runtime.history_of(bpy.data.objects["Cam"]).entries if e.step])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -346,6 +347,6 @@ if __name__ == "__main__":
     H.run(test_deleted_object_keeps_them)
     H.run(test_animated_custom_prop_left_out)
     H.run(test_custom_node_tree)
-    H.run(test_a_save_on_blender_4_is_no_change_to_a_camera)
+    H.run(test_a_save_is_no_change_to_a_camera)
     addon_off()
     H.finish()
