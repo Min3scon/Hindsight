@@ -74,7 +74,7 @@ def main(argv=None):
     npass = sum(int(m.group("p")) for m in rows)
     secs = time.time() - t0
     md = [f"### {mode}", "",
-          f"{len(rows) - len(bad) - len(kfail)}/{len(rows)} files ok, {npass} PASS lines, {secs:.0f} s"
+          f"{len(rows) - len(bad) - len(kfail)}/{len(rows)} files ok, {npass} PASS lines, {secs:.0f} s",
           ""]
     if bad:
         md += ["Failed files:"] + [f"- `{m.group('file')}` (pass={m.group('p')} fail={m.group('f')} rc={m.group('rc')})"
