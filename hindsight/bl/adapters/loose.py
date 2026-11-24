@@ -25,7 +25,8 @@ _TEXT_PROPS = ("filepath", "use_module", "indentation")
 # (Object data, particle settings and materials an object uses are recorded with the object; node
 # groups with D133.)
 _SNAP_COLLS = ("images", "actions", "palettes", "brushes", "linestyles", "masks", "movieclips", "sounds",
-               "fonts", "cache_files", "paint_curves", "textures")
+               "fonts", "cache_files", "paint_curves", "textures", "particles")
+_USED_BY_OBJECTS = ("actions", "particles")   # recorded with the object that uses them; snapshotted when none does
 _PROP_COLLS = _SNAP_COLLS + ("texts",)
 _LOOSE_TURN = [0]
 SNAP_READ_MAX = 2          # D154: datablocks there were at the first read, snapshotted again per operation, in turn
@@ -53,10 +54,10 @@ def _loose_mats():
 
 def _snappable(name, idb) -> bool:
     """A file-level datablock D154 snapshots: local; not Blender's render and viewer images; not an action
-    something uses (its object records it)."""
+    or particle settings something uses (its object records it)."""
     if idb.library is not None or getattr(idb, "type", "") in ("RENDER_RESULT", "COMPOSITING"):
         return False
-    return name != "actions" or _unused(idb)
+    return name not in _USED_BY_OBJECTS or _unused(idb)
 
 
 def _b64(raw: bytes) -> str:

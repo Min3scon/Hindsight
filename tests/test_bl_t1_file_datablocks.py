@@ -93,6 +93,9 @@ KINDS = {
     "actions": (lambda: setattr(D.actions.new("Made"), "use_fake_user", True),
                 lambda a: (a.use_frame_range, _r(a.frame_start), _r(a.frame_end), a.use_fake_user),
                 lambda a: (setattr(a, "use_frame_range", True), setattr(a, "frame_end", 42.0))),
+    "particles": (lambda: setattr(D.particles.new("Made"), "use_fake_user", True),     # no object uses it
+                  lambda p: (p.count, _r(p.lifetime), p.use_fake_user),
+                  lambda p: (setattr(p, "count", 77), setattr(p, "lifetime", 12.5))),
     "palettes": (lambda: setattr(D.palettes.new("Made").colors.new(), "color", (0.1, 0.2, 0.3)),
                  lambda p: tuple(_r(c.color) for c in p.colors),
                  lambda p: setattr(p.colors[0], "color", (0.7, 0.6, 0.5))),
