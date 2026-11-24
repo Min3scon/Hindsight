@@ -152,7 +152,8 @@ def test_session_writes_only_what_is_listed():
 
 
 def test_saving_an_unrecorded_file_adds_nothing():
-    """D29 and D30, with Record set to Sculpting only (the default is checked below)."""
+    """D29 and D30, with Record set to Sculpting only: a visit to each mode adds nothing. With the
+    default (Everything) only a file saved untouched is checked below, not these mode visits."""
     for mode in ("OBJECT", "SCULPT", "VERTEX_PAINT", "EDIT"):
         H.fresh()
         prefs.FORCE["record_scope"] = "SCULPT"
