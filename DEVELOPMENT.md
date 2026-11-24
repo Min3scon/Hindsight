@@ -324,7 +324,7 @@ Other limits of the verification:
   question, Movie Mode playback, Rust engine, redraw cost, saving and the re-packer).
 - Scripts in `bench/`: `bench_bl.py`, `bench_core.py`, `bench_codec.py`, `bench_format.py`,
   `bench_dict.py`, `bench_native.py` (`--jumps` compares apply_steps, the per-function module and
-  Python), `bench_movie.py`, `mem_profile.py`, `mem_speed.py`, `mem_speed_core.py`, `saveload_bench.py`,
+  Python), `bench_movie.py`, `mem_profile.py`, `held_once_mem.py` (memory after opening and peak during a save, A/B, #58), `mem_speed.py`, `mem_speed_core.py`, `saveload_bench.py`,
   `packer_bench.py`, `perf_log.py`, `scrub_ab.py`, `scrub_compare.py`, `bench/lab/`. Results as JSON:
   `bench/results_*.json`; the older prose is `bench/RESULTS.md`.
 - Not in the repository (they lived in the session scratchpad and are lost): the DRAW redraw benchmark
