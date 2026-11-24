@@ -48,9 +48,8 @@ _LEFT: dict = {}           # uid -> snapshot record of an action a jump took awa
 
 
 def _unused(idb) -> bool:
-    """No user but its fake user (a library kept for later, data an add-on keeps). One without even
-    that isn't kept: a save leaves it out (#104: a reopen then counted it as deleted)."""
-    return idb.library is None and idb.use_fake_user and idb.users <= 1
+    """No user but its fake user (a library kept for later, data an add-on keeps)."""
+    return idb.library is None and idb.users - int(bool(idb.use_fake_user)) <= 0
 
 
 def _remove(coll: str, idb) -> None:
@@ -83,7 +82,11 @@ def _ids(name: str):
 
 
 def _loose_mats():
-    return [m for m in bpy.data.materials if _unused(m)] + [w for w in bpy.data.worlds if _unused(w)]
+    """D151's materials and worlds: only those a fake user keeps. One without even that isn't kept: a save
+    leaves it out (#104: a reopen then counted it as deleted). (#116: not in _unused, which a jump uses to
+    take away what it went back over the making of, kept or not.)"""
+    kept = lambda i: i.use_fake_user and _unused(i)
+    return [m for m in bpy.data.materials if kept(m)] + [w for w in bpy.data.worlds if kept(w)]
 
 
 def _snappable(name, idb) -> bool:
@@ -527,11 +530,13 @@ def made_again(uid: str):
     return _load_snapshot(uid, rec, {}, None) if rec else None
 
 
-def flush_loose_removals() -> None:
+def flush_loose_removals() -> bool:
     """D152: end of a jump: remove the datablocks it went back (or forward) over the making of, unless
-    something uses them now (never a datablock an object or scene uses: it is said in a note)."""
+    something uses them now (never a datablock an object or scene uses: it is said in a note).
+    True when one stays that nothing Hindsight records uses (#116: the caller makes it the position's own)."""
+    stays = False
     if not _LOOSE_GONE:
-        return
+        return stays
     todo = dict(_LOOSE_GONE)
     _LOOSE_GONE.clear()
     for uid, kind in todo.items():
@@ -542,6 +547,7 @@ def flush_loose_removals() -> None:
             if not _unused(idb):
                 if not _kept_by_record(idb, kind):
                     log.warn(f"{idb.name} was made after this point but can't be taken away: something uses it now")
+                    stays = True
                 continue
             if kind in _OFF_SCENE and not idb.use_fake_user and (kind != "collections" or uid in COLL_NAMES):
                 continue          # D174: object data with no user isn't recorded (Blender drops it at save);
@@ -555,6 +561,7 @@ def flush_loose_removals() -> None:
             _remove(_LOOSE_COLL.get(kind, kind), idb)
         except Exception as e:
             log.error_once(("loose_rm", uid, str(e)), f"could not take away {getattr(idb, 'name', uid)}: {e}", e)
+    return stays
 
 
 def forget_loose_data() -> None:

@@ -509,6 +509,7 @@ def test_quick_auto_key_with_data_no_object_uses():
     a = H.make_mesh(1200, "A")
     L.tick_like("add A")
     H.enter(a, "SCULPT")
+    L.tick_like("enter Sculpt Mode")            # #116: what the timer does (on 4.2 Sculpt Mode makes a brush)
     H.fake_stroke(a, 1); assert H.commit(a) is not None
     H.fake_stroke(a, 2); assert H.commit(a) is not None
     end = H.snapshot(a)
