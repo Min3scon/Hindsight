@@ -218,7 +218,8 @@ def test_embed_save_fails_before_the_old_copy_is_touched():
         "reading the last save back leaves no library behind"
     assert not [f for f in os.listdir(TMP) if f.endswith(".hindsight.blend")], "nor the link it was read through"
     book.stroke(obs["B"], 30)            # recorded after the failed save, then interrupted
-    for rec in ("LAST_SAVED", "INTERRUPTED"):
+    # INTERRUPTED first: opening with LAST_SAVED starts the journal again
+    for rec in ("INTERRUPTED", "LAST_SAVED"):
         SETTINGS.crash_recovery = rec
         interrupt(path)
         ha = runtime.history_of(bpy.data.objects["A"])
@@ -228,6 +229,9 @@ def test_embed_save_fails_before_the_old_copy_is_touched():
             f"{rec}: A's history from the save before is never played onto this mesh"
         hb = runtime.history_of(bpy.data.objects["B"])
         assert hb is not None and len(hb.entries) >= 3, (rec, hb)
+        if rec == "INTERRUPTED":
+            # the .blend kept the save before, so the crash journal since that save stays with it
+            assert len(hb.entries) == 4, f"B's stroke after the failed save was not brought back ({len(hb.entries)})"
         check(book, file_state, rec)
 
 

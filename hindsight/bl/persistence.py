@@ -68,7 +68,8 @@ _PROTECT = {"sidecar": False, "embed": False}
 _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 
 _J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12]}    # live journal of the session file
-_FALLBACK = {"sidecar": False}   # the history couldn't be stored in the .blend: on_save_pre saw to the folder
+# the history couldn't be stored in the .blend: on_save_pre saw to the folder (sidecar), which failed too (kept)
+_FALLBACK = {"sidecar": False, "kept": False}
 _FROM_TEXT = [False]             # the history loaded last was read from the .blend's Text
 
 
@@ -345,7 +346,7 @@ def on_save_pre(*args) -> None:
     runtime.end_paused(now=True)      # D153: and a Dyntopo visit that paused recording
     runtime.drop_unused_uids()
     drop_default_settings()
-    _FALLBACK["sidecar"] = False
+    _FALLBACK["sidecar"] = _FALLBACK["kept"] = False
     path = _handler_path(args)
     if not _writes_anything(path):
         return
@@ -416,6 +417,7 @@ def _store_elsewhere(text, reg, path) -> None:
             persist.save_sidecar(reg, path)
     except Exception as e:
         guard.fail("saving", e, "could not write the undo history folder")
+        _FALLBACK["kept"] = True         # on_save_post keeps the journal: it goes with the last save
         try:
             _keep_last_saved(text)
             _note("ERROR", KEPT_LAST_SAVE_TEXT)
@@ -498,8 +500,9 @@ def on_save_post(*args) -> None:
         _drop_copy(text)
     mode = _mode()
     folder = mode in ("SIDECAR", "BOTH") and not _FALLBACK["sidecar"]
-    _FALLBACK["sidecar"] = False
-    folder_failed = False
+    # #56: the .blend kept the last save's history (folder failed too): the journal since that save stays
+    folder_failed = _FALLBACK["kept"]
+    _FALLBACK["sidecar"] = _FALLBACK["kept"] = False
     if folder and _PROTECT["sidecar"] and os.path.isfile(persist.sidecar_file(path)):
         runtime.log.warn("history folder left untouched: it was saved by a newer Hindsight")
     elif folder:
@@ -515,9 +518,9 @@ def on_save_post(*args) -> None:
     if current and not _same_path(path, current):
         return   # "Save Copy": the session file itself did not change
     if folder_failed:
-        # The folder still holds the save before this one, and the journal goes with that save:
-        # keep it. The .blend names this save, so opening it knows the folder is older and its
-        # check of every mesh leaves out the histories that no longer fit (D46).
+        # The folder (or, kept, the .blend) still holds the save before this one, and the journal goes
+        # with that save: keep it. Otherwise the .blend names this save, so opening it knows the folder is
+        # older and its check of every mesh leaves out the histories that no longer fit (D46).
         runtime.missing_message[0] = None
         return
     try:
