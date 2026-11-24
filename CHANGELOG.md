@@ -2,9 +2,11 @@
 
 All notable changes to Hindsight. Dates are when the release went out.
 
-## 1.0.0-beta.3
+## 2.0.0 (V2, not released yet)
 
 Record everything now covers almost everything in a file, add-ons' data included; Weight Paint, texture painting, Multires and Dyntopo can be recorded; Movie Mode sets up its own camera and lighting, a timelapse needs fewer frames and less time per frame, long sessions use less memory, and Hindsight now works on Blender 5.2 and 5.3.
+
+Still to come in this section as their tickets land: the history always inside the .blend (no history folder option; files saved with beta 2 move in at the next save), Record everything as the default, and every step kept exactly.
 
 This build was tested headless on Blender 4.2 and 5.0 to 5.3, and in real Blender windows on 5.3 and 4.2: painting in every mode, Multires, Dyntopo, Movie Mode with its renders, the slider and the earlier test rounds. The release rounds on 5.0 to 5.2 in a window are still to come.
 
@@ -56,7 +58,7 @@ Faster and lighter:
 - Once the memory limit is reached, a stroke no longer rescans every step.
 - Saving with the history inside the .blend needs about half the extra memory it did: 74 to 86 MB instead of 143 MB at 6,000 steps.
 - History inside the .blend (Save mode Embed or Both) is stored as it is instead of as text. With 6,000 steps of a 100k-vertex mesh, saving takes about 0.2 s instead of 0.4 s, opening 0.15 s instead of 0.35 s, and saving needs 54 MB of extra memory instead of 72 MB.
-- A file saved without Compress File (the Blender 4.2 default) is about a quarter smaller with the history inside: 60 MB instead of 78 MB. Beta 2 opens such a file without its history.
+- A file saved without Compress File (the Blender 4.2 default) is about a quarter smaller with the history inside: 60 MB instead of 78 MB. Version 1.0.0-beta.2 opens such a file without its history.
 - Opening a file after a crash keeps the recovered steps packed, as saved steps are, and reads the crash record once instead of twice. With 3,000 unsaved strokes of a 100k-vertex mesh, opening takes 0.14 s instead of 0.23 s, and the recovered history takes 32 MB of memory instead of 92 MB.
 - Saving a 1M-vertex mesh right after sculpting is quicker: the newest strokes, kept unpacked for quick undo, are packed for the file on several cores. With 64 such strokes that part of the save takes 22 ms instead of 54 ms.
 - Each recorded mesh needs less memory: while you pause, the mesh's connectivity that Hindsight keeps for comparison is packed. A 1.5M-vertex remeshed sculpt holds 87 MB instead of 140 MB, a 1M-vertex grid 12 MB instead of 61 MB.
