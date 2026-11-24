@@ -6,7 +6,7 @@ All notable changes to Hindsight. Dates are when the release went out.
 
 Record everything now covers almost everything in a file, add-ons' data included; Weight Paint, texture painting, Multires and Dyntopo can be recorded; Movie Mode sets up its own camera and lighting, a timelapse needs fewer frames and less time per frame, long sessions use less memory, and Hindsight now works on Blender 5.2 and 5.3.
 
-Still to come in this section as their tickets land: the history always inside the .blend (no history folder option; files saved with beta 2 move in at the next save), Record everything as the default, and every step kept exactly.
+Still to come in this section as their tickets land: the history always inside the .blend (no history folder option; files saved with V1 move in at the next save), Record everything as the default, and every step kept exactly.
 
 This build was tested headless on Blender 4.2 and 5.0 to 5.3, and in real Blender windows on 5.3 and 4.2: painting in every mode, Multires, Dyntopo, Movie Mode with its renders, the slider and the earlier test rounds. The release rounds on 5.0 to 5.2 in a window are still to come.
 

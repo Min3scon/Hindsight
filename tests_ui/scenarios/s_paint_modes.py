@@ -1,4 +1,4 @@
-"""Weight Paint, Vertex Paint and Texture Paint in a real window (D140, D141, beta 3).
+"""Weight Paint, Vertex Paint and Texture Paint in a real window (D140, D141, V2).
 
 One real stroke in each mode (simulated mouse input in the viewport) must be exactly one step,
 and dragging the on-screen slider back must put the weights, the colours and the image back;

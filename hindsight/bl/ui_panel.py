@@ -16,7 +16,7 @@ import bpy
 from . import reg
 
 from . import guard
-from .beta import ISSUES_URL
+from .notice import ISSUES_URL
 from .prefs import draw_scrubber_props, get_prefs
 from .ctx import active_object as _ctx_active
 
@@ -383,7 +383,7 @@ def draw_help(layout, context):
     sub.scale_y = 0.85
     if s:
         sub.label(text="Last self-check: " + s)
-    sub.label(text=f"Hindsight {addon_version()}. Beta: back up your files.")
+    sub.label(text=f"Hindsight {addon_version()}. Back up your files.")
 
 
 def _draw_memory_readout(layout, stats):
@@ -403,10 +403,6 @@ class VIEW3D_PT_hindsight(bpy.types.Panel):
     bl_category = CATEGORY
     bl_label = "Undo History"
     bl_order = 0
-
-    def draw_header_preset(self, context):
-        from .beta import draw_header_tag
-        draw_header_tag(self.layout)
 
     def draw(self, context):
         layout = self.layout
