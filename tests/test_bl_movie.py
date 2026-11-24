@@ -599,12 +599,49 @@ def test_a_change_waiting_to_be_recorded_survives_a_jump_back():
     assert sc.get("take") == 2.0
 
 
+def test_a_stroke_at_the_end_moves_the_step_value():
+    """#107: a stroke made at the end while Movie Mode is on moves the Step value onto it. Before, the
+    Step value stayed one step back: the next playback jumped back one step and, with Record on
+    Everything, a later change (render settings in the window scenario movie_mode) then threw the
+    stroke away."""
+    from hindsight.bl import datarec, idmap
+    from tests import t1_gate_lib as L
+    H.fresh()
+    datarec.record_file_default()               # what opening a file does: Everything in this file
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 1); assert H.commit(a) is not None
+    runtime.set_global(C, True)
+    sc, sh = C.scene, C.scene.hindsight
+    n = runtime.scrub_info(C)["len"]
+    sh.movie_mode = True
+    sh.movie_step = n                           # the end
+    H.fake_stroke(a, 2); assert H.commit(a) is not None
+    s1 = H.snapshot(a)
+    sc.frame_set(sc.frame_current + 1)          # playback, before the timer has run
+    H.assert_same(H.snapshot(a), s1, "playback keeps the stroke on screen")
+    assert sh.movie_step == n + 1, ("the Step value follows the stroke", n, sh.movie_step)
+    H.fake_stroke(a, 3); assert H.commit(a) is not None
+    s2 = H.snapshot(a)
+    runtime.tick()                              # the timer sees this stroke first
+    assert sh.movie_step == n + 2, ("the timer moves the Step value", n, sh.movie_step)
+    sc.frame_set(sc.frame_current + 1)
+    H.assert_same(H.snapshot(a), s2, "playback keeps the second stroke")
+    sc["take"] = 2.0                            # a later change (the scenario: render settings), one more step
+    datarec._DIRTY[idmap.uid_of(sc)] = datarec._now()
+    datarec.commit(label="Change", settled=True)
+    assert runtime.scrub_info(C)["len"] == n + 3, ("no stroke thrown away", n, runtime.scrub_info(C))
+    H.assert_same(H.snapshot(a), s2)
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
           test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
           test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame,
-          test_a_change_waiting_to_be_recorded_survives_a_jump_back]:
+          test_a_change_waiting_to_be_recorded_survives_a_jump_back,
+          test_a_stroke_at_the_end_moves_the_step_value]:
     H.run(f)
 H.finish()
