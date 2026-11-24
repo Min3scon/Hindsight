@@ -118,7 +118,6 @@ def check_markdown(path):
 
 def check_yaml_text(path):
     for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        m = re.match(r"\s*(?:-\s*)?(?:label|description|placeholder|about|name|title|value|body)?:?\s*(.*)$", line)
         text = line.split(":", 1)[1] if ":" in line and not line.strip().startswith("-") else line
         text = text.strip().strip('"').strip("'").strip("|").strip(">")
         if re.search(r"[A-Za-z]{3,}\s+[A-Za-z]{2,}", text):

@@ -22,7 +22,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from hindsight.bl import datarec, idmap, persistence, runtime
+from hindsight.bl import datarec, idmap, runtime
 from hindsight.core import persist
 from hindsight.core.types import SETTINGS
 

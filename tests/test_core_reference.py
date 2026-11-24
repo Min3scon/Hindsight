@@ -11,6 +11,7 @@ reference writes identical bytes (checked below), so one corpus stands for all t
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import ast
+import importlib
 import json
 import struct
 import traceback
@@ -80,7 +81,8 @@ def test_nothing_in_hindsight_imports_the_reference():
             if "tests/reference" in text.replace("\\", "/") and "import" in text and "tests.reference" in text:
                 bad.append((os.path.relpath(path, ROOT), "mentions tests.reference"))
     assert not bad, bad
-    import hindsight.core.step, hindsight.core.codec              # noqa: F401
+    for name in ("step", "codec"):
+        importlib.import_module(f"hindsight.core.{name}")
     loaded = [m for m in sys.modules if m.startswith("hindsight.") and getattr(sys.modules[m], "__file__", "")
               and "reference" in os.path.relpath(sys.modules[m].__file__, ROOT).split(os.sep)]
     assert not loaded, loaded
@@ -557,7 +559,7 @@ def test_errors_and_exceptions():
             pass
         else:
             raise AssertionError(bad)
-    st = captured_steps(1, n_steps=5)[0]
+    captured_steps(1, n_steps=5)[0]
     for kw in ({"kind": "NOPE"},):
         try:
             stepmod.step_to_bytes(Step(1, "l", "m", "t", 0.0, kw["kind"], []))
@@ -633,7 +635,7 @@ def test_record_equals_diff_and_encode():
     """record(): the whole stroke in one engine call gives the bytes of diff per channel, a Step and
     the Python reference writing it (every channel type, runs and scatters, channels that appear or
     go, a changed empty channel, sizes that differ, nothing changed)."""
-    from hindsight.core.types import ADD, CHANNEL_TYPES, ChannelDelta, make_key
+    from hindsight.core.types import CHANNEL_TYPES, make_key
     keys = [make_key(f"c_{t.lower()}", "POINT", t) for t in CHANNEL_TYPES]
     rng = np.random.default_rng(21)
     n = 0
@@ -643,7 +645,6 @@ def test_record_equals_diff_and_encode():
         for key in keys:
             if rng.random() < 0.3:
                 continue
-            dt = np.dtype(ns.key_dtype(key))
             w = ns.key_width(key)
             old = ns.values(rng, key, nv)
             how = ["run", "scatter", "nudge", "all", "same"][int(rng.integers(5))]

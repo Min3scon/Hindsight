@@ -11,12 +11,11 @@ import traceback
 
 import numpy as np
 
-from hindsight.core import codec, delta, native, step as stepmod
+from hindsight.core import codec, delta, step as stepmod
 from hindsight.core.history import History, MeshState
 from hindsight.core.persist import registry_from_bytes, registry_to_bytes
 from hindsight.core.registry import Registry
-from hindsight.core.types import (CORNER_EDGE_KEY, CORNER_VERT_KEY, DATA, DELTA, EDGE_VERTS_KEY, FACE_OFFSETS_KEY,
-                                  JOIN, POSITION_KEY, TOPO, ChannelDelta, DataChange, Entry, Snapshot, Step)
+from hindsight.core.types import CORNER_EDGE_KEY, CORNER_VERT_KEY, DATA, DELTA, EDGE_VERTS_KEY, FACE_OFFSETS_KEY, POSITION_KEY, TOPO, DataChange, Entry, Snapshot, Step
 
 RNG = np.random.default_rng(11)
 
@@ -163,7 +162,6 @@ def test_caps_truncate_save_and_reload():
         h2.goto(pos, {"o": b})
         assert key(a) == key(b), pos
     # drop the oldest steps: the next step still holds its `before` (it is its own reference)
-    first = h.entries[0].step
     keep = {k: v.copy() for k, v in h.entries[1].step.before.arrays.items()} if h.entries[1].step.kind == TOPO else None
     h.goto(n, {"o": a})
     h.drop_oldest(1)

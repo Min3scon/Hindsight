@@ -1,6 +1,6 @@
 """R069: an Edit Mode operator that keeps the counts (Smooth Vertices), Record everything, 300k vertices:
 finish_operation with the baseline's topology packed (compared by checksum) and unpacked (by arrays)."""
-import os, sys, time, statistics, json
+import sys, time, statistics, json
 ROOT = sys.argv[1]; sys.path.insert(0, ROOT)
 import bpy, bmesh
 import tests.harness as H

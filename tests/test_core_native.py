@@ -20,7 +20,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 from reference import pure, delta as rdelta                   # noqa: E402
 import test_core_codec as tc                      # noqa: E402  (its damaged-input generator and cases)
-from hindsight.core import codec, delta, native, step as stepmod   # noqa: E402
+from hindsight.core import delta, native, step as stepmod
 from hindsight.core.types import ADD, CHANNEL_TYPES, DELTA, XOR, ChannelDelta, Step, make_key   # noqa: E402
 
 RNG = np.random.default_rng(20261118)

@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference co
 from reference import delta as rdelta                 # noqa: E402
 from hindsight.core import delta, step as stepmod     # noqa: E402
 from hindsight.core.native import ENGINE              # noqa: E402
-from hindsight.core.types import ADD, DELTA, Step, make_key   # noqa: E402
+from hindsight.core.types import DELTA, Step, make_key
 
 RNG = np.random.default_rng(71)
 DT = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}

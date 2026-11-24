@@ -841,7 +841,6 @@ def test_replay_join_rewrite_and_resync():
     after the steps that are part of the file. A "resync" record starts the bookkeeping again."""
     from hindsight.core.history import History
     from hindsight.core.persist import replay
-    from hindsight.core.step import step_to_bytes
 
     def two(a_seqs=(1, 2)):
         reg, ha = _saved_history(0, 0, "HA", "objA")
