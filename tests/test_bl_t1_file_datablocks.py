@@ -270,6 +270,27 @@ def test_a_collection_only_an_instance_uses_is_made_again():
     assert states[0][0] == ["InInst"], states
 
 
+def test_a_collection_instance_points_at_its_collection_made_again():
+    """D178: deleting the collection an instance uses is a scene step, and the instance's cleared pointer a step
+    of its own. Going back over both on the global timeline points the instance at the collection again: the
+    instance is written before the scene makes the collection again, so its pointer waits for it."""
+    def setup():
+        c = D.collections.new("Inst")
+        e = D.objects.new("Instancer", None)
+        e.instance_type, e.instance_collection = "COLLECTION", c
+        bpy.context.scene.collection.objects.link(e)
+    read = lambda: (getattr(D.objects["Instancer"].instance_collection, "name", None), "Inst" in D.collections)
+    states, _h = _scene_ops([("delete Inst", lambda: D.collections.remove(D.collections["Inst"]))], read, setup)
+    sp = bpy.context.scene.hindsight
+    sp.use_global = True
+    try:
+        for pos in (0, 1, 0):
+            runtime.global_goto(bpy.context, pos)
+            assert read() == states[pos], (pos, read(), states[pos])
+    finally:
+        sp.use_global = False
+
+
 def test_a_collection_holding_a_scene_object_leaves_it_to_the_object():
     """D177: a collection no scene holds but holding a scene's object (light linking does that) isn't
     snapshotted: going back over the object's deletion brings the object back into the scene, not a copy."""
@@ -686,6 +707,7 @@ if __name__ == "__main__":
                       test_object_data_its_object_left_with_no_user_is_not_snapshotted,
                       test_object_data_with_no_user_stays_over_a_jump,
                       test_a_collection_only_an_instance_uses_is_made_again,
+                      test_a_collection_instance_points_at_its_collection_made_again,
                       test_a_collection_holding_a_scene_object_leaves_it_to_the_object,
                       test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again,
                       test_going_back_over_keying_takes_its_action_away,

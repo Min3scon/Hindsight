@@ -148,7 +148,7 @@ class ObjectAdapter(Adapter):
             if GEOM in dv and dv[GEOM] is not MISSING and idb.mode != "EDIT":
                 write_geometry(idb.data, dv[GEOM])          # after the settings (lattice resolution)
         if SETTINGS_KEY in values and values[SETTINGS_KEY] is not MISSING:
-            write_settings(idb, values[SETTINGS_KEY])
+            write_settings(idb, values[SETTINGS_KEY], owner=idb)
         for path, v in values.items():          # D120: the actions, then which one it plays
             if path.startswith(ACT_PREFIX) and v is not MISSING:
                 write_action(path, v)

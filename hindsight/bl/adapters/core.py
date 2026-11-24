@@ -424,9 +424,10 @@ def struct_values(st, skip=_UI_PROPS, skip_prefix: tuple = (), anim=None) -> dic
     return out
 
 
-def set_struct_values(st, values: dict, owner=None, prefix: str = "") -> None:
+def set_struct_values(st, values: dict, owner=None, prefix: str = "", apath: str = "constraints") -> None:
     """Set recorded values back on a struct: ID pointers first (other values may depend on them).
-    owner and prefix: the object the struct belongs to and its path there (for D37)."""
+    owner and prefix: the object the struct belongs to and its path there (for D37); apath: the object's
+    recorded path that writes them again once a missing datablock is back."""
     items = sorted(values.items(), key=lambda kv: 0 if isinstance(kv[1], dict) else 1)
     for ident, v in items:
         if v == ANIMATED:
@@ -436,7 +437,7 @@ def set_struct_values(st, values: dict, owner=None, prefix: str = "") -> None:
             if isinstance(v, dict) and "ref" in v:
                 ref = v["ref"]
                 v = idmap.find(ref) if ref else None
-                _note_ref(owner, prefix + ident, ref, v, "object", "constraints")
+                _note_ref(owner, prefix + ident, ref, v, "object", apath)
                 if cur == v:
                     continue          # unchanged: no write (Blender reports some writes as errors)
             elif isinstance(v, list) and getattr(st.bl_rna.properties.get(ident), "is_enum_flag", False):
