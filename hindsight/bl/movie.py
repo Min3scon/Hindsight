@@ -109,7 +109,7 @@ def _apply(context, value) -> bool:
         want = target = pos
         _BUSY[0] = True
         try:
-            sh.id_data.hindsight.movie_step = pos
+            sh.id_data.hindsight.movie_step = pos      # sh is a read-only proxy in the frame handler
         finally:
             _BUSY[0] = False
     if target == pos:

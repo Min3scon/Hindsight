@@ -845,7 +845,7 @@ def _mesh_step(ob, uid: str, label: str):
 
 @guard.guarded("datarec")
 def flush_pending() -> None:
-    """#104: a change still waiting to settle is recorded before a jump moves any history. Kept for
+    """#107: a change still waiting to settle is recorded before a jump moves any history. Kept for
     later, it would count as made at the new position and throw away every step after it."""
     if _DIRTY:
         refresh_mesh_users()
