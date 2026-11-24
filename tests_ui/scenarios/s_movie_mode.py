@@ -221,15 +221,24 @@ def run(d):
         if engine != "BLENDER_WORKBENCH":
             sc.eevee.taa_render_samples = 1
         r.filepath = os.path.join(out, label + "_####")
-        with d.override():
-            bpy.ops.render.render(animation=True)
+        lit = []    # each frame: the scene's own light, Movie Mode's lamps (#104: they follow the user's light)
+
+        def _lit(scene, *_):
+            lit.append((scene.frame_current, C.mod("camrig").scene_has_own_light(scene), set(RIG[1:]) <= _rig()))
+        bpy.app.handlers.frame_change_post.append(_lit)
+        try:
+            with d.override():
+                bpy.ops.render.render(animation=True)
+        finally:
+            bpy.app.handlers.frame_change_post.remove(_lit)
         yield 0.5
         files = sorted(f for f in os.listdir(out) if f.startswith(label + "_") and f.endswith(".png"))
         sums = [_png_sum(os.path.join(out, f)) for f in files] if files else []
         want = sc.frame_end - sc.frame_start + 1
         d.check(f"timelapse rendered with {label}: every frame written, first and last frames differ",
                 len(files) == want and len(set(sums)) > 1 and sums[0] != sums[-1], (want, files, sums))
-        d.check(f"{label}: rendered from the Movie Mode camera with its lamps",
-                sc.camera is not None and sc.camera.name == "Hindsight Camera" and _rig() == set(RIG),
-                (sc.camera and sc.camera.name, sorted(_rig())))
+        d.check(f"{label}: rendered from the Movie Mode camera, its lamps on every frame without the user's light",
+                sc.camera is not None and sc.camera.name == "Hindsight Camera" and len(lit) >= want
+                and all(own != lamps for _f, own, lamps in lit) and not all(own for _f, own, _l in lit),
+                (sc.camera and sc.camera.name, lit))
     d.note("render_dir", out)

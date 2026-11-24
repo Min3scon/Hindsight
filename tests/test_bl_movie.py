@@ -528,11 +528,45 @@ def test_quick_auto_key_with_data_no_object_uses():
     assert loose.name in bpy.data.materials
 
 
+def test_lamps_follow_the_users_light_on_every_frame():
+    """#104: with Record on Everything a timelapse can bring the user's deleted light back (step 0) and
+    take it away again. Movie lighting's lamps follow in the same frame: before, only the timer put
+    them back, and it waits for a render to end, so every frame after the light's deletion rendered
+    without any light (window scenario movie_mode)."""
+    from hindsight.bl import camrig, datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    sc = C.scene
+    light = bpy.data.objects.new("Light", bpy.data.lights.new("Light", "POINT"))
+    sc.collection.objects.link(light)
+    datarec.record_file_default()
+    bpy.data.objects.remove(light)
+    L.tick_like("Delete")
+    H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    runtime.set_global(C, True)
+    sh = sc.hindsight
+    sh.movie_camera = sh.movie_lighting = True
+    sh.movie_mode = True
+    sh.movie_step = runtime.scrub_info(C)["len"]
+    camrig.ensure(sc)
+    lamps = set(camrig.LIGHT_ROLES)
+    assert lamps <= set(camrig.rig(sc)), camrig.rig(sc)
+    sh.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    for f, own in ((sc.frame_start, True), (sc.frame_start + 2, False), (sc.frame_start, True),
+                   (sc.frame_start + 1, False)):
+        sc.frame_set(f)
+        assert camrig.scene_has_own_light(sc) == own, (f, own)
+        assert (lamps & set(camrig.rig(sc))) == (set() if own else lamps), (f, sorted(camrig.rig(sc)))
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
           test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
-          test_quick_auto_key_with_data_no_object_uses]:
+          test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame]:
     H.run(f)
 H.finish()
