@@ -95,8 +95,8 @@ def test_frame_change_is_not_a_step_and_gone_action_is_made_again():
     assert len(h.entries) == n, "the frame isn't a step"
     runtime._goto_history(h, 0, True)
     assert anim_state(a)[0] is None
-    act = next(x for x in bpy.data.actions if x.users == 0)
-    bpy.data.actions.remove(act)            # what saving and opening does to an action nothing uses
+    # D162: the jump takes away the action the keys made, as Blender's undo (and saving and opening) does
+    assert not [x.name for x in bpy.data.actions if x.users == 0], [x.name for x in bpy.data.actions]
     runtime._goto_history(h, len(h.entries), True)
     assert anim_state(a) == keyed, (anim_state(a), keyed)
 
