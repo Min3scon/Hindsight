@@ -549,16 +549,14 @@ def write_material_slots(ob, rec) -> None:
             oref = row[2] if len(row) > 2 else None
             sl = ob.material_slots[i]
             dm = idmap.find(dref) if dref else None
-            if dref and dm is None:
-                _note_ref(ob, f"data.materials[{i}]", dref, None, "object", "slots")
+            _note_ref(ob, f"data.materials[{i}]", dref, dm, "object", "slots")   # D60: noted, or forgotten
             if mats[i] != dm:
                 mats[i] = dm                      # the mesh's material (also behind an object link)
             if sl.link != link:
                 sl.link = link
             if link == "OBJECT":
                 om = idmap.find(oref) if oref else None
-                if oref and om is None:
-                    _note_ref(ob, f"material_slots[{i}].material", oref, None, "object", "slots")
+                _note_ref(ob, f"material_slots[{i}].material", oref, om, "object", "slots")
                 if sl.material != om:
                     sl.material = om
         if 0 <= int(active) < len(ob.material_slots) and ob.active_material_index != int(active):

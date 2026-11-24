@@ -1145,7 +1145,8 @@ def sync_missing_refs(idb, st: MeshState, data_keys: dict) -> None:
     if not d:
         return
     cap = None
-    for _path, (_ref, aid, apath) in list(d.items()):
+    # D164: once per recorded value; two references it waits for (two slots) would set WANTED to the capture
+    for aid, apath in {(aid, apath) for _ref, aid, apath in d.values()}:
         if apath not in data_keys.get(aid, ()) or (aid, apath) not in st.values:
             continue
         if cap is None:

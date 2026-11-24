@@ -320,8 +320,40 @@ def test_going_back_over_a_slot_takes_the_material_it_made_away():
     assert after and back is None and fwd == after, (after, back, fwd)
 
 
+def test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again():
+    """D164: going forward over giving a shared mesh two new materials, a linked duplicate whose step comes
+    first writes its slots while both materials are gone; once the owner has made them again, both hold them."""
+    from tests import t1_gate_lib as L, t1_ops as T
+    from tests.test_bl_t1_loose_data import datarec_resolve
+    L.fresh_scene()
+    L.track_all()
+    L.tick_like("baseline")
+    T.duplicate("A", True).fn()
+    L.tick_like("dup")
+    a, b = D.objects["A"], D.objects["A.001"]
+    T.select("A")
+    for n in ("Made0", "Made1"):
+        a.data.materials.append(D.materials.new(n))
+    L.tick_like("mats")
+    read = lambda: [[s.material and s.material.name for s in ob.material_slots] for ob in (a, b)]
+    after = read()
+    assert after == [["Made0", "Made1"]] * 2, after
+    ha, hb = runtime.history_of(a), runtime.history_of(b)
+    for h in (ha, hb):
+        runtime._goto_history(h, len(h.entries) - 1, True)
+        datarec_resolve()
+    assert read() == [[], []] and D.materials.get("Made0") is None, (read(), list(D.materials))
+    for h in (hb, ha):                          # the duplicate first: its slots wait for both materials
+        runtime._goto_history(h, len(h.entries), True)
+        datarec_resolve()
+    assert read() == after, (read(), after)
+    from hindsight.bl import adapters
+    assert not adapters.MISSING_REFS.get(idmap.uid_of(b)), adapters.MISSING_REFS    # D60: forgotten once written
+
+
 if __name__ == "__main__":
     for t in TESTS + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
+                      test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again,
                       test_going_back_over_keying_takes_its_action_away,
                       test_going_back_over_a_slot_takes_the_material_it_made_away,
                       test_digest_leaves_out_what_custom_properties_hold,
