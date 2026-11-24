@@ -66,6 +66,7 @@ _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 
 _J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12]}    # live journal of the session file
 _FALLBACK = {"sidecar": False}   # the history couldn't be stored in the .blend: write the folder instead
+_FROM_TEXT = [False]             # the history loaded last was read from the .blend's Text
 
 
 # ----------------------------------------------------------------------------- journal
@@ -467,6 +468,7 @@ def _load_registry(path: str, text):
     """The saved registry for this file, or None. Never raises; problems become sidebar notes."""
     mode = _mode()
     embedded = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text)
+    read = []
 
     def from_text():
         # R061: base64 text when it is there (an earlier build wrote it, so it is the newer copy when both
@@ -477,7 +479,8 @@ def _load_registry(path: str, text):
             # a2b_base64 reads the stored text in place (b64decode would first copy it to bytes)
             raw = binascii.a2b_base64(v) if key == DATA_PROP else v
             del v
-            return persist.registry_from_bytes(raw)
+            read.append(persist.registry_from_bytes(raw))
+            return read[-1]
         except persist.NewerFormatError as e:
             _PROTECT["embed"] = True
             _note("ERROR", NEWER_TEXT.format(found=e.found))
@@ -530,6 +533,7 @@ def _load_registry(path: str, text):
                 reg = other
             else:
                 _note("WARNING", STALE_SIDECAR_TEXT)
+    _FROM_TEXT[0] = reg is not None and any(r is reg for r in read)
     if reg is not None:
         _report_load(reg)
     return reg
@@ -654,6 +658,15 @@ def on_load_post(*args) -> None:
                 if hasattr(p, "preserve_modes"):
                     reg.preserve_modes = bool(p.preserve_modes)
         runtime.set_registry(reg)
+        if _FROM_TEXT[0]:
+            # #9: Hindsight holds the history now, so Blender's copy of it goes (a save builds it again). Only
+            # after recovery, which reads it again if it fails. A copy that wasn't read (newer, unreadable) stays.
+            try:
+                for key in (DATA_PROP, DATA_BIN_PROP):
+                    if key in text:
+                        del text[key]
+            except Exception as e:
+                guard.fail("loading", e, "could not let go of Blender's copy of the history")
         try:
             runtime.restamp_overrides(getattr(reg, "saved", None))        # D109
         except Exception as e:
