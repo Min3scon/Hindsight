@@ -6,8 +6,7 @@ mesh reads): break it on purpose, one change at a time, and check the tests noti
 Each mutant is a copy of hindsight/ and tests/ under .tmp/mutants_bl/<n>/ with one edit; the listed
 test files run inside Blender against it. A mutant is killed when a test fails. A mutant that can't
 change behaviour is listed with a reason (`equivalent`) instead of being left to survive. Writes one
-result per Blender to .tmp/results/tools/mutation_bl/<blender>/ for tools/make_evidence.py (gate item
-MUT, for the rows each mutant belongs to) and exits 1 if any mutant survived without a reason.
+result per Blender to .tmp/results/tools/mutation_bl/<blender>/ and exits 1 if any mutant survived without a reason.
 """
 import json
 import os
@@ -310,8 +309,7 @@ def main():
             survived_any |= not ok
             print(f"[{tag}] {n:2d} {'killed by ' + killer if killer else ('equivalent: ' + reason if reason else 'SURVIVED')}"
                   f"  {fname}: {what}", flush=True)
-            rows.append({"name": f"mutant {n}: {what}", "ok": ok, "killed_by": killer, "reason": reason,
-                         "covers": [[r, "MUT"] for r in row_ids]})
+            rows.append({"name": f"mutant {n}: {what}", "ok": ok, "killed_by": killer, "reason": reason})
             shutil.rmtree(d, ignore_errors=True)
         dst = os.path.join(RESULTS, tag)
         os.makedirs(dst, exist_ok=True)

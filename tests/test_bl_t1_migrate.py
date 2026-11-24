@@ -22,7 +22,6 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import datarec, idmap, runtime
 from hindsight.core.types import SETTINGS
 
@@ -143,12 +142,10 @@ def migrate(tag):
             runtime._goto_history(h, len(h.entries), True)
 
 
-@covers(ROWS, "RELOAD.MIGRATE")
 def test_format3_file():
     migrate("format3")
 
 
-@covers(ROWS, "RELOAD.MIGRATE")
 def test_beta1_file():
     migrate("beta1")
 

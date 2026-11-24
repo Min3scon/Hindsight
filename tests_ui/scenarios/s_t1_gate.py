@@ -34,7 +34,6 @@ def run(d):
     globaltl = importlib.import_module(C.PKG + ".core.globaltl")      # the installed add-on's own
     rt, datarec, idmap = C.mod("runtime"), C.mod("datarec"), C.mod("idmap")
     variant = d.args.get("variant", "default")
-    undo_item = {"default": "UNDO", "globaloff": "UNDO.GLOBAL_OFF"}.get(variant, "UNDO.LIMITS")
     mark = d.console_mark()
     yield 1.0
     C.dismiss_splash(d)
@@ -116,7 +115,7 @@ def run(d):
 
     states, positions, labels, lens, names_at = [snap()], [gpos()], ["start"], [counts()], [names_now()]
 
-    def step(label, row, histories, wait=0.9, items="OPS STEPS"):
+    def step(label, row, histories, wait=0.9):
         """Generator, after an operation: exactly one step in each of `histories` (object names or
         "scene"), none elsewhere, one global position."""
         yield wait
@@ -125,8 +124,7 @@ def run(d):
         diffs = {u: now.get(u, 0) - before.get(u, 0) for u in set(now) | set(before)}
         bad = {u: n for u, n in diffs.items() if n != (1 if u in want else 0)}
         ok = not bad and gpos() == positions[-1] + (1 if histories else 0) and glen() == gpos()
-        d.check(f"{label}: one step", ok, {"diffs": bad, "pos": gpos(), "len": glen()},
-                covers=f"{row}: {items}")
+        d.check(f"{label}: one step", ok, {"diffs": bad, "pos": gpos(), "len": glen()})
         states.append(snap())
         positions.append(gpos())
         labels.append(label)
@@ -201,7 +199,7 @@ def run(d):
     select("Pivot")
     before = counts()
     ob("Pivot").location.x += 0.75            # a property edit (what the N panel field does): settle path
-    yield from step("N panel location edit (settle)", ROWS["move"], ["Pivot"], wait=1.2, items="STEPS")
+    yield from step("N panel location edit (settle)", ROWS["move"], ["Pivot"], wait=1.2)
 
     select("C")
     before = counts()
@@ -237,7 +235,7 @@ def run(d):
     yield from step("add a constraint", ROWS["con"], ["B"])
     before = counts()
     ob("B").constraints[0].influence = 0.4      # dragging the Influence slider: settle path
-    yield from step("constraint influence (settle)", ROWS["con"], ["B"], wait=1.2, items="STEPS")
+    yield from step("constraint influence (settle)", ROWS["con"], ["B"], wait=1.2)
 
     select("C")
     before = counts()
@@ -292,8 +290,7 @@ def run(d):
         if shown:
             break
     d.shot("alt_d_warning")
-    d.check("Alt+D on a recorded mesh: the shared-mesh warning comes up", any(shown), shown,
-            covers="sculpt.joinsep, obj.addremove: WARN")
+    d.check("Alt+D on a recorded mesh: the shared-mesh warning comes up", any(shown), shown)
     d.key("ESC")
     warn.linked_duplicate_check = real_check
     yield from step("Alt+D", ROWS["scene"], ["scene"])
@@ -471,8 +468,7 @@ def run(d):
         with d.override():
             wm.hindsight_step = len(h.entries)
         yield 0.15
-    d.check("every object's history is exact through the sidebar slider, both ways", not bad, bad[:3],
-            covers="obj.transforms, obj.parenting, obj.constraints, obj.collections, obj.editsteps: EXACT")
+    d.check("every object's history is exact through the sidebar slider, both ways", not bad, bad[:3])
 
     # the on-screen slider, dragged with the mouse, on A
     select("A")
@@ -480,8 +476,7 @@ def run(d):
     yield 0.3
     target = max(1, len(h.entries) // 2)
     yield from C.drag_slider_to(d, target)
-    d.check("dragging the on-screen slider moves A's history", h.cursor == target, (h.cursor, target),
-            covers="obj.transforms: EXACT")
+    d.check("dragging the on-screen slider moves A's history", h.cursor == target, (h.cursor, target))
     with d.override():
         wm.hindsight_step = len(h.entries)
     yield 0.3
@@ -502,9 +497,7 @@ def run(d):
         got = snap()
         if got != states[i]:
             gbad.append((labels[i], O.diff(states[i], got)[:2]))
-    d.check("global timeline: every operation boundary is exact, both ways", not gbad, gbad[:3],
-            covers="obj.transforms, obj.parenting, obj.constraints, obj.collections, obj.addremove, "
-                   "obj.editsteps: EXACT")
+    d.check("global timeline: every operation boundary is exact, both ways", not gbad, gbad[:3])
     d.shot("global_timeline")
     with d.override():
         bpy.ops.wm.call_panel(name="VIEW3D_PT_hindsight_popover", keep_open=True)
@@ -537,20 +530,16 @@ def run(d):
         dbg(f"Ctrl+Z {k + 1}")
         ok, where = in_sync()
         moved.append(gpos() - p0)
-        d.check(f"Ctrl+Z {k + 1}: data and history in sync", ok, where,
-                covers=f"obj.transforms, obj.addremove, obj.editsteps, obj.collections: {undo_item}")
+        d.check(f"Ctrl+Z {k + 1}: data and history in sync", ok, where)
     for k in range(3):
         d.key("Z", ctrl=True, shift=True, x=cx, y=cy)
         yield 0.9
         dbg(f"Ctrl+Shift+Z {k + 1}")
         ok, where = in_sync()
-        d.check(f"Ctrl+Shift+Z {k + 1}: data and history in sync", ok, where,
-                covers=f"obj.transforms, obj.addremove, obj.editsteps, obj.collections: {undo_item}")
-    d.check("undo and redo recorded nothing", counts() == n_all, None,
-            covers=f"obj.transforms, obj.addremove: {undo_item}")
+        d.check(f"Ctrl+Shift+Z {k + 1}: data and history in sync", ok, where)
+    d.check("undo and redo recorded nothing", counts() == n_all, None)
     if variant in ("default", "undomax"):
-        d.check("Ctrl+Z went back one operation each time", moved == [-1, -1, -1], moved,
-                covers=f"obj.transforms: {undo_item}")
+        d.check("Ctrl+Z went back one operation each time", moved == [-1, -1, -1], moved)
 
     # scrub, then Ctrl+Z undoes the jump, Ctrl+Shift+Z redoes it
     with d.override():
@@ -566,8 +555,7 @@ def run(d):
     yield 0.9
     dbg("scrub, Ctrl+Shift+Z")
     ok2, w2 = in_sync()
-    d.check("scrub, Ctrl+Z, Ctrl+Shift+Z: data and history in sync", ok0 and ok1 and ok2, (w1, w2),
-            covers=f"obj.transforms, obj.addremove: {undo_item}")
+    d.check("scrub, Ctrl+Z, Ctrl+Shift+Z: data and history in sync", ok0 and ok1 and ok2, (w1, w2))
     with d.override():
         rt.global_goto(bpy.context, glen())
     yield 0.4
@@ -609,7 +597,7 @@ def run(d):
     yield 0.6
     ok, where = in_sync()
     d.check("Ctrl+Z and Ctrl+Shift+Z across Tab: back in sync, nothing recorded", ok and counts() == n_all,
-            {"end": where, "steps": sync}, covers=f"obj.editsteps: UNDO.MODES; obj.transforms: UNDO.MODES")
+            {"end": where, "steps": sync})
 
     # ------------------------------------------------------------------ panels to look at
     with d.override():

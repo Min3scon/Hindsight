@@ -5,10 +5,9 @@ and the release notes may claim. `tools/check_copy.py` has the rule (a data type
 `supported` or `partial` may only be named in a sentence that says it isn't recorded or is planned), but
 since the website was removed it runs on no file.
 
-**Status** comes only from the tier gate (HANDOFF.md, "Test guarantee"), with the evidence in
-TEST_EVIDENCE.md, which `tools/make_evidence.py` generates from real test runs and which also checks
-this column: a row may be `supported` only when every gate item has a passing run on Blender 5.0.1,
-5.1.1 and 5.1.2.
+**Status** comes only from the tier gate (HANDOFF.md, "Test guarantee"): a row may be `supported` only
+when every gate item has a passing run on Blender 5.0.1, 5.1.1 and 5.1.2. Nothing checks this column
+by tool any more (the evidence system was retired, #73); the full test runs are the proof.
 - **supported**: the full gate passed for the whole row.
 - **partial**: the gate passed for part of the row; Limits says exactly what works and what doesn't.
 - **not covered**: the gate hasn't passed (the code may exist). Notes says why.
