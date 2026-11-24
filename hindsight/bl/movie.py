@@ -162,8 +162,8 @@ def follow_new_steps() -> None:
     """#107: the timer moves the Step value onto steps recorded while Movie Mode is on, so it says what
     the scene shows (a frame change that comes first does the same)."""
     sh = _props(bpy.context.scene)
-    if _active(sh) and _recorded_since(sh.movie_step):
-        _apply(bpy.context, sh.movie_step)
+    if _active(sh) and _recorded_since(sh.movie_step) and not bpy.app.is_job_running('RENDER'):
+        _apply(bpy.context, sh.movie_step)      # not while a render reads the scene: after it
 
 
 @persistent
