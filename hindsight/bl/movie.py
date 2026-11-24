@@ -66,14 +66,16 @@ def _histories_now() -> tuple:
 
 
 def _seq() -> tuple:
+    """What a recorded step changes, and what Blender's undo / redo changes (a cursor, no new step number)."""
     r = runtime.reg()
-    return (id(r), r.next_seq)
+    return (id(r), r.next_seq, runtime.UNDO_MOVES[0])
 
 
 def _recorded_since(want) -> bool:
-    """True if steps were recorded (in the same registry) since the Step value `want` was last applied."""
+    """True if, in the same registry, steps were recorded or Blender's undo / redo moved a history since
+    the Step value `want` was last applied."""
     then, now = _SHOWN.get("seq"), _seq()
-    return want == _SHOWN.get("want") and then is not None and then[0] == now[0] and then[1] != now[1]
+    return want == _SHOWN.get("want") and then is not None and then[0] == now[0] and then[1:] != now[1:]
 
 
 def _apply(context, value) -> bool:
@@ -105,7 +107,7 @@ def _apply(context, value) -> bool:
     target = max(0, min(want, len(groups)))
     if _recorded_since(want):
         # #107: a step recorded with Movie Mode on (a stroke at the end) stays shown and the Step value
-        # follows it; jumping back would let the next change throw it away
+        # follows it; jumping back would let the next change throw it away. An undo of it sticks the same way
         want = target = pos
         _BUSY[0] = True
         try:

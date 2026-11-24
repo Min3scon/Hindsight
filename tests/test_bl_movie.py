@@ -635,6 +635,74 @@ def test_a_stroke_at_the_end_moves_the_step_value():
     H.assert_same(H.snapshot(a), s2)
 
 
+def test_undo_of_a_followed_stroke_sticks():
+    """#108 review: Ctrl+Z of a stroke the Step value has followed moves the Step value back with it.
+    Before, sculpt undo moved the history back without a new step number, the Step value stayed on
+    the stroke and the next frame change (or the timer and then a frame change) put the stroke back."""
+    from hindsight.bl import datarec, meshio
+    from tests import t1_gate_lib as L
+    H.fresh()
+    datarec.record_file_default()
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 1); assert H.commit(a) is not None
+    runtime.set_global(C, True)
+    sc, sh = C.scene, C.scene.hindsight
+    n = runtime.scrub_info(C)["len"]
+    sh.movie_mode = True
+    sh.movie_step = n
+    s0 = H.snapshot(a)
+
+    def undo():                                 # what Blender's sculpt undo does, then its handler
+        meshio.write_changes(a.data, s0, ["position|POINT|FLOAT_VECTOR"])
+        runtime.on_undo()
+        assert runtime.scrub_info(C)["pos"] == n, ("undo moves the history back", runtime.scrub_info(C))
+
+    H.fake_stroke(a, 2); assert H.commit(a) is not None
+    sc.frame_set(sc.frame_current + 1)          # the frame change follows the stroke
+    assert sh.movie_step == n + 1, sh.movie_step
+    undo()
+    sc.frame_set(sc.frame_current + 1)
+    H.assert_same(H.snapshot(a), s0, "the undo sticks after a frame change")
+    assert sh.movie_step == n, ("the Step value follows the undo", n, sh.movie_step)
+    assert runtime.scrub_info(C)["pos"] == n
+    H.fake_stroke(a, 3); assert H.commit(a) is not None
+    runtime.tick()                              # the timer follows the stroke
+    assert sh.movie_step == n + 1, sh.movie_step
+    undo()
+    runtime.tick()
+    assert sh.movie_step == n, ("the timer follows the undo", n, sh.movie_step)
+    sc.frame_set(sc.frame_current + 1)
+    H.assert_same(H.snapshot(a), s0, "the undo sticks after the timer and a frame change")
+    assert runtime.scrub_info(C)["pos"] == n
+
+
+def test_undo_of_a_followed_change_sticks_in_object_mode():
+    """#108 review: the same for a change Record everything records in Object Mode (datarec's undo)."""
+    from hindsight.bl import datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    datarec.record_file_default()
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    runtime.set_global(C, True)
+    sc, sh = C.scene, C.scene.hindsight
+    n = runtime.scrub_info(C)["len"]
+    sh.movie_mode = True
+    sh.movie_step = n
+    a.location.x = 3.0
+    L.tick_like("Move")
+    sc.frame_set(sc.frame_current + 1)
+    assert sh.movie_step == n + 1, sh.movie_step
+    a.location.x = 0.0                          # what Blender's undo puts back, then its handler
+    datarec.on_undo("undo")
+    assert runtime.scrub_info(C)["pos"] == n, runtime.scrub_info(C)
+    sc.frame_set(sc.frame_current + 1)
+    assert a.location.x == 0.0, "the undo sticks after a frame change"
+    assert sh.movie_step == n and runtime.scrub_info(C)["pos"] == n, (n, sh.movie_step, runtime.scrub_info(C))
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
@@ -642,6 +710,7 @@ for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test
           test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
           test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame,
           test_a_change_waiting_to_be_recorded_survives_a_jump_back,
-          test_a_stroke_at_the_end_moves_the_step_value]:
+          test_a_stroke_at_the_end_moves_the_step_value, test_undo_of_a_followed_stroke_sticks,
+          test_undo_of_a_followed_change_sticks_in_object_mode]:
     H.run(f)
 H.finish()

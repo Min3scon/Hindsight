@@ -1001,6 +1001,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         for ok_, idx, inverse, move in ((fwd, back) if UNDO_DIRECTION[0] == "redo" else (back, fwd)):
             if ok_ and _inverse_matches(step, h.entries[idx].load(), st, inverse):
                 h.cursor += move
+                UNDO_MOVES[0] += 1
                 _apply_to_state(st, step)
                 if inverse:
                     _LAST_UNDO_MATCH[0] = time.time()
@@ -1413,6 +1414,7 @@ def tick() -> float:
 
 OP_GROUP = [None]             # [first step number] while one operator's changes are recorded (D52)
 UNDO_DIRECTION = ["undo"]      # which way Blender's last undo or redo went (see commit, datarec.on_undo)
+UNDO_MOVES = [0]               # histories moved by Blender's undo or redo: Movie Mode's Step value follows (#107)
 
 
 @persistent

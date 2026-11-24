@@ -1416,6 +1416,8 @@ def _on_undo(direction: str):
         st.values = vals
         if mesh_step is not None:
             rt._apply_to_state(st, mesh_step)
+    if moved:
+        rt.UNDO_MOVES[0] += 1
     _DIRTY.clear()
     _MESH_DIRTY.clear()
     rt.tag_redraw_all()
