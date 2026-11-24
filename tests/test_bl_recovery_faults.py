@@ -113,6 +113,12 @@ def notes():
     return [t for _sev, t in runtime.load_notes]
 
 
+def blender_copy():
+    """The history keys Blender holds in memory on the Text (none once a save is over, #55/#56)."""
+    text = bpy.data.texts.get(persistence.TEXT_NAME)
+    return [k for k in (persistence.DATA_PROP, persistence.DATA_BIN_PROP) if text is not None and k in text]
+
+
 def check(book, file_state, where=""):
     """Every history that came back: the mesh at each position is the session's, and the position it
     opens at is the file's. Objects are compared by name with the file."""
@@ -166,6 +172,7 @@ def test_embed_save_out_of_memory_keeps_the_history():
         file_state = save(path)
     finally:
         persist.parts_to_bytes = real
+    assert not blender_copy(), "Blender's copy of the history is not left behind (#56)"
     told = [t for t in notes() if t == getattr(persistence, "EMBED_FALLBACK_TEXT", None)]
     for rec in ("LAST_SAVED", "INTERRUPTED"):
         SETTINGS.crash_recovery = rec
@@ -205,6 +212,11 @@ def test_embed_save_fails_before_the_old_copy_is_touched():
         file_state = save(path)
     finally:
         persist.registry_parts = real
+    assert not blender_copy(), "Blender's copy of the history is not left behind (#56)"
+    assert getattr(persistence, "KEPT_LAST_SAVE_TEXT", None) in notes(), "the user is told (#56)"
+    assert not [lib for lib in bpy.data.libraries if lib.filepath.endswith(".hindsight.blend")], \
+        "reading the last save back leaves no library behind"
+    assert not [f for f in os.listdir(TMP) if f.endswith(".hindsight.blend")], "nor the link it was read through"
     book.stroke(obs["B"], 30)            # recorded after the failed save, then interrupted
     for rec in ("LAST_SAVED", "INTERRUPTED"):
         SETTINGS.crash_recovery = rec
@@ -217,6 +229,42 @@ def test_embed_save_fails_before_the_old_copy_is_touched():
         hb = runtime.history_of(bpy.data.objects["B"])
         assert hb is not None and len(hb.entries) >= 3, (rec, hb)
         check(book, file_state, rec)
+
+
+def test_embed_save_blender_fails_to_write():
+    """#56: Blender fails to write the .blend (its temporary file can't be made). The .blend on disk stays as
+    it was, Blender's copy of the history isn't left behind in memory, and the next save stores every step."""
+    setup("EMBED")
+    obs = make(("A",))
+    book = Book()
+    for s in range(3):
+        book.stroke(obs["A"], s)
+    path = os.path.join(TMP, "embed_write_fails.blend")
+    save(path)
+    with open(path, "rb") as fh:
+        before = fh.read()
+    book.stroke(obs["A"], 10)
+    os.mkdir(path + "@")                 # Blender writes "<file>@" first, then renames it: a folder there stops it
+    try:
+        try:
+            save(path)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("the save was meant to fail")
+    finally:
+        os.rmdir(path + "@")
+    with open(path, "rb") as fh:
+        assert fh.read() == before, "the .blend on disk is as it was"
+    assert not blender_copy(), "Blender's copy of the history is not left behind"
+    h = runtime.history_of(bpy.data.objects["A"])
+    assert h is not None and len(h.entries) == 4 and h.cursor == 4, h
+    file_state = save(path)
+    SETTINGS.crash_recovery = "LAST_SAVED"
+    interrupt(path)
+    h = runtime.history_of(bpy.data.objects["A"])
+    assert h is not None and len(h.entries) == 4 and h.cursor == 4, h
+    check(book, file_state, "saved after the failed save")
 
 
 class _Fail:
