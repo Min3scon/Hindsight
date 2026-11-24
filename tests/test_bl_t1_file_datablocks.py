@@ -143,6 +143,19 @@ KINDS["grease_pencils"] = (_fake_gp, lambda g: (len(g.layers), _r(g.layers[0].op
                            lambda g: (g.__setitem__("note", "changed"), setattr(g.layers[0], "opacity", 0.5)))
 
 
+def _fake_annotation():
+    a = D.annotations.new("Made")         # 5.0 on: annotations are their own kind (4.2: grease_pencils)
+    a.use_fake_user = True
+    a.layers.new("Notes")
+
+
+if hasattr(bpy.data, "annotations"):     # D176
+    KINDS["annotations"] = (_fake_annotation,
+                            lambda a: (len(a.layers), _r(a.layers[0].annotation_opacity), a.get("note"),
+                                       a.use_fake_user),
+                            lambda a: (a.__setitem__("note", "changed"), setattr(a.layers[0], "annotation_opacity", 0.5)))
+
+
 def _fake(coll, *args):
     """Object data no object uses, kept with a fake user."""
     d = getattr(D, coll).new("Made", *args)

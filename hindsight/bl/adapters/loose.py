@@ -30,11 +30,12 @@ _DATA_COLLS = ("meshes", "curves", "metaballs", "lattices", "armatures", "camera
                "speakers", "volumes", "pointclouds", "hair_curves")
 _SNAP_COLLS = ("images", "actions", "palettes", "brushes", "linestyles", "masks", "movieclips", "sounds",
                "fonts", "cache_files", "paint_curves", "textures", "particles", "grease_pencils",
-               "collections") + _DATA_COLLS
+               "collections", "annotations") + _DATA_COLLS
 # D174/D175: of these only _ids' are recorded here; with no user at all they are left alone (dropped at save)
 _OFF_SCENE = _DATA_COLLS + ("collections",)
-# recorded with what uses them; snapshotted when nothing does (grease_pencils: 4.2 annotations, 5.0 on objects' data)
-_WHEN_UNUSED = ("actions", "particles", "grease_pencils") + _DATA_COLLS
+# recorded with what uses them; snapshotted when nothing does (grease_pencils: 4.2 annotations, 5.0 on objects' data;
+# annotations: 5.0 on, D176)
+_WHEN_UNUSED = ("actions", "particles", "grease_pencils", "annotations") + _DATA_COLLS
 _PROP_COLLS = _SNAP_COLLS + ("texts",)
 _LOOSE_TURN = [0]
 SNAP_READ_MAX = 2          # D154: datablocks there were at the first read, snapshotted again per operation, in turn
@@ -467,7 +468,7 @@ def _queue_loose_removals(sc, values: dict) -> None:
     for want, kinds in todo:
         want = set(want)
         for kind in kinds:
-            for idb in list(getattr(bpy.data, _LOOSE_COLL.get(kind, kind))):
+            for idb in list(getattr(bpy.data, _LOOSE_COLL.get(kind, kind), ())):   # (4.2: no annotations)
                 if idb.library is not None or (kind == "tx" and idb.name == TEXT_NAME):
                     continue
                 u = idmap.uid_of(idb)

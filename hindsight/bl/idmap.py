@@ -20,7 +20,8 @@ COLLECTIONS = ("objects", "meshes", "materials", "node_groups", "worlds", "scene
                "speakers", "lightprobes",
                # D151: datablocks whose custom properties and add-on data the scene records
                "palettes", "brushes", "linestyles", "masks", "movieclips", "cache_files", "paint_curves",
-               "textures", "pointclouds", "volumes")
+               "textures", "pointclouds", "volumes",
+               "annotations")     # D176: 5.0 on (4.2: grease_pencils)
 
 _cache: dict = {}        # uid -> (collection name, datablock name)
 _owner: dict = {}        # uid -> as_pointer() of the datablock that owns it this session
