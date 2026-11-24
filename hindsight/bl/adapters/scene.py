@@ -83,6 +83,7 @@ class SceneAdapter(Adapter):
         if COLL_SETTINGS in values and values[COLL_SETTINGS] is not MISSING:
             write_collection_settings(idb, values[COLL_SETTINGS])
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
+            _snapshots_back(values, recorded, colls=True)
             return
         want = set(values["objects"])
         have = {idmap.uid_of(o): o for o in idb.objects if not rigmark.is_rig(o)}   # never removes those
@@ -100,6 +101,9 @@ class SceneAdapter(Adapter):
                 if par is not None:
                     ob.parent = par
                     ob.matrix_parent_inverse = to_rna(body["parent_inverse"])
+        _snapshots_back(values, recorded, colls=True)     # D179: collections after the objects they hold
+
+
 _SCENE_SKIP = frozenset(_UI_PROPS | {
     "name", "use_fake_user", "use_extra_user", "is_runtime_data", "tag", "asset_data", "annotation",
     "frame_current", "frame_subframe", "frame_float", "time_jump_unit", "time_jump_delta",
