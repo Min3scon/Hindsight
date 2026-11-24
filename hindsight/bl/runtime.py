@@ -1308,19 +1308,23 @@ def _tick_once() -> bool:
         multires.tick(ob_)
     if _DIRTY and stroke_running():
         return painting   # never split a stroke, even if a slow modifier stack pauses its updates
+    _commit_dirty(DEBOUNCE)
+    return painting
+
+
+def _commit_dirty(wait: float) -> None:
     now = time.time()
     for uid, t in list(_DIRTY.items()):
         # A stroke that has finished is committed at once, so quick strokes stay separate steps.
         # Changes without a stroke operator (filters run from a menu, scripts) wait for the
         # updates to settle.
-        if uid in _STROKE_SEEN or now - t >= DEBOUNCE:
+        if uid in _STROKE_SEEN or now - t >= wait:
             ob = find_object(uid)
             if ob is None or not _mode_recorded(ob.mode):
                 _DIRTY.pop(uid, None)
                 _STROKE_SEEN.discard(uid)
                 continue
             commit(ob)
-    return painting
 
 
 # R069: a baseline's topology (edge and corner indices: about 50 MB at 1M vertices) is packed on a helper
@@ -1638,6 +1642,7 @@ def goto(context, pos: int, final: bool = True) -> None:
         return
     if _PAUSED:
         end_paused(now=True)                 # D153: a paused Dyntopo visit is a step before any jump
+    _commit_dirty(0.0)                       # #107: so is a change still waiting to settle (a filter)
     datarec.flush_pending()
     if use_global(context):
         global_goto(context, pos, final)

@@ -703,6 +703,71 @@ def test_undo_of_a_followed_change_sticks_in_object_mode():
     assert sh.movie_step == n and runtime.scrub_info(C)["pos"] == n, (n, sh.movie_step, runtime.scrub_info(C))
 
 
+def test_an_operator_that_just_ended_survives_a_jump_back():
+    """#108 review: an operator that ended since the timer last ran is recorded before a jump, at the
+    end. Hiding sends no update, so it never waits to settle; before, the timer recorded it after the
+    jump, at the new position, and threw away every step after it."""
+    from hindsight.bl import datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    datarec.record_file_default()
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    runtime.set_global(C, True)
+    k = runtime.scrub_info(C)["len"]
+    for x in (1.0, 2.0):
+        a.location.x = x
+        L.tick_like("Move")
+    sh = C.scene.hindsight
+    n = runtime.scrub_info(C)["len"]
+    assert n == k + 2, (k, n)
+    sh.movie_mode = True
+    sh.movie_step = n
+    real = datarec._ops_marker
+    datarec._OPS["marker"] = (0, 0)
+    datarec._ops_marker = lambda: (1, 4242)    # Hide ended (the operator list gained one) ...
+    try:
+        a.hide_set(True)
+        sh.movie_step = k                       # ... and the user jumps back before the timer runs
+        assert not a.hide_get() and a.location.x == 0.0, "step k: A shown, where it was added"
+        datarec.tick()                          # the timer
+    finally:
+        datarec._ops_marker = real
+    last = runtime.scrub_info(C)["len"]
+    assert last == n + 1, ("Hide is one more step at the end; none is lost", n, last)
+    sh.movie_step = last
+    assert a.hide_get() and a.location.x == 2.0, (a.hide_get(), a.location.x)
+
+
+def test_a_change_waiting_in_sculpt_mode_survives_a_jump_back():
+    """#108 review: a sculpt change still waiting to settle (a filter run from a menu, a script) is
+    recorded before a jump, at the end, as one waiting in Record everything is."""
+    from hindsight.bl import datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    datarec.record_file_default()
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 1); assert H.commit(a) is not None
+    H.fake_stroke(a, 2); assert H.commit(a) is not None
+    runtime.set_global(C, True)
+    sh = C.scene.hindsight
+    n = runtime.scrub_info(C)["len"]
+    sh.movie_mode = True
+    sh.movie_step = n
+    H.fake_stroke(a, 3)
+    runtime._DIRTY[runtime.obj_uid(a)] = runtime.time.time()   # waiting to settle
+    end = H.snapshot(a)
+    sh.movie_step = n - 2
+    for uid in list(runtime._DIRTY):            # what the timer does once it settles
+        runtime.commit(runtime.find_object(uid))
+    last = runtime.scrub_info(C)["len"]
+    assert last == n + 1, ("the change is one more step at the end; none is lost", n, last)
+    sh.movie_step = last
+    H.assert_same(H.snapshot(a), end, "the change at the end")
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
@@ -711,6 +776,7 @@ for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test
           test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame,
           test_a_change_waiting_to_be_recorded_survives_a_jump_back,
           test_a_stroke_at_the_end_moves_the_step_value, test_undo_of_a_followed_stroke_sticks,
-          test_undo_of_a_followed_change_sticks_in_object_mode]:
+          test_undo_of_a_followed_change_sticks_in_object_mode, test_an_operator_that_just_ended_survives_a_jump_back,
+          test_a_change_waiting_in_sculpt_mode_survives_a_jump_back]:
     H.run(f)
 H.finish()
