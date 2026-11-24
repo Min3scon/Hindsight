@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Tests for hindsight.core.journal and hindsight.core.persist (pure Python, no bpy).
 
 Uses the real core.step / core.history / core.registry when importable; otherwise (or with
@@ -9,7 +10,6 @@ import json
 import pickle
 import shutil
 import tempfile
-import traceback
 import types
 
 import numpy as np
@@ -953,17 +953,9 @@ def main():
     _install("history", _standin_history_module, _check_history)
     _install("registry", _standin_registry_module, _check_registry)
     print("INFO stand-ins in use: %s" % (", ".join(STANDINS) if STANDINS else "none (real modules)"))
-    failed = 0
     for t in TESTS:
-        try:
-            t()
-            print("PASS %s" % t.__name__)
-        except Exception:
-            failed += 1
-            print("FAIL %s" % t.__name__)
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

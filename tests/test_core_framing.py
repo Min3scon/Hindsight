@@ -1,8 +1,8 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Tests for hindsight.core.framing (Movie Mode camera and lighting math). Plain script, no bpy."""
 import copy
 import math
-import traceback
 
 import numpy as np
 
@@ -560,14 +560,6 @@ TESTS = [test_view_basis, test_lens_tangents, test_fit_invariant, test_merge, te
 
 
 if __name__ == "__main__":
-    failed = 0
     for fn in TESTS:
-        try:
-            fn()
-            print(f"PASS {fn.__name__}")
-        except Exception:
-            failed += 1
-            print(f"FAIL {fn.__name__}")
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(fn)
+    R.finish()

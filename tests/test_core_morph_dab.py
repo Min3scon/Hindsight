@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as RN
 """R083: the engine's `morph_dab` (one dab of the Morph History brush in one pass) against the numpy code it
 replaced (tests/reference/morph_dab.py): the same positions, the same strongest weights and the same count, bit
 for bit, on random meshes and strokes (masks out of range and NaN, hidden vertices, vertices one float32 step
@@ -70,7 +71,7 @@ def test_random_strokes():
             co, acc, m = run_both(co, start, target, acc, mask, hidden, c, r, s, f"stroke {k} dab {dab}")
             total += m
     assert total > 20000, total
-    print(f"PASS test_random_strokes (160 strokes of 6 dabs, {total} vertices moved)")
+    print(f"  test_random_strokes (160 strokes of 6 dabs, {total} vertices moved)")
 
 
 def _near(v, k=6):
@@ -113,7 +114,6 @@ def test_at_the_edges():
             for hidden in (None, rng.random(n) < 0.3):
                 for s in (0.4, 1.0):
                     _co, _acc, m = run_both(co.copy(), start, target, np.zeros(n), mask, hidden, c, r, s, f"edges {c} {r}")
-    print("PASS test_at_the_edges")
 
 
 def test_the_same_as_before_r081():
@@ -131,7 +131,6 @@ def test_the_same_as_before_r081():
             m1 = R.morph_dab(co1, start, target, acc1, None, hidden, c[0], c[1], c[2], r, 0.8, box=R.old_in_box)
             m2 = ENGINE.morph_dab(co, start, target, acc, None, hidden, c[0], c[1], c[2], r, 0.8)
             assert m1 == m2 and same_bits(co1, co) and same_bits(acc1, acc), (k, dab)
-    print("PASS test_the_same_as_before_r081")
 
 
 def test_refusals():
@@ -169,20 +168,9 @@ def test_refusals():
     assert ENGINE.morph_dab(co, ok["start"], ok["target"], ok["acc"], None, None, 0.0, 0.0, 0.0, 1.0, 1.0) == 0
     e = np.zeros(0, np.float32)
     assert ENGINE.morph_dab(e, e, e, np.zeros(0), None, None, 0.0, 0.0, 0.0, 1.0, 1.0) == 0
-    print("PASS test_refusals")
 
 
 if __name__ == "__main__":
-    import traceback
-    failed = []
     for t in (test_random_strokes, test_at_the_edges, test_the_same_as_before_r081, test_refusals):
-        try:
-            t()
-        except Exception:
-            failed.append(t.__name__)
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{4 - len(failed)}/4 passed")
-    if failed:
-        print("FAILED: " + ", ".join(failed))
-        sys.exit(1)
+        RN.run(t)
+    RN.finish()

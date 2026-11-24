@@ -13,10 +13,10 @@ DATA steps, channels that appear and go, empty deltas, several objects, raw and 
 damaged blobs. apply_steps itself is also fed hostile input directly (any thread count).
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import json
 import struct
 import subprocess
-import traceback
 
 import numpy as np
 
@@ -259,7 +259,7 @@ def test_mixed_histories():
             part = {"A": start["A"]}
             run_twins(entries, part, 0, [n] + plan_for(rng, n, 20), f"seed {seed} A only")
         assert twins[0][2].cursor == twins[-1][2].cursor
-    print("PASS test_mixed_histories (12 histories, every engine agrees)")
+    print("  test_mixed_histories (12 histories, every engine agrees)")
 
 
 def test_ends_are_exact():
@@ -274,7 +274,6 @@ def test_ends_are_exact():
         for k, v in start["A"].arrays.items():
             assert states["A"].arrays[k].tobytes() == v.tobytes(), (seed, k)
         run_twins(entries, start, 0, [200, 0, 137, 3, 200, 199, 0], f"plain {seed}")
-    print("PASS test_ends_are_exact")
 
 
 try:
@@ -314,7 +313,7 @@ def test_damaged_blobs():
             continue
         kinds[twins[0][2].cursor == 40] = kinds.get(twins[0][2].cursor == 40, 0) + 1
         n += 1
-    print(f"PASS test_damaged_blobs ({n} damaged steps; reached the end {kinds.get(True, 0)} times)")
+    print(f"  test_damaged_blobs ({n} damaged steps; reached the end {kinds.get(True, 0)} times)")
 
 
 def _crafted(st):
@@ -387,7 +386,7 @@ def test_crafted_blobs():
         bad = list(entries)
         bad[at] = Entry(blob=b, meta=dict(entries[at].meta))
         run_twins(bad, start, 0, [30, 0, at + 1, at, 30, 5], name)
-    print(f"PASS test_crafted_blobs ({len(cases)} cases)")
+    print(f"  test_crafted_blobs ({len(cases)} cases)")
 
 
 def test_empty_records_count_as_changed():
@@ -410,7 +409,6 @@ def test_empty_records_count_as_changed():
     run_twins(entries, start, 0, [6, 0, 4, 3, 2, 6], "empty record")
     h, states = twin(entries, start, 0)
     assert set(h.goto(6, states)["A"]) == {KEYS[0], KEYS[4]}
-    print("PASS test_empty_records_count_as_changed")
 
 
 def test_hostile_calls():
@@ -496,7 +494,7 @@ def test_hostile_calls():
             agree += 1
         else:
             assert a[key].tobytes() == pos.tobytes()
-    print(f"PASS test_hostile_calls ({len(cases)} hostile blobs, {agree} taken and matching Python)")
+    print(f"  test_hostile_calls ({len(cases)} hostile blobs, {agree} taken and matching Python)")
 
 
 def test_threads_agree():
@@ -519,7 +517,6 @@ def test_threads_agree():
                 assert v.tobytes() == start["A"].arrays[k].tobytes(), (th, k)
             res.append((sorted(keys), {k: v.tobytes() for k, v in a.items()}))
         assert all(r == res[0] for r in res), "thread counts disagree"
-    print("PASS test_threads_agree")
 
 
 def test_property():
@@ -527,8 +524,7 @@ def test_property():
     try:
         from hypothesis import given, settings, strategies as hs, HealthCheck
     except ImportError:
-        print("SKIP test_property: hypothesis not installed")
-        return
+        raise R.Skip("hypothesis not installed")
 
     @settings(max_examples=60, deadline=None, suppress_health_check=list(HealthCheck))
     @given(hs.integers(0, 2 ** 31), hs.integers(1, 40), hs.integers(1, 120), hs.booleans(),
@@ -538,7 +534,6 @@ def test_property():
         run_twins(entries, start, 0, [min(p, n_steps) for p in plan] + [n_steps, 0], f"prop {seed}")
 
     prop()
-    print("PASS test_property")
 
 
 def test_old_module_and_loader():
@@ -560,23 +555,15 @@ def test_old_module_and_loader():
         assert r.returncode != 0 and "EngineMissing" in r.stderr and f"found API {api}" in r.stderr, (api, r)
     r = run(probe)
     assert r.returncode == 0 and r.stdout.startswith("True"), r
-    print("PASS test_old_module_and_loader")
 
 
 def main():
     tests = [test_old_module_and_loader, test_ends_are_exact, test_threads_agree, test_mixed_histories,
              test_damaged_blobs, test_crafted_blobs, test_empty_records_count_as_changed, test_hostile_calls,
              test_property]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

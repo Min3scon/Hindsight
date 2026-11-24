@@ -1,8 +1,8 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Storage engine tests: codec, delta, step, store. Plain script, no bpy."""
 import threading
 import time
-import traceback
 
 import numpy as np
 
@@ -100,7 +100,6 @@ def test_diff_apply_all_types():
         delta.apply(buf, x, forward=False)
         assert bits_equal(buf, old), key
         assert delta.diff(key, old, old.copy()) is None
-    print("PASS test_diff_apply_all_types")
 
 
 def test_nan_negzero_bits():
@@ -116,7 +115,6 @@ def test_nan_negzero_bits():
     assert bits_equal(buf, new)
     # NaN unchanged bit-for-bit -> no delta (even though nan != nan)
     assert delta.diff(key, old, old.copy()) is None
-    print("PASS test_nan_negzero_bits")
 
 
 def test_exists_and_empty():
@@ -130,7 +128,6 @@ def test_exists_and_empty():
     new = z.copy(); new[3] = 0.5
     d = delta.diff(key, z, new, exists=(False, True))
     assert d.exists == (False, True) and list(d.idx) == [3]
-    print("PASS test_exists_and_empty")
 
 
 def test_pack_unpack_all_types():
@@ -154,7 +151,6 @@ def test_pack_unpack_all_types():
     # max uint32 index
     d = ChannelDelta(MASK_KEY, np.array([0, 2 ** 32 - 1], np.uint32), np.array([[1], [2]], np.uint32))
     assert deltas_equal(d, delta.unpack_delta(delta.pack_delta(d)))
-    print("PASS test_pack_unpack_all_types")
 
 
 def make_snapshot(nv=200, nf=50):
@@ -220,7 +216,6 @@ def test_snapshot_roundtrip():
         assert s2.arrays[k].dtype == s.arrays[k].dtype, k
     empty = Snapshot({"POINT": 0, "EDGE": 0, "FACE": 0, "CORNER": 0}, {FACE_OFFSETS_KEY: np.zeros(1, np.int32)})
     assert snaps_equal(empty, stepmod.snapshot_from_bytes(stepmod.snapshot_to_bytes(empty)))
-    print("PASS test_snapshot_roundtrip")
 
 
 def test_topology_step_written_without_full_copies():
@@ -250,7 +245,6 @@ def test_topology_step_written_without_full_copies():
                 assert peak < 3.2 * size, (name, effort, peak / size)
     finally:
         stepmod.VERIFY = verify
-    print("PASS test_topology_step_written_without_full_copies")
 
 
 def test_step_roundtrip_all_codecs():
@@ -272,7 +266,6 @@ def test_step_roundtrip_all_codecs():
         assert join.extra["_snapshots"]["m1"].arrays  # input not mutated
         empty = Step(4, "Nothing", "SCULPT", "obj-a")
         assert steps_equal(empty, stepmod.step_from_bytes(stepmod.step_to_bytes(empty, name)))
-    print("PASS test_step_roundtrip_all_codecs")
 
 
 def test_entry_pack_load():
@@ -286,7 +279,6 @@ def test_entry_pack_load():
     assert steps_equal(st, e.load())
     assert e.to_bytes() is e.blob
     assert e.meta["seq"] == 7
-    print("PASS test_entry_pack_load")
 
 
 def test_codec_fallback():
@@ -306,7 +298,7 @@ def test_codec_fallback():
     st = make_delta_step()
     for name in ("zstd", "lz4", "zlib", "none", "bogus"):
         assert steps_equal(st, stepmod.step_from_bytes(stepmod.step_to_bytes(st, name))), name
-    print(f"PASS test_codec_fallback (available={codec.available()})")
+    print(f"  test_codec_fallback (available={codec.available()})")
 
 
 class FakeHistory:
@@ -369,7 +361,6 @@ def test_packer_concurrent():
     assert not p._thread.is_alive()
     # after stop, submit packs synchronously
     e = Entry(tiny_step(1)); p.submit(e, "zlib"); assert e.is_packed()
-    print("PASS test_packer_concurrent")
 
 
 def test_enforce_tiers():
@@ -393,7 +384,6 @@ def test_enforce_tiers():
         p.stop()
     assert [e.is_packed() for e in h3.entries] == [True] * 90 + [False] * 10
     assert h3.entries[0].load().deltas[0].vals.sum() == 4
-    print("PASS test_enforce_tiers")
 
 
 def test_caps_max_steps():
@@ -406,7 +396,6 @@ def test_caps_max_steps():
     assert len(h.entries) == 10_000 and h.entries[0].seq == 50 and h.entries[-1].seq == 10_049
     assert h.cursor == 10_000
     assert store.enforce_caps([h], s) == 0
-    print("PASS test_caps_max_steps")
 
 
 def test_caps_memory():
@@ -426,7 +415,6 @@ def test_caps_memory():
     assert store.enforce_caps([a, b], s) == 0, "under the limit again: nothing more to drop"
     remaining = sorted(e.seq for e in a.entries + b.entries)
     assert remaining == list(range(400 - keep, 400)), remaining[:5]  # oldest seqs dropped first
-    print("PASS test_caps_memory")
 
 
 def test_caps_memory_skewed():
@@ -442,7 +430,6 @@ def test_caps_memory_skewed():
     assert len(d.entries) == 30 and len(c.entries) == keep - 30   # all drops from the older history
     assert c.entries[0].seq == 100 - (keep - 30)
     assert c.cursor == len(c.entries)
-    print("PASS test_caps_memory_skewed")
 
 
 def test_caps_never_drop_at_or_past_the_cursor():
@@ -491,7 +478,6 @@ def test_caps_never_drop_at_or_past_the_cursor():
     assert c.cursor == 0 and len(c.entries) == 4
     c.goto(len(c.entries), st)
     assert np.array_equal(st["C"].arrays[key], states_c[6])
-    print("PASS test_caps_never_drop_at_or_past_the_cursor")
 
 
 def _caps_world(seed, a_n=(5_000, 40_000)):
@@ -570,7 +556,6 @@ def test_caps_memo_stuck_between_target_and_limit():
         st = {}
         store.enforce(h1, settings, None, st, memo, h1[1])
         assert len(h1[1].entries) == 0 and st["memory_dropped"] == 2, (memo, len(h1[1].entries), st)
-    print("PASS test_caps_memo_stuck_between_target_and_limit")
 
 
 def test_enforce_reports_drops_before_packing():
@@ -593,7 +578,6 @@ def test_enforce_reports_drops_before_packing():
     else:
         raise AssertionError("packing should have failed")
     assert heard and heard[0][0] == "A", heard
-    print("PASS test_enforce_reports_drops_before_packing")
 
 
 def test_caps_memo_same_as_whole_pass():
@@ -669,7 +653,6 @@ def test_caps_memo_same_as_whole_pass():
         assert used[0] > 60, f"the short pass was hardly used ({used[0]}): the test doesn't test it"
     finally:
         store._enforce_one = real
-    print("PASS test_caps_memo_same_as_whole_pass")
 
 
 def test_caps_memo_reads_only_the_changed_history():
@@ -697,22 +680,13 @@ def test_caps_memo_reads_only_the_changed_history():
     st = {}
     store.enforce(hs, settings, None, st, memo, hs[1])
     assert st["memory_dropped"] > 0 and a.entries[0].seq > 1, "A's past must go first (oldest first)"
-    print("PASS test_caps_memo_reads_only_the_changed_history")
 
 
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

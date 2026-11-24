@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as RN
 """R085: the Movie Mode camera's extents are measured by the engine (`extents_into`): bit for bit the numpy
 reference (tests/reference/framing.py `extents`, the product written out left to right) on random points of both
 float types with NaN, infinite and overflowing rows, any 3x3 basis, a subset by index; equal to the numpy code
@@ -64,7 +65,6 @@ def test_extents_bit_for_bit():
     assert same(F.extents(np.arange(9, dtype=np.float16), np.eye(3), 1, 1), R.extents(np.arange(9, dtype=np.float64), np.eye(3), 1, 1))
     assert F.extents(np.zeros(0), np.eye(3), 1, 1) is None and F.extents(np.zeros(4), np.eye(3), 1, 1) is None
     assert F.extents(np.full((5, 3), np.nan), np.eye(3), 1, 1) is None
-    print("PASS test_extents_bit_for_bit")
 
 
 def test_multi_and_subsets():
@@ -91,7 +91,6 @@ def test_multi_and_subsets():
         for i in range(nb):
             w = R.extents(p[idx], bs[i], *ts[i])
             assert same(out[i], w) if w is not None else np.array_equal(out[i], np.array(F._START)), (k, i)
-    print("PASS test_multi_and_subsets")
 
 
 def test_history_walk_as_before():
@@ -115,7 +114,7 @@ def test_history_walk_as_before():
             assert got is not None and close(got, want), (seed, c, got, want)
             checked += 1
     assert checked >= 24, checked
-    print(f"PASS test_history_walk_as_before ({checked} walks)")
+    print(f"  test_history_walk_as_before ({checked} walks)")
 
 
 def test_refusals():
@@ -138,21 +137,10 @@ def test_refusals():
     shared = np.zeros(6 + 30)
     assert bad(shared[3:33], None, b, t, shared[:6].reshape(1, 6))    # out shares memory with the points
     assert ENGINE.extents_into(p, np.zeros(0, np.uint32), b, t, o) == 0 and np.array_equal(o, np.tile(np.array(F._START), (1, 1)))
-    print("PASS test_refusals")
 
 
 if __name__ == "__main__":
-    import traceback
-    failed = []
     tests = (test_extents_bit_for_bit, test_multi_and_subsets, test_history_walk_as_before, test_refusals)
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed.append(t.__name__)
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - len(failed)}/{len(tests)} passed")
-    if failed:
-        print("FAILED: " + ", ".join(failed))
-        sys.exit(1)
+        RN.run(t)
+    RN.finish()

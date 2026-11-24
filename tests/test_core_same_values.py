@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """R070: the engine's same_values, the data recorder's "nothing changed" check (datarec._same_values).
 
   rule        True only for strictly equal values: the same exact type at every level, floats by their
@@ -14,7 +15,6 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import marshal
 import random
 import struct
-import traceback
 
 from hindsight.core.native import ENGINE
 
@@ -158,15 +158,14 @@ def test_random_pairs():
             new[k] = mutate(rng, new[k])
             check_pair(old, new)
     assert n_same > 2500 and n_diff > 1500, (n_same, n_diff)
-    print(f"PASS test_random_pairs ({n_same} same, {n_diff} different, plus recorder-like dicts)")
+    print(f"  test_random_pairs ({n_same} same, {n_diff} different, plus recorder-like dicts)")
 
 
 def test_hypothesis():
     try:
         from hypothesis import given, settings, strategies as hs, HealthCheck
     except ImportError:
-        print("SKIP test_hypothesis: hypothesis not installed (test_random_pairs checks the same rule)")
-        return
+        raise R.Skip("hypothesis not installed (test_random_pairs checks the same rule)")
     # The Blender program runs with denormals flushed to zero (its CPU mode, as test_bl_t1_prop notes); hypothesis then
     # refuses to make subnormal floats. Where they exist (the bpy module) they are drawn; test_cases has some from their bits.
     sub = float.fromhex('0x1p-1060') * float.fromhex('0x1p-10') > 0.0   # False when flushed to zero
@@ -183,7 +182,7 @@ def test_hypothesis():
         assert SAME(a, copy(a)), a
         check_pair(a, mutate(random.Random(seed), copy(a)))
     prop()
-    print("PASS test_hypothesis (800 examples of three pairs each)")
+    print("  test_hypothesis (800 examples of three pairs each)")
 
 
 def test_cases():
@@ -252,21 +251,13 @@ def test_cases():
     d1["x"] = d1
     d2["x"] = d2
     assert not S(d1, d2)
-    print("PASS test_cases")
 
 
 def main():
     tests = [test_cases, test_random_pairs, test_hypothesis]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":
