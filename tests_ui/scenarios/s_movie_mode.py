@@ -50,7 +50,6 @@ def _engines():
 def run(d):
     yield 1.0
     C.dismiss_splash(d)
-    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only
     yield 0.3
     with d.override():
         for ob in list(bpy.data.objects):
@@ -68,10 +67,11 @@ def run(d):
     sc = bpy.context.scene
     sh = sc.hindsight
     sh.use_global = True
+    end = C.info(d)["len"]                # the strokes and, with Record on Everything, the scene's steps
     sh.movie_camera = True
     sh.movie_lighting = True
     sh.movie_mode = True
-    sh.movie_step = 4                     # the end: strokes made while Movie Mode is on add to it
+    sh.movie_step = end                   # the end: strokes made while Movie Mode is on add to it
     yield 1.4
     cam = sc.camera
     d.check("Movie Mode adds its camera and three lamps", _rig() == set(RIG) and cam is not None

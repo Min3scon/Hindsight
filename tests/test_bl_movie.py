@@ -494,10 +494,45 @@ def test_visibility_change_on_the_same_frame():
     check(a, b, states, 3)
 
 
+def test_quick_auto_key_with_data_no_object_uses():
+    """#104: with Record on Everything, a file with data no object uses (the startup file's unused
+    Grease Pencil materials) lost its timelapse. Movie Mode stopped reading that data, so it counted
+    as deleted: a step at each jump's position, and after Quick auto key's jump to step 0 every later
+    step was thrown away and every frame showed step 0 (window scenario movie_mode)."""
+    from hindsight.bl import datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    loose = bpy.data.materials.new("Loose")     # no object uses it
+    datarec.record_file_default()               # what opening a file does: Everything in this file
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 1); assert H.commit(a) is not None
+    H.fake_stroke(a, 2); assert H.commit(a) is not None
+    end = H.snapshot(a)
+    H.enter(a, "OBJECT")
+    runtime.set_global(C, True)
+    sc, n = C.scene, runtime.scrub_info(C)["len"]
+    sc.hindsight.movie_mode = True
+    L.tick_like("Movie Mode on")
+    assert runtime.scrub_info(C)["len"] == n, ("turning Movie Mode on is no step", n, runtime.scrub_info(C))
+    sc.hindsight.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert "A" not in sc.objects, "step 0: before A was added"
+    L.tick_like("Quick auto key")               # what the timer does once the operator has finished
+    assert runtime.scrub_info(C)["len"] == n, ("no step at step 0, none lost", n, runtime.scrub_info(C))
+    sc.frame_set(sc.frame_start + n)
+    assert "A" in sc.objects, "the last frame shows the last step"
+    H.assert_same(H.snapshot(bpy.data.objects["A"]), end, "A as it was at the end")
+    assert loose.name in bpy.data.materials
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
-          test_frame_lists_objects_once, test_visibility_change_on_the_same_frame]:
+          test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
+          test_quick_auto_key_with_data_no_object_uses]:
     H.run(f)
 H.finish()
