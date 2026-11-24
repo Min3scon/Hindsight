@@ -705,7 +705,8 @@ def on_load_post(*args) -> None:
             runtime.packer.queue_recompress(e for h in reg.all() for e in h.entries)
     try:
         from . import datarec
-        datarec.record_file_default()
+        if reg is not None or text is None:     # a history that didn't load may hold "switched off" (#61)
+            datarec.record_file_default()
     except Exception as e:
         guard.fail("loading", e, "could not switch on Everything in this file")
 

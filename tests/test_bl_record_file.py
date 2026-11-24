@@ -2,6 +2,7 @@
 in one click (objects added later follow, D36), shows as on only when all of them are, and switches
 them all off again. Hindsight's own Movie Mode objects are never switched on."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import shutil
 import tempfile
 import time
 import bpy
@@ -12,6 +13,7 @@ from hindsight.bl import datarec, runtime
 from hindsight.bl import prefs
 
 C = bpy.context
+TMP = tempfile.mkdtemp(prefix="hs_record_file_")    # each run its own folder: suites run side by side
 
 
 def test_one_switch_for_the_file():
@@ -104,7 +106,7 @@ def test_a_fresh_install_records_everything_in_a_file():
     a file where nobody switched it off: a change outside sculpting becomes a step, no switch turned on."""
     L.fresh_scene()
     assert prefs.HINDSIGHT_AP_prefs.__annotations__["record_scope"].keywords["default"] == "EVERYTHING"
-    path = os.path.join(tempfile.gettempdir(), "fresh_install", "plain.blend")
+    path = os.path.join(TMP, "fresh_install", "plain.blend")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
@@ -136,7 +138,7 @@ def test_a_stored_sculpting_only_choice_survives_the_update():
     a = _stored_prefs()
     try:
         prefs.get_prefs().record_scope = "SCULPT"      # what choosing it in the old build stored
-        path = os.path.join(tempfile.gettempdir(), "stored_choice", "plain.blend")
+        path = os.path.join(TMP, "stored_choice", "plain.blend")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=path)
         bpy.ops.wm.open_mainfile(filepath=path)
@@ -162,7 +164,7 @@ def test_a_file_saved_with_everything_switched_off_opens_with_it_off():
     """#61: switching "Everything in this file" off is a choice the file keeps. Saved and opened
     again, it is still off and a move is not recorded (only a file nobody switched gets the default)."""
     L.fresh_scene()
-    path = os.path.join(tempfile.gettempdir(), "switched_off", "off.blend")
+    path = os.path.join(TMP, "switched_off", "off.blend")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
@@ -179,6 +181,33 @@ def test_a_file_saved_with_everything_switched_off_opens_with_it_off():
     assert h is None or not h.entries, "nothing is recorded"
 
 
+def test_a_file_whose_history_did_not_load_keeps_its_choice():
+    """Review of #105: a file saved with "Everything in this file" switched off, whose history can't
+    be read when it opens (here its history folder is gone), doesn't get the default: the choice is
+    in that history, so nothing is switched on."""
+    from hindsight.core import persist
+    from hindsight.core.types import SETTINGS
+    L.fresh_scene()
+    was, SETTINGS.save_mode = SETTINGS.save_mode, "SIDECAR"
+    try:
+        path = os.path.join(TMP, "unread", "off.blend")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        bpy.ops.hindsight.record_file(on=False)
+        a = bpy.data.objects["A"]
+        a.location.x += 1
+        L.tick_like("move")
+        bpy.ops.wm.save_mainfile()
+        assert os.path.isdir(persist.sidecar_dir(path))
+        shutil.rmtree(persist.sidecar_dir(path))
+        bpy.ops.wm.open_mainfile(filepath=path)
+        assert runtime.missing_message[0], "the history didn't load"
+        assert not runtime.reg().everything and not datarec.file_tracked(), "nothing switched on"
+    finally:
+        SETTINGS.save_mode = was
+
+
 if __name__ == "__main__":
     H.run(test_one_switch_for_the_file)
     H.run(test_switch_is_quick_with_many_objects)
@@ -186,4 +215,5 @@ if __name__ == "__main__":
     H.run(test_a_fresh_install_records_everything_in_a_file)
     H.run(test_a_stored_sculpting_only_choice_survives_the_update)
     H.run(test_a_file_saved_with_everything_switched_off_opens_with_it_off)
+    H.run(test_a_file_whose_history_did_not_load_keeps_its_choice)
     H.finish()
