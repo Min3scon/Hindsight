@@ -139,7 +139,8 @@ def test_session_writes_only_what_is_listed():
     path = os.path.join(TMP, "session", "scene.blend")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     full_session(path)
-    blend = found_in_blend()
+    # #55: after the save the history is in the file only, not on the Text in memory
+    blend = found_in_blend() | {f"{persistence.TEXT_NAME}[{k}]" for k in H.stored_text(path)}
     files = files_next_to(path)
     unlisted = sorted(n for n in blend | files if not matches(n, want))
     assert not unlisted, f"written but not in METADATA.md: {unlisted}"

@@ -47,8 +47,8 @@ def test_saved_as_bytes_and_read_back():
         states.append(positions(ob))
     p = path()
     bpy.ops.wm.save_as_mainfile(filepath=p)
-    text = bpy.data.texts[persistence.TEXT_NAME]
-    assert persistence.DATA_BIN_PROP in text and persistence.DATA_PROP not in text, list(text.keys())
+    text = H.stored_text(p)
+    assert persistence.DATA_BIN_PROP in text and persistence.DATA_PROP not in text, list(text)
     assert isinstance(text[persistence.DATA_BIN_PROP], bytes)
     bpy.ops.wm.open_mainfile(filepath=p)
     ob = bpy.data.objects["E"]
@@ -63,7 +63,7 @@ def test_older_builds_text_still_opens():
     recorded()
     p = path()
     bpy.ops.wm.save_as_mainfile(filepath=p)
-    raw = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
+    raw = H.stored_text(p)[persistence.DATA_BIN_PROP]
     persistence.unregister()                        # the file as an earlier build left it: base64 text only
     try:
         bpy.ops.wm.open_mainfile(filepath=p)
@@ -82,10 +82,10 @@ def test_text_wins_when_both_are_there():
     recorded(5)
     p = path()
     bpy.ops.wm.save_as_mainfile(filepath=p)
-    old = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
+    old = H.stored_text(p)[persistence.DATA_BIN_PROP]
     recorded(2)                                         # what an earlier build saved over it later
     bpy.ops.wm.save_as_mainfile(filepath=p)
-    newer = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
+    newer = H.stored_text(p)[persistence.DATA_BIN_PROP]
     persistence.unregister()
     try:
         bpy.ops.wm.open_mainfile(filepath=p)
@@ -100,7 +100,7 @@ def test_text_wins_when_both_are_there():
     assert h is not None and len(h.entries) == 2, h and len(h.entries)
     # the next save writes the bytes and leaves no text behind
     bpy.ops.wm.save_mainfile(filepath=p)
-    text = bpy.data.texts[persistence.TEXT_NAME]
+    text = H.stored_text(p)
     assert persistence.DATA_PROP not in text and persistence.DATA_BIN_PROP in text
 
 
@@ -108,7 +108,7 @@ def test_damaged_bytes_are_kept_aside(older=None):
     recorded()
     p = path()
     bpy.ops.wm.save_as_mainfile(filepath=p)
-    raw = bytearray(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
+    raw = bytearray(H.stored_text(p)[persistence.DATA_BIN_PROP])
     raw[:4] = b"JUNK"
     persistence.unregister()
     try:
@@ -138,8 +138,7 @@ def test_file_is_smaller():
     recorded(40)
     p = path()
     bpy.ops.wm.save_as_mainfile(filepath=p)
-    text = bpy.data.texts[persistence.TEXT_NAME]
-    n = len(text[persistence.DATA_BIN_PROP])
+    n = len(H.stored_text(p)[persistence.DATA_BIN_PROP])
     assert n == len(persist.registry_to_bytes(runtime.reg())), n      # the registry's bytes, not their base64
 
 

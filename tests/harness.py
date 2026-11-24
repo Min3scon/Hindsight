@@ -127,6 +127,23 @@ def commit(obj, **kw):
     return runtime.commit(obj, **kw)
 
 
+def stored_text(path):
+    """The custom properties of the Text ``.hindsight_history`` saved in ``path`` (None without one), read
+    from the file without opening it: after a save Blender holds no copy of the history (#55)."""
+    from hindsight.bl import persistence
+    copy = os.path.join(tempfile.mkdtemp(), "stored.blend")     # Blender won't load from the open file itself
+    shutil.copyfile(path, copy)
+    with bpy.data.libraries.load(copy) as (src, dst):
+        dst.texts = [persistence.TEXT_NAME] if persistence.TEXT_NAME in src.texts else []
+    if not dst.texts:
+        return None
+    t = dst.texts[0]
+    try:
+        return {k: t[k] for k in t.keys()}
+    finally:
+        bpy.data.texts.remove(t)
+
+
 def snapshot(obj):
     snap = meshio.read_snapshot(obj.data, sculpt_only=False)
     return {k: v.copy() for k, v in snap.arrays.items()}

@@ -416,6 +416,16 @@ def on_save_post(*args) -> None:
     path = _handler_path(args)
     if not path or not _writes_anything(path):
         return
+    text = bpy.data.texts.get(TEXT_NAME)
+    if text is not None and not _PROTECT["embed"]:
+        # #9: the history is written; Blender's copy goes again, for Save, Save As and Save Copy alike (a newer
+        # Hindsight's copy stays: nothing would put it back)
+        try:
+            for key in (DATA_PROP, DATA_BIN_PROP):
+                if key in text:
+                    del text[key]
+        except Exception as e:
+            guard.fail("saving", e, "could not let go of Blender's copy of the history")
     mode = _mode()
     folder = mode in ("SIDECAR", "BOTH") or _FALLBACK["sidecar"]
     _FALLBACK["sidecar"] = False
