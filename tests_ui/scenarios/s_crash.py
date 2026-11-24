@@ -136,7 +136,8 @@ def check(d, folder):
     jr.close()
     d.check("Last saved: the three saved steps, the file's mesh, the journal started again",
             i is not None and i["len"] == saved and i["pos"] == saved and _state(d) == states[saved]
-            and recs is not None and not [r for r in recs if r[0] == "STEP"], (i, None if recs is None else [r[0] for r in recs]))
+            and recs is not None and not [r for r in recs if r[0] == "STEP"], (i, None if recs is None else [r[0] for r in recs],
+             [(r[1], C.step_detail(r[2])) for r in recs or () if r[0] == "STEP"]))
 
 
 def run(d, topo=False):
