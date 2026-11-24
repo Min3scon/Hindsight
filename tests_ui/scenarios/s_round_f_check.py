@@ -5,7 +5,6 @@ the files> (reads <src>/<label>.json from s_round_f_make). Works on old builds t
 For every file: history length and cursor as saved, the mesh at the cursor bit-exact, every
 position bit-exact after a jump, no error notes, no Python errors.
 """
-import hashlib
 import json
 import os
 import shutil
@@ -13,15 +12,6 @@ import shutil
 import bpy
 
 import common as C
-
-
-def mesh_hash(ob):
-    snap = C.mod("meshio").read_snapshot(ob.data, sculpt_only=False)
-    h = hashlib.blake2b(digest_size=16)
-    for k in sorted(snap.arrays):
-        h.update(k.encode())
-        h.update(snap.arrays[k].tobytes())
-    return h.hexdigest()
 
 
 def run(d):
@@ -51,7 +41,7 @@ def run(d):
                 got == (meta["steps"], meta["cursor"]), (got, meta))
         if h is None:
             continue
-        d.check(f"{label} {name}: mesh at the cursor bit-exact", mesh_hash(ob) == exp["hashes"][h.cursor])
+        d.check(f"{label} {name}: mesh at the cursor bit-exact", C.mesh_hash(ob) == exp["hashes"][h.cursor])
         with d.override():
             bpy.context.view_layer.objects.active = ob
             ob.select_set(True)
@@ -59,7 +49,7 @@ def run(d):
         for p in list(range(meta["steps"] + 1)) + [0, meta["steps"], meta["cursor"]]:
             with d.override():
                 rt.goto(bpy.context, p)
-            if mesh_hash(ob) != exp["hashes"][p]:
+            if C.mesh_hash(ob) != exp["hashes"][p]:
                 bad.append(p)
         d.check(f"{label} {name}: every position bit-exact after a jump", not bad, bad)
         notes = getattr(rt, "load_notes", [])

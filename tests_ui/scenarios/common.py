@@ -1,4 +1,5 @@
 """Helpers shared by the real-UI scenarios (run inside Blender)."""
+import hashlib
 import importlib
 import math
 
@@ -146,3 +147,27 @@ def keymap_hits(idname):
     kc = bpy.context.window_manager.keyconfigs.addon
     return [(km.name, kmi.type, kmi.ctrl, kmi.shift) for km in kc.keymaps for kmi in km.keymap_items
             if kmi.idname == idname]
+
+
+def dyntopo_state(d):
+    """The mesh as Dyntopo has it (written back first)."""
+    with d.override():
+        ob = bpy.context.active_object
+        if ob.mode == "SCULPT" and ob.use_dynamic_topology_sculpting:
+            bpy.ops.ed.flush_edits()
+        me = ob.data
+        co = [0.0] * (3 * len(me.vertices))
+        me.vertices.foreach_get("co", co)
+        cv = [0] * len(me.loops)
+        me.loops.foreach_get("vertex_index", cv)
+        h = hashlib.sha1(repr(([round(x, 5) for x in co], cv)).encode()).hexdigest()[:12]
+        return (len(me.vertices), len(me.polygons), h)
+
+
+def mesh_hash(ob):
+    snap = mod("meshio").read_snapshot(ob.data, sculpt_only=False)
+    h = hashlib.blake2b(digest_size=16)
+    for k in sorted(snap.arrays):
+        h.update(k.encode())
+        h.update(snap.arrays[k].tobytes())
+    return h.hexdigest()

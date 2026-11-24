@@ -230,20 +230,15 @@ def test_mesh_changed_without_hindsight():
         op(o)
     path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), "outside_mesh.blend")
 
-    def change():
-        a = bpy.data.objects["A"]
-        a.data.vertices[0].co.x += 1.0
-        a.data.update()
-    outside = save_and_change_outside(path, change, keep_backup=False)
+    outside = save_and_change_outside(path, move_a_vertex, keep_backup=False)
     a = bpy.data.objects["A"]
     assert runtime.history_of(a) is None, "a history that can't match the mesh is left out"
     assert any(runtime.OUTSIDE_MESH_TEXT.format(name="A") == t for _s, t in runtime.load_notes), runtime.load_notes
     assert state() == outside
 
 
-def test_mesh_changed_without_hindsight_bridged_by_the_backup():
-    """D107: Blender's backup copy (.blend1) holds the mesh exactly as Hindsight saved it, so the change
-    made without Hindsight becomes one step and the history goes on; every position existed."""
+def bridged_case_states():
+    """A fresh scene with three steps on A; the mesh at every position, the cursor left at the end."""
     setup()
     for o in (T.translate("A", (1, 0, 0)), T.edit_ops("A", 2)[0], T.leave_edit("A")):
         op(o)
@@ -253,13 +248,22 @@ def test_mesh_changed_without_hindsight_bridged_by_the_backup():
         runtime._goto_history(h, pos, True)
         states.append(state())
     runtime._goto_history(h, len(h.entries), True)
+    return states
+
+
+def move_a_vertex():
+    a = bpy.data.objects["A"]
+    a.data.vertices[0].co.x += 1.0
+    a.data.update()
+
+
+def test_mesh_changed_without_hindsight_bridged_by_the_backup():
+    """D107: Blender's backup copy (.blend1) holds the mesh exactly as Hindsight saved it, so the change
+    made without Hindsight becomes one step and the history goes on; every position existed."""
+    states = bridged_case_states()
     path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), "outside_bridged.blend")
 
-    def change():
-        a = bpy.data.objects["A"]
-        a.data.vertices[0].co.x += 1.0
-        a.data.update()
-    outside = save_and_change_outside(path, change)
+    outside = save_and_change_outside(path, move_a_vertex)
     a = bpy.data.objects["A"]
     h = runtime.history_of(a)
     assert h is not None and h.entries[-1].load().label == runtime.OUTSIDE_LABEL, "one step for the change"
@@ -339,11 +343,7 @@ def test_mesh_changed_without_hindsight_against_blake2b_prints():
         op(o)
     path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), "outside_mesh_old.blend")
 
-    def change():
-        a = bpy.data.objects["A"]
-        a.data.vertices[0].co.x += 1.0
-        a.data.update()
-    outside = save_and_change_outside(path, change, keep_backup=False, prints=blake2b_print)
+    outside = save_and_change_outside(path, move_a_vertex, keep_backup=False, prints=blake2b_print)
     loaded_prints(OLD_FORM)
     a = bpy.data.objects["A"]
     assert runtime.history_of(a) is None, "a history that can't match the mesh is left out"
@@ -354,22 +354,10 @@ def test_mesh_changed_without_hindsight_against_blake2b_prints():
 def test_bridged_by_the_backup_against_blake2b_prints():
     """R060: as test_mesh_changed_without_hindsight_bridged_by_the_backup, the file saved by a build
     before R060: the backup copy's mesh is hashed with blake2b too, matches, and the change is one step."""
-    setup()
-    for o in (T.translate("A", (1, 0, 0)), T.edit_ops("A", 2)[0], T.leave_edit("A")):
-        op(o)
-    states = [state()]
-    h = runtime.history_of(bpy.data.objects["A"])
-    for pos in range(len(h.entries) + 1):
-        runtime._goto_history(h, pos, True)
-        states.append(state())
-    runtime._goto_history(h, len(h.entries), True)
+    states = bridged_case_states()
     path = os.path.join(tempfile.mkdtemp(prefix="hs_outside_"), "outside_bridged_old.blend")
 
-    def change():
-        a = bpy.data.objects["A"]
-        a.data.vertices[0].co.x += 1.0
-        a.data.update()
-    outside = save_and_change_outside(path, change, prints=blake2b_print)
+    outside = save_and_change_outside(path, move_a_vertex, prints=blake2b_print)
     loaded_prints(OLD_FORM)
     a = bpy.data.objects["A"]
     h = runtime.history_of(a)
