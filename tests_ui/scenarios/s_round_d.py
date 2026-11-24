@@ -63,7 +63,10 @@ def run(d):
     os.makedirs(work, exist_ok=True)
     yield 1.0
     C.dismiss_splash(d)
-    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only
+    # Sculpting only (#62, #104): part 1 checks the warnings that say what Sculpting only leaves out (shape
+    # keys, materials...: Everything records them, so it shows none), and the damaged-history part flips
+    # bytes at offsets that assume the file holds only the sculpt history
+    C.mod("prefs").get_prefs().record_scope = "SCULPT"
     yield 0.3
 
     # ============================================================ part 1: awkward objects

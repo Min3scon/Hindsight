@@ -35,7 +35,6 @@ def run(d):
     rt = C.mod("runtime")
     yield 1.0
     C.dismiss_splash(d)
-    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only
     yield 0.3
     a = C.fresh_sphere(d, name="A")
     C.frame_view(d)
@@ -114,6 +113,8 @@ def run(d):
     d.check("the slider is locked while Movie Mode is on", C.info(d)["locked"])
     sh.movie_mode = False
     sh.use_global = False
+    # with Record on Everything step 0 is before A was added: playback took A away and brought it back
+    a = bpy.data.objects["A"]
     yield 0.2
 
     # ---------------------------------------------------------------- Join, then scrub back past it
