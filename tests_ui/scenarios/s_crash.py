@@ -53,6 +53,9 @@ def make(d, folder, topo=False):
     C.dismiss_splash(d)
     yield 0.3
     C.fresh_sphere(d, segments=48, rings=24)
+    if topo:                # with the new sphere: with Record on Everything a later change is a step (#104)
+        with d.override():
+            bpy.context.active_object.data.remesh_voxel_size = 0.012
     C.frame_view(d)
     _set_recovery("INTERRUPTED")
     C.set_mode(d, "SCULPT")
@@ -68,7 +71,6 @@ def make(d, folder, topo=False):
         yield from C.real_stroke(d, 3)
         states.append(_state(d))
         with d.override():
-            bpy.context.active_object.data.remesh_voxel_size = 0.012
             bpy.ops.object.voxel_remesh()
         yield 1.5
         states.append(_state(d))
@@ -138,7 +140,6 @@ def check(d, folder):
 
 
 def run(d, topo=False):
-    C.mod("prefs").get_prefs().record_scope = "SCULPT"    # #62: what this proves is about sculpting only (both phases)
     folder = os.path.abspath(d.args.get("dir") or os.path.join(d.out, "files"))
     if d.args.get("phase") == "check":
         yield from check(d, folder)

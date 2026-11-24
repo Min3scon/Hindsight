@@ -495,14 +495,16 @@ def test_visibility_change_on_the_same_frame():
 
 
 def test_quick_auto_key_with_data_no_object_uses():
-    """#104: with Record on Everything, a file with data no object uses (the startup file's unused
-    Grease Pencil materials) lost its timelapse. Movie Mode stopped reading that data, so it counted
-    as deleted: a step at each jump's position, and after Quick auto key's jump to step 0 every later
-    step was thrown away and every frame showed step 0 (window scenario movie_mode)."""
+    """#104: with Record on Everything, a file with data no object uses (a material library; in the
+    window the startup file's unused Grease Pencil materials) lost its timelapse. Movie Mode stopped
+    reading that data, so it counted as deleted: a step at each jump's position, and after Quick auto
+    key's jump to step 0 every later step was thrown away and every frame showed step 0 (window
+    scenario movie_mode)."""
     from hindsight.bl import datarec
     from tests import t1_gate_lib as L
     H.fresh()
-    loose = bpy.data.materials.new("Loose")     # no object uses it
+    loose = bpy.data.materials.new("Loose")     # no object uses it: kept with a fake user
+    loose.use_fake_user = True
     datarec.record_file_default()               # what opening a file does: Everything in this file
     a = H.make_mesh(1200, "A")
     L.tick_like("add A")

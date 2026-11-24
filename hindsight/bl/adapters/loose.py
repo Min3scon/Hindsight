@@ -25,8 +25,9 @@ _LOOSE_TURN = [0]
 
 
 def _unused(idb) -> bool:
-    """No user but its fake user (a library kept for later, data an add-on keeps)."""
-    return idb.library is None and idb.users - int(bool(idb.use_fake_user)) <= 0
+    """No user but its fake user (a library kept for later, data an add-on keeps). One without even
+    that isn't kept: a save leaves it out (#104: a reopen then counted it as deleted)."""
+    return idb.library is None and idb.use_fake_user and idb.users <= 1
 
 
 def _loose_mats():
