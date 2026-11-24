@@ -31,20 +31,12 @@ from hindsight.core.types import (                              # noqa: E402
     ChannelDelta, DataChange, Entry, Snapshot, Step, key_dtype, key_width, make_key,
 )
 
-LIB = native.lib
-HAS = LIB is not None and hasattr(LIB, "apply_steps")
+LIB = native.ENGINE
 KEYS = [make_key(f"c_{t.lower()}", "POINT", t) for t in CHANNEL_TYPES]
 WEIRD32 = tc.WEIRD32
 
 
 ENGINES = [("native", History), ("reference", RefHistory)]       # History.goto against the Python loop
-
-
-def skip(name):
-    if not HAS:
-        print(f"SKIP {name}: hindsight_native with apply_steps not loaded ({native.ERROR})")
-        return True
-    return False
 
 
 # ------------------------------------------------------------------------------ values
@@ -255,8 +247,6 @@ def plan_for(rng, n, k=60):
 
 # ------------------------------------------------------------------------------ tests
 def test_mixed_histories():
-    if skip("test_mixed_histories"):
-        return
     jumps = 0
     for seed in range(12):
         rng = np.random.default_rng(1000 + seed)
@@ -275,8 +265,6 @@ def test_mixed_histories():
 
 def test_ends_are_exact():
     """Plain stroke histories end where they were recorded, both ways, at every channel type."""
-    if skip("test_ends_are_exact"):
-        return
     for seed in range(4):
         entries, start, cur = build(50 + seed, n_steps=200, n=2000, targets=("A",), mix=False)
         h, states = twin(entries, start, 0)
@@ -300,8 +288,6 @@ except Exception:
 def test_damaged_blobs():
     """A damaged step in the middle of a run: the same exception and the same state on every
     engine (steps before it applied, cursor kept)."""
-    if skip("test_damaged_blobs"):
-        return
     rng = np.random.default_rng(77)
     entries, start, cur = build(9, n_steps=40, n=200, targets=("A",), mix=False)
     n = 0
@@ -393,8 +379,6 @@ def _crafted(st):
 def test_crafted_blobs():
     """Damage made on purpose in each field apply_steps checks, in the middle of a run: the same
     outcome on every engine."""
-    if skip("test_crafted_blobs"):
-        return
     entries, start, cur = build(4, n_steps=30, n=300, targets=("A",), mix=False)
     at = 17
     st = entries[at].load()
@@ -410,8 +394,6 @@ def test_crafted_blobs():
 def test_empty_records_count_as_changed():
     """A record with no changed element still names its channel as changed (as the Python path
     does), inside a run, whichever way."""
-    if skip("test_empty_records_count_as_changed"):
-        return
     rng = np.random.default_rng(12)
     n = 50
     a = {KEYS[0]: values(rng, KEYS[0], n), KEYS[4]: values(rng, KEYS[4], n)}
@@ -435,8 +417,6 @@ def test_empty_records_count_as_changed():
 def test_hostile_calls():
     """apply_steps on its own: bad arguments and hostile data never crash, never write a step it
     refuses, and never allocate from an unchecked length."""
-    if skip("test_hostile_calls"):
-        return
     L = LIB
     rng = np.random.default_rng(3)
     key = POSITION_KEY
@@ -523,8 +503,6 @@ def test_hostile_calls():
 def test_threads_agree():
     """Any helper thread count gives the same arrays, and a step that isn't taken stops every
     thread count at the same place."""
-    if skip("test_threads_agree"):
-        return
     rng = np.random.default_rng(8)
     entries, start, cur = build(21, n_steps=150, n=3000, targets=("A",), mix=False)
     blobs = [e.blob for e in entries]
@@ -548,8 +526,6 @@ def test_threads_agree():
 
 def test_property():
     """Random small histories (hypothesis): every engine agrees on every jump."""
-    if skip("test_property"):
-        return
     try:
         from hypothesis import given, settings, strategies as hs, HealthCheck
     except ImportError:
@@ -569,28 +545,23 @@ def test_property():
 
 def test_old_module_and_loader():
     """The engine must be API 3: a module from an older release (API 1 or 2, no codecs or step
-    container) or a newer one (or none at all) is refused with EngineMissing, in every mode. The
+    container) or a newer one (or none at all) is refused with EngineMissing. The
     engine is one module: there is no older-module mode."""
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
     def fake(api):
         return (f"import sys, types; m = types.ModuleType('hindsight_native'); m.API = {api}; "
                 "sys.modules['hindsight_native'] = m; ")
-    probe = "from hindsight.core import native; print(native.lib is not None, repr(native.ERROR))"
+    probe = "from hindsight.core import native; print(native.ENGINE is not None)"
 
-    def run(code, mode):
-        env = dict(os.environ)
-        env.pop("HINDSIGHT_NATIVE", None)
-        if mode is not None:
-            env["HINDSIGHT_NATIVE"] = mode
-        return subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True)
+    def run(code):
+        return subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
 
     for api in (0, 1, 2, native.API + 1):
-        for mode in (None, "require"):
-            r = run(fake(api) + probe, mode)
-            assert r.returncode != 0 and "EngineMissing" in r.stderr and f"found API {api}" in r.stderr, (api, mode, r)
-    r = run(probe, None)
-    assert r.returncode == 0 and r.stdout.startswith("True None"), r
+        r = run(fake(api) + probe)
+        assert r.returncode != 0 and "EngineMissing" in r.stderr and f"found API {api}" in r.stderr, (api, r)
+    r = run(probe)
+    assert r.returncode == 0 and r.stdout.startswith("True"), r
     print("PASS test_old_module_and_loader")
 
 
