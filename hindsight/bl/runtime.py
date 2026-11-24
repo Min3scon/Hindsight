@@ -1635,6 +1635,7 @@ def goto(context, pos: int, final: bool = True) -> None:
         return
     if _PAUSED:
         end_paused(now=True)                 # D153: a paused Dyntopo visit is a step before any jump
+    datarec.flush_pending()
     if use_global(context):
         global_goto(context, pos, final)
     else:

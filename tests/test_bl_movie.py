@@ -564,11 +564,47 @@ def test_lamps_follow_the_users_light_on_every_frame():
         assert (lamps & set(camrig.rig(sc))) == (set() if own else lamps), (f, sorted(camrig.rig(sc)))
 
 
+def test_a_change_waiting_to_be_recorded_survives_a_jump_back():
+    """#107: a change still waiting to settle when Movie Mode jumps back (Quick auto key on the first
+    frame) is recorded first, at the end. Before, the recorder kept it after the jump, at step 0, as a
+    new step: every step after step 0 was thrown away, the object added in it never came back and the
+    timelapse rendered step 0 on every frame."""
+    from hindsight.bl import datarec, idmap
+    from tests import t1_gate_lib as L
+    H.fresh()
+    datarec.record_file_default()               # what opening a file does: Everything in this file
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    H.enter(a, "SCULPT")
+    H.fake_stroke(a, 1); assert H.commit(a) is not None
+    H.fake_stroke(a, 2); assert H.commit(a) is not None
+    end = H.snapshot(a)
+    H.enter(a, "OBJECT")
+    runtime.set_global(C, True)
+    sc = C.scene
+    n = runtime.scrub_info(C)["len"]
+    assert n == 3, n
+    sc.hindsight.movie_mode = True
+    sc["take"] = 2.0                            # changed just now: waiting to settle
+    datarec._DIRTY[idmap.uid_of(sc)] = datarec._now()
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert "A" not in sc.objects, "step 0: before A was added"
+    datarec.commit(label="Change", settled=True)   # what the timer does once changes settle
+    last = runtime.scrub_info(C)["len"]
+    assert last == n + 1, ("the change is one more step at the end; none is lost", n, last)
+    sc.hindsight.movie_step = last
+    assert "A" in sc.objects, "A comes back"
+    H.assert_same(H.snapshot(bpy.data.objects["A"]), end, "A as it was at the end")
+    assert sc.get("take") == 2.0
+
+
 for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
           test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
-          test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame]:
+          test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame,
+          test_a_change_waiting_to_be_recorded_survives_a_jump_back]:
     H.run(f)
 H.finish()
