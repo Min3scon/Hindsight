@@ -10,8 +10,9 @@ decisions below remove only things that never shipped or that nothing uses. Git 
 - O2, the gate evidence frozen at beta 2 is retired (#73): `evidence/`, `test_rounds/`, `TEST_EVIDENCE.md`,
   `tools/make_evidence.py`, `gate_spec.py`, `visual_review.py`, the `@covers` marks and the pre-commit check on
   them. The 12-point gate itself stays.
-- O3 and O4, the benchmarks (#74): `bench/results/` and everything `OPTIMISATION_LOG.md` links to stay; the 34
-  one-off scripts that `bench/suite.py` replaces go. The copy checker's website-only coverage rule and its test
+- O4, the benchmarks (#74): `bench/results/` and everything `OPTIMISATION_LOG.md` links to stay; the 34
+  one-off scripts that `bench/suite.py` replaces go.
+- O3, the copy checker (#74): its website-only coverage rule and its test
   (`tests/test_tools_coverage.py`) are deleted rather than aimed at README and CHANGELOG.
 - O6, the unused tools go (#74): `tools/net_check.py` and `tools/list_ui_strings.py`.
 - Not decided here: the frozen oracle copies in `tests/reference` (O5) wait for format 5 (#11).
