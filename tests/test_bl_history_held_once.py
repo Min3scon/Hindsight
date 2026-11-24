@@ -1,15 +1,18 @@
 """#9 / #54: after a .blend with its history inside opens, Hindsight holds the history and Blender's copy of it
 (the bytes on the Text ``.hindsight_history``) is dropped, so it is in memory once. A history Hindsight doesn't
 read (from a newer Hindsight, or unreadable) is not dropped: it stays in the file untouched, as before.
-#55: a save puts the copy back only for the write (Save, Save As and Save Copy alike) and takes it out after."""
+#55: a save puts the copy back only for the write (Save, Save As and Save Copy alike) and takes it out after.
+#57: a file recovered from Blender's autosave opens cleanly without its history; after a crash the .blend itself and
+the crash journal bring every step back, even when the autosave was recovered first."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import json
+import shutil
 import struct
 import tempfile
 
 import bpy
 import tests.harness as H
-from hindsight.bl import persistence, runtime
+from hindsight.bl import guard, persistence, runtime
 from hindsight.core import persist
 from hindsight.core.types import SETTINGS
 
@@ -179,11 +182,105 @@ def test_blenders_undo_after_opening_does_not_bring_the_copy_back():
     assert h is not None and len(h.entries) == len(states) - 1
 
 
+# #57: Blender's autosave runs no save hooks, so it holds no copy of the history: a file recovered from it opens
+# without its history (the accepted cost). After a crash, the .blend itself and the crash journal bring every step back.
+def with_unsaved_steps(n=2):
+    """Saved with every step, then ``n`` steps more recorded on top and not saved; the state at each position."""
+    SETTINGS.crash_recovery = "INTERRUPTED"
+    p, states = saved_with_states()
+    ob = bpy.data.objects["E"]
+    H.enter(ob, "SCULPT")
+    for k in range(n):
+        H.fake_stroke(ob, 50 + k)
+        assert runtime.commit(ob) is not None
+    H.enter(ob, "OBJECT")
+    for pos in range(len(states), len(states) + n):
+        runtime.goto(C, pos)
+        states.append(positions(ob))
+    return p, states
+
+
+def autosave_of(p):
+    """What Blender's autosave writes: the session as it is in memory, written without Hindsight's save hooks."""
+    a = os.path.join(os.path.dirname(p), "e_1234_autosave.blend")
+    persistence.unregister()
+    try:
+        bpy.ops.wm.save_as_mainfile(filepath=a, copy=True)
+    finally:
+        persistence.register()
+    return a
+
+
+def opened_cleanly_without_history(work):
+    ob = bpy.data.objects["E"]
+    assert runtime.history_of(ob) is None
+    assert positions(ob) == work, "the autosave's work didn't come back"
+    assert not runtime.load_notes and runtime.missing_message[0] is None, (runtime.load_notes, runtime.missing_message)
+    assert not guard.failed(), guard.failed()
+
+
+def recovered_with(p, states, saved_at):
+    """Opening the .blend itself brings every step back, the cursor at the saved position, and drops Blender's copy."""
+    bpy.ops.wm.open_mainfile(filepath=p)
+    ob = bpy.data.objects["E"]
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == len(states) - 1, (h and len(h.entries), len(states) - 1)
+    assert h.cursor == saved_at and positions(ob) == states[saved_at], h.cursor
+    assert copies() == [], copies()
+    assert not runtime.load_notes and not guard.failed(), (runtime.load_notes, guard.failed())
+    for pos in list(range(len(states))) + [0, len(states) - 1]:
+        runtime.goto(C, pos)
+        assert positions(ob) == states[pos], pos
+
+
+def test_after_a_crash_opening_the_blend_brings_every_step_back():
+    try:
+        p, states = with_unsaved_steps()
+        recovered_with(p, states, saved_at=len(states) - 3)       # the session ends without saving
+    finally:
+        SETTINGS.crash_recovery = "LAST_SAVED"
+
+
+def test_a_file_recovered_from_blenders_autosave_opens_cleanly_without_its_history():
+    try:
+        p, states = with_unsaved_steps()
+        a = autosave_of(p)
+        bpy.ops.wm.recover_auto_save(filepath=a)
+        opened_cleanly_without_history(states[-1])
+        recovered_with(p, states, saved_at=len(states) - 3)
+    finally:
+        SETTINGS.crash_recovery = "LAST_SAVED"
+
+
+def test_the_autosave_recovered_at_the_blends_path_leaves_its_crash_journal_alone():
+    # Blender gives a recovered autosave the path of the .blend it was made from (it reads it with G_FILE_RECOVER_READ):
+    # its contents are opened at that path here, the .blend itself set aside meanwhile
+    try:
+        p, states = with_unsaved_steps()
+        a = autosave_of(p)
+        os.replace(p, p + ".kept")
+        shutil.copyfile(a, p)
+        bpy.ops.wm.open_mainfile(filepath=p)
+        os.replace(p + ".kept", p)
+        opened_cleanly_without_history(states[-1])
+        ob = bpy.data.objects["E"]                                  # a step in the recovered session, not saved
+        H.enter(ob, "SCULPT")
+        H.fake_stroke(ob, 77)
+        assert runtime.commit(ob) is not None
+        H.enter(ob, "OBJECT")
+        recovered_with(p, states, saved_at=len(states) - 3)
+    finally:
+        SETTINGS.crash_recovery = "LAST_SAVED"
+
+
 if __name__ == "__main__":
     for t in (test_blenders_copy_goes_after_opening_and_every_step_plays_back, test_the_next_save_still_holds_the_history,
               test_save_as_save_and_save_copy_each_take_blenders_copy_out_again,
               test_a_newer_history_stays_and_is_saved_back_untouched,
               test_an_unreadable_history_stays_and_is_saved_back_untouched,
-              test_blenders_undo_after_opening_does_not_bring_the_copy_back):
+              test_blenders_undo_after_opening_does_not_bring_the_copy_back,
+              test_after_a_crash_opening_the_blend_brings_every_step_back,
+              test_a_file_recovered_from_blenders_autosave_opens_cleanly_without_its_history,
+              test_the_autosave_recovered_at_the_blends_path_leaves_its_crash_journal_alone):
         H.run(t)
     H.finish()

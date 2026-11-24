@@ -679,10 +679,14 @@ def on_load_post(*args) -> None:
             runtime.missing_message[0] = MISSING_TEXT.format(folder=folder)
 
     recover = reg is not None and bool(path) and _recovery() == "INTERRUPTED"
+    # #57: a saved history that isn't in what was opened (Blender's autosave holds no copy of it, the folder is
+    # missing) leaves the journal of that save alone, for when the .blend itself is opened; replay skips this
+    # session's records
+    held_elsewhere = reg is None and text is not None and bool(text.get(SAVE_ID_PROP))
     j = None
     # D29: a file without history gets no journal until something is recorded (opened on the first
     # step); one with history, or with a journal left by an interrupted session, gets it now
-    if reg is not None or os.path.isfile(journal_path(path)):
+    if reg is not None or (not held_elsewhere and os.path.isfile(journal_path(path))):
         try:
             # without recovery the journal is emptied below in any case (not kept): R067 lets it go now
             j = _open_journal(path, keep=recover, discard=not recover)
