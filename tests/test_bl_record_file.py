@@ -208,6 +208,37 @@ def test_a_file_whose_history_did_not_load_keeps_its_choice():
         SETTINGS.save_mode = was
 
 
+def test_a_crash_keeps_everything_switched_off():
+    """#104 (#61 review): "Everything in this file" switched off, then Blender ends without a save. The
+    crash journal holds the choice, so the recovered file keeps it off, though the history it saved
+    never had one (it had the default)."""
+    from hindsight.bl import persistence
+    from hindsight.core.types import SETTINGS
+    L.fresh_scene()
+    was = SETTINGS.save_mode, SETTINGS.crash_recovery
+    SETTINGS.save_mode, SETTINGS.crash_recovery = "SIDECAR", "INTERRUPTED"
+    try:
+        path = os.path.join(TMP, "crash_off", "off.blend")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        a = bpy.data.objects["A"]
+        a.location.x += 1
+        L.tick_like("move")
+        bpy.ops.wm.save_mainfile()              # a saved history with the default: no choice in it
+        bpy.ops.hindsight.record_file(on=False)
+        assert not datarec.file_tracked()
+        a.location.x += 1
+        L.tick_like("move while off")
+        persistence._close_journal()            # the session ends here, unsaved
+        bpy.ops.wm.open_mainfile(filepath=path)
+        h = runtime.history_of(bpy.data.objects["A"])
+        assert h is not None and len(h.entries) == 1, "the saved step came back"
+        assert not runtime.reg().everything and not datarec.file_tracked(), "still off"
+    finally:
+        SETTINGS.save_mode, SETTINGS.crash_recovery = was
+
+
 if __name__ == "__main__":
     H.run(test_one_switch_for_the_file)
     H.run(test_switch_is_quick_with_many_objects)
@@ -216,4 +247,5 @@ if __name__ == "__main__":
     H.run(test_a_stored_sculpting_only_choice_survives_the_update)
     H.run(test_a_file_saved_with_everything_switched_off_opens_with_it_off)
     H.run(test_a_file_whose_history_did_not_load_keeps_its_choice)
+    H.run(test_a_crash_keeps_everything_switched_off)
     H.finish()

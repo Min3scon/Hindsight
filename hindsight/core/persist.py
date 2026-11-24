@@ -664,6 +664,8 @@ def replay(reg, records: list) -> int:
             t = header.get("uid")
             if t and hasattr(reg, "everything"):
                 (reg.everything.add if header.get("on") else reg.everything.discard)(t)
+                if not header.get("on"):        # #104: switched off is a choice the file keeps (#61)
+                    reg.everything_chosen = True
         elif rtype == "META":
             if not uid:
                 if header.get("resync"):
