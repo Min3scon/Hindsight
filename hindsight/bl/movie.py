@@ -2,17 +2,21 @@
 
 Movie Mode only plays history back, it never changes it: no step is ever recorded from here.
 """
+import contextlib
 import inspect
 import math
 
 import bpy
+
+from . import reg
 from bpy.app.handlers import persistent
 
 from . import guard, runtime
 
 DATA_PATH = "hindsight.movie_step"
 _BUSY = [False]   # re-entrancy guard (goto / keying write meshes and the Step value)
-_SHOWN = {}       # the Step value last applied, what that jump was planned from, the whole frame it was for
+_SHOWN = {}       # the Step value last applied, what that jump was planned from, the whole frame it was for,
+                  # the next step number then
 
 
 def _takes_vis(fn) -> bool:
@@ -61,6 +65,19 @@ def _histories_now() -> tuple:
     return _histories_key(frozenset(runtime._visible_uids()))
 
 
+def _seq() -> tuple:
+    """What a recorded step changes, and what Blender's undo / redo changes (a cursor, no new step number)."""
+    r = runtime.reg()
+    return (id(r), r.next_seq, runtime.UNDO_MOVES[0])
+
+
+def _recorded_since(want) -> bool:
+    """True if, in the same registry, steps were recorded or Blender's undo / redo moved a history since
+    the Step value `want` was last applied."""
+    then, now = _SHOWN.get("seq"), _seq()
+    return want == _SHOWN.get("want") and then is not None and then[0] == now[0] and then[1:] != now[1:]
+
+
 def _apply(context, value) -> bool:
     """Move the global timeline to `value` if Movie Mode is active. True if it moved.
 
@@ -88,8 +105,17 @@ def _apply(context, value) -> bool:
     if not groups:
         return False
     target = max(0, min(want, len(groups)))
+    if _recorded_since(want):
+        # #107: a step recorded with Movie Mode on (a stroke at the end) stays shown and the Step value
+        # follows it; jumping back would let the next change throw it away. An undo of it sticks the same way
+        want = target = pos
+        _BUSY[0] = True
+        try:
+            sh.id_data.hindsight.movie_step = pos      # sh is a read-only proxy in the frame handler
+        finally:
+            _BUSY[0] = False
     if target == pos:
-        _SHOWN.update(want=want, histories=_histories_key(vis))
+        _SHOWN.update(want=want, histories=_histories_key(vis), seq=_seq())
         return False
     prev = getattr(runtime.goto, "_movie", False)
     _BUSY[0] = True
@@ -105,8 +131,24 @@ def _apply(context, value) -> bool:
         runtime.goto._movie = prev
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
-    _SHOWN.update(want=want, histories=_histories_key(vis))
+    _lamps_follow(context.scene)
+    _SHOWN.update(want=want, histories=_histories_key(vis), seq=_seq())
     return True
+
+
+def _lamps_follow(scene) -> None:
+    """#104: a jump can bring the user's light back or take it away. Movie lighting's lamps follow in
+    the same frame, in a render too (the timer waits for it to end); one lamp the user deleted is left
+    to the timer."""
+    try:
+        from . import camrig
+    except ImportError:
+        return
+    if not scene.hindsight.movie_lighting:
+        return
+    roles = set(camrig.LIGHT_ROLES)
+    if bool(camrig.wanted(scene) & roles) != bool(set(camrig.rig(scene)) & roles):
+        camrig.ensure(scene, reframe=False)
 
 
 @guard.guarded("movie")
@@ -115,6 +157,15 @@ def on_step_changed(context) -> None:
     sh = _props(context.scene)
     if sh is not None:
         _apply(context, sh.movie_step)
+
+
+@guard.guarded("movie")
+def follow_new_steps() -> None:
+    """#107: the timer moves the Step value onto steps recorded while Movie Mode is on, so it says what
+    the scene shows (a frame change that comes first does the same)."""
+    sh = _props(bpy.context.scene)
+    if _active(sh) and _recorded_since(sh.movie_step) and not bpy.app.is_job_running('RENDER'):
+        _apply(bpy.context, sh.movie_step)      # not while a render reads the scene: after it
 
 
 @persistent
@@ -133,10 +184,8 @@ def on_frame_change(scene, depsgraph=None) -> None:
     else:
         value = sh.movie_step
         if depsgraph is not None:
-            try:
+            with contextlib.suppress(Exception):
                 value = scene.evaluated_get(depsgraph).hindsight.movie_step
-            except Exception:
-                pass
     _apply(_no_operator_context(bpy.context), value)
     _SHOWN["frame"] = frame
 
@@ -250,8 +299,7 @@ classes = (HINDSIGHT_OT_quick_auto_key,)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     if on_frame_change not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(on_frame_change)
 
@@ -262,8 +310,4 @@ def unregister():
         if fn is on_frame_change or getattr(fn, "__name__", "") == "on_frame_change" and \
                 getattr(fn, "__module__", "") == __name__:
             hl.remove(fn)
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

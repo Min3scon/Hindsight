@@ -9,6 +9,7 @@ operator finished), or (2) changes have settled for SETTLE seconds (property edi
 """
 from __future__ import annotations
 
+import contextlib
 import marshal
 import time
 
@@ -17,6 +18,7 @@ import bpy
 from ..core.history import DATA_MARK, MeshState
 from ..core.native import ENGINE as _ENGINE
 from ..core.types import DATA, MISSING, DataChange, Entry, Step
+from .prefs import value as _pref
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
@@ -62,18 +64,8 @@ _MESH_OF: dict = {}          # owner uid -> pointer of the mesh its state was re
 OBJECT_DEEP_MAX = 1_000_000  # vertices; above this an Object Mode check compares counts and values only
 
 
-FORCE_SCOPE = [None]         # tests: "EVERYTHING" or "SCULPT" when the preferences aren't registered
-
-
 def scope_everything() -> bool:
-    if FORCE_SCOPE[0] is not None:
-        return FORCE_SCOPE[0] == "EVERYTHING"
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        return p is not None and getattr(p, "record_scope", "SCULPT") == "EVERYTHING"
-    except Exception:
-        return False
+    return _pref("record_scope", "EVERYTHING") == "EVERYTHING"
 
 
 def _rt():
@@ -141,6 +133,24 @@ def set_file_tracked(on: bool) -> int:
     return n
 
 
+def record_file_default() -> None:
+    """#10: "Everything in this file" is on in a file where nobody switched anything on or off (its
+    history has nothing switched on and keeps no choice, #61): called when a file is loaded. It is no
+    choice of the user's, so it isn't journaled and alone it saves nothing (D29); loading the file
+    applies it again."""
+    r = _rt().reg()
+    if r.everything or r.everything_chosen or not scope_everything():
+        return
+    r.file_default = True
+    with idmap.frame():
+        for x in file_candidates():
+            uid = idmap.claim(x)
+            if uid is not None and uid not in r.disabled:
+                r.everything.add(uid)
+                baseline(x, uid, refresh=True)
+        refresh_mesh_users()
+
+
 def set_tracked(idb, on: bool, _refresh: bool = True) -> None:
     """Switch "Record everything on this object" (also used by tests). Linked data is refused."""
     rt = _rt()
@@ -153,6 +163,8 @@ def set_tracked(idb, on: bool, _refresh: bool = True) -> None:
     uid = idmap.claim(idb)
     if uid is None:
         return
+    rt.reg().file_default = False         # someone chose: no longer the default (#10)
+    rt.reg().everything_chosen = True     # and the file keeps that choice (#61)
     if on:
         was_on = uid in rt.reg().everything
         rt.reg().everything.add(uid)
@@ -261,19 +273,8 @@ def _state(uid: str) -> MeshState:
 
 def enabled_kinds():
     """Data kinds switched on in the preferences (None: all)."""
-    if FORCE_KINDS[0] is not None:
-        return set(FORCE_KINDS[0])
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        if p is not None and hasattr(p, "record_kinds"):
-            return {k.lower() for k in p.record_kinds}
-    except Exception:
-        pass
-    return None
-
-
-FORCE_KINDS = [None]          # tests: a set of kind ids
+    kinds = _pref("record_kinds", None)
+    return None if kinds is None else {k.lower() for k in kinds}
 
 
 def capture(idb) -> dict:
@@ -413,12 +414,10 @@ def on_update(depsgraph) -> None:
     if not uids:
         adapters.forget_materials()
         return
-    try:
+    with contextlib.suppress(Exception):
         if bpy.context.screen is not None and bpy.context.screen.is_animation_playing:
             adapters.forget_materials()
             return            # playback changes animated values every frame; nothing to record
-    except Exception:
-        pass
     now = _now()
     scenes = _scene_uids_in(uids)
     mats = (bpy.types.Material, bpy.types.NodeTree, bpy.types.World)
@@ -477,11 +476,9 @@ def _is_scene_uid(uid: str) -> bool:
         return True
     # find() only returns a local datablock that carries this id: if no local scene does, it can't
     # be a scene (a few scenes to look at instead of a search of every object, mesh, ...)
-    try:
+    with contextlib.suppress(Exception):
         if not any(sc.library is None and sc.get(idmap.UID_PROP) == uid for sc in bpy.data.scenes):
             return False
-    except Exception:
-        pass
     idb = idmap.find(uid)
     if isinstance(idb, bpy.types.Scene):
         _SCENE_UIDS.add(uid)
@@ -531,7 +528,7 @@ def _mesh_snapshot(body):
 
 
 def _operation_running() -> bool:
-    try:
+    try:  # runs every timer tick: a try costs nothing, suppress costs a context manager
         for win in bpy.context.window_manager.windows:
             for op in getattr(win, "modal_operators", ()):
                 if not op.bl_idname.startswith(_PASSIVE_PREFIXES):
@@ -594,11 +591,6 @@ def _last_op_kind(prev):
     return None
 
 
-def _select_only(prev) -> bool:
-    """R048: exactly one operator ended since the marker `prev`, and it only changes the selection."""
-    return _last_op_kind(prev) == "select"
-
-
 def _selected_uids() -> set:
     """The recorded objects that are selected or active (all recorded ones if that can't be read)."""
     tracked = tracked_uids()
@@ -632,22 +624,21 @@ def _last_ops_info():
 
 
 def _last_label(default: str = "Change") -> str:
-    try:
+    with contextlib.suppress(Exception):
         ops = bpy.context.window_manager.operators
         if len(ops):
             return ops[-1].bl_label or default
-    except Exception:
-        pass
     return default
 
 
 @guard.guarded("datarec")
-def tick() -> None:
+def tick(flush: bool = False) -> None:
     """Called from the runtime timer: commit when an operation has ended. When an operator finishes,
     every tracked datablock is compared (some operators, such as hiding in the viewport, don't send
-    the object an update); otherwise only those that changed, once changes settle."""
+    the object an update); otherwise only those that changed, once changes settle. flush (before a
+    jump, which runs suspended): changes are recorded without waiting for them to settle."""
     rt = _rt()
-    if rt._SUSPEND[0] or _operation_running():
+    if not flush and (rt._SUSPEND[0] or _operation_running()):
         return
     idle = not any_tracked()
     if not idle:
@@ -661,7 +652,7 @@ def tick() -> None:
         _OPS["marker"] = marker
     if not _DIRTY and not finished:
         return
-    settled = bool(_DIRTY) and _now() - max(_DIRTY.values()) >= _settle_time()
+    settled = bool(_DIRTY) and (flush or _now() - max(_DIRTY.values()) >= _settle_time())
     if finished or settled:
         prev = _OPS["marker"]
         _OPS["marker"] = marker
@@ -685,7 +676,7 @@ def finish_operation(label: str, select_only: bool = False, topology: bool = Tru
     operation (the scene, object data, meshes, every object in Edit Mode: one position on the
     global timeline, D52 and D58). Tests call this for what the timer does.
 
-    select_only (R048, _select_only): the operator only changed the selection. The selected, active
+    select_only (R048): the operator only changed the selection. The selected, active
     and updated datablocks are compared (a setting that doesn't tell the depsgraph is read again on
     the selected and active objects, as for any operator, D117); the rest, and Edit Mode's mesh, wait
     for the next operator, which reads everything.
@@ -700,10 +691,8 @@ def finish_operation(label: str, select_only: bool = False, topology: bool = Tru
     adapters.forget_loose_data()          # D151
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
-    try:
+    with contextlib.suppress(Exception):
         bpy.context.view_layer.update()
-    except Exception:
-        pass
     rt.OP_GROUP[0] = [None]
     try:
         uids = (_selected_uids() if select_only else tracked_uids()) | set(_DIRTY)
@@ -853,6 +842,14 @@ def _mesh_step(ob, uid: str, label: str):
         return None
     deep = "corners" if len(ob.data.vertices) <= OBJECT_DEEP_MAX else False
     return rt._observe(ob, st, True, label, "OBJECT", deep=deep)
+
+
+@guard.guarded("datarec")
+def flush_pending() -> None:
+    """#107: an operator that ended since the timer last ran, or a change still waiting to settle, is
+    recorded before a jump moves any history. Kept for later, it would count as made at the new
+    position and throw away every step after it."""
+    tick(flush=True)
 
 
 @guard.guarded("datarec")
@@ -1093,10 +1090,8 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
                         lambda path, aid=aid: _recorded(st, aid, path))
             except Exception as e:
                 _adapter_failed(aid, e, "apply")
-    try:
+    with contextlib.suppress(Exception):
         idb.update_tag()
-    except Exception:
-        pass
     sync_taken_names()
     sync_missing_refs(idb, st, data_keys)
     _DIRTY.pop(idmap.uid_of(idb), None)
@@ -1421,6 +1416,8 @@ def _on_undo(direction: str):
         st.values = vals
         if mesh_step is not None:
             rt._apply_to_state(st, mesh_step)
+    if moved:
+        rt.UNDO_MOVES[0] += 1
     _DIRTY.clear()
     _MESH_DIRTY.clear()
     rt.tag_redraw_all()

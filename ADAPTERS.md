@@ -69,10 +69,10 @@ Changes Hindsight makes itself (playback) are never recorded.
 
 ## Scope and opt-in
 
-- Preference **Record**: `Sculpting only` (default, exactly the current behaviour) or `Everything`.
+- Preference **Record**: `Everything` (the default since V2, #10) or `Sculpting only` (V1's behaviour).
 - With `Everything`, other data is recorded only for objects (and their materials) the user turned
   on with **Record everything on this object** in the Undo History tab, plus the scene if **Record the
-  scene** is on. Nothing else is recorded until enabled.
+  scene** is on. Since V2 both are on in a file where nobody switched anything on or off (#60).
 - Per-data-type toggles in an Advanced sub-panel; per-datablock pause like the existing per-object one.
 
 ## Storage

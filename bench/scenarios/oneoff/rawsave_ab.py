@@ -2,7 +2,6 @@
 steps of a mesh still unpacked (70 strokes of 2%). One JSON line: median and min of 7 builds."""
 import json, os, sys, time, statistics
 ROOT = sys.argv[1]; V = int(sys.argv[2]); sys.path.insert(0, ROOT); sys.path.insert(1, os.path.join(ROOT, "bench", "scenarios"))
-import bpy
 import tests.harness as H
 import _common as K
 BL = K.load_bench_module("bench_bl")

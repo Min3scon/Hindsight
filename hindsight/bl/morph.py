@@ -1,11 +1,16 @@
 """Morph History brush: paint brushed areas back toward the morph target step."""
 from __future__ import annotations
 
+import contextlib
+import weakref
+
 import bpy
+
+from . import reg
 import numpy as np
 
 from ..core import morph as M
-from ..core.types import POSITION_KEY, MASK_KEY, HIDE_VERT_KEY
+from ..core.types import JOIN, TOPO, POSITION_KEY, MASK_KEY, HIDE_VERT_KEY
 from . import guard, log, meshio, runtime
 
 TOOL_ID = "hindsight.morph_history"
@@ -13,6 +18,7 @@ STROKE_LABEL = "Morph History"
 MSG_REMESH = "The mesh was remeshed since the morph target. Set a new one"
 
 _SESSION: dict = {}          # object uid -> stroke data (see begin)
+_TARGETS: dict = {}          # R084: object uid -> (weakref to its History, key, its positions at the morph target)
 last_message = [None]        # reason the last begin() refused
 _tool_registered = [False]
 
@@ -36,6 +42,40 @@ def _refuse(msg: str) -> bool:
     return False
 
 
+def _target_positions(h, st, uid):
+    """`core.morph.target_positions`, kept from one stroke to the next (R084).
+
+    The mesh at the morph target doesn't change while the steps up to it don't, so the walk back to it (every
+    step since the target, Morph History strokes included: about 19 of the 27 ms a stroke start took at 1M
+    vertices) is done once. Kept per object for the History object it was made from, the target index, the
+    steps at the target and at the start, and the vertex count. As the walk would, a topology step of this
+    object or a Join between the cursor and the target gives None. The array is read-only.
+    """
+    try:
+        mt = int(h.morph_target)
+        n = len(h.entries)
+        if mt < 0 or mt > n:
+            return None
+        key = (mt, h.entries[mt - 1].seq if mt else None, h.entries[0].seq if n else None,
+               int(st.counts.get("POINT", -1)) if st is not None else None)
+    except (TypeError, ValueError, AttributeError):
+        return M.target_positions(h, st, uid)
+    hit = _TARGETS.get(uid)
+    if hit is not None and hit[0]() is h and hit[1] == key:
+        cur = int(h.cursor)
+        lo, hi = (mt, cur) if mt < cur else (cur, mt)
+        if any(e.kind == JOIN or (e.kind == TOPO and e.target == uid) for e in h.entries[lo:hi]):
+            return None
+        return hit[2]
+    target = M.target_positions(h, st, uid)
+    _TARGETS.pop(uid, None)
+    if target is not None:
+        target = np.ascontiguousarray(target, dtype=np.float32)
+        target.flags.writeable = False
+        _TARGETS[uid] = (weakref.ref(h), key, target)
+    return target
+
+
 def begin(obj) -> bool:
     """Start a stroke: validate, record pending changes, compute the target once.
 
@@ -57,7 +97,7 @@ def begin(obj) -> bool:
     if h is None or h.morph_target is None:
         return _refuse("No morph target yet. Set one in the History Menu first")
     st = runtime.ensure_state(obj)
-    target = M.target_positions(h, st, uid)
+    target = _target_positions(h, st, uid)
     me = obj.data
     start = meshio.read_channel(me, POSITION_KEY)
     if target is None or start is None or target.size != start.size:
@@ -71,26 +111,14 @@ def begin(obj) -> bool:
         hidden = None
     susp = runtime.suspended()
     susp.__enter__()   # keep the recorder from splitting the stroke into several steps
-    _SESSION[uid] = {"target": target, "start": start.copy(), "acc": np.zeros(nv, np.float64),
+    target = np.ascontiguousarray(target, dtype=np.float32)          # the engine's types (R083)
+    if mask is not None:
+        mask = np.ascontiguousarray(mask, dtype=np.float32)
+    if hidden is not None:
+        hidden = np.ascontiguousarray(hidden, dtype=np.bool_)
+    _SESSION[uid] = {"target": target, "start": np.array(start, dtype=np.float32), "acc": np.zeros(nv, np.float64),
                      "mask": mask, "hidden": hidden, "susp": susp, "moved": False}
     return True
-
-
-def in_box(co, c, r: float, hidden=None):
-    """Indices (ascending) of the vertices of co (N x 3, float32) within r of c on every axis, hidden ones left out.
-
-    R081: one axis at a time, each on the vertices still in, instead of all three axes of every vertex at once
-    (a float64 copy of the whole mesh and a reduce: 34 of the 40 ms of a dab at 1M vertices). The differences
-    are the same float64 numbers as before (the vertex in float64 minus the centre), so the same vertices pass.
-    """
-    cand = np.flatnonzero(np.abs(np.subtract(co[:, 0], c[0], dtype=np.float64)) <= r)
-    for ax in (1, 2):
-        if cand.size == 0:
-            return cand
-        cand = cand[np.abs(np.subtract(co[cand, ax], c[ax], dtype=np.float64)) <= r]
-    if hidden is not None and cand.size:
-        cand = cand[~hidden[cand]]
-    return cand
 
 
 def apply_morph_at(obj, center_local, radius_local: float, strength: float) -> int:
@@ -107,28 +135,14 @@ def apply_morph_at(obj, center_local, radius_local: float, strength: float) -> i
     cur = meshio.read_channel(me, POSITION_KEY)
     if cur is None or cur.size != s["start"].size:
         return 0
-    c = np.array(tuple(center_local)[:3], dtype=np.float64)
-    co = cur.reshape(-1, 3)
-    r = float(radius_local)
-    # cheap box test first, then exact distances on the candidates
-    cand = in_box(co, c, r, s["hidden"])
-    if cand.size == 0:
-        return 0
-    d = np.sqrt(((co[cand].astype(np.float64) - c) ** 2).sum(axis=1))
-    inside = d < r
-    idx = cand[inside]
-    if idx.size == 0:
-        return 0
-    w = M.falloff(d[inside], r) * float(strength)
-    if s["mask"] is not None:
-        w *= 1.0 - s["mask"][idx]
-    acc = s["acc"]
-    w = np.maximum(acc[idx], np.clip(w, 0.0, 1.0))
-    acc[idx] = w
-    before = co[idx].copy()
-    co[idx] = s["start"].reshape(-1, 3)[idx]
-    M.morph_blend(cur, s["target"], idx, w, 1.0)
-    moved = int(np.count_nonzero(np.any(co[idx] != before, axis=1)))
+    cur = np.ascontiguousarray(cur, dtype=np.float32)
+    cx, cy, cz = (float(v) for v in tuple(center_local)[:3])
+    # R083: the box test, the distances, the falloff, the mask, the stroke's strongest weight per vertex and the
+    # blend from the stroke's start toward the target, in one pass in the engine (numpy over the whole mesh was
+    # 14 ms of a dab at 1M vertices after R081; tests/reference/morph_dab.py is that code, the bit-exact oracle)
+    from ..core.native import ENGINE
+    moved = ENGINE.morph_dab(cur, s["start"], s["target"], s["acc"], s["mask"], s["hidden"], cx, cy, cz,
+                             float(radius_local), float(strength))
     if moved:
         with runtime.suspended():
             meshio.write_channel(me, POSITION_KEY, cur)
@@ -145,18 +159,14 @@ def end(obj, commit: bool = True):
     s = _SESSION.pop(uid, None) if uid is not None else None
     if s is None:
         return None
-    try:
+    with contextlib.suppress(Exception):
         s["susp"].__exit__(None, None, None)
-    except Exception:
-        pass
     if not commit or not s["moved"]:
         return None
     step = runtime.commit(obj, label=STROKE_LABEL, mode=obj.mode)
     if step is not None and not bpy.app.background:
-        try:
+        with contextlib.suppress(Exception):
             bpy.ops.ed.undo_push(message=STROKE_LABEL)
-        except Exception:
-            pass
     runtime.tag_redraw_all()
     return step
 
@@ -191,10 +201,8 @@ def _brush_settings(context):
     strength = float(pick("use_unified_strength", "strength", 0.5))
     locked = pick("use_unified_size", "use_locked_size", "VIEW")
     unproj = float(pick("use_unified_size", "unprojected_size" if half < 1 else "unprojected_radius", 0.0)) * half
-    try:
+    with contextlib.suppress(Exception):
         size *= context.preferences.system.ui_scale
-    except Exception:
-        pass
     return size, strength, (unproj if locked == "SCENE" and unproj > 0 else None)
 
 
@@ -293,10 +301,8 @@ class HINDSIGHT_OT_morph_stroke(bpy.types.Operator):
             guard.fail("morph", exc, "stroke")
             ob = bpy.data.objects.get(getattr(self, "_obj_name", ""))
             if ob is not None:
-                try:
+                with contextlib.suppress(Exception):
                     end(ob)   # keep what was painted so far as one step
-                except Exception:
-                    pass
             return {'CANCELLED'}
 
     def _modal(self, context, event):
@@ -345,8 +351,7 @@ classes = (HINDSIGHT_OT_morph_stroke,)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     _tool_registered[0] = False
     try:
         bpy.utils.register_tool(HINDSIGHT_TOOL_morph_history, after={"builtin.annotate"},
@@ -357,6 +362,7 @@ def register():
 
 
 def unregister():
+    _TARGETS.clear()
     for uid in list(_SESSION):
         s = _SESSION.pop(uid)
         try:
@@ -364,13 +370,7 @@ def unregister():
         except Exception:
             pass
     if _tool_registered[0]:
-        try:
+        with contextlib.suppress(Exception):
             bpy.utils.unregister_tool(HINDSIGHT_TOOL_morph_history)
-        except Exception:
-            pass
         _tool_registered[0] = False
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)
