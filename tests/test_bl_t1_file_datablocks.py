@@ -270,6 +270,28 @@ def test_digest_leaves_out_what_is_after_the_end_of_a_string():
     assert loose._digest(bytes(raw), blocks, info) != before, "a changed letter kept the digest"
 
 
+def test_digest_reads_every_byte_of_a_long_string():
+    """A raw data block (SDNA number 0) has no struct layout: it was read as struct 0 (`Link`, two pointers in
+    16 bytes), so in a block of 16 bytes or more every word that wasn't a block's address was left out, and an
+    F-Curve path changed in its first 8 bytes of a word to another of its length kept the action's digest."""
+    from hindsight.bl import multires
+    from hindsight.bl.adapters import loose
+    ob = D.objects.new("Digest", None)
+    path = '["prop_001_with_a_long_name"]'
+    ob[path[2:-2]] = 0.0
+    ob.keyframe_insert(path)
+    raw = bytearray(multires.snapshot_bytes(ob.animation_data.action))
+    blocks = multires.blend_blocks(bytes(raw))
+    info = loose._dna_info(bytes(raw), blocks)
+    hs, _so = loose._heads(raw)
+    p = next(p for p, c, _ in blocks if c == b"DATA" and raw[p + hs:p + hs + len(path)] == path.encode())
+    before = loose._digest(bytes(raw), blocks, info)
+    for at in (2, path.index("1"), 20):       # in words 0, 1 and 2
+        raw[p + hs + at] ^= 1
+        assert loose._digest(bytes(raw), blocks, info) != before, f"a changed letter {at} kept the digest"
+        raw[p + hs + at] ^= 1
+
+
 def test_digest_leaves_out_the_runtime_fields_of_an_id():
     """D156: an ID's session number and depsgraph tags are written, but given again when it is read (a file
     opened again, a snapshot loaded): they are left out of the digest."""
@@ -397,6 +419,7 @@ if __name__ == "__main__":
                       test_going_back_over_a_duplicate_takes_its_action_away,
                       test_digest_leaves_out_the_runtime_fields_of_an_id,
                       test_digest_leaves_out_what_is_after_the_end_of_a_name,
-                      test_digest_leaves_out_what_is_after_the_end_of_a_string]:
+                      test_digest_leaves_out_what_is_after_the_end_of_a_string,
+                      test_digest_reads_every_byte_of_a_long_string]:
         H.run(t)
     H.finish()

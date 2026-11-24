@@ -78,8 +78,9 @@ def _dna_info(raw: bytes, blocks: list) -> tuple:
                 at += tlen[ft] * dims
             offs[t] = out, run, txt
         return offs[t]
+    # struct 0 is the SDNA number of raw data (4.2 names it `Link`, 5.x an empty struct): no layout to read
     ptrs = {k: (tlen[t], *(np.array(x, dtype=np.int64) for x in ptr_offsets(t)))
-            for t, (k, _) in strc.items()}
+            for t, (k, _) in strc.items() if k}
     idp = types.index(b"IDProperty") if b"IDProperty" in types else -1
     return (strc[idp][0] if idp in strc else -1), ptrs
 
