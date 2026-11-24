@@ -14,8 +14,8 @@ from . import core, materials
 from .core import note_name
 from .idprops import _ID_EMPTY4, _ID_EMPTY5, id_props, write_id_props
 from .keys import (
-    DNA_PREFIX, IDPROPS_KEY, INV_GROUPS, INV_LOOSE, LMAT_PREFIX, LOOSE_PREFIXES, LPROPS_PREFIX, LWORLD_PREFIX,
-    META_PREFIX, NG_PREFIX, SNAP_PREFIX, SYSPROPS_KEY, TEXT_PREFIX, _MAT_CACHE)
+    COLL_NAMES, DNA_PREFIX, IDPROPS_KEY, INV_GROUPS, INV_LOOSE, LMAT_PREFIX, LOOSE_PREFIXES, LPROPS_PREFIX,
+    LWORLD_PREFIX, META_PREFIX, NG_PREFIX, SNAP_PREFIX, SYSPROPS_KEY, TEXT_PREFIX, _MAT_CACHE)
 from .materials import group_owner_map, material_owner_map, write_material
 from .snapdigest import _DINFO, _digest, _dna_digest, _dna_info, _heads  # noqa: F401 (tests)
 
@@ -29,7 +29,10 @@ _TEXT_PROPS = ("filepath", "use_module", "indentation")
 _DATA_COLLS = ("meshes", "curves", "metaballs", "lattices", "armatures", "cameras", "lights", "lightprobes",
                "speakers", "volumes", "pointclouds", "hair_curves")
 _SNAP_COLLS = ("images", "actions", "palettes", "brushes", "linestyles", "masks", "movieclips", "sounds",
-               "fonts", "cache_files", "paint_curves", "textures", "particles", "grease_pencils") + _DATA_COLLS
+               "fonts", "cache_files", "paint_curves", "textures", "particles", "grease_pencils",
+               "collections") + _DATA_COLLS
+# D174/D175: of these only _ids' are recorded here; with no user at all they are left alone (dropped at save)
+_OFF_SCENE = _DATA_COLLS + ("collections",)
 # recorded with what uses them; snapshotted when nothing does (grease_pencils: 4.2 annotations, 5.0 on objects' data)
 _WHEN_UNUSED = ("actions", "particles", "grease_pencils") + _DATA_COLLS
 _PROP_COLLS = _SNAP_COLLS + ("texts",)
@@ -58,6 +61,9 @@ def _ids(name: str):
     """bpy.data.<name>; of a kind recorded with what uses it, only those nothing uses (object data: but a fake
     user), found without a Python loop over the rest (foreach_get: a file has a mesh per object)."""
     coll = getattr(bpy.data, name, ())
+    if name == "collections":       # D175: those no scene holds, kept by a fake user or a collection instance
+        held = {c.as_pointer() for sc in bpy.data.scenes for c in sc.collection.children_recursive}
+        return [c for c in coll if c.users and c.as_pointer() not in held]
     if name not in _WHEN_UNUSED or not len(coll):
         return coll
     users, fake = np.empty(len(coll), np.int32), np.empty(len(coll), bool)
@@ -117,6 +123,10 @@ def _file_snapshots(out: dict, inv: list, recorded=None) -> None:
     # every id first: a snapshot holds the ids of what its datablock uses (a brush's paint curve made with it)
     todo = [(name, idb, u) for name in _SNAP_COLLS for idb in _ids(name)
             if _snappable(name, idb) and (u := idmap.claim(idb))]
+    for name, idb, _u in todo:
+        if name == "collections":   # D175: made again, its objects and child collections map back to the file's
+            for x in (*idb.all_objects, *idb.children_recursive):
+                idmap.claim(x)
     for name, idb, u in todo:
         c = _SNAPS.get(u)
         if c is None or c[0] != idb.session_uid or c[3]:
@@ -344,7 +354,7 @@ def scene_loose(sc) -> dict:
             if p is not _ID_EMPTY4 and p is not _ID_EMPTY5:
                 out[LPROPS_PREFIX + mu] = p
     for name in _PROP_COLLS:
-        for idb in _ids(name) if name in _DATA_COLLS else getattr(bpy.data, name, ()):
+        for idb in _ids(name) if name in _OFF_SCENE else getattr(bpy.data, name, ()):
             if idb.library is not None or (name == "texts" and idb.name == TEXT_NAME):
                 continue
             p = id_props(idb)
@@ -497,8 +507,8 @@ def _kept_by_record(idb, kind) -> bool:
                 for sc in bpy.data.scenes)
         if kind == "lw":
             return any(sc.world == idb for sc in bpy.data.scenes)
-        if kind in _WHEN_UNUSED:
-            return True               # an object uses it: the object records it
+        if kind in _WHEN_UNUSED or kind == "collections":
+            return True               # an object (a scene) uses it: that records it
     return False
 
 
@@ -525,8 +535,9 @@ def flush_loose_removals() -> None:
                 if not _kept_by_record(idb, kind):
                     log.warn(f"{idb.name} was made after this point but can't be taken away: something uses it now")
                 continue
-            if kind in _DATA_COLLS and not idb.use_fake_user:
-                continue          # D174: object data with no user isn't recorded (Blender drops it at save)
+            if kind in _OFF_SCENE and not idb.use_fake_user and (kind != "collections" or uid in COLL_NAMES):
+                continue          # D174: object data with no user isn't recorded (Blender drops it at save);
+                                  # D175: nor a collection a scene held (the tree writer unlinks, never removes)
             if kind in ("actions", "lm") and ((inv := _recorded_loose()) is None or uid in inv):
                 continue          # D162: data nothing uses where the jump went (or no inventory recorded)
             if kind == "actions":

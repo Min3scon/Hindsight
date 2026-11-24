@@ -170,6 +170,9 @@ for _k in [("curves", ("CURVE",), "bevel_depth", 0.25), ("metaballs", (), "resol
            ("lightprobes", ("VOLUME",), "influence_distance", 3.0), ("speakers", (), "volume", 0.5),
            ("volumes", (), "frame_offset", 3), ("hair_curves", (), "surface_uv_map", "UV")]:
     KINDS[_k[0]] = _data_kind(*_k)
+# D175: a collection no scene uses (kept with a fake user)
+KINDS["collections"] = (lambda: _fake("collections"), lambda c: (c.hide_render, c.color_tag, c.use_fake_user),
+                        lambda c: (setattr(c, "hide_render", True), setattr(c, "color_tag", "COLOR_03")))
 
 
 def walk(kind):
@@ -234,6 +237,24 @@ def test_object_data_with_no_user_stays_over_a_jump():
     texts_walk(read, [("delete A", lambda: D.objects.remove(D.objects["A"])),
                       ("make image", lambda: setattr(D.images.new("Img", 4, 4), "use_fake_user", True))],
                lambda: setattr(D.objects["A"].data, "name", "AMesh"))
+
+
+def test_a_collection_only_an_instance_uses_is_made_again():
+    """D175: a collection no scene holds, only a collection instance uses (with an object in it): going back
+    over its deletion makes it again with its id and its object (the file's, not a copy)."""
+    def setup():
+        c = D.collections.new("Inst")
+        c.objects.link(D.objects.new("InInst", None))
+        e = D.objects.new("Instancer", None)
+        e.instance_type, e.instance_collection = "COLLECTION", c
+        bpy.context.scene.collection.objects.link(e)
+
+    def read():
+        c = D.collections.get("Inst")
+        return (c and [o.name for o in c.objects], c and idmap.uid_of(c),
+                sorted(o.name for o in D.objects if o.name.startswith("InInst")))
+    states = texts_walk(read, [("delete Inst", lambda: D.collections.remove(D.collections["Inst"]))], setup)
+    assert states[0][0] == ["InInst"], states
 
 
 def test_made_again_keeps_its_id_and_users():
@@ -640,6 +661,7 @@ if __name__ == "__main__":
                       test_object_data_its_object_left_with_a_fake_user,
                       test_object_data_its_object_left_with_no_user_is_not_snapshotted,
                       test_object_data_with_no_user_stays_over_a_jump,
+                      test_a_collection_only_an_instance_uses_is_made_again,
                       test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again,
                       test_going_back_over_keying_takes_its_action_away,
                       test_going_back_over_a_slot_takes_the_material_it_made_away,
