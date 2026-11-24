@@ -187,14 +187,23 @@ These exist and keep passing with their checks unchanged:
   and not with "Last save", the file opens alone after one save, and it opens moved without its folder.
 - `tests/test_core_migration.py`: formats 1 and 2 (`tests/fixtures/beta1_format1.hsr`, `beta2wip_format2.hsr`,
   `legacy_expected.npz`) load, play back, are saved again, are re-packed and take new steps on top.
-- `tests/test_bl_t1_migrate.py`: .blend files saved by the format 3 build and by the format 1 build, made fresh by
-  those builds' own code. Its save in the folder mode becomes a format 5 save when the option goes.
 - `tests/test_bl_embed_bytes.py`: the main-branch build's `hindsight_data_bin`, base64 winning when both are there,
   and a damaged copy kept aside.
 - `tests/test_core_reference.py` with `step_corpus_base.zip`: encodings decode bit for bit.
 
+`tests/test_bl_t1_migrate.py` is not among them. It is meant to open .blend files saved by the format 3 build (git
+fc2b6d3) and by beta 1 (format 1), made fresh by those builds' own code, but its beta 1 case needs the release zip
+`.tmp/old/b1.zip`, which is in neither the repo nor its GitHub releases (beta 1 has no git tag either). So the file
+fails on every checkout and is one of the two known failures: nothing runs that proof today. Format 1's bytes are
+still proven by `test_core_migration.py` (`beta1_format1.hsr`), but no running test opens a .blend that beta 1 or the
+format 3 build saved. The build ticket replaces it (below).
+
 New ones the build ticket adds, each also on the files above:
 
+- **Older .blend files as fixtures**: a .blend saved by beta 1 and one saved by the format 3 build, made once and
+  committed under `tests/fixtures` with an `expect.json`, the way `tests/fixtures/beta2/make_beta2_files.py` makes
+  beta 2's (the beta 1 one from the zip, by whoever holds it). `test_bl_t1_migrate.py` then opens those instead of
+  building them at test time, so its proof runs everywhere; its save in the folder mode becomes a format 5 save.
 - **Move-in byte for byte**: after the first save, every step part holds the V1 steps' bytes in order, with the same
   CRC-32s and metas. The index part has V1's settings, cursors and members. Reopened from the .blend alone, every
   position is exact both ways.
