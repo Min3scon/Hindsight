@@ -298,8 +298,37 @@ def test_a_collection_holding_a_scene_object_leaves_it_to_the_object():
         c = D.collections.new("Holds")
         c.use_fake_user = True
         c.objects.link(D.objects["A"])
-    read = lambda: ("A" in bpy.context.scene.objects, sorted(o.name for o in D.objects if o.name.startswith("A")))
-    texts_walk(read, [("delete A", lambda: D.objects.remove(D.objects["A"]))], setup)
+    read = lambda: ("A" in bpy.context.scene.objects, sorted(o.name for o in D.objects if o.name.startswith("A")),
+                    "Holds" in D.collections and [o.name for o in D.collections["Holds"].objects])
+    states = texts_walk(read, [("delete A", lambda: D.objects.remove(D.objects["A"]))], setup)
+    assert states[0][2] == ["A"], states        # #102 review 2: a jump never takes the collection away
+
+
+def test_a_collection_holding_a_scene_object_is_made_changed_and_deleted():
+    """#102 review 3: a collection no scene holds but holding a scene's object (light linking makes one) is
+    recorded as the other collections are: its settings, an object in no scene put in it, a light linking
+    state and its deletion are taken back, and the scene's object is never copied."""
+    def make():
+        c = D.collections.new("Holds")
+        c.use_fake_user = True
+        c.objects.link(D.objects["A"])
+
+    def exclude():
+        c = D.collections["Holds"]          # (collection_objects is in the order of objects)
+        c.collection_objects[list(c.objects).index(D.objects["A"])].light_linking.link_state = "EXCLUDE"
+
+    def read():
+        c = D.collections.get("Holds")
+        return (c and (c.hide_render, c.color_tag, c.use_fake_user, sorted(o.name for o in c.objects),
+                       [x.light_linking.link_state for x in c.collection_objects]),
+                "A" in bpy.context.scene.objects, sorted(o.name for o in D.objects if o.name.startswith("A")))
+    states = texts_walk(read, [("make", make),
+                               ("settings", lambda: (setattr(D.collections["Holds"], "hide_render", True),
+                                                     setattr(D.collections["Holds"], "color_tag", "COLOR_03"))),
+                               ("an object in no scene", lambda: D.collections["Holds"].objects.link(D.objects.new("Loose", None))),
+                               ("light linking", exclude),
+                               ("delete", lambda: D.collections.remove(D.collections["Holds"]))])
+    assert all(a != b for a, b in zip(states, states[1:])), states
 
 
 def test_made_again_keeps_its_id_and_users():
@@ -709,6 +738,7 @@ if __name__ == "__main__":
                       test_a_collection_only_an_instance_uses_is_made_again,
                       test_a_collection_instance_points_at_its_collection_made_again,
                       test_a_collection_holding_a_scene_object_leaves_it_to_the_object,
+                      test_a_collection_holding_a_scene_object_is_made_changed_and_deleted,
                       test_a_linked_duplicate_waits_for_both_materials_its_owner_makes_again,
                       test_going_back_over_keying_takes_its_action_away,
                       test_going_back_over_a_slot_takes_the_material_it_made_away,

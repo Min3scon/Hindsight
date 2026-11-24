@@ -66,11 +66,10 @@ def _ids(name: str):
         held = {c.as_pointer() for sc in bpy.data.scenes for c in sc.collection.children_recursive}
         held.update(c.as_pointer() for sc in bpy.data.scenes if (rb := sc.rigidbody_world) is not None
                     for c in (rb.collection, rb.constraints) if c is not None)
-        out = [c for c in coll if c.users and c.as_pointer() not in held]
-        if out:     # D177: nor one holding a scene's object (that object records it; made again, it would hold a copy)
-            obs = {o.as_pointer() for sc in bpy.data.scenes for o in sc.objects}
-            out = [c for c in out if not any(o.as_pointer() in obs for o in c.all_objects)]
-        return out
+        # D179: one holding a scene's object too (light linking makes those): made again after the scene's objects
+        # shortcut: its snapshot holds that object and its data, written again when the object changes; record
+        # the collection's own blocks only if that gets slow
+        return [c for c in coll if c.users and c.as_pointer() not in held]
     if name not in _WHEN_UNUSED or not len(coll):
         return coll
     users, fake = np.empty(len(coll), np.int32), np.empty(len(coll), bool)
@@ -284,18 +283,21 @@ def _keep_paint(old, new) -> None:
         new.pixels.foreach_set(px)
 
 
-def _snapshots_back(values: dict, recorded=None, replace: bool = False) -> None:
+def _snapshots_back(values: dict, recorded=None, replace: bool = False, colls: bool = False) -> None:
     """D154: a file-level datablock deleted since is made again from its snapshot, with its id (before the
     other writers). replace: after them, one that still differs from its snapshot is replaced by it (what
-    uses it uses the loaded one); a change the other writers put back (custom properties) keeps it."""
+    uses it uses the loaded one); a change the other writers put back (custom properties) keeps it.
+    colls: collections only, both ways, after the scene's objects (D179: a snapshot brought along an object
+    not made again yet as a copy); without it, no collection."""
     from .. import multires
     for path, rec in values.items():
-        if not path.startswith(SNAP_PREFIX) or not isinstance(rec, list) or len(rec) < 5:
+        if (not path.startswith(SNAP_PREFIX) or not isinstance(rec, list) or len(rec) < 5
+                or (rec[0] == "collections") != colls):
             continue
         uid = path[len(SNAP_PREFIX):]
         old = idmap.find(uid)
         c = _SNAPS.get(uid)
-        if (old is not None) != replace or (replace and c is not None and c[1] == rec):
+        if (not colls and (old is not None) != replace) or (old is not None and c is not None and c[1] == rec):
             continue
         _LOOSE_GONE.pop(uid, None)
         try:
