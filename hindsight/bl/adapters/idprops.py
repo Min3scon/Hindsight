@@ -76,6 +76,12 @@ def _own_prop(k: str) -> bool:
     return k == "hindsight" or k.startswith("_hindsight") or k.startswith("hindsight_")
 
 
+def _skipped(g, k: str) -> bool:
+    """Not recorded: Hindsight's own properties, and the "cycles" group Blender 4 writes on a camera at
+    each save, a copy of its panorama settings for older versions (#104: a reopen read it as a change)."""
+    return _own_prop(k) or (k == "cycles" and isinstance(g, bpy.types.Camera) and not hasattr(g, "cycles"))
+
+
 def _sys_group(idb, create: bool = False):
     """Blender 5: the group add-ons' properties are stored in, or None (none yet, or Blender 4)."""
     get = getattr(idb, "bl_system_properties_get", None)
@@ -133,7 +139,7 @@ def _group_json(g) -> dict:
     except Exception:
         return out
     for k in keys:
-        if _own_prop(k):
+        if _skipped(g, k):
             continue
         try:
             v = g[k]
@@ -202,13 +208,13 @@ def _write_group(g, want: dict) -> None:
     if g is None:
         return
     want = want or {}
-    for k in [k for k in g.keys() if not _own_prop(k) and k not in want]:
+    for k in [k for k in g.keys() if not _skipped(g, k) and k not in want]:
         try:
             del g[k]                     # not set then: back to the add-on's default
         except Exception:
             pass
     for k, v in want.items():
-        if _own_prop(k):
+        if _skipped(g, k):
             continue
         try:
             cur = g[k] if k in g else MISSING
