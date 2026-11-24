@@ -4,13 +4,15 @@ it (when nothing uses it), going back over its deletion makes it again, exactly,
 datablock written and loaded with Blender's library functions); forward the other way round. A change of its
 settings between is a step too, put back from the snapshot."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import ctypes
+import struct
 import tempfile
 import wave
 
 import bpy
 import tests.harness as H
 from tests.test_bl_t1_loose_data import texts_walk
-from hindsight.bl import idmap, runtime
+from hindsight.bl import idmap, multires, runtime
 
 
 class _Data:
@@ -63,10 +65,81 @@ def _curve_brush(sculpt):
     assert sculpt.brush == brush, sculpt.brush
 
 
+def _pcp(raw):
+    """(SDNA number, size) of PaintCurvePoint, from the DNA block of a .blend Blender wrote."""
+    def strings(tag, i):
+        i = raw.index(tag, i) + 8
+        out = []
+        for _ in range(int.from_bytes(raw[i - 4:i], "little")):
+            j = raw.index(b"\0", i)
+            out.append(bytes(raw[i:j]))
+            i = j + 1
+        return out, i
+    _names, i = strings(b"NAME", next(p for p, c, n in multires.blend_blocks(bytes(raw)) if c == b"DNA1"))
+    types, i = strings(b"TYPE", i)
+    i = raw.index(b"TLEN", i) + 4
+    tlen = struct.unpack_from(f"<{len(types)}H", raw, i)
+    i = raw.index(b"STRC", i + 2 * len(types)) + 8
+    t = types.index(b"PaintCurvePoint")
+    for k in range(int.from_bytes(raw[i - 4:i], "little")):
+        if int.from_bytes(raw[i:i + 2], "little") == t:
+            return k, tlen[t]
+        i += 4 + 4 * int.from_bytes(raw[i + 2:i + 4], "little")
+
+
+def _pc_written(pc):
+    """(the paint curve as Blender writes it, its head size, PaintCurvePoint's (SDNA number, size), its own block's
+    (offset, length): its struct ends with points, tot_points and add_index)."""
+    raw = bytearray(multires.snapshot_bytes(pc))
+    blk = next((p, n) for p, c, n in multires.blend_blocks(bytes(raw)) if c == b"PC\0\0")
+    return raw, 32 if raw[7:9] == b"17" else 24, _pcp(raw), blk
+
+
+def _points(pc):
+    """A paint curve's points ((x, y) of each): Python has no way to read them, so read as Blender writes them."""
+    raw, hs, (k, size), _blk = _pc_written(pc)
+    for p, c, n in multires.blend_blocks(bytes(raw)):
+        if c == b"DATA" and struct.unpack_from("<i", raw, p + (4 if hs == 32 else 16))[0] == k:
+            return tuple(_r(struct.unpack_from("<2f", raw, p + hs + i + 12)) for i in range(0, n - hs, size))
+    return ()
+
+
+def _with_points(pc, pts):
+    """A copy of the paint curve with points pts: only the paint curve operators in a 3D view make points (headless,
+    add_point crashes), so it is loaded from the bytes Blender writes it as, given the points."""
+    raw, hs, (k, size), (p, n) = _pc_written(pc)
+    end = p + n
+    body = bytearray(size * len(pts))
+    for i, xy in enumerate(pts):
+        struct.pack_into("<2f", body, i * size + 12, *xy)          # bez.vec[1]: where the point is
+    addr = 0x7E57_0000_0000_0010                                    # an old address no other block has
+    struct.pack_into("<Qi", raw, end - 16, addr, len(pts))
+    raw[end:end] = (struct.pack("<4siQqq", b"DATA", k, addr, len(body), len(pts)) if hs == 32
+                    else struct.pack("<4siQii", b"DATA", len(body), addr, k, len(pts))) + body
+    path, before = _tmp("points.blend"), set(D.paint_curves)
+    with open(path, "wb") as fh:
+        fh.write(raw)
+    with D.libraries.load(path, link=False) as (src, dst):
+        dst.paint_curves = list(src.paint_curves)
+    return next(x for x in D.paint_curves if x not in before)
+
+
+def _move_point(pc, i, xy):
+    """Move a paint curve's point, in its memory: Python has no way to (the paint curve operators need a 3D view)."""
+    _raw, hs, (_k, size), (_p, n) = _pc_written(pc)
+    end = pc.as_pointer() + n - hs                                  # the struct's end in memory
+    assert ctypes.c_int.from_address(end - 8).value > i            # tot_points: the layout is the one read
+    (ctypes.c_float * 2).from_address(ctypes.c_uint64.from_address(end - 16).value + i * size + 12)[:] = xy
+
+
 def _paint_curve(sculpt):
-    """A paint curve: made in Sculpt Mode for the brush."""
+    """A paint curve with two points: made in Sculpt Mode for the brush, its points given as _with_points does."""
     assert bpy.ops.paintcurve.new() == {"FINISHED"}
-    D.paint_curves[-1].name = "Made"
+    pc = D.paint_curves[-1]
+    made = _with_points(pc, [(10.0, 20.0), (30.0, 40.0)])
+    pc.user_remap(made)
+    bpy.data.batch_remove([pc])
+    made.name = "Made"
 
 
 def _sound():
@@ -115,8 +188,8 @@ KINDS = {
                     lambda c: (os.path.basename(c.filepath), _r(c.scale), _r(c.frame_offset)),
                     lambda c: (setattr(c, "scale", 2.5), setattr(c, "frame_offset", 3.0))),
     "paint_curves": (lambda: _sculpt(_paint_curve),
-                     lambda p: (p.name, p.get("note")),
-                     lambda p: p.__setitem__("note", "changed"),
+                     lambda p: (p.name, p.get("note"), _points(p)),
+                     lambda p: (p.__setitem__("note", "changed"), _move_point(p, 1, (50.0, 60.0))),
                      lambda: _sculpt(_curve_brush)),
     "sounds": (_sound,
                lambda s: (os.path.basename(s.filepath), s.use_mono),
@@ -175,8 +248,21 @@ def _data_kind(coll, args, attr, value):
 
 KINDS["meshes"] = (_tri, lambda m: (len(m.polygons), _r(m.vertices[0].co), m.use_fake_user),
                    lambda m: setattr(m.vertices[0], "co", (0.0, 0.0, 1.0)))
-KINDS["pointclouds"] = (lambda: _fake("pointclouds"), lambda p: (p.get("note"), p.use_fake_user),
-                        lambda p: p.__setitem__("note", "changed"))
+def _cloud():
+    p = _fake("pointclouds")
+    if hasattr(p, "resize"):            # 5.x: two points (4.2 has no Python way to add points)
+        p.resize(2)
+
+
+def _cloud_change(p):
+    p["note"] = "changed"
+    p.attributes.new("weight", "FLOAT", "POINT")
+    if len(p.points):
+        p.points[1].co = (1.0, 2.0, 3.0)
+
+
+KINDS["pointclouds"] = (_cloud, lambda p: (p.get("note"), p.use_fake_user, sorted(a.name for a in p.attributes),
+                                           tuple(_r(x.co) for x in p.points)), _cloud_change)
 for _k in [("curves", ("CURVE",), "bevel_depth", 0.25), ("metaballs", (), "resolution", 0.5),
            ("lattices", (), "points_u", 4), ("armatures", (), "display_type", "STICK"),
            ("cameras", (), "lens", 85.0), ("lights", ("POINT",), "energy", 250.0),
