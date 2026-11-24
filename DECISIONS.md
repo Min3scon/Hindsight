@@ -1,5 +1,21 @@
 # Decisions log
 
+## Slop check clean-up (owner, 2026-11-22; verdict on #6, report `dev/reports/SLOP_CHECK.md`)
+
+The code is kept and fixed in place, with no rebuild. Every ticket keeps every function and adds none; the owner's
+decisions below remove only things that never shipped or that nothing uses. Git keeps the history.
+
+- O1, the importer goes (#72): `hindsight/core/importer.py`, its tests and `IMPORTER.md`. It was built ahead of an
+  interface that is not in the repo, so it is not a shipped function.
+- O2, the gate evidence frozen at beta 2 is retired (#73): `evidence/`, `test_rounds/`, `TEST_EVIDENCE.md`,
+  `tools/make_evidence.py`, `gate_spec.py`, `visual_review.py`, the `@covers` marks and the pre-commit check on
+  them. The 12-point gate itself stays.
+- O3 and O4, the benchmarks (#74): `bench/results/` and everything `OPTIMISATION_LOG.md` links to stay; the 34
+  one-off scripts that `bench/suite.py` replaces go. The copy checker's website-only coverage rule and its test
+  (`tests/test_tools_coverage.py`) are deleted rather than aimed at README and CHANGELOG.
+- O6, the unused tools go (#74): `tools/net_check.py` and `tools/list_ui_strings.py`.
+- Not decided here: the frozen oracle copies in `tests/reference` (O5) wait for format 5 (#11).
+
 ## History inside the .blend (owner, 2026-11-22)
 
 The history lives inside the .blend itself, so the file alone carries all of it to any computer; nobody should
