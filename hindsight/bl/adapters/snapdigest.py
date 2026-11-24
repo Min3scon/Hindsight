@@ -136,7 +136,11 @@ def _digest(raw: bytes, blocks: list, info: tuple = (-1, {})) -> bytes:
             r = r[r[:, -1] < 8 * k]
             u8 = words.view(np.uint8)
             u8[r[np.cumsum(u8[r] == 0, axis=1) > 0]] = 0
-        h.update(words.tobytes() + raw[pos + hs + 8 * k:pos + n])
+        body = words.tobytes() + raw[pos + hs + 8 * k:pos + n]
+        z = raw.find(b"\0", pos + hs, pos + n) if code == b"DATA" and s == 0 else -1
+        if z >= pos + n - 4:    # a string: 4.2 rounds its block up to 4 bytes, the rest as it was in memory
+            body = body[:z + 1 - pos - hs] + bytes(pos + n - z - 1)
+        h.update(body)
     return h.digest()
 
 

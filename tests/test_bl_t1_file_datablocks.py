@@ -247,6 +247,29 @@ def test_digest_leaves_out_what_is_after_the_end_of_a_name():
     assert loose._digest(bytes(raw), blocks, info) != before, "a changed letter kept the digest"
 
 
+def test_digest_leaves_out_what_is_after_the_end_of_a_string():
+    """4.2 writes a string (an F-Curve's path) as a block of its length rounded up to 4 bytes, what is after
+    its end as it was in memory, so an action loaded again read as changed (t1_prop corpus 411076cc4a42):
+    that is left out of the digest, and a changed letter changes it. (5.x writes the string to its end.)"""
+    from hindsight.bl import multires
+    from hindsight.bl.adapters import loose
+    ob = D.objects.new("Digest", None)
+    ob.keyframe_insert("color", index=0)
+    raw = bytearray(multires.snapshot_bytes(ob.animation_data.action))
+    blocks = multires.blend_blocks(bytes(raw))
+    info = loose._dna_info(bytes(raw), blocks)
+    hs, _so = loose._heads(raw)
+    p, n = next((p, n) for p, c, n in blocks if c == b"DATA" and raw[p + hs:p + hs + 6] == b"color\0")
+    assert n - hs == (8 if bpy.app.version < (5, 0) else 6), n - hs
+    raw[p + hs + 6:p + n] = bytes(n - hs - 6)
+    before = loose._digest(bytes(raw), blocks, info)
+    if n - hs == 8:
+        raw[p + hs + 6:p + n] = b"er"
+        assert loose._digest(bytes(raw), blocks, info) == before, "bytes after the end of a string changed the digest"
+    raw[p + hs] ^= 1
+    assert loose._digest(bytes(raw), blocks, info) != before, "a changed letter kept the digest"
+
+
 def test_digest_leaves_out_the_runtime_fields_of_an_id():
     """D156: an ID's session number and depsgraph tags are written, but given again when it is read (a file
     opened again, a snapshot loaded): they are left out of the digest."""
@@ -373,6 +396,7 @@ if __name__ == "__main__":
                       test_digest_leaves_out_what_custom_properties_hold,
                       test_going_back_over_a_duplicate_takes_its_action_away,
                       test_digest_leaves_out_the_runtime_fields_of_an_id,
-                      test_digest_leaves_out_what_is_after_the_end_of_a_name]:
+                      test_digest_leaves_out_what_is_after_the_end_of_a_name,
+                      test_digest_leaves_out_what_is_after_the_end_of_a_string]:
         H.run(t)
     H.finish()
