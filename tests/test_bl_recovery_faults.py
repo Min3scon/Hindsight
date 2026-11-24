@@ -231,6 +231,55 @@ def test_embed_save_fails_before_the_old_copy_is_touched():
         check(book, file_state, rec)
 
 
+def test_embed_save_as_new_path_both_fail():
+    """#56 under Save As: the history can't be built for the new .blend and the folder can't be written
+    either. The new .blend keeps the history of the session's last save, read from the old .blend, with the
+    meshes of this one; the old .blend is left as it was, and opening the new one never plays that history
+    onto meshes it doesn't fit."""
+    setup("EMBED")
+    obs = make(("A", "B"))
+    book = Book()
+    for s in range(3):
+        book.stroke(obs["A"], s)
+        book.stroke(obs["B"], 20 + s)
+    old = os.path.join(TMP, "embed_as_old.blend")
+    save(old)
+    with open(old, "rb") as fh:
+        before = fh.read()
+    book.stroke(obs["A"], 10)            # B is unchanged since that save
+    new_dir = os.path.join(TMP, "as_new")
+    os.mkdir(new_dir)
+    path = os.path.join(new_dir, "embed_as_new.blend")
+    real = persist.registry_parts
+
+    def boom(reg, codec="auto"):
+        raise MemoryError("test")
+    persist.registry_parts = boom        # save_sidecar builds the same parts: the folder fails too
+    try:
+        file_state = save(path)
+    finally:
+        persist.registry_parts = real
+    assert bpy.data.filepath == path, bpy.data.filepath
+    assert not blender_copy(), "Blender's copy of the history is not left behind"
+    assert getattr(persistence, "KEPT_LAST_SAVE_TEXT", None) in notes(), "the user is told"
+    assert not [lib for lib in bpy.data.libraries if lib.filepath.endswith(".hindsight.blend")], \
+        "reading the last save back leaves no library behind"
+    for d in (TMP, new_dir):
+        assert not [f for f in os.listdir(d) if f.endswith(".hindsight.blend")], "nor the link it was read through"
+    with open(old, "rb") as fh:
+        assert fh.read() == before, "the old .blend is as it was"
+    book.stroke(obs["B"], 30)            # recorded after the failed save, then interrupted
+    for rec in ("LAST_SAVED", "INTERRUPTED"):
+        SETTINGS.crash_recovery = rec
+        interrupt(path)
+        ha = runtime.history_of(bpy.data.objects["A"])
+        assert ha is None or not ha.entries or ha.entries[-1].load().label == runtime.OUTSIDE_LABEL, \
+            f"{rec}: A's history from the save before is never played onto this mesh"
+        hb = runtime.history_of(bpy.data.objects["B"])
+        assert hb is not None and len(hb.entries) >= 3, (rec, hb)
+        check(book, file_state, rec)
+
+
 def test_embed_save_blender_fails_to_write():
     """#56: Blender fails to write the .blend (its temporary file can't be made). The .blend on disk stays as
     it was, Blender's copy of the history isn't left behind in memory, and the next save stores every step."""
