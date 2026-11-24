@@ -41,6 +41,12 @@ def _unused(idb) -> bool:
     return idb.library is None and idb.users - int(bool(idb.use_fake_user)) <= 0
 
 
+def _remove(coll: str, idb) -> None:
+    """Remove a datablock from the file (cache files and paint curves have no remove(): batch_remove)."""
+    c = getattr(bpy.data, coll)
+    c.remove(idb) if hasattr(c, "remove") else bpy.data.batch_remove([idb])
+
+
 def _loose_mats():
     return [m for m in bpy.data.materials if _unused(m)] + [w for w in bpy.data.worlds if _unused(w)]
 
@@ -86,25 +92,22 @@ def _file_snapshots(out: dict, inv: list, recorded=None) -> None:
     shortcut: a change of one of those is found within a few operations (as D151's materials), so deleting
     it right after a change makes the older state again; a cheap per-type check would find it at once."""
     seen, old = {}, []
-    for name in _SNAP_COLLS:
-        for idb in getattr(bpy.data, name, ()):
-            if not _snappable(name, idb):
+    # every id first: a snapshot holds the ids of what its datablock uses (a brush's paint curve made with it)
+    todo = [(name, idb, u) for name in _SNAP_COLLS for idb in getattr(bpy.data, name, ())
+            if _snappable(name, idb) and (u := idmap.claim(idb))]
+    for name, idb, u in todo:
+        c = _SNAPS.get(u)
+        if c is None or c[0] != idb.session_uid or c[3]:
+            try:
+                if c is None:
+                    _UNMATCHED.add(u)
+                c = _take(name, idb, c, c[3] if c is not None else _SNAP_READ[0])
+            except Exception as e:
+                log.error_once(("snap", name, str(e)), f"could not record {idb.name}: {e}", e)
                 continue
-            u = idmap.claim(idb)
-            if not u:
-                continue
-            c = _SNAPS.get(u)
-            if c is None or c[0] != idb.session_uid or c[3]:
-                try:
-                    if c is None:
-                        _UNMATCHED.add(u)
-                    c = _take(name, idb, c, c[3] if c is not None else _SNAP_READ[0])
-                except Exception as e:
-                    log.error_once(("snap", name, str(e)), f"could not record {idb.name}: {e}", e)
-                    continue
-            else:
-                old.append((u, name, idb))
-            seen[u] = c
+        else:
+            old.append((u, name, idb))
+        seen[u] = c
     if old:
         k = _SNAP_TURN[0] % len(old)
         for u, name, idb in (old[k:] + old[:k])[:SNAP_READ_MAX]:
@@ -213,7 +216,7 @@ def _load_snapshot(uid, rec, values, recorded):
             if have is not None and have != x:
                 x.user_remap(have)
             if x.users == 0:
-                getattr(bpy.data, c).remove(x)
+                _remove(c, x)
     return got
 
 
@@ -245,7 +248,7 @@ def _snapshots_back(values: dict, recorded=None, replace: bool = False) -> None:
             if old is not None:
                 old.user_remap(new)
                 idmap.unnote(old)
-                getattr(bpy.data, rec[0]).remove(old)
+                _remove(rec[0], old)
             new[idmap.UID_PROP] = uid
             idmap.note(new, uid)
             if new.name != rec[3]:
@@ -450,7 +453,7 @@ def flush_loose_removals() -> None:
                     log.warn(f"{idb.name} was made after this point but can't be taken away: something uses it now")
                 continue
             idmap.unnote(idb)
-            getattr(bpy.data, _LOOSE_COLL.get(kind, kind)).remove(idb)
+            _remove(_LOOSE_COLL.get(kind, kind), idb)
         except Exception as e:
             log.error_once(("loose_rm", uid, str(e)), f"could not take away {getattr(idb, 'name', uid)}: {e}", e)
 

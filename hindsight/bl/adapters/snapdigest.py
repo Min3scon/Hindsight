@@ -11,6 +11,9 @@ _DINFO: dict = {}          # DNA id -> _dna_info of that DNA block
 # D156: written, but given again when the datablock is read (a file opened, a snapshot loaded); and every
 # padding field (`_pad...`, D158: 5.0 writes an action channel bag's as it was in memory)
 _ID_RUNTIME = (b"recalc", b"recalc_after_undo_push", b"session_uid")
+# a char array of at least this many is a name or path: Blender reads it up to its end (5.0 writes a brush
+# asset's catalog name with what is after its end as it was in memory); shorter ones can be small numbers
+_TEXT_MIN = 32
 _NOT_OWN = (b"REND", b"TEST", b"GLOB", b"DNA1", b"ENDB", b"USER")    # a .blend's file blocks, not the datablock's
 
 
@@ -53,7 +56,7 @@ def _dna_info(raw: bytes, blocks: list) -> tuple:
 
     def ptr_offsets(t):             # byte offsets of the pointers in struct type t, its embedded structs' too
         if t not in offs:
-            out, run, at = [], [], 0
+            out, run, txt, at = [], [], [], 0
             for ft, fn in strc[t][1]:
                 nm = names[fn]
                 dims = 1
@@ -65,12 +68,15 @@ def _dna_info(raw: bytes, blocks: list) -> tuple:
                     continue
                 if (types[t] == b"ID" and nm in _ID_RUNTIME) or nm.startswith(b"_pad"):
                     run += range(at, at + tlen[ft] * dims)
+                elif types[ft] == b"char" and nm.count(b"[") == 1 and dims >= _TEXT_MIN:
+                    txt.append((at, dims))
                 if ft in strc:
                     sub = ptr_offsets(ft)
                     out += [at + e * tlen[ft] + o for e in range(dims) for o in sub[0]]
                     run += [at + e * tlen[ft] + o for e in range(dims) for o in sub[1]]
+                    txt += [(at + e * tlen[ft] + o, m) for e in range(dims) for o, m in sub[2]]
                 at += tlen[ft] * dims
-            offs[t] = out, run
+            offs[t] = out, run, txt
         return offs[t]
     ptrs = {k: (tlen[t], *(np.array(x, dtype=np.int64) for x in ptr_offsets(t)))
             for t, (k, _) in strc.items()}
@@ -121,10 +127,15 @@ def _digest(raw: bytes, blocks: list, info: tuple = (-1, {})) -> bytes:
         b = _ptr_words(n - hs, info, s)
         words[b[~hit[b]]] = 0
         words[hit] = num[order[at[hit]]]
-        size, _p, run = info[1].get(s, (0, (), ()))
+        size, _p, run, txt = info[1].get(s, (0, (), (), ()))
         if len(run) and size:
             r = (run[None, :] + size * np.arange((n - hs) // size)[:, None]).ravel()
             words.view(np.uint8)[r[r < 8 * k]] = 0
+        for a, m in txt if size else ():     # a name or path: what is after its end is left out
+            r = (a + size * np.arange((n - hs) // size))[:, None] + np.arange(m)
+            r = r[r[:, -1] < 8 * k]
+            u8 = words.view(np.uint8)
+            u8[r[np.cumsum(u8[r] == 0, axis=1) > 0]] = 0
         h.update(words.tobytes() + raw[pos + hs + 8 * k:pos + n])
     return h.digest()
 

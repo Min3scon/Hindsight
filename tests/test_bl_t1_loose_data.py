@@ -54,9 +54,12 @@ def run_ops(ops, read):
     return states
 
 
-def texts_walk(read, ops):
-    """Run `ops` on the scene, then walk the scene's history over every position both ways."""
+def texts_walk(read, ops, setup=None):
+    """Run `ops` on the scene (setup() first, before the baseline), then walk the scene's history over every
+    position both ways."""
     L.fresh_scene()
+    if setup is not None:
+        setup()
     L.track_all()
     L.tick_like("baseline")
     states = run_ops(ops, read)

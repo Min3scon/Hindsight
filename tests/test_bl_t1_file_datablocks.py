@@ -4,6 +4,9 @@ it (when nothing uses it), going back over its deletion makes it again, exactly,
 datablock written and loaded with Blender's library functions); forward the other way round. A change of its
 settings between is a step too, put back from the snapshot."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tempfile
+import wave
+
 import bpy
 import tests.harness as H
 from tests.test_bl_t1_loose_data import texts_walk
@@ -23,7 +26,66 @@ def _r(v):
     return tuple(round(x, 4) for x in v) if hasattr(v, "__len__") else round(v, 4)
 
 
-# kind: (make it, read its state, change a setting)
+def _tmp(name):
+    return os.path.join(tempfile.gettempdir(), name)
+
+
+def _cache_file():
+    """A cache file: an Alembic file written from the scene, opened."""
+    abc = _tmp("made.abc")
+    if not os.path.exists(abc):
+        bpy.ops.wm.alembic_export(filepath=abc)
+    bpy.ops.cachefile.open(filepath=abc)
+    D.cache_files[-1].name = "Made"
+
+
+def _sculpt(fn):
+    C = bpy.context
+    C.view_layer.objects.active = D.objects["A"]
+    bpy.ops.object.mode_set(mode="SCULPT")
+    fn(C.scene.tool_settings.sculpt)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def _curve_brush(sculpt):
+    """Sculpt Mode's brush: a local brush that strokes along a curve (a linked brush asset's paint curve
+    is made in its library: never recorded)."""
+    brush = D.brushes.new("CurveBrush", mode="SCULPT")
+    brush.stroke_method = "CURVE"
+    if bpy.app.version < (4, 3):
+        sculpt.brush = brush
+        return
+    brush.asset_mark()
+    try:
+        bpy.ops.brush.asset_activate(asset_library_type="LOCAL", relative_asset_identifier="Brush/CurveBrush")
+    except RuntimeError:        # 5.0 on Windows
+        bpy.ops.brush.asset_activate(asset_library_type="LOCAL", relative_asset_identifier="Brush\\CurveBrush")
+    assert sculpt.brush == brush, sculpt.brush
+
+
+def _paint_curve(sculpt):
+    """A paint curve: made in Sculpt Mode for the brush."""
+    assert bpy.ops.paintcurve.new() == {"FINISHED"}
+    D.paint_curves[-1].name = "Made"
+
+
+def _sound():
+    wav = _tmp("made.wav")
+    with wave.open(wav, "wb") as w:
+        w.setnchannels(1), w.setsampwidth(2), w.setframerate(8000), w.writeframes(bytes(1600))
+    D.sounds.load(wav).name = "Made"
+
+
+def _movie_clip():
+    png = _tmp("made.png")
+    img = D.images.new("ClipFrame", 4, 4)
+    img.filepath_raw, img.file_format = png, "PNG"
+    img.save()
+    D.images.remove(img)
+    D.movieclips.load(png).name = "Made"
+
+
+# kind: (make it, read its state, change a setting[, set the scene up before the baseline])
 KINDS = {
     "images": (lambda: D.images.new("Made", 8, 8, alpha=True),
                lambda i: (i.size[:], i.generated_type, i.alpha_mode, i.use_fake_user),
@@ -46,18 +108,36 @@ KINDS = {
     "textures": (lambda: setattr(D.textures.new("Made", "CLOUDS"), "noise_scale", 0.5),
                  lambda t: (t.type, _r(t.noise_scale)),
                  lambda t: setattr(t, "noise_scale", 1.75)),
+    "cache_files": (_cache_file,
+                    lambda c: (os.path.basename(c.filepath), _r(c.scale), _r(c.frame_offset)),
+                    lambda c: (setattr(c, "scale", 2.5), setattr(c, "frame_offset", 3.0))),
+    "paint_curves": (lambda: _sculpt(_paint_curve),
+                     lambda p: (p.name, p.get("note")),
+                     lambda p: p.__setitem__("note", "changed"),
+                     lambda: _sculpt(_curve_brush)),
+    "sounds": (_sound,
+               lambda s: (os.path.basename(s.filepath), s.use_mono),
+               lambda s: setattr(s, "use_mono", True)),
+    "fonts": (lambda: setattr(D.fonts.load(os.path.join(bpy.utils.system_resource("DATAFILES", path="fonts"),
+                                                         "DejaVuSansMono.woff2")), "name", "Made"),
+              lambda f: (os.path.basename(f.filepath), f.get("note")),
+              lambda f: f.__setitem__("note", "changed")),
+    "movieclips": (_movie_clip,
+                   lambda m: (os.path.basename(m.filepath), m.frame_start),
+                   lambda m: setattr(m, "frame_start", 7)),
 }
 
 
 def walk(kind):
-    make, state, change = KINDS[kind]
+    make, state, change, *setup = KINDS[kind]
     coll = lambda: getattr(bpy.data, kind)
 
     def read():
         idb = coll().get("Made")
         return None if idb is None else state(idb)
     states = texts_walk(read, [("make", make), ("change", lambda: change(coll()["Made"])),
-                               ("delete", lambda: coll().remove(coll()["Made"]))])
+                               ("delete", lambda: bpy.data.batch_remove([coll()["Made"]]))],  # (no remove() for some kinds)
+                        *setup)
     assert states[0] is None and states[-1] is None and states[1] != states[2], (kind, states)
 
 
@@ -107,7 +187,9 @@ def test_digest_reads_a_pointer_to_data_not_written_as_null():
     info = loose._dna_info(bytes(raw), blocks)
     hs, so = loose._heads(raw)
     p = next(p for p, c, _ in blocks if c == b"IM\0\0")
-    ptrs, run = (set(x.tolist()) for x in info[1][int.from_bytes(raw[p + so:p + so + 4], "little")][1:3])
+    entry = info[1][int.from_bytes(raw[p + so:p + so + 4], "little")]
+    ptrs, run = (set(x.tolist()) for x in entry[1:3])
+    run.update(i for a, m in entry[3].tolist() for i in range(a, a + m))    # nor a name or path (read to its end)
     word = lambda o: raw[p + hs + o:p + hs + o + 8]
     at = p + hs + next(o for o in sorted(ptrs) if o % 8 == 0 and not any(word(o)))         # a null pointer
     data = p + hs + next(o for o in range(64, 1600, 8) if o not in ptrs and any(word(o))   # a set data word
@@ -132,6 +214,23 @@ def test_digest_leaves_out_what_custom_properties_hold():
     before = loose._digest(bytes(raw), blocks, info)
     raw[raw.index(b"walk cycle\0")] ^= 1
     assert loose._digest(bytes(raw), blocks, info) == before, "a custom property's text changed the digest"
+
+
+def test_digest_leaves_out_what_is_after_the_end_of_a_name():
+    """Blender reads a name or a path up to its end. 5.0 writes a brush asset's catalog name with what is
+    after its end as it was in memory: that is left out of the digest, and a changed letter changes it."""
+    from hindsight.bl import multires
+    from hindsight.bl.adapters import loose
+    img = D.images.new("Digest", 4, 4)
+    raw = bytearray(multires.snapshot_bytes(img))
+    blocks = multires.blend_blocks(bytes(raw))
+    info = loose._dna_info(bytes(raw), blocks)
+    before = loose._digest(bytes(raw), blocks, info)
+    at = raw.index(b"IM" + img.name.encode() + b"\0")
+    raw[at + len(img.name) + 6] = 0x5A
+    assert loose._digest(bytes(raw), blocks, info) == before, "a byte after the end of the name changed the digest"
+    raw[at + 3] ^= 1
+    assert loose._digest(bytes(raw), blocks, info) != before, "a changed letter kept the digest"
 
 
 def test_digest_leaves_out_the_runtime_fields_of_an_id():
@@ -183,6 +282,7 @@ if __name__ == "__main__":
     for t in TESTS + [test_made_again_keeps_its_id_and_users, test_digest_reads_a_pointer_to_data_not_written_as_null,
                       test_digest_leaves_out_what_custom_properties_hold,
                       test_going_back_over_a_duplicate_takes_its_action_away,
-                      test_digest_leaves_out_the_runtime_fields_of_an_id]:
+                      test_digest_leaves_out_the_runtime_fields_of_an_id,
+                      test_digest_leaves_out_what_is_after_the_end_of_a_name]:
         H.run(t)
     H.finish()
