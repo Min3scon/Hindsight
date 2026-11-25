@@ -52,11 +52,11 @@ class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
         description="When global history moves to another object's step, select that object and enter its mode")
     movie_mode: bpy.props.BoolProperty(
         name="Movie Mode", default=False, update=_upd_movie_rig,
-        description="On while the time lapse plays on the timeline (Create time lapse switches it on). "
-                    "Switch it off to change the history again: the time lapse's camera and lighting go with it")
+        description="Switch off to stop playing the time lapse on the timeline, which also removes its camera "
+                    "and lighting")
     movie_step: bpy.props.IntProperty(
         name="Step", default=0, min=0, update=_upd_movie_step, options={'ANIMATABLE'},
-        description="The global history step Movie Mode shows. Keyframe it to make a timelapse")
+        description="The global history step Movie Mode shows, keyed by Create time lapse")
     frames_per_step: bpy.props.IntProperty(
         name="Frames per step", default=2, min=1, max=1000,
         description="How many frames each step lasts in the time lapse")

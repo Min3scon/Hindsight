@@ -1,4 +1,4 @@
-"""Movie Mode: play the global history back from the Timeline (e.g. to render a timelapse).
+"""Movie Mode: play the global history back from the Timeline (e.g. to render a time lapse).
 
 Movie Mode only plays history back, it never changes it: no step is ever recorded from here.
 """
@@ -204,9 +204,8 @@ def movie_length(scene) -> dict | None:
 
 
 class HINDSIGHT_OT_create_time_lapse(bpy.types.Operator):
-    """Play the global history on the timeline: key it Frames per step apart, then add a camera that has the
-    whole history in frame and, when the scene has no light, lighting. Click again after more work for the
-    longer history"""
+    """Key the global history on the timeline and add a camera that keeps all of it in frame, with lighting
+    when the scene has none"""
     bl_idname = "hindsight.create_time_lapse"
     bl_label = "Create time lapse"
     bl_options = {'REGISTER', 'UNDO'}

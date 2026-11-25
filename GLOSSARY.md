@@ -82,11 +82,16 @@ _Avoid_: recorder (for one kind), handler
 The step that the Morph History brush paints the mesh back towards.
 
 **Movie Mode**:
-Playing a history on Blender's timeline so it can be rendered as a timelapse.
+Playing a history on Blender's timeline so it can be rendered as a time lapse.
 
 **Create time lapse**:
 The one action that switches Movie Mode on, keys the global history on the timeline, and only then adds
 the time lapse's camera and, when the scene has no light, its lighting, placed for the whole history.
+
+**Safe bound**:
+What the time lapse's camera frames when it can't measure an object's shape exactly (a volume's box, for
+example): never smaller than the object, so nothing is cut off, though the frame may be looser. The panel
+names the objects framed this way.
 
 ## Keeping and saving history
 
