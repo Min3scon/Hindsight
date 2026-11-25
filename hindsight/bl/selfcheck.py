@@ -257,6 +257,15 @@ def run_checks(retry_failed=True):
             # data recorded again from now on: what changed while it was off isn't one big step
             from . import datarec
             datarec.rebaseline()
+        if "recorder" in names:
+            with contextlib.suppress(Exception):
+                # D46, D95: the mesh changed while the recorder was off is one step of its own, not part of
+                # the next stroke's
+                from . import runtime
+                for uid in list(runtime._STATES):
+                    ob = runtime.find_object(uid)
+                    if ob is not None and ob.mode != "EDIT":
+                        runtime.commit(ob, label="Changes While Off", full=True)
         log.info("Self-check switched these back on: " + ", ".join(names))
     results = []
     for fn in CHECKS:

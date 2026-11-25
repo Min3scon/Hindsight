@@ -236,8 +236,39 @@ def test_animated_constraint_settings_are_not_steps():
     assert len(hist("A").entries) == n + 1
 
 
+def test_strokes_while_the_recorder_is_off_are_one_step():
+    """#118 (D46, D95): strokes made while a fault had the recorder switched off become one step of
+    their own when Self-check switches it back on; the next stroke is the step after it."""
+    H.fresh()
+    ob = H.make_mesh(400, name="Blob")
+    H.enter(ob, "SCULPT")
+    for seed in (0, 1):
+        H.fake_stroke(ob, seed)
+        H.commit(ob)
+    h = runtime.reg().history_for(runtime.obj_uid(ob))
+    assert len(h.entries) == 2
+    real = runtime._observe
+    runtime._observe = boom
+    try:
+        H.fake_stroke(ob, 2)
+        runtime._DIRTY[runtime.obj_uid(ob)] = 0.0   # the stroke has settled
+        runtime._tick_once()                        # the recorder's timer commits it and fails
+    finally:
+        runtime._observe = real
+    assert not guard.ok("recorder") and len(h.entries) == 2
+    H.fake_stroke(ob, 3)                            # made while the recorder is off
+    off = H.snapshot(ob)
+    selfcheck.run_checks(retry_failed=True)         # what the Self-check button runs
+    assert guard.ok("recorder")
+    H.fake_stroke(ob, 4)
+    H.commit(ob)
+    assert len(h.entries) == 4, [e.meta.get("label") for e in h.entries]
+    runtime._goto_history(h, 3, True)               # back one step: only the last stroke is undone
+    assert all((H.snapshot(ob)[k] == v).all() for k, v in off.items())
+
+
 for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults, test_edit_steps_fault,
            test_object_mode_mesh_check_fault, test_mesh_change_without_an_operator_is_recorded,
-           test_animated_constraint_settings_are_not_steps):
+           test_animated_constraint_settings_are_not_steps, test_strokes_while_the_recorder_is_off_are_one_step):
     H.run(fn)
 H.finish()
