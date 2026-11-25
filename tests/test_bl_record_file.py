@@ -239,6 +239,49 @@ def test_a_crash_keeps_everything_switched_off():
         SETTINGS.save_mode, SETTINGS.crash_recovery = was
 
 
+def test_a_crash_after_one_switch_off_keeps_the_default_on_the_rest():
+    """#104 review: a saved history with no Everything set (Sculpting only, as before #10) opens with
+    the default. One object switched off, then Blender ends without a save: the recovered file has that
+    object off and every other one still on (not all off, not all on). The whole file switched off
+    stays all off."""
+    from hindsight.bl import persistence
+    from hindsight.core.types import SETTINGS
+    was = SETTINGS.save_mode, SETTINGS.crash_recovery
+    try:
+        for off in ("A", "B", "file"):          # A's id is in the file, B's is given when it opens
+            L.fresh_scene()
+            SETTINGS.save_mode, SETTINGS.crash_recovery = "SIDECAR", "INTERRUPTED"
+            path = os.path.join(TMP, "crash_one_off_" + off, "one.blend")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            prefs.FORCE["record_scope"] = "SCULPT"
+            a = bpy.data.objects["A"]
+            H.enter(a, "SCULPT")
+            H.fake_stroke(a, 1, n=80)
+            assert H.commit(a) is not None
+            H.enter(a, "OBJECT")
+            bpy.ops.wm.save_as_mainfile(filepath=path)      # a history with no Everything set
+            prefs.FORCE["record_scope"] = None              # the default, Everything
+            bpy.ops.wm.open_mainfile(filepath=path)
+            assert not runtime.reg().everything_chosen and datarec.file_tracked(), off
+            if off == "file":
+                bpy.ops.hindsight.record_file(on=False)
+            else:
+                datarec.set_tracked(bpy.data.objects[off], False)
+            persistence._close_journal()        # the session ends here, unsaved
+            bpy.ops.wm.open_mainfile(filepath=path)
+            on = {o.name for o in datarec.file_candidates() if datarec.is_tracked(o)}
+            rest = set() if off == "file" else {o.name for o in datarec.file_candidates()} - {off}
+            assert off != "file" or not on, sorted(on)
+            assert rest <= on, (off, sorted(on), sorted(rest))
+            if off == "A":                      # B can't be told from a new object: it comes back on
+                assert "A" not in on, "the switch-off came back"
+            h = runtime.history_of(bpy.data.objects["A"])
+            assert h is not None and len(h.entries) == 1, (off, "the saved stroke came back")
+    finally:
+        SETTINGS.save_mode, SETTINGS.crash_recovery = was
+        prefs.FORCE["record_scope"] = None
+
+
 if __name__ == "__main__":
     H.run(test_one_switch_for_the_file)
     H.run(test_switch_is_quick_with_many_objects)
@@ -248,4 +291,5 @@ if __name__ == "__main__":
     H.run(test_a_file_saved_with_everything_switched_off_opens_with_it_off)
     H.run(test_a_file_whose_history_did_not_load_keeps_its_choice)
     H.run(test_a_crash_keeps_everything_switched_off)
+    H.run(test_a_crash_after_one_switch_off_keeps_the_default_on_the_rest)
     H.finish()

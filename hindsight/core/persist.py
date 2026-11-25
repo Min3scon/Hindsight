@@ -662,9 +662,16 @@ def replay(reg, records: list) -> int:
             live[uid] = 0
         elif rtype == "META_EVERYTHING":
             t = header.get("uid")
-            if t and hasattr(reg, "everything"):
-                (reg.everything.add if header.get("on") else reg.everything.discard)(t)
-                if not header.get("on"):        # #104: switched off is a choice the file keeps (#61)
+            if "unnamed" in header:
+                # #104: ids given since the save are not in the .blend, so their records find nothing:
+                # on or off for those objects (the default ended, or the whole file was switched)
+                reg.unnamed_on = bool(header["unnamed"])
+            elif t and hasattr(reg, "everything"):
+                on = bool(header.get("on"))
+                (reg.everything.add if on else reg.everything.discard)(t)
+                if hasattr(reg, "named_off"):
+                    (reg.named_off.discard if on else reg.named_off.add)(t)
+                if not on:                      # #104: switched off is a choice the file keeps (#61)
                     reg.everything_chosen = True
         elif rtype == "META":
             if not uid:
