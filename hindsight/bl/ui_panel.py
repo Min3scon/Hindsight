@@ -540,6 +540,16 @@ def draw_movie_camera(layout, context, sh):
             own = False
         if own:
             wrap(layout, context, "This scene has a light of its own, so Hindsight adds none.", 'INFO')
+    if sh.movie_mode and sh.movie_camera:
+        try:
+            from . import camrig
+            names = camrig.bounded(context.scene)
+        except Exception:
+            names = ()
+        if names:       # #114: not an exact measure, so the frame may be looser than tight
+            more = f" and {len(names) - 3:,} more" if len(names) > 3 else ""
+            wrap(layout, context, f"Framed by a safe bound, not measured exactly: {', '.join(names[:3])}{more}.",
+                 'INFO')
 
 
 class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):

@@ -7,7 +7,8 @@ are never moved, hidden or deleted. Nothing here records or moves history.
 
 What the camera holds (the model as a render shows it, at every step of the history): every
 object with a history that renders (renders()), of any type; other types than meshes as they render
-now (_shape: exact, a bound for volumes and 4.2's Grease Pencil). For meshes:
+now (_shape: exact; a bound for volumes, 4.2's Grease Pencil, hair curves (drawn with flat ends) and
+points of different radii). bounded() names what the last placement held by a bound. For meshes:
 - the shape now: exact, from the evaluated object; when the viewport doesn't evaluate it the way a
   render does (render-only modifiers, other render levels, disabled in viewports) from a temporary
   copy set up for rendering, unless that copy would pass COPY_BUDGET vertices;
@@ -373,6 +374,14 @@ def _np_matrix(m) -> np.ndarray:
 
 
 _PAST = {}             # (history uid, object uid) -> (signature, extents of the mesh's other history positions)
+_BOUND_HIT = [False]   # set by a measure that held the object being measured by a safe bound, not exactly
+_BOUNDED = {}          # scene name -> names of the objects the last placement held by a safe bound
+
+
+def bounded(scene) -> tuple:
+    """#114: names of the objects the camera's last placement held by a safe bound (never cut off, not
+    an exact measure, so the frame can be looser than tight); the panel says so."""
+    return _BOUNDED.get(scene.name_full, ())
 
 
 def _history_extents(ob, uid, bases, tans):
@@ -752,6 +761,7 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter, now_only=Fal
     if len(ev) == len(bs) and ob.mode != "EDIT" and deforms_only(ob):
         moved = _measure_deformed(ob, ev, bs, local_basis, tx, ty)
         if moved is not None:
+            _BOUND_HIT[0] = True                # balls around where each vertex renders now
             return framing.merge(ext, moved), ev
     box_now = framing.bounds(bs)
     if box_now is None:
@@ -782,6 +792,8 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter, now_only=Fal
     size_now = float(np.linalg.norm(box_now[1] - box_now[0]))
     size_all = float(np.linalg.norm(hi - lo))
     grow = 1.0 if size_all <= size_now else (size_all / size_now if size_now > 1e-12 else 1e6)
+    if r > 0:                                   # the reach past the exact envelope: a bound
+        _BOUND_HIT[0] = True
     ball = framing.ball_extents(r * grow, local_basis, tx, ty)
     for k, (_L, Z) in enumerate(wide):
         e = framing.plus(framing.plus(past[k + 1], framing.extents(Z, local_basis, tx, ty)), ball)
@@ -805,8 +817,11 @@ def _shape(ev):
     """(points (n, 3) float32 in the object's own space, radius) of what renders of an evaluated
     object: the evaluated mesh of meshes, curves, text, surfaces and metaballs; the points of point
     clouds, hair curves and Grease Pencil (each visible layer's current drawing) with their largest
-    radius; else (volumes, 4.2's Grease Pencil) the corners of the evaluated box, a safe bound."""
+    radius; else (volumes, 4.2's Grease Pencil) the corners of the evaluated box, a safe bound. Each
+    bound sets _BOUND_HIT."""
     t = ev.type
+    if t == "CURVES":                  # #114: Cycles draws a hair's ends flat: the balls there are a bound
+        _BOUND_HIT[0] = True
     if t in ("CURVES", "POINTCLOUD"):
         return _positions(ev.data).reshape(-1, 3), _radius(ev.data)
     if t == "GREASEPENCIL":
@@ -834,6 +849,7 @@ def _shape(ev):
             return np.empty((0, 3), np.float32), 0.0
         finally:
             ev.to_mesh_clear()
+    _BOUND_HIT[0] = True
     return np.array([c[:] for c in ev.bound_box], np.float32), 0.0
 
 
@@ -843,6 +859,8 @@ def _radius(data) -> float:
         return DEFAULT_RADIUS
     rr = np.empty(len(rad.data), np.float32)
     rad.data.foreach_get("value", rr)
+    if rr.min() != rr.max():                   # the largest stands for all: a bound
+        _BOUND_HIT[0] = True
     return float(rr.max())
 
 
@@ -851,6 +869,7 @@ def _measure_other(ob, basis, tx, ty, dg):
     (see _shape); an instancing empty: its instances. Points with a radius are grown by it exactly
     (the largest radius stands for all: a bound when they differ)."""
     if dg is None:
+        _BOUND_HIT[0] = True
         parts = [((np.array([c[:] for c in ob.bound_box], np.float32), 0.0), _np_matrix(ob.matrix_world))]
     elif ob.type == "EMPTY":
         found = [(i.object.original, _np_matrix(i.matrix_world)) for i in dg.object_instances
@@ -908,10 +927,12 @@ def _measure(ob, basis, tx, ty, depsgraph=None, scene=None, now_only=False):
                 past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
                 ext = framing.merge(ext, None if past is None else past[0])
         if ob.mode == "EDIT":                          # and the mesh being edited: its evaluated box
+            _BOUND_HIT[0] = True
             box = np.array([c[:] for c in ob.bound_box], np.float32)
             ext = framing.merge(ext, framing.extents(box, local_basis, tx, ty))
             pts = np.vstack([np.asarray(pts, np.float32).reshape(-1, 3), box])
     else:                                              # other types: the evaluated box
+        _BOUND_HIT[0] = True
         pts = np.array([c[:] for c in ob.bound_box], np.float32)
         ext = framing.extents(pts, local_basis, tx, ty)
     bnd = None
@@ -1025,6 +1046,7 @@ def frame(scene) -> bool:
     ext = None
     bnd = None
     dg = []
+    hit = set()
 
     def depsgraph(refresh=False):
         if refresh or not dg:
@@ -1036,12 +1058,16 @@ def frame(scene) -> bool:
         if now_only:                                   # a jump changed the scene: evaluate it again
             depsgraph(True)                            # (matrix_world too, which a mesh is placed by)
         for ob in model_objects(scene):
+            _BOUND_HIT[0] = False
             e, b = _measure(ob, basis, tx, ty, depsgraph, scene, now_only)
+            if _BOUND_HIT[0]:
+                hit.add(ob.name)
             ext = framing.merge(ext, e)
             bnd = framing.merge_bounds(bnd, b)
 
     if not _at_every_step(lambda: measure(True)):
         measure()
+    _BOUNDED[scene.name_full] = tuple(sorted(hit))
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
     with runtime.suspended():
         if fitted is None or bnd is None:
@@ -1216,6 +1242,7 @@ def _on_load_post(*_args) -> None:
     the caches were made for, with other shapes."""
     _PAST.clear()
     _REACH.clear()
+    _BOUNDED.clear()                   # its scenes may have the same names
 
 
 def register():
