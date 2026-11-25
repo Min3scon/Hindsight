@@ -13,6 +13,7 @@ render the same way.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import math
+import subprocess
 import tempfile
 
 import bpy
@@ -144,8 +145,11 @@ def test_a_1_km_cube():
 
 
 def test_a_1m_vertex_mesh():
+    """A grid: Blender's UV sphere takes 4 minutes to make at 1M vertices, a grid one second."""
     H.fresh()
-    ob = H.make_mesh(1_002_000, "A")
+    bpy.ops.mesh.primitive_grid_add(x_subdivisions=1000, y_subdivisions=1000, size=4)
+    ob = C.active_object
+    ob.name = "A"
     assert len(ob.data.vertices) >= 1_000_000, len(ob.data.vertices)
     L.track_all()
     runtime.set_global(C, True)
@@ -308,7 +312,7 @@ def test_a_volume_held_by_a_bound():
     _type_case(_volume, "volume", tight=False)
 
 
-def test_grease_pencil():
+def _grease_pencil_case():
     """Grease Pencil is drawn by its own engine where Blender can make a GPU context (in some background
     runs it renders nothing: then test_bl_camrig_types checks its frame, not this). Its strokes have a
     soft edge about a pixel wide (5.3: alpha 0.03 to 0.06 just past a tight margin), so a pixel is the
@@ -322,6 +326,18 @@ def test_grease_pencil():
         print("  (Grease Pencil renders nothing in this background Blender: checked without rendering)")
         return
     _every_step_rendered("Grease Pencil", tight=ob.type == "GREASEPENCIL", cover=0.5)
+
+
+def test_grease_pencil():
+    """_grease_pencil_case in a Blender of its own, judged by what it prints: the GPU context it makes
+    crashed the 5.3 bpy module at exit on Windows, after the case had passed."""
+    exe, me = bpy.app.binary_path, os.path.abspath(__file__)
+    cmd = [exe, "-b", "--factory-startup", "--python", me] if exe else [sys.executable, me]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=1200, env=dict(os.environ, HS_RENDER_GP="1"))
+    for ln in r.stdout.splitlines():
+        if "Grease Pencil" in ln and ln.startswith("  "):
+            print(ln)
+    assert "PASS _grease_pencil_case" in r.stdout, (r.stdout[-3000:], r.stderr[-2000:])
 
 
 # ----------------------------------------------------------------------------- lights
@@ -437,7 +453,10 @@ def test_a_point_cloud_of_one_radius_is_exact():
     assert camrig.bounded(C.scene) == (), camrig.bounded(C.scene)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and os.environ.get("HS_RENDER_GP"):
+    H.run(_grease_pencil_case)
+    H.finish()
+elif __name__ == "__main__":
     for t in (test_a_1_mm_cube, test_an_8_vertex_cube, test_a_normal_model, test_a_1_km_cube,
               test_a_1m_vertex_mesh, test_a_curve, test_a_text, test_a_surface, test_a_metaball,
               test_hair_curves_held_by_a_bound, test_a_point_cloud, test_an_empty_instancing_a_collection,
