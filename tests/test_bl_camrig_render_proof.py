@@ -299,6 +299,25 @@ def test_hair_curves_held_by_a_bound():
     assert camrig.bounded(C.scene) == ("Hair",), camrig.bounded(C.scene)
 
 
+def _hairpin():
+    """One hair 8 m long, bent back on itself 0.3 m wide: the curve Cycles draws through its points
+    swings about 1 m past the bend (D182)."""
+    hc = bpy.data.hair_curves.new("Hairpin")
+    hc.add_curves([4])
+    co = np.array([(0, 0, 0), (8, 0, 0), (8, 0.3, 0), (0, 0.3, 0)], np.float32)
+    hc.attributes["position"].data.foreach_set("vector", co.reshape(-1))
+    rad = hc.attributes.new("radius", "FLOAT", "POINT")
+    rad.data.foreach_set("value", np.full(len(co), 0.05, np.float32))
+    return Y._link("Hairpin", hc)
+
+
+def test_a_hairpin_hair_held_whole():
+    """D182: the smooth curve between a hair's points, not only the balls around them, is in frame."""
+    _type_case(_hairpin, "hairpin", tight=False)
+    assert camrig.bounded(C.scene) == ("Hairpin",), camrig.bounded(C.scene)
+
+
+
 def test_a_point_cloud():
     _type_case(_point_cloud, "point cloud")
 
@@ -459,7 +478,8 @@ if __name__ == "__main__" and os.environ.get("HS_RENDER_GP"):
 elif __name__ == "__main__":
     for t in (test_a_1_mm_cube, test_an_8_vertex_cube, test_a_normal_model, test_a_1_km_cube,
               test_a_1m_vertex_mesh, test_a_curve, test_a_text, test_a_surface, test_a_metaball,
-              test_hair_curves_held_by_a_bound, test_a_point_cloud, test_an_empty_instancing_a_collection,
+              test_hair_curves_held_by_a_bound, test_a_hairpin_hair_held_whole, test_a_point_cloud,
+              test_an_empty_instancing_a_collection,
               test_a_volume_held_by_a_bound, test_grease_pencil,
               test_with_no_scene_light_every_framed_object_is_lit,
               test_the_panel_says_when_a_safe_bound_was_used,

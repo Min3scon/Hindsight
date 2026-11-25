@@ -822,7 +822,8 @@ def _shape(ev):
     t = ev.type
     if t == "CURVES":                  # #114: Cycles draws a hair's ends flat: the balls there are a bound
         _BOUND_HIT[0] = True
-    if t in ("CURVES", "POINTCLOUD"):
+        return _hair_hull(ev.data), _radius(ev.data)
+    if t == "POINTCLOUD":
         return _positions(ev.data).reshape(-1, 3), _radius(ev.data)
     if t == "GREASEPENCIL":
         pts, r = [np.empty((0, 3), np.float32)], 0.0
@@ -851,6 +852,30 @@ def _shape(ev):
             ev.to_mesh_clear()
     _BOUND_HIT[0] = True
     return np.array([c[:] for c in ev.bound_box], np.float32), 0.0
+
+
+def _hair_hull(cv) -> np.ndarray:
+    """D182: points whose hull holds the curve Cycles draws through each hair's points (Catmull-Rom,
+    ends doubled): each point and its Bezier handles P +- (next - previous) / 6, plus the handles of
+    Bezier curves."""
+    p = _positions(cv).reshape(-1, 3)
+    n = len(p)
+    off = np.empty(len(cv.curves) + 1, np.int32)
+    cv.curve_offset_data.foreach_get("value", off)
+    if n == 0 or len(off) < 2:
+        return p
+    first = np.repeat(off[:-1], np.diff(off))
+    last = np.repeat(off[1:] - 1, np.diff(off))
+    i = np.arange(n)
+    tan = (p[np.minimum(i + 1, last)] - p[np.maximum(i - 1, first)]) / 6.0
+    out = [p, (p + tan)[i < last], (p - tan)[i > first]]
+    for name in ("handle_left", "handle_right"):
+        a = cv.attributes.get(name)
+        if a is not None and len(a.data) == n:
+            h = np.empty(n * 3, np.float32)
+            a.data.foreach_get("vector", h)
+            out.append(h.reshape(-1, 3))
+    return np.vstack(out).astype(np.float32)
 
 
 def _radius(data) -> float:
@@ -1034,6 +1059,10 @@ def _at_every_step(measure) -> bool:
     return True
 
 
+def _same_extents(a, b) -> bool:
+    return (a is None and b is None) or (a is not None and b is not None and np.array_equal(a, b))
+
+
 def frame(scene) -> bool:
     """Place the camera and lighting around the model. False when there is nothing to frame."""
     sh = _props(scene)
@@ -1053,20 +1082,46 @@ def frame(scene) -> bool:
             dg[:] = [_depsgraph(scene, refresh)]
         return dg[0]
 
+    walked = []                                        # per step of the walk: {name: (ext, bnd, bound)}
+                                                       # of the objects that render without a history
     def measure(now_only=False):
         nonlocal ext, bnd
         if now_only:                                   # a jump changed the scene: evaluate it again
             depsgraph(True)                            # (matrix_world too, which a mesh is placed by)
-        for ob in model_objects(scene):
+        obs = model_objects(scene)
+        for ob in obs:
             _BOUND_HIT[0] = False
             e, b = _measure(ob, basis, tx, ty, depsgraph, scene, now_only)
             if _BOUND_HIT[0]:
                 hit.add(ob.name)
             ext = framing.merge(ext, e)
             bnd = framing.merge_bounds(bnd, b)
+        if now_only:
+            names = {o.name for o in obs}
+            here = {}
+            walked.append(here)
+            for ob in scene.objects:
+                if ob.name not in names and renders(ob):
+                    _BOUND_HIT[0] = False
+                    e, b = _measure(ob, basis, tx, ty, depsgraph, scene, True)
+                    here[ob.name] = (e, b, _BOUND_HIT[0])
 
     if not _at_every_step(lambda: measure(True)):
         measure()
+    # D181: an object without a history of its own counts when the history plays it back: a step makes
+    # or deletes it (it isn't there at every step), or moves or reshapes it (a parent or modifier
+    # object that is recorded). One that is the same at every step (a backdrop) is left out.
+    # shortcut: measures every such object at every step; skip the unchanged ones if framing gets slow.
+    for name in {n for here in walked for n in here}:
+        rows = [here.get(name) for here in walked]
+        first = rows[0]
+        if first is not None and all(r is not None and _same_extents(r[0], first[0]) for r in rows):
+            continue
+        for e, b, bound in filter(None, rows):
+            ext = framing.merge(ext, e)
+            bnd = framing.merge_bounds(bnd, b)
+            if bound:
+                hit.add(name)
     _BOUNDED[scene.name_full] = tuple(sorted(hit))
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
     with runtime.suspended():

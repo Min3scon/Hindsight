@@ -170,6 +170,52 @@ def test_a_curve_whose_shape_changed():
     _frame_and_check_every_step()
 
 
+def test_added_late_never_changed():
+    """D181: its making is the scene's step, it has no history of its own: still held at every step."""
+    _start(("A", (0, 0, 0), (1, 1, 1)))
+    _run(T.translate("A", (0, 0, 1)), T.add_primitive("cube", (30, 0, 0)))
+    _frame_and_check_every_step()
+
+
+def test_deleted_midway_never_changed():
+    """D181: never changed before its deletion (the scene's step): held at the steps where it exists."""
+    _start(("A", (0, 0, 0), (1, 1, 1)), ("B", (35, 0, 0), (2, 2, 2)))
+    _run(T.translate("A", (0, 0, 1)), T.delete(["B"]))
+    assert "B" not in C.scene.objects
+    _frame_and_check_every_step()
+
+
+def test_child_of_a_moved_parent():
+    """Parented before recording and never changed itself: it follows its parent 40 m away and back."""
+    _start(("A", (0, 0, 0), (3, 3, 3)), ("P", (0, 0, 0), (0.2, 0.2, 0.2)))
+    a, p = bpy.data.objects["A"], bpy.data.objects["P"]
+    a.parent = p
+    a.matrix_parent_inverse = p.matrix_world.inverted()
+    L.track_all()
+    _run(T.translate("P", (40, 0, 0)), T.translate("P", (-20, 0, 0)))
+    _frame_and_check_every_step()
+
+
+def test_a_backdrop_that_never_changes_is_not_framed():
+    """The rule D181 settles: an object without a history counts when the history brings, takes away,
+    moves or reshapes it; one that stays as it is at every step (a backdrop) is left out."""
+    _start(("A", (0, 0, 0), (1, 1, 1)), ("Ground", (0, 0, -1), (200, 200, 0.01)))
+    _run(T.translate("A", (0, 0, 1)), T.translate("A", (2, 0, 0)))
+    sc = C.scene
+    sc.hindsight.movie_mode = True
+    assert camrig.frame(sc)
+    a = bpy.data.objects["A"]
+    pts = []
+    for g in range(glen() + 1):
+        runtime.global_goto(C, g, True)
+        C.view_layer.update()
+        m = np.array([list(r) for r in a.matrix_world], np.float64)
+        co = np.array([v.co[:] for v in a.data.vertices], np.float64)
+        pts.append(co @ m[:3, :3].T + m[:3, 3])
+    check_in_frame(np.vstack(pts), tight=True, msg="A alone")
+
+
+
 def test_the_movie_never_walks_the_history():
     """A frame of the movie that takes the user's light away makes the lamps again and places them:
     from that step only, never by walking the history inside the frame change (where a mode switch
@@ -216,4 +262,8 @@ if __name__ == "__main__":
     H.run(test_two_objects_100_m_apart)
     H.run(test_a_curve_whose_shape_changed)
     H.run(test_the_movie_never_walks_the_history)
+    H.run(test_added_late_never_changed)
+    H.run(test_deleted_midway_never_changed)
+    H.run(test_child_of_a_moved_parent)
+    H.run(test_a_backdrop_that_never_changes_is_not_framed)
     H.finish()
