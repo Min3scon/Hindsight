@@ -1,6 +1,7 @@
 """Hindsight runtime: recorder (stroke detection, capture), playback and the API used by the UI."""
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 
@@ -8,50 +9,36 @@ import bpy
 import numpy as np
 from bpy.app.handlers import persistent
 
-from ..core import globaltl
+from ..core import delta as D, globaltl, store, topopack
+from ..core.delta import view_bits
 from ..core.history import MeshState
 from ..core.registry import Registry, new_uid
+from ..core.store import Packer
 from ..core.types import (
     JOURNAL_CODEC, SETTINGS, Snapshot, Step, DELTA, TOPO, CHANNEL_TYPES, split_key, key_width, key_dtype,
 )
-from . import filtering, guard, log, meshio, multires, rigmark
+from . import adapters, datarec, filtering, guard, idmap, log, meshio, multires, rigmark
+from .prefs import get_prefs, value as _pref
 from . import warnings as _warn
+from .selfcheck import flash_status
 from .ctx import active_object as _ctx_active
 
 UID_PROP = "_hindsight_uid"
 RECORD_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT")
 TRACK_MODES = ("SCULPT", "VERTEX_PAINT", "WEIGHT_PAINT", "TEXTURE_PAINT", "EDIT")
 DEBOUNCE = 0.15
-FORCE_TEXTURE = [None]      # tests: True or False when the preferences aren't registered
-
-
 def texture_on() -> bool:
     """Record texture painting (preference, off by default)."""
-    if FORCE_TEXTURE[0] is not None:
-        return FORCE_TEXTURE[0]
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        return p is not None and bool(getattr(p, "record_texture_painting", False))
-    except Exception:
-        return False
+    return bool(_pref("record_texture_painting", False))
 
 
-FORCE_DYNTOPO = [None]     # tests: True or False when the preferences aren't registered
 DYNTOPO_TRIS_MAX = 200_000  # D145: a Dyntopo stroke's step holds the whole mesh (LIMITS-A 1.5: about 250 ms
                             # per stroke at 100k triangles, 1.4 s and 32 to 64 MB at 1M)
 
 
 def dyntopo_on() -> bool:
     """Record Dyntopo (preference, off by default)."""
-    if FORCE_DYNTOPO[0] is not None:
-        return FORCE_DYNTOPO[0]
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        return p is not None and bool(getattr(p, "record_dyntopo", False))
-    except Exception:
-        return False
+    return bool(_pref("record_dyntopo", False))
 
 
 def dyntopo_active(obj) -> bool:
@@ -73,15 +60,13 @@ _DYN_WANT: dict = {}     # uid -> Dyntopo on or off after the jump being written
 def _dyn_at(h, pos: int) -> bool:
     """Whether Dyntopo was on at history position pos: each step committed with Dyntopo on (or just
     turned off) holds extra["dyn"] = [before, after] (D145); no record means off."""
-    try:
+    with contextlib.suppress(Exception):
         if pos > 0:
             d = (h.entries[pos - 1].meta.get("extra") or {}).get("dyn")
             return bool(d and d[1])
         if h.entries:
             d = (h.entries[0].meta.get("extra") or {}).get("dyn")
             return bool(d and d[0])
-    except Exception:
-        pass
     return False
 
 
@@ -194,12 +179,9 @@ def set_registry(r: Registry) -> None:
     _NATIVE_PENDING.clear()
     WEIGHTS_CLAMPED.clear()
     _TRACK.update(name=None, uid=None, mode=None)
-    try:
-        from . import datarec, idmap
+    with contextlib.suppress(Exception):
         datarec.forget()
         idmap.forget(session=True)
-    except Exception:
-        pass
 
 
 def settings():
@@ -224,7 +206,7 @@ def step_payload(entry):
     def fn():
         if blob is not None:
             return blob
-        from ..core.step import step_to_bytes
+        from ..core.step import step_to_bytes  # local: tests patch core.step.step_to_bytes
         return step_to_bytes(st, JOURNAL_CODEC, 0)
     fn.size = entry.nbytes()
     return fn
@@ -266,7 +248,6 @@ def obj_uid(obj, create: bool = False):
         obj[UID_PROP] = u
         _FRESH_UIDS.add(u)
     if u is not None:
-        from . import idmap
         idmap.note(obj, u)
     return u
 
@@ -277,7 +258,6 @@ def drop_unused_uids() -> int:
     recorded data), take it off again, so saving a file without recording adds nothing to it."""
     if not _FRESH_UIDS:
         return 0
-    from . import idmap
     used = set(_REG.everything) | set(_REG.disabled) | set(idmap._owner)
     for h in _REG.histories.values():
         used.update(h.members)
@@ -338,7 +318,6 @@ def any_uid(obj):
     Empties and other object types have one once Record everything has recorded them."""
     u = obj_uid(obj)
     if u is None and obj is not None:
-        from . import idmap
         u = idmap.uid_of(obj)
     return u
 
@@ -399,19 +378,10 @@ def tag_redraw_all() -> None:
 
 
 # ----------------------------------------------------------------------------- state
-def _sync_edit(obj) -> None:
-    if obj.mode == "EDIT":
-        try:
-            obj.update_from_editmode()
-        except Exception:
-            pass
-
-
 def extras_on(obj) -> bool:
     """D43: vertex group weights and shape keys are part of the mesh state of objects recorded with
     Record everything."""
     try:
-        from . import datarec
         return datarec.is_tracked(obj)
     except Exception:
         return False
@@ -497,28 +467,24 @@ _PAINTING = [None]     # D142: uid of the object a texture painting stroke is ru
 
 
 def _image_stroke_running() -> bool:
-    try:
+    with contextlib.suppress(Exception):
         for win in bpy.context.window_manager.windows:
             for op in getattr(win, "modal_operators", ()):
                 if op.bl_idname == "PAINT_OT_image_paint":
                     return True
-    except Exception:
-        pass
     return False
 
 
 def _image_editor_images() -> set:
     """Names of the images shown in an Image Editor in Paint mode (2D texture painting)."""
     out = set()
-    try:
+    with contextlib.suppress(Exception):
         for win in bpy.context.window_manager.windows:
             for area in win.screen.areas:
                 if area.type == "IMAGE_EDITOR":
                     sp = area.spaces.active
                     if getattr(sp, "mode", None) == "PAINT" and sp.image is not None:
                         out.add(sp.image.name)
-    except Exception:
-        pass
     return out
 
 
@@ -614,7 +580,7 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
 def _exclusion_test():
     """is_excluded for many objects in a row: the same answers, with what doesn't depend on the
     object looked up once (the slider asks for every object on every redraw in global mode)."""
-    try:
+    with contextlib.suppress(Exception):
         sh = filtering._scene_props(bpy.context.scene)
         if sh is None or sh.filter_mode not in ("BLACKLIST", "WHITELIST"):
             # Collection Filtering off: only Hindsight's own Movie Mode objects are left out
@@ -624,8 +590,6 @@ def _exclusion_test():
                 except Exception:
                     return False
             return test
-    except Exception:
-        pass
     return is_excluded
 
 
@@ -636,19 +600,15 @@ def _visible_uids() -> set:
         u = any_uid(ob)
         if u is not None and not excluded(ob):
             out.add(u)
-    try:
-        from . import datarec
+    with contextlib.suppress(Exception):
         out |= {u for u in datarec.tracked_uids() if datarec._is_scene_uid(u)}
         if any(datarec._is_scene_uid(u) for u in datarec.tracked_uids()):
             # with the scene recorded, a deleted object can come back: its history stays on the
             # global timeline (so the timeline doesn't change length when objects come and go)
-            from . import idmap
             for h in _REG.histories.values():
                 for m in h.members:
                     if m not in out and idmap.find(m) is None:
                         out.add(m)
-    except Exception:
-        pass
     return out
 
 
@@ -663,7 +623,6 @@ def prime_states() -> None:
 # ----------------------------------------------------------------------------- recording
 def _deltas_match(seen: Step, rec: Step, st: MeshState, inverse: bool) -> bool:
     """True if the change `seen` (diffed from `st`) is exactly `rec` undone (inverse) or redone."""
-    from ..core import delta as D
     if seen.kind != DELTA or rec.kind != DELTA or len(seen.deltas) != len(rec.deltas):
         return False
     by_key = {d.key: d for d in rec.deltas}
@@ -684,7 +643,6 @@ def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool
     if new.kind == DELTA:
         return _deltas_match(new, old, st, inverse)
     if new.kind == TOPO and old.kind == TOPO and old.before is not None:
-        from ..core.delta import view_bits
 
         def same(s1, s2):
             if s1.counts != s2.counts:
@@ -704,7 +662,6 @@ def _inverse_matches(new: Step, old: Step, st: MeshState, inverse: bool) -> bool
 def _observe(obj, st: MeshState, full: bool, label: str, mode: str, me=None, deep=True):
     """Diff the mesh (or `me`, a copy of it) against the state. Returns an unsaved Step (seq=0) or None.
     With full, every attribute is compared, and the topology too (deep: see meshio.topology_equal)."""
-    from ..core import delta as D
     me = me if me is not None else obj.data
     uid = obj_uid(obj)
     c = meshio.counts(me)
@@ -852,7 +809,6 @@ def _write_state(obj, st: MeshState, keys, final: bool = True) -> None:
 
 def _refresh_toggle() -> bool:
     try:
-        from .prefs import get_prefs
         p = get_prefs()
         return bool(getattr(p, "sculpt_refresh_toggle", False)) if p else False
     except Exception:
@@ -862,11 +818,9 @@ def _refresh_toggle() -> bool:
 def _sculpt_refresh(obj) -> None:
     if bpy.app.background:
         return
-    try:
+    with contextlib.suppress(Exception):
         bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.object.mode_set(mode="SCULPT")
-    except Exception:
-        pass
 
 
 def commit_edit(obj, label: str = "Edit", deep: bool = True):
@@ -888,7 +842,6 @@ def commit_edit(obj, label: str = "Edit", deep: bool = True):
 
 def _mesh_owned_elsewhere(obj) -> bool:
     try:
-        from . import datarec
         return datarec.mesh_owned_elsewhere(obj)
     except Exception:
         return False
@@ -896,7 +849,6 @@ def _mesh_owned_elsewhere(obj) -> bool:
 
 def edit_steps_on(obj) -> bool:
     try:
-        from . import adapters, datarec
         return (datarec.is_tracked(obj) and adapters.kind_on("edit_steps")
                 and len(obj.data.vertices) <= SETTINGS.edit_steps_max and not datarec.mesh_owned_elsewhere(obj))
     except Exception:
@@ -1006,12 +958,10 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     if label is None:
         label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "WEIGHT_PAINT": "Weight Paint", "TEXTURE_PAINT": "Texture Paint",
                  "EDIT": "Edit Mode"}.get(mode, "Change")
-        try:
+        with contextlib.suppress(Exception):
             ops = bpy.context.window_manager.operators
             if len(ops):
                 label = ops[-1].bl_label or label
-        except Exception:
-            pass
     label = _shared(label)
     dyn = dyntopo_active(obj)
     if dyn:
@@ -1102,11 +1052,8 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     entry = h.entries[-1]
     _journal("STEP", {"hist": h.uid, "at": at}, step_payload(entry))
     _enforce(h)
-    try:
-        from . import datarec
+    with contextlib.suppress(Exception):
         datarec.drop_undone_jumps()
-    except Exception:
-        pass
     tag_redraw_all()
     return step
 
@@ -1129,11 +1076,8 @@ def _put_back_after_native_undo(obj, st: MeshState, step: Step, text: str = NATI
     else:
         bpy.app.timers.register(_later, first_interval=0.0)
     log.warn(text)
-    try:
-        from .selfcheck import flash_status
+    with contextlib.suppress(Exception):
         flash_status("Hindsight: " + text, 10.0)
-    except Exception:
-        pass
 
 
 def _revert(obj, st: MeshState, step: Step) -> None:
@@ -1187,11 +1131,8 @@ def _note_eviction(n: int) -> None:
         MEMORY["warned"] = True
         text = MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
         log.warn(text)
-        try:
-            from .selfcheck import flash_status
+        with contextlib.suppress(Exception):
             flash_status("Hindsight: " + text, 15.0)
-        except Exception:
-            pass
 
 
 def _journal_drop(h, n) -> None:
@@ -1213,7 +1154,6 @@ def _enforce(h=None) -> None:
     """Keep caps and tiers. Incremental per commit (O(1)); full rescans every 64 commits or when
     the memory estimate crosses the limit, so recording cost does not grow with history length."""
     try:
-        from ..core import store
         global _CAPS_MEMO
         if _CAPS_MEMO is None:
             _CAPS_MEMO = store.CapsMemo()
@@ -1332,7 +1272,6 @@ def _on_depsgraph(scene, depsgraph=None) -> None:
         return
     guard.mark_ok("recorder")
     try:
-        from . import datarec
         datarec.on_update(depsgraph)
     except Exception as e:
         log.error_once(("datarec_update", str(e)), f"data recorder error: {e}", e)
@@ -1407,7 +1346,6 @@ def _pack_job(st):
 def pack_idle_states(wait: bool = False) -> int:
     """Swap in the packed topology of finished jobs and start the next one (one at a time). wait
     (tests): pack every baseline that can be before returning. Returns how many were swapped in."""
-    from ..core import topopack
     done = 0
     for uid, (st, job, fut) in list(_PACKING.items()):
         if not (wait or fut.done()):
@@ -1460,7 +1398,6 @@ def tick() -> float:
         except Exception as e:
             log.error_once(("topo_pack_tick", str(e)), f"could not pack a mesh's topology: {e}", e)
     try:
-        from . import datarec
         datarec.tick()
         busy = busy or bool(datarec._DIRTY)
     except Exception as e:
@@ -1497,7 +1434,6 @@ def _after_native_undo() -> None:
     """Compare the mesh with our state (commit() detects the match)."""
     _GEN[0] += 1
     try:
-        from . import idmap
         idmap.restore_after_undo()        # D42: ids set after Blender's undo push come back first
     except Exception as e:
         log.error_once(("restore_ids", str(e)), f"could not restore ids after undo: {e}", e)
@@ -1507,7 +1443,6 @@ def _after_native_undo() -> None:
     # is where it belongs and isn't compared again (in Edit Mode that compare would undo the undo)
     moved = set()
     try:
-        from . import datarec
         moved = datarec.on_undo(UNDO_DIRECTION[0]) or set()
     except Exception as e:
         log.error_once(("datarec_undo", str(e)), f"data recorder error after undo: {e}", e)
@@ -1570,7 +1505,6 @@ def _find_any(uid):
     if ob is not None:
         return ob
     try:
-        from . import idmap
         return idmap.find(uid)
     except Exception:
         return None
@@ -1578,7 +1512,6 @@ def _find_any(uid):
 
 def _after_mesh_write(ob) -> None:
     try:
-        from . import adapters
         adapters.after_mesh_write(ob)      # D108: UV map flags, once the UV maps exist again
     except Exception as e:
         log.error_once(("after_mesh_write", str(e)), f"could not finish restoring {ob.name}: {e}", e)
@@ -1587,7 +1520,6 @@ def _after_mesh_write(ob) -> None:
 def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     """Move one history to pos and write what changed to Blender. With acc (a global jump), the
     move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
-    from . import datarec
     multires.flush()
     states = {}
     for m in list(h.members):
@@ -1687,13 +1619,11 @@ _STROKE_OPS = frozenset({
 
 
 def stroke_running() -> bool:
-    try:
+    with contextlib.suppress(Exception):
         for win in bpy.context.window_manager.windows:
             for op in getattr(win, "modal_operators", ()):
                 if op.bl_idname in _STROKE_OPS:
                     return True
-    except Exception:
-        pass
     return False
 
 
@@ -1733,7 +1663,6 @@ def _leave_edit_for_push(context, final: bool):
     would keep only the edit mesh, and Blender's undo would later put back stale data for every
     other object. The edit is kept as a step first (as when a jump leaves Edit Mode). Returns the
     object to put back into Edit Mode after the push, or None."""
-    from . import datarec
     ob = _ctx_active(context)
     if not final or IN_HANDLER[0] or not datarec.can_push() or ob is None or ob.mode != "EDIT":
         return None
@@ -1883,7 +1812,6 @@ def _position(vis, groups) -> int:
 def global_goto(context, g: int, final: bool = True) -> None:
     """Move the global timeline to position g. Steps are undone and redone across histories in
     step-number order (globaltl.transition), and the whole jump is one entry on Blender's undo."""
-    from . import datarec
     if _PAUSED:
         end_paused(now=True)                 # D153
     vis = _visible_uids()
@@ -1920,7 +1848,6 @@ def global_goto(context, g: int, final: bool = True) -> None:
 def _recorded_values() -> dict:
     """datarec.recorded_values in one id frame (its look-ups use the frame's index: 7.2 -> 1.4 ms with
     500 recorded objects). Nothing is made or removed while it reads."""
-    from . import datarec, idmap
     with idmap.frame():
         return datarec.recorded_values()
 
@@ -1964,7 +1891,6 @@ def _scrub_key(context):
         filt = (p.filter_mode, tuple(it.collection.as_pointer() if it.collection is not None else 0
                                      for it in p.filter_collections), bool(p.movie_mode), bool(p.use_global))
     try:
-        from . import datarec
         tracked = frozenset(datarec.tracked_uids())
     except Exception:
         tracked = None
@@ -2125,7 +2051,6 @@ def _override_key(idb):
     lib = getattr(ref, "library", None) if ref is not None else None
     if lib is None:
         return None
-    from . import idmap
     return [type(idb).__name__, idmap.lib_path(lib), ref.name]
 
 
@@ -2150,7 +2075,6 @@ def restamp_overrides(saved) -> int:
     """D109: Blender builds library overrides again from their library when a file is opened, and the
     id Hindsight gave one is gone. Each override saved with an id gets it back, found by its type,
     library file and the name of the datablock it overrides. Returns how many."""
-    from . import idmap
     m = (saved or {}).get(OVERRIDES_KEY)
     if not isinstance(m, dict) or not m:
         return 0
@@ -2176,7 +2100,6 @@ def restamp_overrides(saved) -> int:
 def saved_prints() -> dict:
     """D46: every recorded object as it is saved (a fingerprint of its mesh, its recorded values), so
     opening the file can tell whether it was changed in a session without Hindsight."""
-    from . import adapters, datarec, idmap
     tracked = datarec.tracked_uids()
     uids = set(tracked)
     for h in _REG.histories.values():
@@ -2265,7 +2188,6 @@ def check_outside_changes(saved: dict) -> None:
     """D46: after opening a file, compare every recorded object with how Hindsight saved it. Values
     changed in a session without Hindsight become one step; a changed mesh can't be rebuilt from
     the history, so that object's history is left out with a message (never played back onto it)."""
-    from . import datarec, idmap
     outside = set()
     for u, rec in (saved or {}).items():
         ob = idmap.find(u) or find_object(u)
@@ -2319,7 +2241,6 @@ def _restore_missing_refs(u, miss) -> None:
     """D57: references that were waiting for a deleted object to come back when the file was saved
     wait again (the sidebar says so, the global history puts them in). One changed without Hindsight
     meanwhile stops waiting when that change is recorded, right after this."""
-    from . import adapters
     for item in miss if isinstance(miss, list) else ():
         try:
             path, ref, aid, apath, value = item[:5]
@@ -2352,13 +2273,15 @@ def turn_on(context, obj) -> None:
         h.enabled = True
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": True,
                           "morph_target": h.morph_target})
-        from . import datarec
-        if datarec.is_tracked(obj) and obj.mode != "EDIT":
+        if datarec.is_tracked(obj) and obj.mode == "OBJECT":
             # D46: values and mesh changed while off become one step together
             datarec.catch_up(obj, "Changes While Off")
         elif uid in _STATES and obj.mode != "EDIT":
             # Changes made while off become the new starting point: one step bridging them.
+            # (#104: in Sculpt Mode the mesh is the sculpt history's even with Record everything)
             commit(obj, label="Changes While Off", full=True)
+            if datarec.is_tracked(obj):
+                datarec.catch_up(obj, "Changes While Off")
         else:
             ensure_state(obj, refresh=obj.mode != "EDIT")
     else:
@@ -2389,7 +2312,6 @@ def _history_bytes(h, gkey) -> int:
     (store._sig) and no step changed size: gkey holds the packer's counters (it packs and
     recompresses in the background) and _ENFORCE_COUNT (packing on the main thread only happens in
     _enforce)."""
-    from ..core import store
     sig = store._sig(h)
     c = _HIST_BYTES.get(h.uid)
     if c is not None and c[0] == sig and c[1] == gkey:
@@ -2401,16 +2323,13 @@ def _history_bytes(h, gkey) -> int:
 
 def memory_stats() -> dict:
     """The Memory panel's numbers (drawn on every redraw while it is open)."""
-    from ..core import store
     total = 0
     steps = 0
     active_b = 0
     active_s = 0
     ah = None
-    try:
+    with contextlib.suppress(Exception):
         ah = history_of(_ctx_active(bpy.context))
-    except Exception:
-        pass
     gkey = (store._packer_key(packer), _ENFORCE_COUNT[0], id(_REG))   # read before any size
     hs = _REG.all()
     if len(_HIST_BYTES) > 2 * len(hs) + 16:
@@ -2434,11 +2353,8 @@ def warnings_for(context, obj) -> list:
     if MEMORY["evicted"]:
         out.append(("WARNING", MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
                     + f". Dropped so far: {MEMORY['evicted']} steps"))
-    try:
-        from .warnings import collect
-        out.extend(collect(context, obj))
-    except Exception:
-        pass
+    with contextlib.suppress(Exception):
+        out.extend(_warn.collect(context, obj))
     return out
 
 
@@ -2451,7 +2367,6 @@ def register() -> None:
         bpy.app.timers.register(tick, first_interval=0.5, persistent=True)
     global packer
     try:
-        from ..core.store import Packer
         packer = Packer()
     except Exception as e:
         log.warn(f"background packing unavailable, packing inline: {e}")
@@ -2471,8 +2386,6 @@ def unregister() -> None:
         ex.shutdown(wait=False)
     global packer
     if packer is not None:
-        try:
+        with contextlib.suppress(Exception):
             packer.stop()
-        except Exception:
-            pass
         packer = None

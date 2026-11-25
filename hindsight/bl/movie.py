@@ -2,10 +2,13 @@
 
 Movie Mode only plays history back, it never changes it: no step is ever recorded from here.
 """
+import contextlib
 import inspect
 import math
 
 import bpy
+
+from . import reg
 from bpy.app.handlers import persistent
 
 from . import guard, runtime
@@ -105,8 +108,24 @@ def _apply(context, value) -> bool:
         runtime.goto._movie = prev
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
+    _lamps_follow(context.scene)
     _SHOWN.update(want=want, histories=_histories_key(vis))
     return True
+
+
+def _lamps_follow(scene) -> None:
+    """#104: a jump can bring the user's light back or take it away. Movie lighting's lamps follow in
+    the same frame, in a render too (the timer waits for it to end); one lamp the user deleted is left
+    to the timer."""
+    try:
+        from . import camrig
+    except ImportError:
+        return
+    if not scene.hindsight.movie_lighting:
+        return
+    roles = set(camrig.LIGHT_ROLES)
+    if bool(camrig.wanted(scene) & roles) != bool(set(camrig.rig(scene)) & roles):
+        camrig.ensure(scene, reframe=False)
 
 
 @guard.guarded("movie")
@@ -133,10 +152,8 @@ def on_frame_change(scene, depsgraph=None) -> None:
     else:
         value = sh.movie_step
         if depsgraph is not None:
-            try:
+            with contextlib.suppress(Exception):
                 value = scene.evaluated_get(depsgraph).hindsight.movie_step
-            except Exception:
-                pass
     _apply(_no_operator_context(bpy.context), value)
     _SHOWN["frame"] = frame
 
@@ -250,8 +267,7 @@ classes = (HINDSIGHT_OT_quick_auto_key,)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     if on_frame_change not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(on_frame_change)
 
@@ -262,8 +278,4 @@ def unregister():
         if fn is on_frame_change or getattr(fn, "__name__", "") == "on_frame_change" and \
                 getattr(fn, "__module__", "") == __name__:
             hl.remove(fn)
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

@@ -15,6 +15,7 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests.addons import hs_fake_addon as FAKE
 from hindsight.bl import adapters, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 _on = [False]
@@ -119,7 +120,7 @@ def test_going_back_over_a_making_keeps_what_is_used_now():
     m = bpy.data.materials.new("Later")
     m.use_fake_user = True
     L.tick_like("make material")
-    t = bpy.data.texts.new("later.txt")
+    bpy.data.texts.new("later.txt")
     L.tick_like("make text")
     a.data.materials.append(m)
     L.tick_like("assign")
@@ -146,7 +147,7 @@ def test_loose_making_on_the_global_timeline():
     read = lambda: (bpy.data.texts.get("g.txt") is not None, bpy.data.materials.get("GMat") is not None,
                     tuple(round(x, 3) for x in bpy.data.objects["A"].location))
     states = [read()]
-    t = bpy.data.texts.new("g.txt")
+    bpy.data.texts.new("g.txt")
     L.tick_like("text")
     states.append(read()); seqs.append(L.max_seq())
     m = bpy.data.materials.new("GMat")
@@ -166,7 +167,6 @@ def test_loose_making_on_the_global_timeline():
 
 def test_loose_making_survives_save_reload_and_recovery():
     import shutil, tempfile
-    from hindsight.bl import datarec, persistence
     from hindsight.core.types import SETTINGS
     tmp = tempfile.mkdtemp(prefix="hs_loose152_")
     try:
@@ -194,7 +194,7 @@ def test_loose_making_survives_save_reload_and_recovery():
             if reopen_how == "saved":
                 bpy.ops.wm.save_as_mainfile(filepath=path)
             bpy.ops.wm.open_mainfile(filepath=path)
-            datarec.FORCE_SCOPE[0] = "EVERYTHING"
+            prefs.FORCE["record_scope"] = "EVERYTHING"
             h = runtime.history_of(C.scene)
             assert h is not None and len(h.entries) >= 3, (reopen_how, h and len(h.entries))
             for pos in list(range(len(h.entries), -1, -1)) + list(range(len(h.entries) + 1)):
@@ -206,6 +206,76 @@ def test_loose_making_survives_save_reload_and_recovery():
             assert read() == states[-1], (reopen_how, read())
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_a_material_nothing_keeps_is_left_out():
+    """#104: a material with no user, not even a fake one, isn't kept: a save leaves it out of the file.
+    It was recorded all the same, so a reopen found it gone and recorded "Changes Outside Hindsight"
+    (window scenario crash: a STEP in the journal right after a reopen with Last saved)."""
+    import shutil, tempfile
+    from hindsight.core.types import SETTINGS
+    tmp = tempfile.mkdtemp(prefix="hs_orphan104_")
+    try:
+        SETTINGS.save_mode = "SIDECAR"
+        L.fresh_scene()
+        L.track_all()
+        bpy.data.materials.new("Orphan")        # as the startup file's unused Grease Pencil materials
+        L.tick_like("baseline")
+        labels = lambda: [(e.meta or {}).get("label") for e in getattr(runtime.history_of(C.scene), "entries", [])]
+        before = labels()
+        path = os.path.join(tmp, "f.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        prefs.FORCE["record_scope"] = "EVERYTHING"
+        L.tick_like("after the reopen")
+        assert "Orphan" not in bpy.data.materials, "Blender left it out of the file"
+        assert labels() == before, (before, labels())
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_going_back_over_a_making_takes_away_what_nothing_keeps():
+    """#104 review: a text, material, world and node group made, then used with their fake user taken
+    off (the text has none from the start): going back over their making takes the uses away, then the
+    datablocks, though no fake user keeps them now, and says nothing about a use; going forward brings
+    them and the uses back."""
+    from hindsight.bl import log
+    L.fresh_scene()
+    L.track_all()
+    L.tick_like("baseline")
+    seq0 = L.max_seq()
+    a = bpy.data.objects["A"]
+    made = (bpy.data.texts.new("New.txt"), bpy.data.materials.new("NewMat"), bpy.data.worlds.new("NewWorld"),
+            bpy.data.node_groups.new("NewGroup", "GeometryNodeTree"))
+    for x in made:
+        x.use_fake_user = not isinstance(x, bpy.types.Text)
+    L.tick_like("make")
+    seq1 = L.max_seq()
+    a.data.materials.append(made[1])
+    C.scene.world = made[2]
+    a.modifiers.new("GN", "NODES").node_group = made[3]
+    for x in made:
+        x.use_fake_user = False
+    L.tick_like("use")
+    seq2 = L.max_seq()
+    names = lambda: [n for n, c in (("New.txt", bpy.data.texts), ("NewMat", bpy.data.materials),
+                                    ("NewWorld", bpy.data.worlds), ("NewGroup", bpy.data.node_groups))
+                     if c.get(n) is not None]
+    said, orig = [], log.warn
+    log.warn = said.append
+    try:
+        L.goto_after(seq0)
+        datarec_resolve()
+        assert not said, said
+        assert names() == [], names()
+        for s in (seq1, seq2):                  # forward one position at a time, as the walks above
+            L.goto_after(s)
+            datarec_resolve()
+            assert names() == ["New.txt", "NewMat", "NewWorld", "NewGroup"], (s, names())
+        assert a.data.materials[-1].name == "NewMat" and C.scene.world.name == "NewWorld"
+        assert a.modifiers["GN"].node_group.name == "NewGroup"
+    finally:
+        log.warn = orig
 
 
 def test_no_extra_work_without_loose_datablocks():
@@ -333,17 +403,17 @@ def test_many_unused_materials_bounded_cost():
     L.track_all()
     L.tick_like("baseline")
     calls = [0]
-    real = adapters.material_record
+    real = adapters.materials.material_record
 
     def spy(m, owner=None):
         if m.session_uid not in adapters._MAT_CACHE:
             calls[0] += 1
         return real(m, owner)
-    adapters.material_record = spy
+    adapters.materials.material_record = spy
     try:
         L.tick_like("nothing")
     finally:
-        adapters.material_record = real
+        adapters.materials.material_record = real
     assert calls[0] <= adapters.LOOSE_READ_MAX, (calls[0], adapters.LOOSE_READ_MAX)
     # a change of the one read last is still found within a few operations
     mats[-1].roughness = 0.33
@@ -362,7 +432,8 @@ def test_many_unused_materials_bounded_cost():
 if __name__ == "__main__":
     for t in (test_text_made_and_deleted, test_unused_material_made_and_deleted, test_unused_world_made_and_deleted,
               test_going_back_over_a_making_keeps_what_is_used_now, test_loose_making_on_the_global_timeline,
-              test_loose_making_survives_save_reload_and_recovery, test_no_extra_work_without_loose_datablocks,
+              test_loose_making_survives_save_reload_and_recovery, test_a_material_nothing_keeps_is_left_out,
+              test_going_back_over_a_making_takes_away_what_nothing_keeps, test_no_extra_work_without_loose_datablocks,
               test_text_content_and_settings, test_unused_material_and_world, test_addon_data_on_any_datablock,
               test_material_an_object_uses_stays_with_the_object, test_many_unused_materials_bounded_cost):
         H.run(t)

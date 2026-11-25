@@ -8,6 +8,7 @@ import numpy as np
 
 import tests.harness as H
 from hindsight.bl import datarec, meshio, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 
@@ -59,7 +60,7 @@ def test_points_write_exactly_also_when_rebuilt():
 
 def test_going_back_over_a_shape_key_edit_is_exact():
     ob, nv = _mesh_with_keys()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     datarec.set_tracked(ob, True)
     datarec.finish_operation("baseline")
     kb = ob.data.shape_keys.key_blocks[2]

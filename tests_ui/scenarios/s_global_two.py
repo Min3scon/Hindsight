@@ -74,13 +74,16 @@ def run(d):
     bpy.context.scene.hindsight.use_global = True
     yield 0.4
     i = C.info(d)
+    hs = C.mod("runtime").history_of(bpy.context.scene)
+    base = len(hs.entries) if hs is not None else 0     # Record on Everything: the setup is the scene's (#104)
     d.check("eight strokes on two objects in turn: eight positions on the global timeline, each changing a mesh",
-            i is not None and i["len"] == 8 and len(set(states)) == 9, (i, states))
-    for pos in (0, 4, 8, 3, 0, 8):
+            i is not None and i["len"] == base + 8 and len(set(states)) == 9, (i, base, states))
+    for k in (0, 4, 8, 3, 0, 8):
+        pos = base + k
         t = time.perf_counter()
         yield from C.drag_slider_to(d, pos)
         took = time.perf_counter() - t
         yield 0.4
         got = _both(a, b)
-        d.check(f"global slider to {pos}: both meshes as after {pos} strokes",
-                C.info(d)["pos"] == pos and got == states[pos], (pos, C.info(d)["pos"], got, states[pos], round(took, 2)))
+        d.check(f"global slider to {pos}: both meshes as after {k} strokes",
+                C.info(d)["pos"] == pos and got == states[k], (pos, C.info(d)["pos"], got, states[k], round(took, 2)))

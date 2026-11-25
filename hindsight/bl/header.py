@@ -4,7 +4,10 @@ The popover holds the same controls as the sidebar tab, so the tab doesn't have 
 The menu is added to the Object, Sculpt, Paint (Vertex Paint) and Mesh (Edit Mode) menus;
 Blender's F3 search finds anything that is in a menu.
 """
+import contextlib
 import bpy
+
+from . import reg
 
 from . import guard
 from .ui_panel import _FAIL, _call, _operator, draw_history_options, draw_main, draw_step_list
@@ -75,8 +78,7 @@ classes = (VIEW3D_PT_hindsight_popover, VIEW3D_MT_hindsight)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     # After the mode menus (View, Sculpt, Mask...): always on screen, unlike the far right end
     # of the header, which is cut off at common window widths.
     bpy.types.VIEW3D_MT_editor_menus.append(draw_header_button)
@@ -94,12 +96,6 @@ def unregister():
                 menu.remove(menu_entry)
             except Exception:
                 pass
-    try:
+    with contextlib.suppress(Exception):
         bpy.types.VIEW3D_MT_editor_menus.remove(draw_header_button)
-    except Exception:
-        pass
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

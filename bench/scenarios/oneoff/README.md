@@ -1,5 +1,4 @@
-One-off profiling scripts left by earlier agents (draw, data recorder, jumps, save and load stages,
-commit profile). They are NOT part of `bench/suite.py`; each was written against an older layout
+One-off A/B and profiling scripts kept because OPTIMISATION_LOG.md and its result files point at them. They are NOT part of `bench/suite.py`; each was written against an older layout
 and may need small path edits. The suite's scenarios in the parent folder cover the same ground.
 
 `embed_ab.py CODE_ROOT` (R061): Save mode Embed at 100k vertices and 6,000 steps; prints one `AB {...}` line
@@ -61,3 +60,6 @@ edges subdivided between steps); the median time of `runtime.commit`.
 
 `morph_dab.py CODE_ROOT N [prof]` (R081): Morph History dabs on an N-vertex grid sphere (40 dabs along a path, 3 strokes,
 radius about 3% of the vertices); the median time of `morph.apply_morph_at` and of `begin`.
+`morph_begin.py CODE_ROOT N` (R084): the start of 10 Morph History strokes (`begin`), the first and the later ones.
+`frame_walk.py CODE_ROOT N STEPS [prof]` (R085): Movie Mode's framing walk over STEPS strokes at N vertices, 3 bases;
+HS_ENGINE puts an unpacked engine first on the path (both probes).

@@ -1,6 +1,8 @@
 """Core operators: step back/forward (Ctrl+Z / Ctrl+Shift+Z), goto, truncation confirmation."""
 import bpy
 
+from . import reg
+
 from . import runtime
 from .ctx import active_object as _ctx_active
 
@@ -84,8 +86,8 @@ class HINDSIGHT_OT_confirm_truncate(bpy.types.Operator):
 class HINDSIGHT_OT_record_everything(bpy.types.Operator):
     bl_idname = "hindsight.record_everything"
     bl_label = "Record Everything on This Object"
-    bl_description = ("Also record changes other than sculpting on this object, such as moving it. "
-                      "Needs Record set to Everything in the preferences")
+    bl_description = ("Record changes other than sculpting on this object, such as moving it. "
+                      "On by default when Record is set to Everything in the preferences")
     bl_options = {'REGISTER'}
 
     on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})
@@ -146,7 +148,7 @@ class HINDSIGHT_OT_record_file(bpy.types.Operator):
     bl_idname = "hindsight.record_file"
     bl_label = "Record Everything in This File"
     bl_description = ("Record everything on every object in this file, and objects being added and deleted. "
-                      "Objects added later are recorded too. Needs Record set to Everything")
+                      "Objects added later are recorded too. On by default when Record is set to Everything")
     bl_options = {'REGISTER'}
 
     on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})
@@ -168,34 +170,17 @@ _keymaps = []
 
 
 def _add_keymaps():
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.addon if wm else None
-    if kc is None:
-        return
     for km_name in ("Sculpt", "Vertex Paint"):
-        km = kc.keymaps.new(name=km_name, space_type='EMPTY')
         for mods in ({"ctrl": True}, {"oskey": True}):
-            k = km.keymap_items.new("hindsight.step_back", 'Z', 'PRESS', **mods)
-            _keymaps.append((km, k))
-            k = km.keymap_items.new("hindsight.step_forward", 'Z', 'PRESS', shift=True, **mods)
-            _keymaps.append((km, k))
+            reg.add_keymap(_keymaps, km_name, "hindsight.step_back", 'Z', **mods)
+            reg.add_keymap(_keymaps, km_name, "hindsight.step_forward", 'Z', shift=True, **mods)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     _add_keymaps()
 
 
 def unregister():
-    for km, k in _keymaps:
-        try:
-            km.keymap_items.remove(k)
-        except Exception:
-            pass
-    _keymaps.clear()
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.remove_keymaps(_keymaps)
+    reg.unregister_classes(classes)

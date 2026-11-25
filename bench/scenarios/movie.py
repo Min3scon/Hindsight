@@ -13,7 +13,6 @@ Extra: frames, goto_calls. Memory: tracemalloc and VmHWM of one extra playback.
 """
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _common as K  # noqa: E402
@@ -21,8 +20,6 @@ import _common as K  # noqa: E402
 opts = K.Opts()
 K.use_root(opts.root)
 import bpy  # noqa: E402
-import numpy as np  # noqa: E402
-import tests.harness as H  # noqa: E402
 
 K.import_checked(opts.root)
 M = K.load_bench_module("bench_movie")

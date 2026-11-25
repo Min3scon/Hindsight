@@ -2,6 +2,7 @@
 
 Run with --fresh --no-install: the zip is installed through Blender's own Install from Disk.
 """
+import contextlib
 import bpy
 
 import common as C
@@ -23,7 +24,7 @@ def run(d):
     d.shot("A_first_run_status_bar")
 
     # ---------------------------------------------------------------- object mode, no history
-    ob = C.fresh_sphere(d)
+    C.fresh_sphere(d)
     C.frame_view(d)
     yield from C.show_sidebar_tab(d)
     win, area, reg, ui, space = d.view3d()
@@ -160,10 +161,8 @@ def run(d):
     old_type = area.type
     area.type = 'PREFERENCES'
     bpy.context.preferences.active_section = 'ADDONS'
-    try:
+    with contextlib.suppress(Exception):
         wm.addon_search = "Hindsight"
-    except Exception:
-        pass
     yield 0.4
     yield 0.3
     # click the disclosure arrow of the (only) listed add-on, like a user
