@@ -1,5 +1,7 @@
 """Time camrig.frame on histories of N global steps (alternating moves of 3 objects, one 100k-vertex), and the
-jumps alone. Run: <venv python> bench/bench_framing.py 50 200 1000 (#115, OPTIMISATION_LOG.md)."""
+jumps alone; with --keyed F,F.. also once Create time lapse has keyed the Step at F frames per step (the walk then
+plays every frame). Run: <venv python> bench/bench_framing.py 50 200 1000 [--keyed 1,2,12] (#115, #117,
+OPTIMISATION_LOG.md)."""
 import os, sys, time; sys.path.insert(0, os.getcwd())
 import bpy
 import tests.harness as H
@@ -8,7 +10,13 @@ from tests import t1_ops as T
 from tests.test_bl_camrig_steps import glen
 from hindsight.bl import camrig, runtime
 C = bpy.context
-for n in [int(x) for x in sys.argv[1:]]:
+args = sys.argv[1:]
+keyed = []
+if "--keyed" in args:
+    i = args.index("--keyed")
+    keyed = [int(x) for x in args[i + 1].split(",")]
+    del args[i:i + 2]
+for n in [int(x) for x in args]:
     H.fresh()
     H.make_mesh(100000, "Big")
     for i, name in enumerate(("A", "B")):
@@ -30,3 +38,12 @@ for n in [int(x) for x in sys.argv[1:]]:
             runtime.global_goto(C, g, False)
         runtime.global_goto(C, glen(), False)
     print(f"RESULT jumps_only steps={glen()} s={time.perf_counter() - t:.3f}")
+    for fps in keyed:
+        sc.hindsight.frames_per_step = fps
+        sc.frame_set(sc.frame_start)
+        assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+        ts = []
+        for _ in range(3):
+            t = time.perf_counter(); camrig.frame(sc); ts.append(time.perf_counter() - t)
+        print(f"RESULT keyed steps={glen()} frames_per_step={fps} frames={sc.frame_end - sc.frame_start + 1} "
+              f"frame_s min={min(ts):.3f} max={max(ts):.3f}")

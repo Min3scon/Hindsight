@@ -1034,8 +1034,10 @@ def _at_every_step(measure) -> bool:
     frame change, a render or playback (where it would jump away from the step being shown).
     Once Create time lapse has keyed it (#117 review 3), every frame of the scene's range instead, each
     showing the step the movie shows there: what changes with the frame (an object's own keys, Grease
-    Pencil keys, a Build modifier) is measured as it renders on that frame.
-    shortcut: walks the whole movie on every frame(); keep each frame's hull if reframing gets slow."""
+    Pencil keys, a Build modifier) is measured as it renders on that frame. A frame that shows the same
+    step as the one before is measured again only when its frame change re-evaluated an object (#117
+    review 4: otherwise every frame cost a step's measure, 17 s instead of 1.5 s at 200 steps of 12 frames).
+    shortcut: an object another add-on's frame handler moves isn't seen; measure every frame if one matters."""
     ctx = bpy.context
     if getattr(ctx, "mode", "OBJECT").startswith("EDIT") or runtime.IN_HANDLER[0] or _render_running() or _playing():
         return False
@@ -1054,20 +1056,31 @@ def _at_every_step(measure) -> bool:
     keyed = mv._step_fcurve(sc) is not None
     n = len(groups)
 
+    moved = [True]
+
+    def seen(_scene, depsgraph=None):
+        if depsgraph is None or any(isinstance(u.id, bpy.types.Object) for u in depsgraph.updates):
+            moved[0] = True
+
     def plays():
         if not keyed:
             yield from range(n + 1)
             return
+        last = None
         for f in range(sc.frame_start, sc.frame_end + 1):
             if f != sc.frame_current:
-                sc.frame_set(f)
-            yield max(0, min(n, sc.hindsight.movie_step))    # the step the movie shows on this frame
+                sc.frame_set(f)                                  # seen() is told what it re-evaluated
+            g = max(0, min(n, sc.hindsight.movie_step))         # the step the movie shows on this frame
+            if g != last or moved[0]:
+                last, moved[0] = g, False
+                yield g
 
     frame_was = (sc.frame_current, sc.frame_subframe)
     busy = mv._BUSY[0]
     mv._BUSY[0] = True                  # a frame change here doesn't play the movie's own jump
     movie = getattr(runtime.goto, "_movie", False)
     runtime.goto._movie = True          # #113: as the time lapse plays: the scene's camera and frame range stay
+    bpy.app.handlers.frame_change_post.append(seen)
     with runtime.suspended():
         try:
             for g in plays():
@@ -1082,6 +1095,7 @@ def _at_every_step(measure) -> bool:
                     if h.cursor != was.get(h.uid, h.cursor):
                         runtime._goto_history(h, was[h.uid], False)
             finally:
+                bpy.app.handlers.frame_change_post.remove(seen)
                 runtime.goto._movie = movie
                 mv._BUSY[0] = busy
             vl.update()                                    # its objects again, after those made and removed

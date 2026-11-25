@@ -394,6 +394,57 @@ def test_grease_pencil_keys():
     _every_frame(points, tight=hasattr(layer, "current_frame"))
 
 
+def test_a_frame_like_the_last_is_not_measured_again():
+    """#117 review 4: once the Step is keyed, the walk measures a frame only when it shows another step
+    than the frame before, or when the frame change moved or reshaped an object (keys, Grease Pencil
+    keys, a Build modifier: test_keyframe_animated_object, test_grease_pencil_keys). Nothing moves with
+    the frame here, so each step is measured once, not once per frame of the scene's range."""
+    from hindsight.bl import camrig
+    _start(("A", (0, 0, 0), (1, 1, 1)), ("B", (3, 0, 0), (1, 1, 1)))
+    _run(T.translate("A", (0, 1, 0)), T.translate("B", (0, 0, 1)), T.translate("A", (1, 0, 0)))
+    sc = C.scene
+    sc.hindsight.movie_mode = True
+    sc.hindsight.frames_per_step = 4
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    frames = []
+    real = camrig.model_objects
+    camrig.model_objects = lambda scene: (frames.append(scene.frame_current), real(scene))[1]
+    try:
+        assert camrig.frame(sc)
+    finally:
+        camrig.model_objects = real
+    assert len(frames) == glen() + 1, (len(frames), glen(), sc.frame_end - sc.frame_start + 1)
+
+
+def test_keys_between_the_frames_that_show_a_step():
+    """#117 review 4: a frame that shows the same step as the frame before is still measured when its
+    frame change moved an object: K, keyed 40 m out on frame 2 only, which shows step 0 like frame 1."""
+    H.fresh()
+    for name, loc in (("A", (0, 0, 0)), ("K", (3, 0, 0))):
+        bpy.ops.mesh.primitive_cube_add(location=loc)
+        C.active_object.name = name
+    k = _ob("K")
+    for f, x in ((1, 3.0), (2, 40.0), (3, 3.0)):
+        k.location.x = x
+        k.keyframe_insert("location", index=0, frame=f)
+    sc = C.scene
+    sc.frame_set(1)
+    L.track_all()
+    runtime.set_global(C, True)
+    _run(T.translate("A", (0, 1, 0)), T.translate("A", (0, 0, 1)))
+    sc.hindsight.frames_per_step = 4
+    sc.frame_end = sc.frame_start
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    sc.frame_set(1)
+    step = sc.hindsight.movie_step
+    sc.frame_set(2)
+    assert sc.hindsight.movie_step == step and _ob("K").matrix_world.translation.x > 39, \
+        (step, sc.hindsight.movie_step, _ob("K").matrix_world.translation)
+    TY.check_in_frame(_rendered_points(), tight=False, msg="frame 2, K 40 m out")
+
+
 if __name__ == "__main__":
     for t in (test_sculpted_outward_then_shrunk, test_subdivided_and_grown_in_edit_mode,
               test_joined_and_separated, test_a_flat_plane_stood_up, test_a_100_to_1_shape_turned,
@@ -403,6 +454,7 @@ if __name__ == "__main__":
               test_image_shapes_and_sensor_fits, test_lenses_18_to_135_mm,
               test_angle_and_height_at_their_extremes, test_random_histories,
               test_random_histories_with_random_cameras, test_keyframe_animated_object,
-              test_grease_pencil_keys):
+              test_grease_pencil_keys, test_a_frame_like_the_last_is_not_measured_again,
+              test_keys_between_the_frames_that_show_a_step):
         H.run(t)
     H.finish()
