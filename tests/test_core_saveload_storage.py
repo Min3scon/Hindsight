@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Save, load and background storage work (pure Python, no bpy): the embedded bytes, the crash journal on a full or failing disk, and the packer's idle recompression (what it
 skips, and that it waits while the user works)."""
 import errno
@@ -6,7 +7,6 @@ import shutil
 import tempfile
 import time
 import tracemalloc
-import traceback
 
 import numpy as np
 
@@ -425,17 +425,9 @@ TESTS = [test_embedded_bytes_are_the_parts_joined, test_embedded_bytes_of_a_regi
 
 
 def main():
-    failed = 0
     for t in TESTS:
-        try:
-            t()
-            print("PASS %s" % t.__name__)
-        except Exception:
-            failed += 1
-            print("FAIL %s" % t.__name__)
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

@@ -1,11 +1,14 @@
-"""Movie Mode: play the global history back from the Timeline (e.g. to render a timelapse).
+"""Movie Mode: play the global history back from the Timeline (e.g. to render a time lapse).
 
 Movie Mode only plays history back, it never changes it: no step is ever recorded from here.
 """
+import contextlib
 import inspect
 import math
 
 import bpy
+
+from . import reg
 from bpy.app.handlers import persistent
 
 from . import guard, runtime
@@ -101,12 +104,28 @@ def _apply(context, value) -> bool:
                 runtime.goto(context, target, final=True, vis=vis)
             else:
                 runtime.goto(context, target, final=True)
+        _lamps_follow(context.scene)   # #112: still in the handler, so placing them doesn't walk the history
     finally:
         runtime.goto._movie = prev
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
     _SHOWN.update(want=want, histories=_histories_key(vis))
     return True
+
+
+def _lamps_follow(scene) -> None:
+    """#104: a jump can bring the user's light back or take it away. Movie lighting's lamps follow in
+    the same frame, in a render too (the timer waits for it to end); one lamp the user deleted is left
+    to the timer."""
+    try:
+        from . import camrig
+    except ImportError:
+        return
+    if not scene.hindsight.movie_lighting:
+        return
+    roles = set(camrig.LIGHT_ROLES)
+    if bool(camrig.wanted(scene) & roles) != bool(set(camrig.rig(scene)) & roles):
+        camrig.ensure(scene, reframe=False)
 
 
 @guard.guarded("movie")
@@ -117,8 +136,7 @@ def on_step_changed(context) -> None:
         _apply(context, sh.movie_step)
 
 
-@persistent
-@guard.guarded("movie")
+@guard.guarded("movie")      # #113: not persistent, so loading a file takes it away (start() puts it back)
 def on_frame_change(scene, depsgraph=None) -> None:
     sh = _props(scene)
     if not _active(sh):
@@ -133,10 +151,8 @@ def on_frame_change(scene, depsgraph=None) -> None:
     else:
         value = sh.movie_step
         if depsgraph is not None:
-            try:
+            with contextlib.suppress(Exception):
                 value = scene.evaluated_get(depsgraph).hindsight.movie_step
-            except Exception:
-                pass
     _apply(_no_operator_context(bpy.context), value)
     _SHOWN["frame"] = frame
 
@@ -172,7 +188,7 @@ def _movie_frames(n: int, sh) -> int:
 
 
 def movie_length(scene) -> dict | None:
-    """The movie Quick auto key makes with the settings as they are now: steps, frames rendered
+    """The movie Create time lapse makes with the settings as they are now: steps, frames rendered
     (first and last key included) and seconds at the scene's frame rate. None without a global
     history."""
     sh = _props(scene)
@@ -187,10 +203,11 @@ def movie_length(scene) -> dict | None:
     return {"steps": n, "frames": frames, "seconds": frames / fps}
 
 
-class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
-    """Keyframe the global history on the timeline, Frames per step apart, so it plays as a timelapse"""
-    bl_idname = "hindsight.quick_auto_key"
-    bl_label = "Quick auto key"
+class HINDSIGHT_OT_create_time_lapse(bpy.types.Operator):
+    """Key the global history on the timeline and add a camera that keeps all of it in frame, with lighting
+    when the scene has none"""
+    bl_idname = "hindsight.create_time_lapse"
+    bl_label = "Create time lapse"
     bl_options = {'REGISTER', 'UNDO'}
 
     @classmethod
@@ -213,6 +230,13 @@ class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
             return {'CANCELLED'}
         f0 = scene.frame_start
         f1 = f0 + _movie_frames(n, sh)
+        from . import camrig
+        if not sh.movie_mode:     # #113: on now; the camera and lights come after the keys, below
+            camrig._HOLD[0] = True
+            try:
+                sh.movie_mode = True
+            finally:
+                camrig._HOLD[0] = False
         _BUSY[0] = True
         try:
             fc = _step_fcurve(scene)
@@ -235,35 +259,55 @@ class HINDSIGHT_OT_quick_auto_key(bpy.types.Operator):
             sh.movie_step = max(0, int(round(value)))
         finally:
             _BUSY[0] = False
+        camrig.on_settings_changed(context)     # placed for the whole history, before the jump (whose
+                                                # lamps check then finds them made)
         _apply(context, sh.movie_step)
-        try:                                    # the camera and lighting, placed for this movie
-            from . import camrig
-            camrig.on_settings_changed(context)
-        except ImportError:
-            pass
         runtime.tag_redraw_all()
         self.report({'INFO'}, f"Keyed steps 0-{n} on frames {f0}-{f1}")
         return {'FINISHED'}
 
 
-classes = (HINDSIGHT_OT_quick_auto_key,)
+classes = (HINDSIGHT_OT_create_time_lapse,)
+
+
+def start() -> None:
+    """#113: the frame handler and the camera and lighting's check start when Movie Mode goes on (Create
+    time lapse, or a file saved with it on), never before. They stay until another file is loaded: both do
+    nothing while Movie Mode is off, and undo can switch it back on without telling anyone."""
+    if on_frame_change not in bpy.app.handlers.frame_change_post:
+        bpy.app.handlers.frame_change_post.append(on_frame_change)
+    with contextlib.suppress(ImportError):
+        from . import camrig
+        camrig.start()
+
+
+def _movie_mode_somewhere() -> bool:
+    from . import camrig
+    return any(sc.library is None and camrig._has_settings(sc) and sc.hindsight.movie_mode
+               for sc in bpy.data.scenes)
+
+
+@persistent
+def _on_load_post(*_args) -> None:
+    if _movie_mode_somewhere():
+        start()
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
-    if on_frame_change not in bpy.app.handlers.frame_change_post:
-        bpy.app.handlers.frame_change_post.append(on_frame_change)
+    reg.register_classes(classes)
+    if _on_load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_on_load_post)
+    with contextlib.suppress(Exception):     # bpy.data is restricted while Blender starts: load_post does it
+        if _movie_mode_somewhere():
+            start()
 
 
 def unregister():
+    while _on_load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_on_load_post)
     hl = bpy.app.handlers.frame_change_post
     for fn in list(hl):
         if fn is on_frame_change or getattr(fn, "__name__", "") == "on_frame_change" and \
                 getattr(fn, "__module__", "") == __name__:
             hl.remove(fn)
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

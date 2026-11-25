@@ -28,8 +28,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
-from hindsight.bl import camrig, cleanup, datarec, persistence, rigmark, runtime
+from hindsight.bl import camrig, cleanup, datarec, persistence, prefs, rigmark, runtime
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -129,13 +128,12 @@ def full_session(path, mode="BOTH"):
     sc.hindsight.use_global = True
     sc.hindsight.movie_mode = True
     sc.frame_set(1)
-    assert bpy.ops.hindsight.quick_auto_key() == {"FINISHED"}
+    assert bpy.ops.hindsight.create_time_lapse() == {"FINISHED"}
     sc.hindsight.movie_mode = False
     SETTINGS.save_mode = mode
     bpy.ops.wm.save_as_mainfile(filepath=path)
 
 
-@covers(ROWS, "WARN")
 def test_session_writes_only_what_is_listed():
     want = listed()
     path = os.path.join(TMP, "session", "scene.blend")
@@ -153,11 +151,12 @@ def test_session_writes_only_what_is_listed():
     assert matches("journal/" + os.path.basename(j), want)
 
 
-@covers(ROWS, "WARN")
 def test_saving_an_unrecorded_file_adds_nothing():
-    """D29 and D30."""
+    """D29 and D30, with Record set to Sculpting only: a visit to each mode adds nothing. With the
+    default (Everything) only a file saved untouched is checked below, not these mode visits."""
     for mode in ("OBJECT", "SCULPT", "VERTEX_PAINT", "EDIT"):
         H.fresh()
+        prefs.FORCE["record_scope"] = "SCULPT"
         T.build_scene()
         a = bpy.data.objects["A"]
         H.enter(a, mode)
@@ -173,11 +172,28 @@ def test_saving_an_unrecorded_file_adds_nothing():
         assert not found_in_blend(), (mode, "after reopening", found_in_blend())
 
 
+def test_saving_an_untouched_file_with_the_default_adds_nothing():
+    """#60, D29: with the default preferences everything in a file is recorded from the moment it
+    opens; saved unchanged, the file still gets nothing of Hindsight's, and recording goes on."""
+    H.fresh()
+    T.build_scene()
+    path = os.path.join(TMP, "default_untouched", "plain.blend")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert datarec.file_tracked()
+    bpy.ops.wm.save_mainfile()
+    assert datarec.file_tracked(), "still recorded after the save"
+    assert not files_next_to(path), files_next_to(path)
+    assert not os.path.isfile(persistence.journal_path(path))
+    H.fresh(register=False)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert not found_in_blend(), found_in_blend()
+
 def _hash(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest()
 
 
-@covers(ROWS, "WARN")
 def test_opening_a_file_changes_nothing():
     for mode in ("OBJECT", "SCULPT", "VERTEX_PAINT", "EDIT"):
         H.fresh(register=False)
@@ -200,7 +216,6 @@ def test_opening_a_file_changes_nothing():
         assert not any(runtime.reg().histories), mode
 
 
-@covers(ROWS, "WARN")
 def test_opens_without_hindsight():
     path = os.path.join(TMP, "nohs", "scene.blend")
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -228,7 +243,6 @@ print("LOADED", len(bpy.data.objects))
     assert got == repr(sorted(want.items())), "a file with Hindsight data opens differently without Hindsight"
 
 
-@covers(ROWS, "WARN")
 def test_remove_hindsight_data():
     for delete_folder in (False, True):
         path = os.path.join(TMP, f"remove_{int(delete_folder)}", "scene.blend")
@@ -254,7 +268,6 @@ def test_remove_hindsight_data():
         assert done["ids"] == r["ids"]
 
 
-@covers(ROWS, "WARN")
 def test_movie_mode_objects_are_listed_and_removed():
     """The camera and lighting Movie Mode keeps in the scene: in the file only while Movie Mode is
     on, every piece listed in METADATA.md, and Remove Hindsight data takes them out again."""
@@ -286,6 +299,7 @@ def test_movie_mode_objects_are_listed_and_removed():
 
 
 for fn in (test_session_writes_only_what_is_listed, test_saving_an_unrecorded_file_adds_nothing,
+           test_saving_an_untouched_file_with_the_default_adds_nothing,
            test_opening_a_file_changes_nothing, test_opens_without_hindsight, test_remove_hindsight_data,
            test_movie_mode_objects_are_listed_and_removed):
     H.run(fn)

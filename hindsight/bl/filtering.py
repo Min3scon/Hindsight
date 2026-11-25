@@ -11,7 +11,10 @@ Modes (scene.hindsight.filter_mode):
             an empty list excludes everything
 """
 
+import contextlib
 import bpy
+
+from . import reg
 from bpy.props import StringProperty
 
 
@@ -77,11 +80,9 @@ def is_excluded(obj, scene=None) -> bool:
 
 
 def _after_change() -> None:
-    try:
+    with contextlib.suppress(Exception):
         from . import runtime
         runtime.tag_redraw_all()
-    except Exception:
-        pass
 
 
 class HINDSIGHT_UL_collections(bpy.types.UIList):
@@ -169,13 +170,8 @@ classes = (
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    reg.register_classes(classes)
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

@@ -1,4 +1,6 @@
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """R060: the engine's Hasher128 (xxh3-128, seed 0), which makes the mesh fingerprints.
 
   known values   equal to an independent implementation for every length class of xxh3
@@ -9,7 +11,6 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import array
 import threading
 import time
-import traceback
 
 import numpy as np
 
@@ -70,7 +71,7 @@ def test_known_values():
     assert h.hexdigest() == h.hexdigest() == KNOWN[b"abc"], "hexdigest doesn't change the state"
     h.update(b"")
     assert h.hexdigest() == KNOWN[b"abc"], "an empty piece changes nothing"
-    print(f"PASS test_known_values ({len(KNOWN) + len(KNOWN_PATTERN)} inputs)")
+    print(f"  test_known_values ({len(KNOWN) + len(KNOWN_PATTERN)} inputs)")
 
 
 def test_streaming_equals_one_shot():
@@ -105,7 +106,7 @@ def test_streaming_equals_one_shot():
         parts.append(b[pos:])
         assert x3(*parts) == x3(b), (size, cuts)
         n += 1
-    print(f"PASS test_streaming_equals_one_shot ({n} splits)")
+    print(f"  test_streaming_equals_one_shot ({n} splits)")
 
 
 def test_buffer_kinds():
@@ -129,12 +130,9 @@ def test_buffer_kinds():
     # a refused piece leaves the hasher as it was
     h = ENGINE.Hasher128()
     h.update(b"abc")
-    try:
+    with contextlib.suppress(TypeError, BufferError, ValueError):
         h.update("text")
-    except (TypeError, BufferError, ValueError):
-        pass
     assert h.hexdigest() == KNOWN[b"abc"]
-    print("PASS test_buffer_kinds")
 
 
 def test_hasher_with_other_threads():
@@ -164,21 +162,14 @@ def test_hasher_with_other_threads():
     assert got == [want] * 3
     assert ran > 20, ran
     assert x3(bytearray(big)) == want and x3(np.frombuffer(big, np.uint8)) == want
-    print(f"PASS test_hasher_with_other_threads (a second thread ran {ran} turns during 3 hashes of 40 MB)")
+    print(f"  test_hasher_with_other_threads (a second thread ran {ran} turns during 3 hashes of 40 MB)")
 
 
 def main():
     tests = [test_known_values, test_streaming_equals_one_shot, test_buffer_kinds, test_hasher_with_other_threads]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

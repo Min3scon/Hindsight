@@ -94,15 +94,7 @@ def diff(key: str, old: np.ndarray, new: np.ndarray, exists=(True, True)):
     exists = (bool(exists[0]), bool(exists[1]))
     ob = view_bits(old).reshape(-1, w)
     nb = view_bits(new).reshape(-1, w)
-    lib = None
-    if lib is not None and ob.flags.c_contiguous and nb.flags.c_contiguous:
-        r = lib.diff(ob, nb, ob.dtype.itemsize, w)
-        if r is not None:
-            return ChannelDelta(key, np.frombuffer(r[0], _U32), np.frombuffer(r[1], ob.dtype).reshape(-1, w),
-                                exists, ADD)
-        idx = _EMPTY_IDX
-    else:
-        idx = np.flatnonzero(_changed_mask(ob ^ nb)).astype(_U32, copy=False)
+    idx = np.flatnonzero(_changed_mask(ob ^ nb)).astype(_U32, copy=False)
     if idx.size == 0:
         if exists[0] == exists[1]:
             return None
@@ -126,11 +118,6 @@ def apply(arr: np.ndarray, d: ChannelDelta, forward: bool = True) -> None:
     v = v.reshape(-1, w)
     idx = d.idx
     k = idx.size
-    lib = None
-    if (lib is not None and idx.dtype == _U32 and idx.ndim == 1 and v.shape[0] == k and b.flags.writeable
-            and idx.flags.c_contiguous and v.flags.c_contiguous
-            and lib.apply(b, idx, v, b.dtype.itemsize, w, d.op == XOR, forward)):
-        return      # anything the native code doesn't take (unsorted indices, ...) runs below as before
     lo = int(idx[0])
     if int(idx[-1]) - lo + 1 == k:
         # one contiguous run (sorted, unique): a slice, no gather or scatter
@@ -350,13 +337,6 @@ def pack_delta(d: ChannelDelta, effort: int = NORMAL) -> bytes:
     flags = (1 if d.exists[0] else 0) | (2 if d.exists[1] else 0) | (4 if d.op == ADD else 0)
     if k == 0:
         return _HDR.pack(_MAGIC, flags, isz, w, IDX_GAPS, len(key_b), 0, 0) + key_b
-    lib = None
-    if lib is not None and v.dtype.kind == "u" and v.dtype.isnative:
-        r = lib.pack(idx, v, isz, w, d.op == ADD and effort != QUICK)
-        if r is None:
-            raise ValueError(f"pack_delta {d.key}: indices must be sorted and unique")
-        code, ib, tv = r
-        return b"".join((_HDR.pack(_MAGIC, flags, isz, w, code, len(key_b), k, len(ib)), key_b, ib, tv))
     # index: gaps, or one run when the elements are contiguous. Measured on real strokes, runs and
     # bitmaps save under 1% of a step after compression and decode slower, so they aren't chosen
     # otherwise (the reader still accepts them).
@@ -473,15 +453,6 @@ def unpack_at(mv, off: int):
     stop = off + ilen + w + nx
     if stop > end:
         raise CorruptDelta("delta: cut short")
-    lib = None
-    if lib is not None and (type(mv) is not memoryview or mv.itemsize == 1):
-        idx = np.empty(k, dtype=_U32)
-        vals = np.empty((k, w), dtype=bdt)
-        try:
-            lib.unpack(mv[off:off + ilen], code, k, mv[off + ilen:stop], isz, w, op == ADD, idx, vals)
-        except ValueError as e:
-            raise CorruptDelta(str(e)) from None
-        return ChannelDelta(key, idx, vals, exists, op), stop
     idx = _decode_idx(code, mv, off, off + ilen, k)
     off += ilen
     tags = bytes(mv[off:off + w])

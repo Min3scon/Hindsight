@@ -1,7 +1,7 @@
-"""Movie Mode playback cost: time scene.frame_set(f) over every frame of a Quick auto key movie
+"""Movie Mode playback cost: time scene.frame_set(f) over every frame of a Create time lapse movie
 (what a render does before drawing each frame), split by cProfile into where the time goes.
 
-    /home/user/venvs/bpy53/bin/python bench/bench_movie.py [--quick] [--render-only]
+    <venv>/bin/python bench/bench_movie.py [--quick] [--render-only]
 
 Writes bench/results_movie.json. Histories are built as tests/test_bl_movie.py does (meshes made
 with numpy + foreach_set, strokes of about 2% of the vertices written to the mesh, then commit).
@@ -16,6 +16,7 @@ The 300-frame grid (100k and 1M vertices, Object and Sculpt Mode, Steps per fram
 --root times another checkout's `hindsight` (an A/B against an older commit: run the two
 alternately, at least five rounds, and compare min and median).
 """
+import contextlib
 import cProfile
 import json
 import math
@@ -32,7 +33,7 @@ if "--root" in sys.argv:            # time another checkout's add-on (A/B runs)
 import bpy  # noqa: E402
 import numpy as np  # noqa: E402
 import tests.harness as H  # noqa: E402
-from hindsight.bl import runtime, movie  # noqa: E402
+from hindsight.bl import runtime
 
 C = bpy.context
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -106,9 +107,9 @@ def key_movie(fps_step=2, spf=1):
     sh.frames_per_step = fps_step
     sh.movie_steps_per_frame = spf
     sc.frame_set(1)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
-    sc.frame_end = sc.frame_start + 1          # Quick auto key only makes the range longer
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    sc.frame_end = sc.frame_start + 1          # Create time lapse only makes the range longer
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     sc.frame_set(sc.frame_end)            # start from the end of the movie, as after keying
     return sc.frame_start, sc.frame_end
 
@@ -164,7 +165,6 @@ def split(prof):
         if c is not None:
             out[c] += tt
             continue
-        name = func[2]
         tot = sum(v[2] for v in callers.values()) or 1.0
         for cf, v in callers.items():
             cc = _cat(cf) or "other"
@@ -361,13 +361,11 @@ def stroke_patch(ob, rng, share=0.02):
 
 
 def _vmhwm_mb():
-    try:
+    with contextlib.suppress(OSError):
         with open("/proc/self/status") as fh:
             for line in fh:
                 if line.startswith("VmHWM"):
                     return round(int(line.split()[1]) / 1024, 1)
-    except OSError:
-        pass
     return None
 
 

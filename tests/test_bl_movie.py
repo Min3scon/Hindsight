@@ -48,7 +48,7 @@ def step_fcurve(scene):
     return fc
 
 
-def test_quick_auto_key_and_playback():
+def test_create_time_lapse_and_playback():
     a, b, states = build()
     sc = C.scene
     sh = sc.hindsight
@@ -62,7 +62,7 @@ def test_quick_auto_key_and_playback():
     sc.frame_end = 5
     sh.frames_per_step = 2
     sc.frame_set(1)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     fc = step_fcurve(sc)
     kps = list(fc.keyframe_points)
     assert len(kps) == 2, len(kps)
@@ -71,7 +71,7 @@ def test_quick_auto_key_and_playback():
     assert all(k.interpolation == 'LINEAR' for k in kps)
     assert sc.frame_end == 9, sc.frame_end
     # re-keying replaces the keys instead of piling them up
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     assert len(step_fcurve(sc).keyframe_points) == 2
     seen = set()
     for f in [1, 3, 5, 7, 9, 2, 4, 6, 8, 5, 1, 9, 3]:
@@ -97,7 +97,7 @@ def test_off_pauses_and_keeps_keys():
     sc.frame_start = 1
     sh.frames_per_step = 3
     sc.frame_set(1)
-    bpy.ops.hindsight.quick_auto_key()
+    bpy.ops.hindsight.create_time_lapse()
     kps = list(step_fcurve(sc).keyframe_points)
     assert [tuple(k.co) for k in kps] == [(1.0, 0.0), (13.0, 4.0)]
     sc.frame_set(7)
@@ -131,7 +131,7 @@ def test_needs_global_history():
     sc.frame_start = 1
     sh.frames_per_step = 1
     sc.frame_set(1)
-    bpy.ops.hindsight.quick_auto_key()
+    bpy.ops.hindsight.create_time_lapse()
     sc.frame_set(3)
     check(a, b, states, 2)
     runtime.set_global(C, False)
@@ -145,7 +145,7 @@ def test_needs_global_history():
     sh.movie_step = 0
     H.assert_same(H.snapshot(a), snap_a)
     assert lengths() == before
-    assert not bpy.ops.hindsight.quick_auto_key.poll(), "Quick Auto Key needs global history"
+    assert not bpy.ops.hindsight.create_time_lapse.poll(), "Create time lapse needs global history"
 
 
 def test_manual_step_value():
@@ -179,11 +179,13 @@ def test_manual_step_value():
 def test_unregister_removes_handler():
     H.fresh()
     from hindsight.bl import movie
+    assert movie.on_frame_change not in bpy.app.handlers.frame_change_post, "#113: none before Movie Mode"
+    C.scene.hindsight.movie_mode = True
     assert movie.on_frame_change in bpy.app.handlers.frame_change_post
     import hindsight
     hindsight.unregister()
     assert movie.on_frame_change not in bpy.app.handlers.frame_change_post
-    assert not hasattr(bpy.types, "HINDSIGHT_OT_quick_auto_key")
+    assert not hasattr(bpy.types, "HINDSIGHT_OT_create_time_lapse")
     hindsight.register()
 
 
@@ -210,7 +212,7 @@ def key(fps=1, spf=1, start=1):
     sh.frames_per_step = fps
     sh.movie_steps_per_frame = spf
     sc.frame_set(start)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     return [tuple(k.co) for k in step_fcurve(sc).keyframe_points]
 
 
@@ -381,7 +383,7 @@ def test_movie_length():
     sc.render.fps, sc.render.fps_base = 30, 1.001
     r = movie.movie_length(sc)
     assert r["frames"] == 3 and math.isclose(r["seconds"], 3 / (30 / 1.001), rel_tol=1e-6), r  # fps_base is a float32
-    # it matches what Quick auto key keys
+    # it matches what Create time lapse keys
     keys = key(1, 3)
     assert keys[1][0] - keys[0][0] + 1 == movie.movie_length(sc)["frames"]
     runtime.set_global(C, False)
@@ -494,10 +496,138 @@ def test_visibility_change_on_the_same_frame():
     check(a, b, states, 3)
 
 
-for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
+def test_create_time_lapse_with_data_no_object_uses():
+    """#104: with Record on Everything, a file with data no object uses (a material library; in the
+    window the startup file's unused Grease Pencil materials) lost its timelapse. Movie Mode stopped
+    reading that data, so it counted as deleted: a step at each jump's position, and after Quick auto
+    key's jump to step 0 every later step was thrown away and every frame showed step 0 (window
+    scenario movie_mode)."""
+    from hindsight.bl import datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    loose = bpy.data.materials.new("Loose")     # no object uses it: kept with a fake user
+    loose.use_fake_user = True
+    datarec.record_file_default()               # what opening a file does: Everything in this file
+    a = H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    H.enter(a, "SCULPT")
+    L.tick_like("enter Sculpt Mode")            # #116: what the timer does (on 4.2 Sculpt Mode makes a brush)
+    H.fake_stroke(a, 1); assert H.commit(a) is not None
+    H.fake_stroke(a, 2); assert H.commit(a) is not None
+    end = H.snapshot(a)
+    H.enter(a, "OBJECT")
+    runtime.set_global(C, True)
+    sc, n = C.scene, runtime.scrub_info(C)["len"]
+    sc.hindsight.movie_mode = True
+    L.tick_like("Movie Mode on")
+    assert runtime.scrub_info(C)["len"] == n, ("turning Movie Mode on is no step", n, runtime.scrub_info(C))
+    sc.hindsight.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    assert "A" not in sc.objects, "step 0: before A was added"
+    L.tick_like("Create time lapse")               # what the timer does once the operator has finished
+    assert runtime.scrub_info(C)["len"] == n, ("no step at step 0, none lost", n, runtime.scrub_info(C))
+    sc.frame_set(sc.frame_start + n)
+    assert "A" in sc.objects, "the last frame shows the last step"
+    H.assert_same(H.snapshot(bpy.data.objects["A"]), end, "A as it was at the end")
+    assert loose.name in bpy.data.materials
+
+
+def test_lamps_follow_the_users_light_on_every_frame():
+    """#104: with Record on Everything a timelapse can bring the user's deleted light back (step 0) and
+    take it away again. Movie lighting's lamps follow in the same frame: before, only the timer put
+    them back, and it waits for a render to end, so every frame after the light's deletion rendered
+    without any light (window scenario movie_mode)."""
+    from hindsight.bl import camrig, datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    sc = C.scene
+    light = bpy.data.objects.new("Light", bpy.data.lights.new("Light", "POINT"))
+    sc.collection.objects.link(light)
+    datarec.record_file_default()
+    bpy.data.objects.remove(light)
+    L.tick_like("Delete")
+    H.make_mesh(1200, "A")
+    L.tick_like("add A")
+    runtime.set_global(C, True)
+    sh = sc.hindsight
+    sh.movie_camera = sh.movie_lighting = True
+    sh.movie_mode = True
+    sh.movie_step = runtime.scrub_info(C)["len"]
+    camrig.ensure(sc)
+    lamps = set(camrig.LIGHT_ROLES)
+    assert lamps <= set(camrig.rig(sc)), camrig.rig(sc)
+    sh.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    for f, own in ((sc.frame_start, True), (sc.frame_start + 2, False), (sc.frame_start, True),
+                   (sc.frame_start + 1, False)):
+        sc.frame_set(f)
+        assert camrig.scene_has_own_light(sc) == own, (f, own)
+        assert (lamps & set(camrig.rig(sc))) == (set() if own else lamps), (f, sorted(camrig.rig(sc)))
+
+
+def test_lamps_made_on_a_frame_leave_the_camera_where_it_is():
+    """#117 review 1: the frame handler makes the lamps at a step where the jump took the user's light
+    away. It can't walk the history there, so framing again placed the camera from that one step (here
+    none: A comes later), and every later frame of a render used that shot."""
+    from hindsight.bl import camrig, datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    sc = C.scene
+    light = bpy.data.objects.new("Light", bpy.data.lights.new("Light", "POINT"))
+    sc.collection.objects.link(light)
+    datarec.record_file_default()
+    bpy.data.objects.remove(light)
+    L.tick_like("Delete")
+    H.make_mesh(1200, "A", (3, 1, 0))
+    L.tick_like("add A")
+    runtime.set_global(C, True)
+    sh = sc.hindsight
+    sh.movie_camera = sh.movie_lighting = True
+    sh.movie_mode = True
+    sh.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    cam = camrig.rig(sc)["camera"]
+
+    def shot():
+        return [v for r in cam.matrix_world for v in r] + [cam.data.clip_start, cam.data.clip_end]
+
+    def lamps():
+        return {r: [tuple(v) for v in ob.matrix_world] for r, ob in camrig.rig(sc).items() if r != "camera"}
+
+    def same(a, b, msg):
+        import numpy as np
+        assert np.allclose(np.array(a), np.array(b), atol=1e-6), (msg, a, b)
+
+    want = shot()
+    for f in (sc.frame_start + 1, sc.frame_start + 2, sc.frame_start, sc.frame_start + 2):
+        sc.frame_set(f)
+        same(shot(), want, f"camera on frame {f}")
+    made = lamps()
+    assert set(made) == set(camrig.LIGHT_ROLES), sorted(made)
+    camrig.on_settings_changed(C)          # a full framing, outside the handler: the same shot and lamps
+    same(shot(), want, "camera framed again")
+    for r, m in lamps().items():
+        same(m, made[r], f"{r} as the handler placed it")
+
+
+def test_setting_tooltips_are_one_sentence():
+    """STYLE.md: a tooltip is one sentence (#117 review 6: Steps per frame and Camera had two). Settings
+    the panel never draws (HIDDEN) have no tooltip to read."""
+    H.fresh()
+    two = [(p.identifier, p.description) for p in C.scene.hindsight.bl_rna.properties
+           if not p.is_hidden and ". " in p.description.rstrip(".")]
+    assert not two, two
+
+
+for f in [test_create_time_lapse_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
-          test_frame_lists_objects_once, test_visibility_change_on_the_same_frame]:
+          test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
+          test_create_time_lapse_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame,
+          test_lamps_made_on_a_frame_leave_the_camera_where_it_is, test_setting_tooltips_are_one_sentence]:
     H.run(f)
 H.finish()

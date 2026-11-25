@@ -14,6 +14,7 @@ Crash Recovery (``SETTINGS.crash_recovery``):
 """
 from __future__ import annotations
 
+import contextlib
 import binascii
 import hashlib
 import os
@@ -28,7 +29,7 @@ from ..core import persist
 from ..core.journal import Journal
 from ..core.registry import Registry
 from ..core.types import SETTINGS
-from . import guard, log, runtime
+from . import guard, idmap, log, runtime
 
 TEXT_NAME = ".hindsight_history"
 DATA_PROP = "hindsight_data"            # base64 text: earlier builds (read; never written since R061)
@@ -164,10 +165,8 @@ def _close_journal(remove_untitled: bool = False) -> None:
         except Exception as e:
             guard.fail("saving", e, "journal close error")
         if remove_untitled and path == journal_path(""):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(path)
-            except OSError:
-                pass
 
 
 def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) -> Journal:
@@ -249,10 +248,8 @@ def _same_path(a: str, b: str) -> bool:
 def _drain_packer() -> None:
     p = runtime.packer
     if p is not None:
-        try:
+        with contextlib.suppress(Exception):
             p.drain(timeout=30.0)
-        except Exception:
-            pass
 
 
 def _mode() -> str:
@@ -270,10 +267,11 @@ def _codec() -> str:
 
 # ----------------------------------------------------------------------------- handlers
 def has_data(reg=None) -> bool:
-    """Something to keep: a step, or an object switched on or paused."""
+    """Something to keep: a step, an object switched on or paused, or Record everything switched off by choice (#61)."""
     reg = reg or runtime.reg()
-    return (any(h.entries for h in reg.histories.values()) or bool(getattr(reg, "everything", ()))
-            or bool(getattr(reg, "disabled", ())))
+    return (any(h.entries for h in reg.histories.values())
+            or (bool(getattr(reg, "everything", ())) and not getattr(reg, "file_default", False))
+            or bool(getattr(reg, "disabled", ())) or getattr(reg, "everything_chosen", False))
 
 
 def _writes_anything(path: str) -> bool:
@@ -282,6 +280,32 @@ def _writes_anything(path: str) -> bool:
     became empty. A history folder alone doesn't count: after Remove Hindsight data the folder can be
     kept as a backup without the file using it again."""
     return has_data() or bpy.data.texts.get(TEXT_NAME) is not None
+
+
+_UNSAVED: list = []      # (datablock, id) left out of one save, put back after it (see _default_ids_off)
+
+
+def _default_ids_off() -> list:
+    """D29: in a file where nothing is recorded and only the default switched everything on (#10),
+    the ids it gave out are left out of the save; _default_ids_back puts them back after it."""
+    if not getattr(runtime.reg(), "file_default", False):
+        return []
+    out = []
+    for c in idmap.COLLECTIONS:
+        for idb in getattr(bpy.data, c, ()):
+            u = idb.get(idmap.UID_PROP) if idb.library is None else None
+            if u is not None:
+                out.append((idb, u))
+                del idb[idmap.UID_PROP]
+    return out
+
+
+@bpy.app.handlers.persistent
+@guard.guarded("saving")
+def _default_ids_back(*_a) -> None:
+    for idb, u in _UNSAVED:
+        idb[idmap.UID_PROP] = u
+    _UNSAVED.clear()
 
 
 def drop_default_settings() -> int:
@@ -346,6 +370,7 @@ def on_save_pre(*args) -> None:
     drop_default_settings()
     _FALLBACK["sidecar"] = False
     if not _writes_anything(_handler_path(args)):
+        _UNSAVED[:] = _default_ids_off()
         return
     reg = runtime.reg()
     try:
@@ -415,6 +440,7 @@ def on_save_pre(*args) -> None:
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
 def on_save_post(*args) -> None:
+    _default_ids_back()
     path = _handler_path(args)
     if not path or not _writes_anything(path):
         return
@@ -486,15 +512,13 @@ def _load_registry(path: str, text):
             _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
             runtime.log.error_once(("embed_unreadable", str(e)), f"embedded history unreadable: {e}", e)
-            try:
+            with contextlib.suppress(Exception):
                 v = text[key]
                 if UNREADABLE_PROP in text:
                     # Blender cuts bytes at the first zero when it replaces a bytes property: a new one only
                     del text[UNREADABLE_PROP]
                 text[UNREADABLE_PROP] = v           # keep the data, out of the way
                 del v, text[key]
-            except Exception:
-                pass
             _note("ERROR", UNREADABLE_EMBED_TEXT)
         return None
 
@@ -651,15 +675,13 @@ def on_load_post(*args) -> None:
             guard.fail("loading", e, "journal error on load")
 
     if reg is not None:
-        try:
+        with contextlib.suppress(Exception):
             p = getattr(bpy.context.scene, "hindsight", None)
             if p is not None:
                 if hasattr(p, "use_global"):
                     reg.use_global = bool(p.use_global)
                 if hasattr(p, "preserve_modes"):
                     reg.preserve_modes = bool(p.preserve_modes)
-        except Exception:
-            pass
         runtime.set_registry(reg)
         try:
             runtime.restamp_overrides(getattr(reg, "saved", None))        # D109
@@ -681,31 +703,33 @@ def on_load_post(*args) -> None:
         if runtime.packer is not None:
             # steps from older files and steps saved in the quick form get re-packed when idle
             runtime.packer.queue_recompress(e for h in reg.all() for e in h.entries)
+    try:
+        from . import datarec
+        if reg is not None or text is None:     # a history that didn't load may hold "switched off" (#61)
+            datarec.record_file_default()
+    except Exception as e:
+        guard.fail("loading", e, "could not switch on Everything in this file")
 
     runtime.tag_redraw_all()
     problems = ([runtime.missing_message[0]] if runtime.missing_message[0] else []) +         [t for sev, t in runtime.load_notes if sev == "ERROR"]
     if problems:
         more = f" ({len(problems) - 1} more in the Undo History tab)" if len(problems) > 1 else ""
-        try:
+        with contextlib.suppress(Exception):
             from .selfcheck import flash_status
             flash_status("Hindsight: " + problems[0] + more, 15.0)
-        except Exception:
-            pass
 
 
 # ----------------------------------------------------------------------------- register
 _HANDLERS = (
     ("save_pre", on_save_pre), ("save_post", on_save_post),
-    ("load_pre", on_load_pre), ("load_post", on_load_post),
+    ("load_pre", on_load_pre), ("load_post", on_load_post), ("save_post_fail", _default_ids_back),
 )
 
 
 def register() -> None:
-    try:
+    with contextlib.suppress(Exception):
         from .selfcheck import addon_version
         persist.WRITER = f"Hindsight {addon_version()}"
-    except Exception:
-        pass
     for name, fn in _HANDLERS:
         hl = getattr(bpy.app.handlers, name)
         if fn not in hl:

@@ -30,6 +30,7 @@ import bpy
 
 import tests.harness as H
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 
@@ -60,7 +61,7 @@ def scene(n, tracked: bool):
     for i in range(n):
         bpy.ops.mesh.primitive_cube_add(size=0.2, location=(i * 0.3, 0, 0))
         C.active_object.name = f"N{i}"
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     if tracked:
         for o in list(C.scene.objects):
             datarec.set_tracked(o, True)
@@ -70,7 +71,7 @@ def scene(n, tracked: bool):
 
 def test_sculpting_only_timer_reads_nothing():
     scene(60, tracked=True)
-    datarec.FORCE_SCOPE[0] = "SCULPT"
+    prefs.FORCE["record_scope"] = "SCULPT"
     ob = C.scene.objects[0]
     with counting((datarec, "capture"), (datarec, "finish_operation"), (datarec, "refresh_mesh_users"),
                   (datarec, "commit"), (idmap, "find"), (datarec, "check_exclusion")) as n:
@@ -202,7 +203,7 @@ def test_selection_only_operator_reads_the_selection():
 
 def test_selection_only_operator_in_edit_mode_reads_no_mesh():
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = H.make_mesh(20_000, name="E")
     datarec.set_tracked(ob, True)
     datarec.finish_operation("baseline")
@@ -222,7 +223,7 @@ def test_transform_in_edit_mode_reads_no_topology():
     import bmesh
     from hindsight.bl import meshio
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = H.make_mesh(20_000, name="T")
     datarec.set_tracked(ob, True)
     datarec.finish_operation("baseline")

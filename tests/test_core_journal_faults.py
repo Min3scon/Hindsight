@@ -1,4 +1,6 @@
+import traceback
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Fault injection for the crash journal and its replay (pure Python, no bpy).
 
 A model session writes the journal records the add-on writes (the same calls in the same order as
@@ -22,15 +24,12 @@ import random
 import shutil
 import tempfile
 import time
-import traceback
 
 import numpy as np
 
 from hindsight.core import persist
 from hindsight.core.journal import Journal
-from hindsight.core.history import History
 from hindsight.core.registry import Registry
-from hindsight.core.step import step_to_bytes
 from hindsight.core.types import ChannelDelta, Step, Entry, DELTA, POSITION_KEY
 
 ABSENT = "-"            # an object a join removed
@@ -372,7 +371,6 @@ def realistic_session(folder):
     s.stroke("C")
     s.scrub("A", 3)
     s.save()
-    marks = [s.journal.size()]
     s.stroke("A")                       # branch at 3 (after the saved state of A: it is 3)
     s.scrub("A", 4)
     for _ in range(4):
@@ -408,8 +406,6 @@ def test_journal_cut_at_every_byte():
         file_bytes, meshes = s.file
         cut = os.path.join(d, "cut.hsj")
         full = Journal(s.jpath).read()
-        ends = []
-        acc = 0
         seen = set()
         errors = []
         for k in range(len(data) + 1):
@@ -810,18 +806,11 @@ TESTS = [
 
 
 def main():
-    failed = 0
     for t in TESTS:
         t0 = time.time()
-        try:
-            t()
-            print("PASS %s (%.1f s)" % (t.__name__, time.time() - t0))
-        except Exception:
-            failed += 1
-            print("FAIL %s" % t.__name__)
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+        print("  %s took %.1f s" % (t.__name__, time.time() - t0))
+    R.finish()
 
 
 if __name__ == "__main__":

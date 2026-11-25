@@ -13,6 +13,8 @@ import os
 
 import bpy
 
+from . import reg
+
 from . import idmap, log, runtime
 
 # Files Hindsight writes in the history folder (see core/persist.py); nothing else is ever deleted.
@@ -207,13 +209,8 @@ classes = (HINDSIGHT_OT_remove_data,)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
 
 
 def unregister():
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

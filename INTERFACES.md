@@ -123,7 +123,7 @@ Step.records: list[DataChange]                  # on any step kind
 MeshState.values: dict[(adapter, path), value]  # recorded data of the datablock
 MeshState.apply_record(rec, forward) -> set     # changed keys ("@", adapter, path)
 
-# bl/adapters.py
+# bl/adapters/ (a package, one module per data kind; adapters.X still resolves every name)
 class Adapter: id, id_types, budget_ms; capture(idb) -> {path: value}; write(idb, values, recorded)
 ALLOWLIST: {ID type: ((path, "value" | "ref"), ...)}; DEPENDENTS: {path: (paths rewritten after it)}
 animated_paths(idb) -> set                      # never recorded by the generic adapter
@@ -242,7 +242,7 @@ class Registry:
     def remove_object(self, obj_uid: str) -> None
     def all(self) -> list[History]
 # global timeline (core/globaltl.py, P3)
-def global_order(reg, visible: set[str] | None = None) -> list[tuple[int, str, int]]   # (seq, hist_uid, entry_index) sorted
+def global_groups(reg, visible: set[str] | None = None) -> list[list[tuple[int, str, int]]]   # one list of (seq, hist_uid, entry_index) per operation, in order of first step
 def global_position(reg, visible=None) -> int                  # number of applied entries in global order prefix
 def plan_global_goto(reg, g: int, visible=None) -> dict[str, int]   # hist_uid -> cursor for global position g
 ```
@@ -291,7 +291,7 @@ items "Last Saved", "Interrupted Session"), `truncation_threshold` Int 10 ("Trun
 `raw_steps` Int 64 ("Uncompressed Recent Steps"), `compression` Enum AUTO/ZSTD/LZ4/ZLIB/NONE ("Compression"),
 scrubber appearance: `scrub_height` Int 6 px, `scrub_margin` Int 18 px, `scrub_color` FloatVector(4, COLOR_GAMMA)
 (1.0, 0.6, 0.24, 1.0), `scrub_bg_color` (0.1, 0.1, 0.1, 0.6), `scrub_show_counter` Bool True, `scrub_width_pct` Int 60.
-Helper: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`.
+Helpers: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`; `value(name, default)` (the one preference reader: `prefs.FORCE[name]` if a test set it, else the preference, else `default`); `SCRUB_DEFAULTS` (the six slider defaults above, shared with the scrubber).
 
 Operator idnames (all `bl_idname = "hindsight.<name>"`, labels exactly as listed):
 - `hindsight.step_back` "Step Back" / `hindsight.step_forward` "Step Forward" (Ctrl+Z / Ctrl+Shift+Z, `oskey` variants)
@@ -304,7 +304,7 @@ Operator idnames (all `bl_idname = "hindsight.<name>"`, labels exactly as listed
   `hindsight.turn_on` "Turn On Undo History", `hindsight.reset_all` "Reset All Objects".
 - Sidebar: `VIEW3D_PT_hindsight` category "Undo History"; sub-panels: Movie Mode (header checkbox
   `movie_mode`), Scrubber, Memory, Collection Filtering, Warnings.
-- Movie: `hindsight.quick_auto_key` "Quick Auto Key".
+- Movie: `hindsight.create_time_lapse` "Create time lapse".
 
 ## 7. Join info (P3) — `Step.extra` for kind JOIN
 
@@ -340,6 +340,8 @@ Behaviour (tests: tests/test_bl_camrig.py, test_bl_rig_ignored.py, test_core_fra
   the model's size). Created with `bpy.data` only, never `bpy.ops`.
 - They exist only while Movie Mode is on (`scene.hindsight.movie_mode`) and the matching switch asks
   for them. Switching Movie Mode off removes them and makes the user's camera the scene camera again.
+  #113: only Create time lapse (`hindsight.create_time_lapse`) switches Movie Mode on from the panel (the
+  panel's switch can only switch it off); it keys the global history first, then adds and places them.
 - Settings on `scene.hindsight` (`bl/props.py`, each calls `camrig.on_settings_changed(context)`):
   `movie_camera` (bool, default on), `movie_lighting` (bool, default on: lighting is added only while
   the scene has no light object of its own that renders), hidden `movie_view_angle` and
@@ -357,8 +359,10 @@ Behaviour (tests: tests/test_bl_camrig.py, test_bl_rig_ignored.py, test_core_fra
   changes (`camrig._PAST`).
 - The recorder ignores marked objects: never recorded, never given `_hindsight_uid`, never in a step,
   never removed or re-created by the global history; `runtime.is_excluded` is true for them.
-- A missing piece (deleted by the user, or by Blender's undo) is put back by `camrig.tick()` (called
-  from `runtime.tick`, checked twice a second, only while Movie Mode is on). Nothing is created while
+- A missing piece (deleted by the user, or by Blender's undo) is put back by `camrig.tick()` (its own
+  timer, checked twice a second while Movie Mode is on). #113: that timer and Movie Mode's frame handler
+  are added when Movie Mode first goes on (`movie.start()`: the switch's update, or loading a file saved
+  with it on), never before, and stay until another file is loaded. Nothing is created while
   a render job runs or the timeline plays.
 - Remove Hindsight data from this file takes the objects out too; METADATA.md lists them.
 
@@ -373,7 +377,7 @@ def merge(a, b)                                        # union of two extents (N
 def fit(ext, basis, tan_x, tan_y, min_distance=1e-3) -> dict | None   # location, near, far, center, depth
 def bounds(points); def merge_bounds(a, b)             # min xyz, max xyz
 def light_rig(basis, center, radius) -> list[dict]     # key, fill, rim: direction, location, strength, angle, color
-def history_extents(h, state, target_uid, basis, tan_x, tan_y)   # extents over every other history position
+def history_extents_multi(h, state, target_uid, bases, tans)   # (k, 6) extents over every other history position, one row per basis
 
 # hindsight/bl/camrig.py
 NAMES; MARGIN

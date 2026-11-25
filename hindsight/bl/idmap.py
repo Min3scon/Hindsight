@@ -6,6 +6,7 @@ time Hindsight looks it up (`claim`). Lookups go through a small cache of (colle
 """
 from __future__ import annotations
 
+import contextlib
 import bpy
 
 from ..core.registry import new_uid
@@ -19,7 +20,8 @@ COLLECTIONS = ("objects", "meshes", "materials", "node_groups", "worlds", "scene
                "speakers", "lightprobes",
                # D151: datablocks whose custom properties and add-on data the scene records
                "palettes", "brushes", "linestyles", "masks", "movieclips", "cache_files", "paint_curves",
-               "textures", "pointclouds", "volumes")
+               "textures", "pointclouds", "volumes",
+               "annotations")     # D176: 5.0 on (4.2: grease_pencils)
 
 _cache: dict = {}        # uid -> (collection name, datablock name)
 _owner: dict = {}        # uid -> as_pointer() of the datablock that owns it this session
@@ -31,18 +33,14 @@ _session: dict = {}
 
 def note(idb, u) -> None:
     """Remember which id this datablock carries in this session."""
-    try:
+    with contextlib.suppress(Exception):
         _session[idb.session_uid] = u
-    except Exception:
-        pass
     idx = _IDX[0]
     if idx is not None:
         # an object that got its id inside a frame (a fresh id: no other datablock has it)
-        try:
+        with contextlib.suppress(Exception):
             if u not in idx[1] and isinstance(idb, bpy.types.Object) and idb.library is None:
                 idx[1][u] = idb
-        except Exception:
-            pass
 
 
 # ----------------------------------------------------------------------------- frames
@@ -118,10 +116,8 @@ def _objects_index():
 
 
 def unnote(idb) -> None:
-    try:
+    with contextlib.suppress(Exception):
         _session.pop(idb.session_uid, None)
-    except Exception:
-        pass
 
 
 def restore_after_undo() -> int:

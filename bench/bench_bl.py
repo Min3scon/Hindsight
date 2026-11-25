@@ -5,6 +5,7 @@ Writes bench/results_bl.json and bench/RESULTS.md. All numbers are measured on t
 Strokes are simulated (positions written with foreach_set, then runtime.commit), because sculpt
 brush operators cannot run headless in bpy-module mode.
 """
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import importlib.util
 import json
@@ -245,14 +246,12 @@ def bench(n, tmp):
 
 def environment():
     cpu = "unknown"
-    try:
+    with contextlib.suppress(OSError):
         with open("/proc/cpuinfo") as fh:
             for line in fh:
                 if line.startswith("model name"):
                     cpu = line.split(":", 1)[1].strip()
                     break
-    except OSError:
-        pass
     if cpu == "unknown" and sys.platform == "win32":
         try:
             import winreg
