@@ -91,7 +91,7 @@ back in any row, and the journal starts again at open.
 | Blender crashes | The .blend on disk | The crash journal | Opening the .blend brings back |
 |---|---|---|---|
 | Between saves (before save B) | save A | SAVE(A) and every change since, except the newest big records if they are still waiting for the helper thread (R079) | every step and change in the journal since save A (all of them, but for those big records); the objects as saved; scrub forward to see the steps |
-| In `save_pre`, while the parts are built and put back | save A | SAVE(A) and every change since: the save waited for the helper first | the same. Blender's copy is the only copy of the full step parts by then (#41), but the process dies whole and nothing on disk changed |
+| In `save_pre`, while the parts are built and put back | save A | SAVE(A) and every change since, except the newest big records if they are still waiting for the helper thread, because `save_pre` does not wait for it today (R079) | as in the first row. Blender's copy is the only copy of the full step parts by then (#41), but the process dies whole and nothing on disk changed |
 | While Blender writes the file | save A (Blender writes the new file beside it and puts it in place only once it is whole) | as above | the same |
 | After Blender put save B in place, before `save_post` | save B, which holds every step | SAVE(A) and the changes since | nothing is replayed and nothing is missing: every record was written before save B, which holds them all. Today's "another save" note shows, needlessly. Starting the journal first in `save_post` keeps this window short |
 | In `save_post`, after the journal started again | save B | SAVE(B) | nothing is needed: save B holds everything |
@@ -100,8 +100,10 @@ back in any row, and the journal starts again at open.
 
 The one loss in the table is R079's: a record of a step held at 4 MB or more (a topology step on a big mesh) is written
 by a helper thread, so a crash can lose the newest such records before they reach the journal. The journal stays a
-prefix of the session: every step before them comes back. Whatever reads, empties or switches the journal (a save,
-recovery, opening another file, quitting) waits for the helper first, so a crash during a save loses nothing.
+prefix of the session: every step before them comes back. What waits for the helper today: `_mark_saved` (the journal's restart in `save_post`), `drain_journal_writer`
+and closing the journal. `save_pre` does not, so a crash while a save is built or written can lose those records too:
+until save B is in place, the file on disk is save A and the journal may lack them. From save B on, the file holds every
+step. The build ticket must make `save_pre` call `drain_journal_writer()` first, which closes the window (see below).
 
 If the crash falls while Blender swaps the files, its backup `.blend1` is save A, and the journal still names save A.
 Renaming `.blend1` back gives a file the journal belongs to, and every step comes back.
@@ -203,6 +205,8 @@ one runs at a close and not at a crash is for the build to measure.
 ## What the build ticket does with this
 
 - Keep the journal and its records as they are, with the save id taken from the index part.
+- `save_pre`: wait for the helper thread first (`drain_journal_writer()`, before the parts are built), so a crash during
+  a save loses no step. Test: queue a big record, crash in the middle of a save, recover: every step is back.
 - `save_post`: start the journal again first, then take the parts back. `save_post_fail`: take the parts back and leave
   the journal. A save whose parts could not all be put back leaves the journal too.
 - At open, a file without its parts: no history, the note, the journal of its path untouched, and the session

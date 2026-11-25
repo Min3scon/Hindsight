@@ -192,17 +192,17 @@ These exist and keep passing with their checks unchanged:
 - `tests/test_core_reference.py` with `step_corpus_base.zip`: encodings decode bit for bit.
 
 `tests/test_bl_t1_migrate.py` is not among them. It is meant to open .blend files saved by the format 3 build (git
-fc2b6d3) and by beta 1 (format 1), made fresh by those builds' own code, but its beta 1 case needs the release zip
-`.tmp/old/b1.zip`, which is in neither the repo nor its GitHub releases (beta 1 has no git tag either). So the file
+fc2b6d3) and by the first V1 build (format 1), made fresh by those builds' own code, but its first-build case needs the release zip
+`.tmp/old/b1.zip`, which is in neither the repo nor its GitHub releases (that build has no git tag either). So the file
 fails on every checkout and is one of the two known failures: nothing runs that proof today. Format 1's bytes are
-still proven by `test_core_migration.py` (`beta1_format1.hsr`), but no running test opens a .blend that beta 1 or the
+still proven by `test_core_migration.py` (`beta1_format1.hsr`), but no running test opens a .blend that the first V1 build or the
 format 3 build saved. The build ticket replaces it (below).
 
 New ones the build ticket adds, each also on the files above:
 
-- **Older .blend files as fixtures**: a .blend saved by beta 1 and one saved by the format 3 build, made once and
+- **Older .blend files as fixtures**: a .blend saved by the first V1 build and one saved by the format 3 build, made once and
   committed under `tests/fixtures` with an `expect.json`, the way `tests/fixtures/beta2/make_beta2_files.py` makes
-  beta 2's (the beta 1 one from the zip, by whoever holds it). `test_bl_t1_migrate.py` then opens those instead of
+  V1's (the first-build one from the zip, by whoever holds it). `test_bl_t1_migrate.py` then opens those instead of
   building them at test time, so its proof runs everywhere; its save in the folder mode becomes a format 5 save.
 - **Move-in byte for byte**: after the first save, every step part holds the V1 steps' bytes in order, with the same
   CRC-32s and metas. The index part has V1's settings, cursors and members. Reopened from the .blend alone, every

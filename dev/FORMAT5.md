@@ -129,7 +129,9 @@ things change around it:
 The doc walks through a crash before, during and after a save, with Crash recovery set to "Unsaved steps": every step
 comes back in each case, with one exception. A crash between saves can lose the newest big records (steps held at 4 MB
 or more, such as a Voxel Remesh on a big mesh) still waiting for the helper thread (R079). The journal stays a prefix,
-so every step before them comes back. A save waits for the helper first, so a crash during a save loses none.
+so every step before them comes back. `save_post` and the journal's restart after a save wait for the helper, but `save_pre` does not today, so a crash
+while the save is being built or written (before save B is in place) can lose the same newest records. Once save B is
+in place it holds every step. The build ticket makes `save_pre` wait first (point 9 below).
 
 ## 5. How V1's formats 1 to 4 are read and moved in (#45)
 
@@ -240,6 +242,10 @@ Each comes with a recommendation; none blocks the others.
    of 100,000 steps is past the cap's default. Recommended: in V2 neither drops steps. The step cap goes, and the
    memory limit warns instead of dropping. Steps then go only when the user asks: Delete earlier steps, or recording
    after going back. No byte of format 5 changes either way, so #11 need not wait for it.
+9. **A wait in `save_pre`** (#44, review of this PR): today only `save_post` (`_mark_saved`) waits for the journal's helper
+   thread, so a crash during a save can lose big records still queued. A requirement for #11, not an owner choice
+   with a cost worth weighing: `save_pre` drains the helper first (`drain_journal_writer()`), at the price of waiting
+   for a few big writes before each save. Recommended: require it. No format 5 byte depends on it.
 
 ## What the build ticket does
 
