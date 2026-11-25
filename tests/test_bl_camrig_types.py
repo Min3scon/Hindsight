@@ -238,6 +238,36 @@ def test_an_empty_instancing_a_collection():
     _frame_and_check(e, np.vstack(truth))
 
 
+def test_an_instanced_collection_with_lights_empties_and_hidden_objects():
+    """Review of #117 (2): of an instanced collection only what renders is framed: its light, empty
+    and an object hidden from renders (40 m away) are left out, as they are when not instanced."""
+    _start()
+    coll = bpy.data.collections.new("Parts")
+    a = H.make_mesh(300, "PartA", (0, 0, 0))
+    hidden = H.make_mesh(300, "Hidden", (40, 0, 0))
+    hidden.hide_render = True
+    lamp = bpy.data.objects.new("Lamp", bpy.data.lights.new("Lamp", "POINT"))
+    lamp.location = (0, 30, 0)
+    marker = bpy.data.objects.new("Marker", None)
+    marker.location = (0, 0, 25)
+    for o in (a, hidden):
+        C.scene.collection.objects.unlink(o)
+    for o in (a, hidden, lamp, marker):
+        coll.objects.link(o)
+    e = _link("Instancer", None)
+    e.instance_type = "COLLECTION"
+    e.instance_collection = coll
+    e.location = (10, 5, 0)
+    _record(e)
+    dg = C.evaluated_depsgraph_get()
+    truth = [_world(np.array([v.co[:] for v in i.object.original.data.vertices]), np.array(i.matrix_world))
+             for i in dg.object_instances if i.is_instance and i.parent and i.parent.original == e
+             and i.object.original == a]
+    assert len(truth) == 1, len(truth)
+    _frame_and_check(e, np.vstack(truth))
+
+
+
 def test_every_rendering_type_with_a_history_counts():
     """Not only meshes: a curve with a history is framed next to a mesh with one; an object with no
     history, cameras, lights and objects hidden from renders are not."""
@@ -267,5 +297,6 @@ if __name__ == "__main__":
     H.run(test_a_point_cloud)
     H.run(test_a_volume)
     H.run(test_an_empty_instancing_a_collection)
+    H.run(test_an_instanced_collection_with_lights_empties_and_hidden_objects)
     H.run(test_every_rendering_type_with_a_history_counts)
     H.finish()

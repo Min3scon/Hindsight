@@ -898,7 +898,8 @@ def _measure_other(ob, basis, tx, ty, dg):
         parts = [((np.array([c[:] for c in ob.bound_box], np.float32), 0.0), _np_matrix(ob.matrix_world))]
     elif ob.type == "EMPTY":
         found = [(i.object.original, _np_matrix(i.matrix_world)) for i in dg.object_instances
-                 if i.is_instance and i.parent is not None and i.parent.original == ob]
+                 if i.is_instance and i.parent is not None and i.parent.original == ob
+                 and i.object.type in _RENDERS and not i.object.original.hide_render]
         shapes = {}
         for src, _m in found:
             if src.name_full not in shapes:
@@ -1202,7 +1203,10 @@ def tick() -> None:
 
 
 def _timer():
-    tick()
+    try:
+        tick()
+    except Exception as e:                     # Blender drops a timer that raises
+        log.error_once(("camrig_tick", str(e)), f"Movie Mode camera error: {e}", e)
     return INTERVAL
 
 

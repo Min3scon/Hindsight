@@ -174,6 +174,18 @@ def test_panel_switch_only_switches_movie_mode_off():
     assert head.__dict__.get("enabled", True) is True, "on: the switch switches it off"
 
 
+def test_the_put_back_timer_survives_an_error():
+    """Review of #117 (1): an error in the put-back check is logged and the timer keeps running (Blender
+    drops a timer whose function raises), as when runtime's timer called it."""
+    real = camrig.tick
+    camrig.tick = lambda: 1 / 0
+    try:
+        assert camrig._timer() == camrig.INTERVAL
+    finally:
+        camrig.tick = real
+
+
+
 if __name__ == "__main__":
     H.run(test_nothing_before_then_everything_placed_for_the_whole_history)
     H.run(test_again_after_more_work_places_them_for_the_longer_history)
@@ -181,4 +193,5 @@ if __name__ == "__main__":
     H.run(test_nothing_to_key_adds_nothing)
     H.run(test_a_saved_time_lapse_starts_again_when_loaded)
     H.run(test_panel_switch_only_switches_movie_mode_off)
+    H.run(test_the_put_back_timer_survives_an_error)
     H.finish()
