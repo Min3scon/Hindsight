@@ -3,8 +3,8 @@
 
 Every save stores the history inside the .blend (Text ``.hindsight_history``, bytes ID property
 ``hindsight_data_bin``; files saved by 1.0.0-beta.2 and earlier hold base64 text in ``hindsight_data``, still
-read), whatever Save Mode (``SETTINGS.save_mode``) says (#48). A history folder ``<stem>_hindsight`` left by V1
-(Save Mode SIDECAR or BOTH) is still read.
+read); there is no other place to save it (#48, #51). A history folder ``<stem>_hindsight`` left by V1
+(its Save history setting, SIDECAR or BOTH) is still read until the next save.
 
 Crash Recovery (``SETTINGS.crash_recovery``):
   LAST_SAVED   loading a file restores only what was saved
@@ -252,11 +252,6 @@ def _drain_packer() -> None:
             p.drain(timeout=30.0)
 
 
-def _mode() -> str:
-    m = str(getattr(SETTINGS, "save_mode", "SIDECAR") or "SIDECAR").upper()
-    return m if m in ("SIDECAR", "EMBED", "BOTH") else "SIDECAR"
-
-
 def _recovery() -> str:
     return str(getattr(SETTINGS, "crash_recovery", "LAST_SAVED") or "LAST_SAVED").upper()
 
@@ -383,7 +378,7 @@ def on_save_pre(*args) -> None:
             text[DATA_BIN_PROP] = data
             del data
             text[SAVE_ID_PROP] = reg.save_id
-        # #48: whatever Save history says, the history goes in the .blend. A folder from a newer
+        # #48: the history always goes in the .blend. A folder from a newer
         # Hindsight stays pointed at, so that Hindsight still finds it.
         text[SIDECAR_PROP] = _PROTECT["sidecar"]
     except Exception as e:
@@ -442,7 +437,6 @@ def _note(sev, text):
 
 def _load_registry(path: str, text):
     """The saved registry for this file, or None. Never raises; problems become sidebar notes."""
-    mode = _mode()
     embedded = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text)
 
     def from_text():
@@ -490,23 +484,19 @@ def _load_registry(path: str, text):
         return None
 
     want = text.get(SAVE_ID_PROP) if text is not None else None
-    if mode == "EMBED":
-        reg = from_text() if embedded else None
-        if reg is None:
-            reg = from_sidecar()
-    else:
-        reg = from_sidecar()
-        if reg is None and embedded:
-            reg = from_text()
-        elif reg is not None and want and getattr(reg, "save_id", None) not in (None, want):
-            # the folder wasn't written by the last save of this .blend (writing it failed, or the
-            # .blend is an older or newer save of it): the history stored in the .blend, if it is
-            # the right one, goes first
-            other = from_text() if embedded else None
-            if other is not None and getattr(other, "save_id", None) == want:
-                reg = other
-            else:
-                _note("WARNING", STALE_SIDECAR_TEXT)
+    # a V1 folder first, only while the .blend still points at it; then the .blend
+    reg = from_sidecar()
+    if reg is None and embedded:
+        reg = from_text()
+    elif reg is not None and want and getattr(reg, "save_id", None) not in (None, want):
+        # the folder wasn't written by the last save of this .blend (writing it failed, or the
+        # .blend is an older or newer save of it): the history stored in the .blend, if it is
+        # the right one, goes first
+        other = from_text() if embedded else None
+        if other is not None and getattr(other, "save_id", None) == want:
+            reg = other
+        else:
+            _note("WARNING", STALE_SIDECAR_TEXT)
     if reg is not None:
         _report_load(reg)
     return reg

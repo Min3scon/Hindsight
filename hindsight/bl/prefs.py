@@ -86,12 +86,6 @@ RECORD_SCOPE_ITEMS = (
                                  "on this object (in the Undo History tab)"),
 )
 
-SAVE_MODE_ITEMS = (
-    ('SIDECAR', "Next to the .blend", "Save history in a folder next to the .blend file (fastest saves)"),
-    ('EMBED', "Inside the .blend", "Save history inside the .blend file (one file to share)"),
-    ('BOTH', "Both", "Save it in both places"),
-)
-
 CRASH_RECOVERY_ITEMS = (
     ('LAST_SAVED', "Last save", "Open files with the history as it was at the last save"),
     ('INTERRUPTED', "Unsaved steps", "Also bring back steps made after the last save if Blender closed unexpectedly"),
@@ -110,9 +104,6 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
     bl_idname = __package__  # replaced by register(base_package)
 
     # Saving
-    save_mode: EnumProperty(
-        name="Save history", description="Where the history is saved",
-        items=SAVE_MODE_ITEMS, default='SIDECAR', update=_update)
     crash_recovery: EnumProperty(
         name="On open", description="Which history to load when a file is opened",
         items=CRASH_RECOVERY_ITEMS, default='LAST_SAVED', update=_update)
@@ -213,7 +204,6 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
             return col
 
         col = section("Saving", 'FILE_TICK')
-        col.prop(self, "save_mode")
         col.prop(self, "crash_recovery")
 
         col = section("History", 'RECOVER_LAST')
