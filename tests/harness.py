@@ -44,9 +44,10 @@ def fresh(register=True):
     _registered[0] = True
     runtime.set_registry(runtime.Registry())
     runtime.reg().disabled.clear()
-    from hindsight.bl import datarec, guard, idmap
+    from hindsight.bl import datarec, guard, idmap, persistence
     datarec.forget()          # module state from an earlier test must not leak into this one
     idmap.forget()
+    persistence._PROTECT.update(sidecar=False, embed=False)     # what loading a file resets (no handler ran)
     guard.reset()
     prefs.FORCE["record_scope"] = None
     prefs.FORCE["record_kinds"] = None

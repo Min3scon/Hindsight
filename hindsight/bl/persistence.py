@@ -18,6 +18,7 @@ import binascii
 import hashlib
 import os
 import queue
+import shutil
 import tempfile
 import threading
 import uuid
@@ -58,7 +59,8 @@ OTHER_SAVE_TEXT = ("Steps from an interrupted session were found, but they belon
                    "file. They were not brought back")
 STALE_SIDECAR_TEXT = "The history folder is from another save of this file"
 
-# Set while loading a file whose history this version must not overwrite (newer format).
+# Set while loading a file whose history this version must not overwrite (newer format); "sidecar" also
+# when the history folder it points at is missing: saving keeps pointing at that folder.
 _PROTECT = {"sidecar": False, "embed": False}
 
 _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
@@ -184,6 +186,18 @@ def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) ->
     _J["journal"] = j
     _J["path"] = path
     return j
+
+
+def _carry_journal(blend_path: str) -> None:
+    """#56: a Save As whose history stayed with the last save. The journal since that save goes with the new
+    .blend, so a crash after it brings those steps back; the old .blend's journal is left as it was."""
+    j, old, new = _J["journal"], _J["path"], journal_path(blend_path)
+    if j is None or j.closed or old == new:
+        return
+    drain_journal_writer()
+    j.flush(fsync=True)
+    shutil.copyfile(old, new)
+    _open_journal(blend_path)
 
 
 def _current_blend() -> str:
@@ -353,7 +367,7 @@ def on_save_pre(*args) -> None:
     except Exception as e:
         log.error_once(("saved_prints", str(e)), f"could not note the recorded objects for saving: {e}", e)
     text = None
-    old = {}             # #48: the last save's copy, held until the new one is built
+    old = None           # #48: the last save's copy and its save id, held until the new ones are in
     try:
         _drain_packer()
         text = bpy.data.texts.get(TEXT_NAME)
@@ -364,32 +378,38 @@ def on_save_pre(*args) -> None:
             # The parts are the step blobs themselves (no copy); anything that can go wrong in
             # putting them together happens here, before the stored copy is touched.
             parts = persist.registry_parts(reg, _codec())
-            for key in (DATA_PROP, DATA_BIN_PROP):
+            # Blender's copy of the last saved history goes before the new one is built (held here instead).
+            # The held copy goes only once Blender holds the new one (#8 review): until then a failure puts
+            # it back. Cost: while Blender copies the new bytes, the last save's copy is held too.
+            old = {}
+            for key in (DATA_PROP, DATA_BIN_PROP, SAVE_ID_PROP):
                 if key in text:
-                    # Blender's copy of the last saved history goes before the new one is built (held here
-                    # until then): otherwise the old copy, the new bytes and Blender's new copy are all held.
                     old[key] = text[key]
                     del text[key]
             # R061: the bytes themselves (base64 cost time and a third more). Both keys are gone by now, which
             # matters: Blender cuts bytes at the first zero when it replaces an existing bytes property.
             data = persist.parts_to_bytes(parts)
             del parts
-            old.clear()
             text[DATA_BIN_PROP] = data
             del data
             text[SAVE_ID_PROP] = reg.save_id
-        # #48: the history always goes in the .blend. A folder from a newer
-        # Hindsight stays pointed at, so that Hindsight still finds it.
+        # #48: the history always goes in the .blend. A folder from a newer Hindsight, or one that
+        # is missing, stays pointed at, so its history is still found there.
         text[SIDECAR_PROP] = _PROTECT["sidecar"]
+        old = None
     except Exception as e:
         guard.fail("saving", e, "could not store undo history in the .blend")
         # #48 (option A), no folder: the .blend keeps the last save's history (put back if it was taken
         # out), its save id and where it pointed, and on_save_post keeps the crash journal that goes with it
         _FALLBACK["kept"] = True
         try:
-            for key, value in old.items():
-                text[key] = value
-            old.clear()
+            if old is not None:
+                for key in (DATA_BIN_PROP, SAVE_ID_PROP):      # this save's, as far as it got
+                    if key in text:
+                        del text[key]
+                for key, value in old.items():
+                    text[key] = value
+            old = None
             had = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text or text.get(SIDECAR_PROP))
             _note("ERROR", KEPT_LAST_SAVE_TEXT if had else NOT_STORED_TEXT)
         except Exception as e2:
@@ -407,9 +427,14 @@ def on_save_post(*args) -> None:
     current = _current_blend()
     if current and not _same_path(path, current):
         return   # "Save Copy": the session file itself did not change
+    _folder_message(path)
     if kept:
         # The .blend still holds the save before this one, and the journal goes with that save: keep it
-        runtime.missing_message[0] = None
+        # (on a Save As, at the new path)
+        try:
+            _carry_journal(path)
+        except Exception as e:
+            guard.fail("saving", e, "journal error on save")
         return
     try:
         j = _open_journal(path)
@@ -418,7 +443,13 @@ def on_save_post(*args) -> None:
         _mark_saved(j, path, getattr(runtime.reg(), "save_id", None))
     except Exception as e:
         guard.fail("saving", e, "journal error on save")
-    runtime.missing_message[0] = None
+
+
+def _folder_message(path) -> None:
+    """The sidebar message while the .blend points at a history folder that isn't next to it (#8 review)."""
+    missing = _PROTECT["sidecar"] and persist.sidecar_missing(path, True)
+    runtime.missing_message[0] = (MISSING_TEXT.format(folder=os.path.basename(persist.sidecar_dir(path)))
+                                  if missing else None)
 
 
 @bpy.app.handlers.persistent
@@ -556,10 +587,13 @@ def on_load_post(*args) -> None:
     text = bpy.data.texts.get(TEXT_NAME)
     reg = _load_registry(path, text)
 
-    if reg is None and path and text is not None and text.get(SIDECAR_PROP):
-        if persist.sidecar_missing(path, True):
-            folder = os.path.basename(persist.sidecar_dir(path))
-            runtime.missing_message[0] = MISSING_TEXT.format(folder=folder)
+    # The folder's history wasn't read: none came from the .blend, or the .blend's was saved by this build while
+    # the folder was missing (a beta 2 file saved both ways holds the folder's own copy, and no save id). Saving
+    # keeps pointing at the folder until it is back (#8 review).
+    if (path and text is not None and text.get(SIDECAR_PROP) and (reg is None or SAVE_ID_PROP in text)
+            and persist.sidecar_missing(path, True)):
+        _PROTECT["sidecar"] = True
+    _folder_message(path)
 
     recover = reg is not None and bool(path) and _recovery() == "INTERRUPTED"
     j = None

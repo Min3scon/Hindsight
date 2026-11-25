@@ -143,11 +143,12 @@ def check(book, file_state, where=""):
 
 
 # ------------------------------------------------------------------------------------------- saving
-def _save_fails_and_keeps_the_last_save(fails, tag):
-    """#48 (option A): building the history for the .blend fails in `fails` (out of memory). No history
-    folder is written: the .blend keeps the history of the save before (put back if it was taken out to
-    save memory) with the meshes of this one, its crash journal stays with it, and the user is told to
-    save again. Opening it must not play that history onto the meshes that changed since."""
+def _save_fails_and_keeps_the_last_save(fails, tag, fake=None, save_as=False):
+    """#48 (option A): building the history for the .blend fails in `fails` (out of memory; or `fake`
+    stands in for it). No history folder is written: the .blend keeps the history of the save before
+    (put back if it was taken out to save memory) with the meshes of this one, its crash journal stays
+    with it (on a Save As, at the new path), and the user is told to save again. Opening it must not
+    play that history onto the meshes that changed since."""
     setup()
     obs = make(("A", "B"))
     book = Book()
@@ -162,7 +163,9 @@ def _save_fails_and_keeps_the_last_save(fails, tag):
 
     def boom(*a, **k):
         raise MemoryError("test: out of memory building the stored history")
-    setattr(persist, fails, boom)
+    setattr(persist, fails, fake or boom)
+    if save_as:
+        path = os.path.join(TMP, f"kept_{tag}_as.blend")
     try:
         file_state = save(path)
     finally:
@@ -199,6 +202,18 @@ def test_embed_save_out_of_memory_keeps_the_history():
 def test_embed_save_fails_before_the_old_copy_is_touched():
     """Building the history fails before the last save's copy is taken out of the .blend."""
     _save_fails_and_keeps_the_last_save("registry_parts", "parts")
+
+
+def test_embed_save_fails_as_blender_stores_it():
+    """The new history is built, but Blender can't take its copy of it (stood in for by a value Blender
+    refuses): the last save's copy, taken out of the .blend to save memory, must still go back."""
+    _save_fails_and_keeps_the_last_save("parts_to_bytes", "store", fake=lambda parts: object())
+
+
+def test_embed_save_as_out_of_memory_takes_the_journal():
+    """A Save As that can't store the history: the new .blend keeps the last save's history, so the crash
+    journal since that save must go with it, or a crash loses every step since."""
+    _save_fails_and_keeps_the_last_save("parts_to_bytes", "save_as", save_as=True)
 
 
 def test_first_save_out_of_memory_keeps_the_history():

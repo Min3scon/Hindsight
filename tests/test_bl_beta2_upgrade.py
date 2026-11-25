@@ -139,6 +139,26 @@ def test_moved_without_its_folder():
     assert not runtime.load_notes, runtime.load_notes
 
 
+def test_saved_without_its_folder():
+    """#8 review: a beta 2 folder file opened and saved without its folder keeps pointing at the folder, and the
+    user is still told to keep it next to the .blend, however often it is saved; once the folder is back, so is
+    its history."""
+    blend, want = place("folder")
+    folder = os.path.splitext(blend)[0] + "_hindsight"
+    os.replace(folder, folder + "_away")
+    missing = persistence.MISSING_TEXT.format(folder="scene_hindsight")
+    SETTINGS.crash_recovery = "LAST_SAVED"
+    for what in ("saved", "saved again"):
+        open_file(blend)
+        bpy.ops.wm.save_mainfile()
+        assert runtime.missing_message[0] == missing, (what, runtime.missing_message[0])
+    open_file(blend)
+    assert runtime.missing_message[0] == missing, ("opened", runtime.missing_message[0])
+    os.replace(folder + "_away", folder)
+    open_file(blend)
+    check(want["S"], want["O"], "saved without its folder, then the folder put back")
+
+
 def test_folder_not_read_after_the_save():
     """#50: once a save has put the history in the .blend, beta 2's folder is never read again. A damaged
     folder, or one a newer Hindsight changed, left beside the file changes nothing and shows no message."""
@@ -227,7 +247,7 @@ if __name__ == "__main__":
     try:
         for t in (test_history_folder_file, test_history_inside_the_blend, test_saved_both_ways,
                   test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash, test_moved_without_its_folder,
-                  test_folder_not_read_after_the_save, test_history_folder_file_saved_out_of_memory,
+                  test_saved_without_its_folder, test_folder_not_read_after_the_save, test_history_folder_file_saved_out_of_memory,
                   test_a_newer_hindsights_folder_stays_pointed_at):
             H.run(t)
     finally:

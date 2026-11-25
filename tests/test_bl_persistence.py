@@ -106,7 +106,8 @@ def test_missing_sidecar_message():
     # deleted folder: same message
     path2 = os.path.join(TMP, "deleted.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path2)
-    assert runtime.missing_message[0] is None, "saving clears the message"
+    # #8 review: the folder's history was never read, so the .blend keeps pointing at a folder named after it
+    assert "deleted_hindsight" in (runtime.missing_message[0] or ""), runtime.missing_message[0]
     shutil.copy2(V1_FOLDER, path2)            # the V1 file again, its folder gone
     bpy.ops.wm.open_mainfile(filepath=path2)
     assert "History folder missing" in (runtime.missing_message[0] or "")
