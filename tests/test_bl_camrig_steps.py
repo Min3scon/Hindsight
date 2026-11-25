@@ -66,15 +66,17 @@ def _where():
             act.name if act else None, sorted(o.name for o in C.selected_objects), C.mode)
 
 
-def _frame_and_check_every_step():
+def _frame_and_check_every_step(setup=None):
     """Frame from the end of the history, then check what renders at every step against that camera.
-    Framing leaves the scene and every cursor as they were."""
+    Framing leaves the scene and every cursor as they were. setup(camera): before framing again."""
     sc = C.scene
     n = glen()
     assert n >= 2, n
     before = _where()
     sc.hindsight.movie_mode = True                      # makes the camera and frames
     assert _where() == before, (before, _where())
+    if setup is not None:
+        setup(camrig.rig(sc)["camera"])
     assert camrig.frame(sc)
     assert _where() == before, (before, _where())
     pts = []
