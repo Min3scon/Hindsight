@@ -12,7 +12,7 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from tests.test_bl_camrig_steps import _frame_and_check_every_step as every_step, _run, _start
-from tests.test_bl_camrig_steps import _rendered_points
+from tests.test_bl_camrig_steps import _rendered_points, glen
 from tests import test_bl_camrig_types as TY
 from hindsight.bl import runtime
 
@@ -182,11 +182,13 @@ def test_shape_keys():
     big = a.shape_key_add(name="Big")
     for p in big.data:
         p.co = p.co * 5
+    big.value = 0.0                         # D183: a key made from Python starts at 1.0 in 5.0 and later
     L.track_all()
-    for v in (1.0, 0.3, 0.6):               # D183: the first value change isn't a step (open)
+    for v in (1.0, 0.3, 0.6):
         a.data.shape_keys.key_blocks["Big"].value = v
         C.view_layer.update()
         L.tick_like("shape key")
+    assert glen() == 3, glen()              # each value change is a step
     every_step()
 
 
