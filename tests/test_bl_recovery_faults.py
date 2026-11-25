@@ -276,14 +276,16 @@ def test_embed_save_as_new_path_both_fail():
     with open(old, "rb") as fh:
         assert fh.read() == before, "the old .blend is as it was"
     book.stroke(obs["B"], 30)            # recorded after the failed save, then interrupted
-    for rec in ("LAST_SAVED", "INTERRUPTED"):
+    # INTERRUPTED first: opening with LAST_SAVED starts the journal again
+    for rec in ("INTERRUPTED", "LAST_SAVED"):
         SETTINGS.crash_recovery = rec
         interrupt(path)
         ha = runtime.history_of(bpy.data.objects["A"])
         assert ha is None or not ha.entries or ha.entries[-1].load().label == runtime.OUTSIDE_LABEL, \
             f"{rec}: A's history from the save before is never played onto this mesh"
         hb = runtime.history_of(bpy.data.objects["B"])
-        assert hb is not None and len(hb.entries) >= 3, (rec, hb)
+        # the new .blend kept the last save, so the crash journal since that save goes with it
+        assert hb is not None and len(hb.entries) == (4 if rec == "INTERRUPTED" else 3), (rec, hb)
         check(book, file_state, rec)
 
 

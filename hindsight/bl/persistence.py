@@ -191,6 +191,18 @@ def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) ->
     return j
 
 
+def _carry_journal(blend_path: str) -> None:
+    """#56: a Save As whose history stayed with the last save. The journal since that save goes with the new
+    .blend, so a crash after it brings those steps back; the old .blend's journal is left as it was."""
+    j, old, new = _J["journal"], _J["path"], journal_path(blend_path)
+    if j is None or j.closed or old == new:
+        return
+    drain_journal_writer()
+    j.flush(fsync=True)
+    shutil.copyfile(old, new)
+    _open_journal(blend_path)
+
+
 def _current_blend() -> str:
     try:
         return bpy.data.filepath or ""
@@ -519,8 +531,13 @@ def on_save_post(*args) -> None:
         return   # "Save Copy": the session file itself did not change
     if folder_failed:
         # The folder (or, kept, the .blend) still holds the save before this one, and the journal goes
-        # with that save: keep it. Otherwise the .blend names this save, so opening it knows the folder is
-        # older and its check of every mesh leaves out the histories that no longer fit (D46).
+        # with that save: keep it (on a Save As, at the new path). Otherwise the .blend names this save, so
+        # opening it knows the folder is older and its check of every mesh leaves out the histories that no
+        # longer fit (D46).
+        try:
+            _carry_journal(path)
+        except Exception as e:
+            guard.fail("saving", e, "journal error on save")
         runtime.missing_message[0] = None
         return
     try:
