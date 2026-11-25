@@ -237,6 +237,50 @@ def test_a_material_nothing_keeps_is_left_out():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_going_back_over_a_making_takes_away_what_nothing_keeps():
+    """#104 review: a text, material, world and node group made, then used with their fake user taken
+    off (the text has none from the start): going back over their making takes the uses away, then the
+    datablocks, though no fake user keeps them now, and says nothing about a use; going forward brings
+    them and the uses back."""
+    from hindsight.bl import log
+    L.fresh_scene()
+    L.track_all()
+    L.tick_like("baseline")
+    seq0 = L.max_seq()
+    a = bpy.data.objects["A"]
+    made = (bpy.data.texts.new("New.txt"), bpy.data.materials.new("NewMat"), bpy.data.worlds.new("NewWorld"),
+            bpy.data.node_groups.new("NewGroup", "GeometryNodeTree"))
+    for x in made:
+        x.use_fake_user = not isinstance(x, bpy.types.Text)
+    L.tick_like("make")
+    seq1 = L.max_seq()
+    a.data.materials.append(made[1])
+    C.scene.world = made[2]
+    a.modifiers.new("GN", "NODES").node_group = made[3]
+    for x in made:
+        x.use_fake_user = False
+    L.tick_like("use")
+    seq2 = L.max_seq()
+    names = lambda: [n for n, c in (("New.txt", bpy.data.texts), ("NewMat", bpy.data.materials),
+                                    ("NewWorld", bpy.data.worlds), ("NewGroup", bpy.data.node_groups))
+                     if c.get(n) is not None]
+    said, orig = [], log.warn
+    log.warn = said.append
+    try:
+        L.goto_after(seq0)
+        datarec_resolve()
+        assert not said, said
+        assert names() == [], names()
+        for s in (seq1, seq2):                  # forward one position at a time, as the walks above
+            L.goto_after(s)
+            datarec_resolve()
+            assert names() == ["New.txt", "NewMat", "NewWorld", "NewGroup"], (s, names())
+        assert a.data.materials[-1].name == "NewMat" and C.scene.world.name == "NewWorld"
+        assert a.modifiers["GN"].node_group.name == "NewGroup"
+    finally:
+        log.warn = orig
+
+
 def test_no_extra_work_without_loose_datablocks():
     """D152 costs nothing when the file has none of these datablocks: capture reads two empty inventories
     and nothing else, and a jump that doesn't change an inventory looks at no datablock."""
@@ -394,7 +438,7 @@ if __name__ == "__main__":
     for t in (test_text_made_and_deleted, test_unused_material_made_and_deleted, test_unused_world_made_and_deleted,
               test_going_back_over_a_making_keeps_what_is_used_now, test_loose_making_on_the_global_timeline,
               test_loose_making_survives_save_reload_and_recovery, test_a_material_nothing_keeps_is_left_out,
-              test_no_extra_work_without_loose_datablocks,
+              test_going_back_over_a_making_takes_away_what_nothing_keeps, test_no_extra_work_without_loose_datablocks,
               test_text_content_and_settings, test_unused_material_and_world, test_addon_data_on_any_datablock,
               test_material_an_object_uses_stays_with_the_object, test_many_unused_materials_bounded_cost):
         H.run(t)

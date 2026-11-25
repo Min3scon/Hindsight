@@ -79,7 +79,8 @@ def _own_prop(k: str) -> bool:
 def _skipped(idb, k: str) -> bool:
     """Not recorded: Hindsight's own properties, and the "cycles" group Blender writes on a camera at each
     save (Blender 5: in its add-on data), a copy of its panorama settings for older versions (#104: a
-    reopen read it as a change)."""
+    reopen read it as a change). The whole group is skipped, so anything an add-on keeps under that key
+    on a camera isn't recorded either."""
     return _own_prop(k) or (k == "cycles" and isinstance(idb, bpy.types.Camera) and not hasattr(idb, "cycles"))
 
 
