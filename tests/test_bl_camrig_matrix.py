@@ -12,6 +12,8 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from tests.test_bl_camrig_steps import _frame_and_check_every_step as every_step, _run, _start
+from tests.test_bl_camrig_steps import _rendered_points
+from tests import test_bl_camrig_types as TY
 from hindsight.bl import runtime
 
 C = bpy.context
@@ -301,6 +303,74 @@ def test_random_histories_with_random_cameras():
             raise AssertionError(f"seed {seed}: {e}") from e
 
 
+# ----------------------------------------------------------------------------- what changes with the frame
+def _every_frame(points=_rendered_points, tight=True):
+    """Create time lapse, then play every frame of the movie and check what renders there (points())
+    against its camera: the frame the time lapse shows a step on, and the frames in between."""
+    sc = C.scene
+    sc.hindsight.frames_per_step = 2
+    sc.frame_end = sc.frame_start                       # Create time lapse makes it the last key's frame
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    pts = []
+    for f in range(sc.frame_start, sc.frame_end + 1):
+        sc.frame_set(f)
+        here = points()
+        TY.check_in_frame(here, tight=False, msg=f"frame {f}")
+        pts.append(here)
+    TY.check_in_frame(np.vstack(pts), tight=tight, msg="every frame")
+
+
+def test_keyframe_animated_object():
+    """#117 review point 3: an object moved by its own keys is framed where they take it on every frame
+    the time lapse plays, between the frames that show a step too, not where it was when it was made."""
+    H.fresh()
+    for name, loc in (("A", (0, 0, 0)), ("B", (3, 0, 0))):
+        bpy.ops.mesh.primitive_cube_add(location=loc)
+        C.active_object.name = name
+    b = _ob("B")
+    for f, x in ((1, 3.0), (4, 30.0), (6, 3.0)):        # out and back between the frames steps are shown on
+        b.location.x = x
+        b.keyframe_insert("location", index=0, frame=f)
+    C.scene.frame_set(1)
+    L.track_all()
+    runtime.set_global(C, True)
+    _run(T.translate("A", (0, 1, 0)), T.translate("B", (0, 0, 0.5)), T.translate("A", (0, 1, 1)))
+    _every_frame()
+
+
+def test_grease_pencil_keys():
+    """#117 review point 3: a Grease Pencil drawing keyed on later frames is framed on every frame the
+    time lapse plays it (4.2's Grease Pencil by its box, a bound)."""
+    TY._start()
+    g = bpy.data.grease_pencils.new("Sketch")
+    layer = g.layers.new("Lines")
+    ob = TY._link("Sketch", g)
+    for f, x in ((1, 0.0), (4, 30.0), (6, 0.0)):
+        fr = layer.frames.new(f)
+        co = np.array([(x, 0, 0), (x + 2, 0, 1), (x, 0, 2)], np.float32)
+        if hasattr(fr, "drawing"):
+            fr.drawing.add_strokes([len(co)])
+            fr.drawing.attributes["position"].data.foreach_set("vector", co.reshape(-1))
+        else:
+            s = fr.strokes.new()
+            s.points.add(len(co))
+            s.points.foreach_set("co", co.reshape(-1))
+    C.scene.frame_set(1)
+    TY._record(ob)
+    _run(T.translate("Sketch", (0, 0, 1)), T.translate("Sketch", (0, 0, -1)))
+
+    def points():
+        if hasattr(layer, "current_frame"):
+            local, r = TY._attr_points(layer.current_frame().drawing)
+            return TY._world(TY._balls(local, r), TY._mw(ob))
+        s = layer.active_frame.strokes[0]
+        co = np.empty(len(s.points) * 3, np.float32)
+        s.points.foreach_get("co", co)
+        return TY._world(co.reshape(-1, 3), TY._mw(ob))
+    _every_frame(points, tight=hasattr(layer, "current_frame"))
+
+
 if __name__ == "__main__":
     for t in (test_sculpted_outward_then_shrunk, test_subdivided_and_grown_in_edit_mode,
               test_joined_and_separated, test_a_flat_plane_stood_up, test_a_100_to_1_shape_turned,
@@ -308,6 +378,7 @@ if __name__ == "__main__":
               test_displace_by_a_texture, test_geometry_nodes, test_armature, test_shape_keys,
               test_image_shapes_and_sensor_fits, test_lenses_18_to_135_mm,
               test_angle_and_height_at_their_extremes, test_random_histories,
-              test_random_histories_with_random_cameras):
+              test_random_histories_with_random_cameras, test_keyframe_animated_object,
+              test_grease_pencil_keys):
         H.run(t)
     H.finish()

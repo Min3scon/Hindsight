@@ -1016,7 +1016,10 @@ def _at_every_step(measure) -> bool:
     objects added late or deleted midway where they exist. False (nothing walked) without a timeline,
     in Edit Mode (a jump there would leave it: what is edited is measured as it is), and in the movie's
     frame change, a render or playback (where it would jump away from the step being shown).
-    shortcut: walks the whole history on every frame(); keep each step's hull if reframing gets slow."""
+    Once Create time lapse has keyed it (#117 review 3), every frame of the scene's range instead, each
+    showing the step the movie shows there: what changes with the frame (an object's own keys, Grease
+    Pencil keys, a Build modifier) is measured as it renders on that frame.
+    shortcut: walks the whole movie on every frame(); keep each frame's hull if reframing gets slow."""
     ctx = bpy.context
     if getattr(ctx, "mode", "OBJECT").startswith("EDIT") or runtime.IN_HANDLER[0] or _render_running() or _playing():
         return False
@@ -1030,21 +1033,41 @@ def _at_every_step(measure) -> bool:
     act = vl.objects.active
     act, mode = (act.name, act.mode) if act is not None else (None, "OBJECT")
     sel = {o.name for o in vl.objects if o.select_get()}
+    from . import movie as mv
+    sc = ctx.scene
+    keyed = mv._step_fcurve(sc) is not None
+    n = len(groups)
+
+    def plays():
+        if not keyed:
+            yield from range(n + 1)
+            return
+        for f in range(sc.frame_start, sc.frame_end + 1):
+            if f != sc.frame_current:
+                sc.frame_set(f)
+            yield max(0, min(n, sc.hindsight.movie_step))    # the step the movie shows on this frame
+
+    frame_was = (sc.frame_current, sc.frame_subframe)
+    busy = mv._BUSY[0]
+    mv._BUSY[0] = True                  # a frame change here doesn't play the movie's own jump
     movie = getattr(runtime.goto, "_movie", False)
     runtime.goto._movie = True          # #113: as the time lapse plays: the scene's camera and frame range stay
     with runtime.suspended():
         try:
-            for g in range(len(groups) + 1):
+            for g in plays():
                 runtime.global_goto(ctx, g, False)        # not final: no undo entry, no mode switch
                 measure()
         finally:
             try:
+                if (sc.frame_current, sc.frame_subframe) != frame_was:
+                    sc.frame_set(frame_was[0], subframe=frame_was[1])
                 runtime.global_goto(ctx, here, False)
                 for h in runtime.reg().histories.values():     # a cursor the timeline can't name: as it was
                     if h.cursor != was.get(h.uid, h.cursor):
                         runtime._goto_history(h, was[h.uid], False)
             finally:
                 runtime.goto._movie = movie
+                mv._BUSY[0] = busy
             vl.update()                                    # its objects again, after those made and removed
             for o in vl.objects:                           # one made again on the way: selected,
                 if o.name in sel and not o.select_get():   # active and in its mode as before
