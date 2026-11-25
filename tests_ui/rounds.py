@@ -12,7 +12,7 @@ H beta 3 in real windows: paint modes, Image Editor, Multires, Dyntopo, Movie Mo
 
 --big adds the 10,000-step session on the 100k model to Round C.
 Writes .tmp/rounds/pass<N>/summary.json and summary.md; copies a few screenshots of generated
-test models to test_rounds/pass<N>/ (WebP). Never copies anything from Round E (own files).
+test models to .tmp/rounds/pass<N>/shots (WebP). Never copies anything from Round E (own files).
 """
 import argparse
 import json
@@ -92,7 +92,7 @@ def main():
     if pdir.exists():
         shutil.rmtree(pdir)
     pdir.mkdir(parents=True)
-    shots_dest = ROOT / "test_rounds" / f"pass{a.pass_no}"
+    shots_dest = pdir / "shots"
     results = []
     t0 = time.time()
 

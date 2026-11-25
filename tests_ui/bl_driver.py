@@ -11,6 +11,7 @@ reads top to bottom like a user session:
 
 Results go to <out>/result.json; screenshots to <out>/shots/. Blender quits at the end.
 """
+import contextlib
 import bpy
 import importlib.util
 import io
@@ -33,37 +34,20 @@ class _Tee(io.TextIOBase):
         self.sink = sink
 
     def write(self, s):
-        try:
+        with contextlib.suppress(Exception):
             self.real.write(s)
             self.real.flush()
-        except Exception:
-            pass
         self.sink.append(s)
         return len(s)
 
     def flush(self):
-        try:
+        with contextlib.suppress(Exception):
             self.real.flush()
-        except Exception:
-            pass
 
 
 CAPTURED = []
 sys.stdout = _Tee(sys.__stdout__, CAPTURED)
 sys.stderr = _Tee(sys.__stderr__, CAPTURED)
-
-
-def _expand_covers(covers: str):
-    """'obj.transforms, obj.parenting: OPS STEPS; sculpt.masks: EXACT' -> [[row, item], ...]."""
-    out = []
-    for group in (covers or "").split(";"):
-        if not group.strip():
-            continue
-        rows, _, items = group.partition(":")
-        if not items.strip():
-            raise ValueError(f"covers group without gate items: {group!r}")
-        out += [[r.strip(), i] for r in rows.split(",") if r.strip() for i in items.split()]
-    return out
 
 
 class Driver:
@@ -82,12 +66,10 @@ class Driver:
     def log(self, *a):
         print("[driver %.1fs]" % (time.time() - self.t0), *a)
 
-    def check(self, name, ok, detail="", covers=""):
-        """A hard check. covers: the COVERAGE rows and gate items (tools/gate_spec.py) it is evidence
-        for, as 'row, row: ITEM ITEM; row: ITEM' (read by tools/make_evidence.py)."""
+    def check(self, name, ok, detail=""):
+        """A hard check."""
         ok = bool(ok)
-        self.checks.append({"name": name, "ok": ok, "detail": str(detail)[:2000],
-                            "covers": _expand_covers(covers)})
+        self.checks.append({"name": name, "ok": ok, "detail": str(detail)[:2000]})
         self.log(("PASS " if ok else "FAIL ") + name + (" -- " + str(detail)[:300] if detail != "" else ""))
         return ok
 
@@ -285,10 +267,8 @@ def _finish(error=None):
         return
 
     def _quit():
-        try:
+        with contextlib.suppress(Exception):
             bpy.context.preferences.view.use_save_prompt = False
-        except Exception:
-            pass
         try:
             win = bpy.context.window_manager.windows[0]
             with bpy.context.temp_override(window=win):

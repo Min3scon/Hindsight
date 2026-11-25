@@ -11,9 +11,8 @@ import shutil
 import tempfile
 
 import bpy
-import numpy as np
 import tests.harness as H
-from hindsight.bl import meshio, runtime
+from hindsight.bl import runtime
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -113,12 +112,11 @@ def test_save_and_reload():
 
 
 def test_journal_replay_restores_weight_steps():
-    from hindsight.core import journal, persist
     ob, nv = setup()
     seen = []
     runtime.journal_hook = lambda t, header, fn=None: seen.append((t, header, fn() if fn else None))
     try:
-        states = drive(ob, strokes(ob, nv))
+        drive(ob, strokes(ob, nv))
     finally:
         runtime.journal_hook = None
     steps = [x for x in seen if x[0] == "STEP"]
@@ -135,9 +133,7 @@ def test_native_undo_moves_the_cursor():
     states = drive(ob, strokes(ob, nv)[:3])
     h = runtime.history_of(ob)
     # Blender's undo puts the weights of the previous stroke back
-    arrays = {meshio.vg_key(g): a for g, a in
-              ((k.split("|")[0][len(meshio.VG_PREFIX):], v) for k, v in meshio.read_weights(ob, ob.data).items())}
-    prev = runtime._STATES[runtime.obj_uid(ob)]
+    runtime._STATES[runtime.obj_uid(ob)]
     runtime.goto(C, 2)
     assert weights(ob) == states[2]
     runtime.goto(C, 3)
@@ -160,7 +156,7 @@ def test_without_vertex_groups_nothing_breaks():
     g = ob.vertex_groups.new(name="First")          # Blender makes a group on the first stroke
     g.add(list(range(0, 50)), 0.4, "REPLACE")
     assert H.commit(ob) is not None
-    h = runtime.history_of(ob)
+    runtime.history_of(ob)
     runtime.goto(C, 0)
     assert weights(ob).get("First", {}) == {}, "going back kept the weights of the first stroke"
     runtime.goto(C, 1)
@@ -198,7 +194,7 @@ def test_group_added_between_strokes():
 
 def test_group_removed_between_strokes():
     ob, nv = setup()
-    ga, gb = ob.vertex_groups["Arm"], ob.vertex_groups["Leg"]
+    ga, _ = ob.vertex_groups["Arm"], ob.vertex_groups["Leg"]
     states = [weights(ob)]
     ga.add(list(range(0, 60, 3)), 0.8, "REPLACE")
     assert H.commit(ob) is not None
@@ -210,7 +206,7 @@ def test_group_removed_between_strokes():
     ob.vertex_groups["Arm"].add(list(range(310, 350)), 0.9, "REPLACE")
     assert H.commit(ob) is not None
     states.append(weights(ob))
-    h = runtime.history_of(ob)
+    runtime.history_of(ob)
     for pos in [2, 1, 0, 3, 1, 3, 0, 2]:
         runtime.goto(C, pos)
         got = weights(ob)

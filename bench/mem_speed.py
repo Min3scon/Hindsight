@@ -15,7 +15,6 @@ import tempfile
 import time
 
 import bpy
-import numpy as np
 import tests.harness as H
 from bench.bench_bl import Stroker, make_mesh, scrub
 from bench.mem_profile import rebuild

@@ -8,6 +8,9 @@ from hindsight.bl import morph as BM
 from hindsight.core import morph as CM
 from hindsight.core.types import POSITION_KEY
 
+sys.path.insert(0, os.path.dirname(__file__))   # tests/: the reference copies (Blender's --python adds no path)
+from reference import morph_dab as R  # noqa: E402
+
 C = bpy.context
 
 
@@ -39,12 +42,12 @@ def radius_for_fraction(co, centre, frac):
 
 
 def test_core_falloff_blend():
-    w = CM.falloff(np.array([0.0, 0.5, 1.0, 2.0]), 1.0)
+    w = R.falloff(np.array([0.0, 0.5, 1.0, 2.0]), 1.0)
     assert w[0] == 1.0 and abs(w[1] - 0.5625) < 1e-12 and w[2] == 0.0 and w[3] == 0.0
     cur = np.zeros(9, np.float32)
     tgt = np.arange(9, dtype=np.float32)
     mask = np.array([0.0, 0.5, 1.0], np.float32)
-    CM.morph_blend(cur, tgt, np.array([0, 1, 2]), np.ones(3), 1.0, mask)
+    R.morph_blend(cur, tgt, np.array([0, 1, 2]), np.ones(3), 1.0, mask)
     assert np.array_equal(cur[:3], tgt[:3]) and np.allclose(cur[3:6], tgt[3:6] * 0.5) and not cur[6:].any()
 
 

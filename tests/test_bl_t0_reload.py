@@ -16,7 +16,6 @@ import bpy
 import tests.harness as H
 from tests import t0_gate_lib as L
 from tests import t0_ops as T0
-from tests.gate import covers
 from hindsight.bl import persistence, runtime
 from hindsight.core import persist
 from hindsight.core.types import SETTINGS
@@ -33,7 +32,9 @@ def save_and_reopen(path, mode):
     assert os.path.isdir(side) == (mode in ("SIDECAR", "BOTH")), (mode, os.path.isdir(side))
     bpy.ops.wm.open_mainfile(filepath=path)
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    assert text is not None and ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
+    # #9: a history read from the .blend (Embed) is held by Hindsight and Blender's copy goes; one read from
+    # the folder (Both) leaves it
+    assert text is not None and ("hindsight_data_bin" in text) == (mode == "BOTH")
     assert "hindsight_data" not in text           # R061: the base64 copy is never written
 
 
@@ -55,22 +56,18 @@ def reload_all_rows(mode):
     SETTINGS.save_mode = "SIDECAR"
 
 
-@covers(ROWS, "RELOAD.SIDECAR")
 def test_reload_sidecar():
     reload_all_rows("SIDECAR")
 
 
-@covers(ROWS, "RELOAD.EMBED")
 def test_reload_embed():
     reload_all_rows("EMBED")
 
 
-@covers(ROWS, "RELOAD.BOTH")
 def test_reload_both():
     reload_all_rows("BOTH")
 
 
-@covers(ROWS, "RELOAD.RENAME")
 def test_renamed_object_keeps_its_history():
     """Renaming (F2) isn't a sculpt step; the history stays with the object, before and after a
     reload, and every position is still exact (the checks look objects up by their new name)."""
