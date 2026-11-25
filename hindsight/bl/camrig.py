@@ -350,7 +350,16 @@ def ensure(scene, reframe: bool = True, take: bool = False) -> dict:
         if "camera" in have:
             _take_camera(scene, have["camera"], take and "camera" in res["created"])
     if have and (reframe or res["created"]):
-        res["framed"] = frame(scene)
+        if runtime.IN_HANDLER[0] and not reframe and "camera" not in res["created"]:
+            # #117 review 1: the movie's frame handler made the lamps. It can't walk the history, so the
+            # camera keeps its shot and the lamps go where the last framing put them (a sun lights the
+            # same from anywhere: only their place in the viewport would differ).
+            sh = scene.hindsight
+            basis = np.asarray(framing.view_basis(sh.movie_view_angle, sh.movie_view_height), np.float64)
+            with runtime.suspended():
+                _place_lights(have, basis, *_LIT.get(scene.name_full, ((0.0, 0.0, 0.0), 1.0)))
+        else:
+            res["framed"] = frame(scene)
     return res
 
 
@@ -376,6 +385,7 @@ def _np_matrix(m) -> np.ndarray:
 _PAST = {}             # (history uid, object uid) -> (signature, extents of the mesh's other history positions)
 _BOUND_HIT = [False]   # set by a measure that held the object being measured by a safe bound, not exactly
 _BOUNDED = {}          # scene name -> names of the objects the last placement held by a safe bound
+_LIT = {}              # scene name -> (center, radius) the last placement put the lamps around
 
 
 def bounded(scene) -> tuple:
@@ -1154,6 +1164,7 @@ def frame(scene) -> bool:
             if cam is not None:
                 cam.matrix_world = _basis_matrix(basis, back * 10.0)
                 _camera_data(cam.data, 1.0, 11.0)
+            _LIT[scene.name_full] = ((0.0, 0.0, 0.0), 1.0)
             _place_lights(have, basis, (0.0, 0.0, 0.0), 1.0)
             return False
         if cam is not None:
@@ -1162,6 +1173,7 @@ def frame(scene) -> bool:
         lo, hi = np.asarray(bnd[0], np.float64), np.asarray(bnd[1], np.float64)
         center = (lo + hi) * 0.5
         radius = max(float(np.linalg.norm(hi - lo)) * 0.5, 1e-3)
+        _LIT[scene.name_full] = (center, radius)
         _place_lights(have, basis, center, radius)
     return True
 
@@ -1325,6 +1337,7 @@ def _on_load_post(*_args) -> None:
     _PAST.clear()
     _REACH.clear()
     _BOUNDED.clear()                   # its scenes may have the same names
+    _LIT.clear()
 
 
 def register():

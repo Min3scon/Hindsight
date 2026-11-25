@@ -567,11 +567,58 @@ def test_lamps_follow_the_users_light_on_every_frame():
         assert (lamps & set(camrig.rig(sc))) == (set() if own else lamps), (f, sorted(camrig.rig(sc)))
 
 
+def test_lamps_made_on_a_frame_leave_the_camera_where_it_is():
+    """#117 review 1: the frame handler makes the lamps at a step where the jump took the user's light
+    away. It can't walk the history there, so framing again placed the camera from that one step (here
+    none: A comes later), and every later frame of a render used that shot."""
+    from hindsight.bl import camrig, datarec
+    from tests import t1_gate_lib as L
+    H.fresh()
+    sc = C.scene
+    light = bpy.data.objects.new("Light", bpy.data.lights.new("Light", "POINT"))
+    sc.collection.objects.link(light)
+    datarec.record_file_default()
+    bpy.data.objects.remove(light)
+    L.tick_like("Delete")
+    H.make_mesh(1200, "A", (3, 1, 0))
+    L.tick_like("add A")
+    runtime.set_global(C, True)
+    sh = sc.hindsight
+    sh.movie_camera = sh.movie_lighting = True
+    sh.movie_mode = True
+    sh.frames_per_step = 1
+    sc.frame_set(sc.frame_start)
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    cam = camrig.rig(sc)["camera"]
+
+    def shot():
+        return [v for r in cam.matrix_world for v in r] + [cam.data.clip_start, cam.data.clip_end]
+
+    def lamps():
+        return {r: [tuple(v) for v in ob.matrix_world] for r, ob in camrig.rig(sc).items() if r != "camera"}
+
+    def same(a, b, msg):
+        import numpy as np
+        assert np.allclose(np.array(a), np.array(b), atol=1e-6), (msg, a, b)
+
+    want = shot()
+    for f in (sc.frame_start + 1, sc.frame_start + 2, sc.frame_start, sc.frame_start + 2):
+        sc.frame_set(f)
+        same(shot(), want, f"camera on frame {f}")
+    made = lamps()
+    assert set(made) == set(camrig.LIGHT_ROLES), sorted(made)
+    camrig.on_settings_changed(C)          # a full framing, outside the handler: the same shot and lamps
+    same(shot(), want, "camera framed again")
+    for r, m in lamps().items():
+        same(m, made[r], f"{r} as the handler placed it")
+
+
 for f in [test_create_time_lapse_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
           test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
-          test_create_time_lapse_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame]:
+          test_create_time_lapse_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame,
+          test_lamps_made_on_a_frame_leave_the_camera_where_it_is]:
     H.run(f)
 H.finish()
