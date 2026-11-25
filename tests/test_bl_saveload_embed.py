@@ -23,7 +23,6 @@ def _record(ob, seeds):
 
 def test_embed_bytes_are_the_history_file():
     H.fresh()
-    SETTINGS.save_mode = "BOTH"
     ob = H.make_mesh(1500, name=NAME)
     H.enter(ob, "SCULPT")
     _record(ob, range(20, 26))
@@ -41,9 +40,7 @@ def test_embed_bytes_are_the_history_file():
         H.enter(ob, "SCULPT")
         _record(ob, [40 + round_])
         H.enter(ob, "OBJECT")
-    SETTINGS.save_mode = "EMBED"
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    shutil.rmtree(persist.sidecar_dir(path), ignore_errors=True)
     bpy.ops.wm.open_mainfile(filepath=path)
     h = runtime.history_of(bpy.data.objects[NAME])
     assert h is not None and len(h.entries) == 8, None if h is None else len(h.entries)

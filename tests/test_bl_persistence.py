@@ -14,9 +14,8 @@ V1_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures",
 NAME = "Sculpty"
 
 
-def setup(save_mode="SIDECAR", recovery="LAST_SAVED"):
+def setup(recovery="LAST_SAVED"):
     H.fresh()
-    SETTINGS.save_mode = save_mode
     SETTINGS.crash_recovery = recovery
     runtime.missing_message[0] = None
 
@@ -28,7 +27,7 @@ def strokes(ob, seeds, states):
         states.append(H.snapshot(ob))
 
 
-def sculpt_and_save(path, n=4, mode="SIDECAR"):
+def sculpt_and_save(path, n=4):
     ob = H.make_mesh(1500, name=NAME)
     H.enter(ob, "SCULPT")
     states = [H.snapshot(ob)]
@@ -54,16 +53,16 @@ def check_scrub(ob, states, order=None):
         H.assert_same(H.snapshot(ob), states[k], f"goto {k}")
 
 
-def roundtrip(mode):
-    setup(mode)
-    path = os.path.join(TMP, f"rt_{mode.lower()}.blend")
-    states = sculpt_and_save(path, 4, mode)
-    assert not os.path.isdir(persist.sidecar_dir(path)), f"{mode}: #48: a save writes no history folder"
+def roundtrip(tag):
+    setup()
+    path = os.path.join(TMP, f"rt_{tag}.blend")
+    states = sculpt_and_save(path, 4)
+    assert not os.path.isdir(persist.sidecar_dir(path)), "#48: a save writes no history folder"
     ob = reopen(path)
     assert runtime.missing_message[0] is None
     text = bpy.data.texts.get(persistence.TEXT_NAME)
     assert text is not None and text.use_fake_user
-    assert not text.get("sidecar") and "hindsight_data_bin" in text, mode     # #48: whatever the mode
+    assert not text.get("sidecar") and "hindsight_data_bin" in text     # #48: the history is in the .blend
     assert "hindsight_data" not in text           # R061: the base64 copy is never written
     h = runtime.history_of(ob)
     assert h is not None, "history not restored"
@@ -73,16 +72,12 @@ def roundtrip(mode):
     return path, ob, states
 
 
-def test_roundtrip_sidecar():
-    roundtrip("SIDECAR")
+def test_roundtrip():
+    roundtrip("once")
 
 
-def test_roundtrip_embed():
-    roundtrip("EMBED")
-
-
-def test_roundtrip_both_and_resave():
-    path, ob, states = roundtrip("BOTH")
+def test_roundtrip_and_resave():
+    path, ob, states = roundtrip("resave")
     # History persists across further sessions: continue sculpting, save again, reopen.
     runtime.goto(C, 4)
     strokes(ob, [99], states)
@@ -94,22 +89,10 @@ def test_roundtrip_both_and_resave():
     check_scrub(ob, states, [5, 0, 5, 3])
 
 
-def test_embed_survives_without_sidecar():
-    setup("BOTH")
-    path = os.path.join(TMP, "both_nofolder.blend")
-    states = sculpt_and_save(path, 4)
-    assert not os.path.isdir(persist.sidecar_dir(path))     # #48: Both writes no folder either
-    ob = reopen(path)
-    assert runtime.missing_message[0] is None
-    h = runtime.history_of(ob)
-    assert len(h.entries) == 4 and h.cursor == 4
-    check_scrub(ob, states, [0, 4])
-
-
 def test_missing_sidecar_message():
     # #48: no save writes a folder any more; a .blend V1 saved with its history in one (Save history:
     # next to the .blend, its default) still says when the folder is missing
-    setup("SIDECAR")
+    setup()
     moved = os.path.join(TMP, "renamed.blend")
     shutil.copy2(V1_FOLDER, moved)            # .blend renamed; its folder keeps the old name
     shutil.copytree(os.path.join(os.path.dirname(V1_FOLDER), "scene_hindsight"), os.path.join(TMP, "scene_hindsight"))
@@ -128,7 +111,7 @@ def test_missing_sidecar_message():
     bpy.ops.wm.open_mainfile(filepath=path2)
     assert "History folder missing" in (runtime.missing_message[0] or "")
     # a file that never had a sidecar shows nothing
-    setup("EMBED")
+    setup()
     path3 = os.path.join(TMP, "embedded_only.blend")
     sculpt_and_save(path3, 1)
     reopen(path3)
@@ -136,7 +119,7 @@ def test_missing_sidecar_message():
 
 
 def interrupted_session(recovery, tag):
-    setup("SIDECAR", recovery)
+    setup(recovery)
     path = os.path.join(TMP, f"crash_{tag}.blend")
     states = sculpt_and_save(path, 2)
     j = persistence.current_journal()
@@ -198,8 +181,7 @@ def test_journal_location_and_hook():
     assert runtime.journal_hook is not None
 
 
-for f in [test_roundtrip_sidecar, test_roundtrip_embed, test_roundtrip_both_and_resave,
-          test_embed_survives_without_sidecar, test_missing_sidecar_message,
+for f in [test_roundtrip, test_roundtrip_and_resave, test_missing_sidecar_message,
           test_crash_recovery_interrupted, test_crash_recovery_last_saved,
           test_journal_location_and_hook]:
     H.run(f)

@@ -45,7 +45,6 @@ def make_override(lib):
 def test_override_keeps_its_history_on_reload():
     lib = make_library()
     H.fresh()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "LAST_SAVED"
     prefs.FORCE["record_scope"] = "EVERYTHING"
     o = make_override(lib)

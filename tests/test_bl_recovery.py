@@ -21,7 +21,6 @@ NAME = "Sculpty"
 
 def setup():
     H.fresh()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "INTERRUPTED"
     SETTINGS.max_steps = 10000
     runtime.missing_message[0] = None
@@ -423,7 +422,6 @@ def test_steps_after_values_changed_without_hindsight():
         L.tick_like(o.label)
 
     def configure():
-        SETTINGS.save_mode = "SIDECAR"
         SETTINGS.crash_recovery = "INTERRUPTED"
 
     L.fresh_scene()

@@ -1,7 +1,6 @@
 """Tier 0 gate, save and reload (gate items RELOAD.*), headless.
 
-Each sculpting row's recorded run is saved under each Save history value (the history always goes in
-the .blend, #48); reopened; and checked again exactly like right after recording (every object's
+Each sculpting row's recorded run is saved (the history goes in the .blend, #48); reopened; and checked again exactly like right after recording (every object's
 history at every position, the global timeline). A renamed object keeps its history, also after a
 reload.
 
@@ -17,20 +16,18 @@ from tests import t0_gate_lib as L
 from tests import t0_ops as T0
 from hindsight.bl import persistence, runtime
 from hindsight.core import persist
-from hindsight.core.types import SETTINGS
 
 C = bpy.context
 ROWS = ("sculpt.positions", "sculpt.masks", "sculpt.colors", "sculpt.topology", "sculpt.editvisit")
 TMP = tempfile.mkdtemp(prefix="hs_t0_reload_")
 
 
-def save_and_reopen(path, mode):
-    SETTINGS.save_mode = mode
+def save_and_reopen(path):
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    assert not os.path.isdir(persist.sidecar_dir(path)), f"{mode}: #48: a save writes no history folder"
+    assert not os.path.isdir(persist.sidecar_dir(path)), "#48: a save writes no history folder"
     bpy.ops.wm.open_mainfile(filepath=path)
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    assert text is not None and "hindsight_data_bin" in text, mode
+    assert text is not None and "hindsight_data_bin" in text
     assert "hindsight_data" not in text           # R061: the base64 copy is never written
 
 
@@ -39,25 +36,11 @@ def recheck(r):
     L.check_global(r)
 
 
-def reload_all_rows(mode):
+def test_reload():
     for row in ROWS:
         r = L.Run(T0.sequences()[row])
-        path = os.path.join(TMP, f"{row.replace('.', '_')}_{mode.lower()}.blend")
-        save_and_reopen(path, mode)
+        save_and_reopen(os.path.join(TMP, f"{row.replace('.', '_')}.blend"))
         recheck(r)
-    SETTINGS.save_mode = "SIDECAR"
-
-
-def test_reload_sidecar():
-    reload_all_rows("SIDECAR")
-
-
-def test_reload_embed():
-    reload_all_rows("EMBED")
-
-
-def test_reload_both():
-    reload_all_rows("BOTH")
 
 
 def test_renamed_object_keeps_its_history():
@@ -76,10 +59,10 @@ def test_renamed_object_keeps_its_history():
         r.states = [{k + " renamed": v for k, v in st.items()} for st in r.states]
         r.lens = [{k + " renamed": v for k, v in ln.items()} for ln in r.lens]
         recheck(r)
-        save_and_reopen(os.path.join(TMP, f"{row.replace('.', '_')}_renamed.blend"), "SIDECAR")
+        save_and_reopen(os.path.join(TMP, f"{row.replace('.', '_')}_renamed.blend"))
         recheck(r)
 
 
-for fn in (test_reload_sidecar, test_reload_embed, test_reload_both, test_renamed_object_keeps_its_history):
+for fn in (test_reload, test_renamed_object_keeps_its_history):
     H.run(fn)
 H.finish()

@@ -24,7 +24,6 @@ MAIN = threading.get_ident()
 
 def setup(big=0):
     H.fresh()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "INTERRUPTED"
     persistence.BIG_RECORD[0] = big
 

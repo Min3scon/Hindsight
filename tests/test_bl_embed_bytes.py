@@ -10,14 +10,12 @@ import bpy
 import tests.harness as H
 from hindsight.bl import persistence, runtime
 from hindsight.core import persist
-from hindsight.core.types import SETTINGS
 
 C = bpy.context
 
 
 def recorded(n=5):
     H.fresh()
-    SETTINGS.save_mode = "EMBED"
     ob = H.make_mesh(3000, name="E")
     H.enter(ob, "SCULPT")
     for k in range(n):

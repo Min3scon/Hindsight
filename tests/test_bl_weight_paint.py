@@ -96,7 +96,6 @@ def test_save_and_reload():
     ob, nv = setup()
     states = drive(ob, strokes(ob, nv))
     H.enter(ob, "OBJECT")
-    SETTINGS.save_mode = "SIDECAR"
     path = os.path.join(TMP, "wp.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
@@ -219,7 +218,6 @@ def test_group_removed_between_strokes():
 def test_crash_recovery_replays_weight_steps():
     from hindsight.core.types import SETTINGS as S
     ob, nv = setup()
-    S.save_mode = "SIDECAR"
     S.crash_recovery = "INTERRUPTED"
     ops = strokes(ob, nv)
     states = drive(ob, ops[:2])

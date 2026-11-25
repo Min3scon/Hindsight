@@ -25,9 +25,8 @@ C = bpy.context
 TMP = tempfile.mkdtemp(prefix="hindsight_recovery_faults_")
 
 
-def setup(mode="SIDECAR", recovery="INTERRUPTED"):
+def setup(recovery="INTERRUPTED"):
     H.fresh()
-    SETTINGS.save_mode = mode
     SETTINGS.crash_recovery = recovery
     SETTINGS.max_steps = 10000
     runtime.missing_message[0] = None
@@ -144,12 +143,12 @@ def check(book, file_state, where=""):
 
 
 # ------------------------------------------------------------------------------------------- saving
-def _save_fails_and_keeps_the_last_save(fails, tag, mode):
+def _save_fails_and_keeps_the_last_save(fails, tag):
     """#48 (option A): building the history for the .blend fails in `fails` (out of memory). No history
     folder is written: the .blend keeps the history of the save before (put back if it was taken out to
     save memory) with the meshes of this one, its crash journal stays with it, and the user is told to
     save again. Opening it must not play that history onto the meshes that changed since."""
-    setup(mode)
+    setup()
     obs = make(("A", "B"))
     book = Book()
     for s in range(3):
@@ -194,12 +193,12 @@ def _save_fails_and_keeps_the_last_save(fails, tag, mode):
 def test_embed_save_out_of_memory_keeps_the_history():
     """The last save's copy is taken out of the .blend before the new one is built (so three copies are
     never held at once); building then runs out of memory. Before #48 the history went to a folder."""
-    _save_fails_and_keeps_the_last_save("parts_to_bytes", "bytes", "SIDECAR")
+    _save_fails_and_keeps_the_last_save("parts_to_bytes", "bytes")
 
 
 def test_embed_save_fails_before_the_old_copy_is_touched():
     """Building the history fails before the last save's copy is taken out of the .blend."""
-    _save_fails_and_keeps_the_last_save("registry_parts", "parts", "EMBED")
+    _save_fails_and_keeps_the_last_save("registry_parts", "parts")
 
 
 def test_first_save_out_of_memory_keeps_the_history():
@@ -244,7 +243,7 @@ def test_save_with_recording_paused_after_changes():
     """Strokes made while an object's recording is paused aren't steps. Saved like that and opened
     again, the file's mesh became the history's last state: turning recording on found nothing to
     record, and going back played the steps onto a mesh they weren't made on."""
-    setup("SIDECAR", "LAST_SAVED")
+    setup("LAST_SAVED")
     obs = make(("A",))
     book = Book()
     for s in range(3):
@@ -271,30 +270,29 @@ def test_blend1_renamed_back():
     """After a crash the user puts back the previous save (the .blend1 Blender keeps), with the journal
     of the newer save still there. Its records are positions in the newer history: replaying them onto
     the older one gave shapes that never existed. They belong to another save and are left alone.
-    #48: the history is in the .blend (and its .blend1) whatever Save history says."""
-    for mode in ("EMBED", "SIDECAR"):
-        setup(mode)
-        obs = make(("A",))
-        book = Book()
-        for s in range(3):
-            book.stroke(obs["A"], s)
-        path = os.path.join(TMP, f"backup_{mode}.blend")
-        old_state = save(path)
-        for s in range(3):
-            book.stroke(obs["A"], 10 + s)
-        runtime.goto(C, 2)
-        book.stroke(obs["A"], 20)
-        save(path)
-        book.stroke(obs["A"], 30)
-        book.stroke(obs["A"], 31)
-        to_object_mode()
-        persistence._close_journal()
-        shutil.copyfile(path + "1", path)                   # the .blend1 put back
-        bpy.ops.wm.open_mainfile(filepath=path)
-        h = runtime.history_of(bpy.data.objects["A"])
-        assert h is not None and len(h.entries) == 3 and h.cursor == 3, (mode, h)
-        assert persistence.OTHER_SAVE_TEXT in notes(), notes()
-        check(book, old_state, mode)
+    #48: the history is in the .blend (and its .blend1)."""
+    setup()
+    obs = make(("A",))
+    book = Book()
+    for s in range(3):
+        book.stroke(obs["A"], s)
+    path = os.path.join(TMP, "backup.blend")
+    old_state = save(path)
+    for s in range(3):
+        book.stroke(obs["A"], 10 + s)
+    runtime.goto(C, 2)
+    book.stroke(obs["A"], 20)
+    save(path)
+    book.stroke(obs["A"], 30)
+    book.stroke(obs["A"], 31)
+    to_object_mode()
+    persistence._close_journal()
+    shutil.copyfile(path + "1", path)                   # the .blend1 put back
+    bpy.ops.wm.open_mainfile(filepath=path)
+    h = runtime.history_of(bpy.data.objects["A"])
+    assert h is not None and len(h.entries) == 3 and h.cursor == 3, h
+    assert persistence.OTHER_SAVE_TEXT in notes(), notes()
+    check(book, old_state, "backup")
 
 
 # ------------------------------------------------------------------------------------- interrupted
@@ -322,7 +320,7 @@ def test_crash_in_the_middle_of_a_global_jump():
     """A jump on the global timeline moves several histories one after another and writes a CURSOR
     record for each. Cut after any of them: the file still holds the meshes of the save, and every
     history comes back with the saved state where it opens."""
-    setup("SIDECAR")
+    setup()
     obs = make(("A", "B", "C"))
     book = Book()
     for s in range(3):
@@ -345,7 +343,7 @@ def test_crash_in_the_middle_of_a_join():
     """A join after the save writes RESET, the merged history step by step, and the join. Cut after
     any record: A and B are as in the file, each points at a history that lists it, and the merged
     history (when it comes back) opens at the file's state."""
-    setup("SIDECAR")
+    setup()
     obs = make(("A", "B"), n=600)
     book = Book()
     book.stroke(obs["A"], 1)
@@ -389,7 +387,7 @@ def run_session(seed, n_actions=24):
     """Strokes, scrubbing (back past the saved position too), new branches, the step cap, Delete
     earlier steps, Clear, recording off and on, saves, and an interruption at a random record, twice."""
     rng = random.Random(seed)
-    setup("SIDECAR" if seed % 2 else "EMBED")
+    setup()
     names = ("A", "B")
     obs = make(names, n=300)
     book = Book()
@@ -488,16 +486,16 @@ def test_damaged_saved_history():
     """The saved history damaged on disk (a bit flipped, the end cut off, a tail of zeros), in the
     history folder and inside the .blend. Opening the file never fails and never plays damaged steps:
     what comes back matches the file at every position, and anything that didn't come back is told."""
-    for mode in ("SIDECAR", "EMBED"):
+    for store in ("folder", "blend"):          # a V1 history folder, the history inside the .blend
         for kind in ("flip", "cut", "zeros"):
-            setup(mode, "LAST_SAVED")
+            setup("LAST_SAVED")
             obs = make(("A",))
             book = Book()
             for s in range(4):
                 book.stroke(obs["A"], 20 + s)
-            path = os.path.join(TMP, f"damaged_{mode.lower()}_{kind}.blend")
+            path = os.path.join(TMP, f"damaged_{store}_{kind}.blend")
             file_state = save(path)
-            if mode == "SIDECAR":
+            if store == "folder":
                 _as_v1_folder(path)         # #48: no save writes a folder; V1's still opens
                 f = persist.sidecar_file(path)
                 with open(f, "rb") as fh:
@@ -511,9 +509,9 @@ def test_damaged_saved_history():
                     del t[persistence.DATA_BIN_PROP]      # Blender cuts bytes at a zero when it replaces them
                     t[persistence.DATA_BIN_PROP] = _damage(raw, kind)
                 _resave_without_hindsight(path, change)
-            setup(mode, "LAST_SAVED")
+            setup("LAST_SAVED")
             interrupt(path)
-            where = f"{mode} {kind}"
+            where = f"{store} {kind}"
             h = runtime.history_of(bpy.data.objects["A"])
             got = 0 if h is None else len(h.entries)
             check(book, file_state, where)
@@ -521,7 +519,7 @@ def test_damaged_saved_history():
                 assert notes(), f"{where}: {got} of 4 steps came back and nothing says so"
             # saving again keeps the file usable and never writes the damaged steps back as good ones
             file_state = save(path)
-            setup(mode, "LAST_SAVED")
+            setup("LAST_SAVED")
             interrupt(path)
             check(book, file_state, where + " after saving again")
 

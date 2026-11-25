@@ -24,7 +24,6 @@ from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.bl import runtime
 from hindsight.bl import prefs
-from hindsight.core.types import SETTINGS
 
 C = bpy.context
 ROOT = H.ROOT
@@ -132,7 +131,6 @@ def migrate(tag):
         L.check_steps(r)
         L.recheck(r)
         out = os.path.join(WORK, tag, f"saved_{row.replace('.', '_')}.blend")
-        SETTINGS.save_mode = "SIDECAR"
         T.select()
         bpy.ops.wm.save_as_mainfile(filepath=out)
         bpy.ops.wm.open_mainfile(filepath=out)

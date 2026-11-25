@@ -187,7 +187,6 @@ def test_level_change_takes_the_step():
 
 def test_save_and_reload():
     ob, states = three_visits()
-    SETTINGS.save_mode = "SIDECAR"
     path = os.path.join(TMP, "mr.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
@@ -202,7 +201,6 @@ def test_save_and_reload():
 
 def test_crash_recovery_replays_the_visits():
     ob = setup()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "INTERRUPTED"
     states = [(top_hash(ob), mesh_hash(ob))]
     states.append(visit(ob, 1))

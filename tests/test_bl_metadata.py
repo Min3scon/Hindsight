@@ -30,7 +30,6 @@ from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.bl import camrig, cleanup, persistence, rigmark, runtime
 from hindsight.core import persist
-from hindsight.core.types import SETTINGS
 
 C = bpy.context
 ROWS = ("sculpt.positions", "obj.transforms", "obj.addremove")
@@ -112,7 +111,7 @@ def matches(name, patterns) -> bool:
     return False
 
 
-def full_session(path, mode="BOTH"):
+def full_session(path):
     H.fresh()
     T.build_scene()
     a = bpy.data.objects["A"]
@@ -131,7 +130,6 @@ def full_session(path, mode="BOTH"):
     sc.frame_set(1)
     assert bpy.ops.hindsight.quick_auto_key() == {"FINISHED"}
     sc.hindsight.movie_mode = False
-    SETTINGS.save_mode = mode
     bpy.ops.wm.save_as_mainfile(filepath=path)
 
 
@@ -201,7 +199,7 @@ def test_opening_a_file_changes_nothing():
 def test_opens_without_hindsight():
     path = os.path.join(TMP, "nohs", "scene.blend")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    full_session(path, mode="BOTH")
+    full_session(path)
     want = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
     want = {n: {k: v for k, v in s.items() if k != "custom"} for n, s in want.items()}
     script = os.path.join(TMP, "nohs", "check.py")
@@ -229,7 +227,7 @@ def test_remove_hindsight_data():
     for delete_folder in (False, True):
         path = os.path.join(TMP, f"remove_{int(delete_folder)}", "scene.blend")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        full_session(path, mode="BOTH")
+        full_session(path)
         persist.save_sidecar(runtime.reg(), path)    # #48: no save writes a folder; V1's Both did
         geometry = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
         r = cleanup.report()

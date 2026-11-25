@@ -156,7 +156,6 @@ def _interrupted_after(drag_values, tag):
     import tempfile
     from hindsight.core.types import SETTINGS
     ob, uid = setup()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "INTERRUPTED"
     update(ob, uid, 0.5)                             # a stored value (an unset one reads as the default)
     advance(1.0)

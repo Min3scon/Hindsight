@@ -25,7 +25,6 @@ from tests import t1_ops as T
 import hindsight
 from hindsight.bl import idmap, persistence, runtime
 from hindsight.bl import prefs
-from hindsight.core.types import SETTINGS
 
 C = bpy.context
 ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps")
@@ -73,7 +72,6 @@ def target_history(r):
 
 
 def save(path):
-    SETTINGS.save_mode = "SIDECAR"
     T.select()
     bpy.ops.wm.save_as_mainfile(filepath=path)
 
