@@ -79,6 +79,11 @@ def _render_layers(scene) -> list:
     return [vl for vl in vls if vl.use] or vls
 
 
+def _rendered_objects(scene) -> set:
+    """as_pointer() of every object in a collection that renders in a view layer the render uses."""
+    return {o.as_pointer() for vl in _render_layers(scene) for c in _rendering_collections(vl) for o in c.objects}
+
+
 def _rendering_collections(view_layer) -> list:
     """The collections whose objects render in this view layer: reached from the scene's
     collection through collections that are neither excluded from the view layer nor disabled in
@@ -385,6 +390,7 @@ def _np_matrix(m) -> np.ndarray:
 _PAST = {}             # (history uid, object uid) -> (signature, extents of the mesh's other history positions)
 _BOUND_HIT = [False]   # set by a measure that held the object being measured by a safe bound, not exactly
 _BOUNDED = {}          # scene name -> names of the objects the last placement held by a safe bound
+_COUNTED = {}          # scene name -> names of the objects without a history the last walk counted (D181)
 _LIT = {}              # scene name -> (center, radius) the last placement put the lamps around
 
 
@@ -1130,32 +1136,42 @@ def frame(scene) -> bool:
                 hit.add(ob.name)
             ext = framing.merge(ext, e)
             bnd = framing.merge_bounds(bnd, b)
-        if now_only:
-            names = {o.name for o in obs}
-            here = {}
-            walked.append(here)
-            for ob in scene.objects:
-                if ob.name not in names and renders(ob):
-                    _BOUND_HIT[0] = False
-                    e, b = _measure(ob, basis, tx, ty, depsgraph, scene, True)
-                    here[ob.name] = (e, b, _BOUND_HIT[0])
+        names = {o.name for o in obs}
+        shown = _rendered_objects(scene)               # #117 review 3: not in a collection disabled in renders
+        here = {}
+        walked.append(here)
+        for ob in scene.objects:
+            if ob.name not in names and renders(ob) and ob.as_pointer() in shown:
+                _BOUND_HIT[0] = False
+                e, b = _measure(ob, basis, tx, ty, depsgraph, scene, True)
+                here[ob.name] = (e, b, _BOUND_HIT[0])
 
-    if not _at_every_step(lambda: measure(True)):
+    walk = _at_every_step(lambda: measure(True))
+    if not walk:
         measure()
     # D181: an object without a history of its own counts when the history plays it back: a step makes
     # or deletes it (it isn't there at every step), or moves or reshapes it (a parent or modifier
     # object that is recorded). One that is the same at every step (a backdrop) is left out.
+    # Without a walk (Edit Mode, the movie's frame change: #117 review 2), the ones the last walk counted
+    # count as they are now, and before any walk every one (one step can't tell a backdrop apart).
     # shortcut: measures every such object at every step; skip the unchanged ones if framing gets slow.
+    known = _COUNTED.get(scene.name_full)
+    counted = set()
     for name in {n for here in walked for n in here}:
         rows = [here.get(name) for here in walked]
         first = rows[0]
-        if first is not None and all(r is not None and _same_extents(r[0], first[0]) for r in rows):
+        if walk and first is not None and all(r is not None and _same_extents(r[0], first[0]) for r in rows):
             continue
+        if not walk and known is not None and name not in known:
+            continue
+        counted.add(name)
         for e, b, bound in filter(None, rows):
             ext = framing.merge(ext, e)
             bnd = framing.merge_bounds(bnd, b)
             if bound:
                 hit.add(name)
+    if walk:
+        _COUNTED[scene.name_full] = counted
     _BOUNDED[scene.name_full] = tuple(sorted(hit))
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
     with runtime.suspended():
@@ -1337,6 +1353,7 @@ def _on_load_post(*_args) -> None:
     _PAST.clear()
     _REACH.clear()
     _BOUNDED.clear()                   # its scenes may have the same names
+    _COUNTED.clear()
     _LIT.clear()
 
 

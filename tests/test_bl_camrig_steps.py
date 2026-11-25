@@ -218,6 +218,57 @@ def test_a_backdrop_that_never_changes_is_not_framed():
 
 
 
+def _a_alone_tight(msg):
+    """A, at every step of the history, reaches the margin of the frame: nothing else was framed."""
+    a = bpy.data.objects["A"]
+    pts = []
+    for g in range(glen() + 1):
+        runtime.global_goto(C, g, True)
+        C.view_layer.update()
+        m = np.array([list(r) for r in a.matrix_world], np.float64)
+        co = np.array([v.co[:] for v in a.data.vertices], np.float64)
+        pts.append(co @ m[:3, :3].T + m[:3, 3])
+    check_in_frame(np.vstack(pts), tight=True, msg=msg)
+
+
+def test_added_late_never_changed_in_edit_mode():
+    """#117 review 2: framing that can't walk the history (Edit Mode) still holds an object without a
+    history that the history plays back (D181): as the last walk counted it, or before any walk, as it
+    is now."""
+    _start(("A", (0, 0, 0), (1, 1, 1)))
+    _run(T.translate("A", (0, 0, 1)), T.add_primitive("cube", (30, 0, 0)))
+    sc = C.scene
+    sc.hindsight.movie_mode = True                      # makes the camera and frames, walking
+    H.enter(bpy.data.objects["A"], "EDIT")
+    for when in ("after a walk", "before any walk"):
+        if when == "before any walk":
+            camrig._on_load_post()
+        assert camrig.frame(sc)
+        assert C.mode == "EDIT_MESH", C.mode
+        check_in_frame(_rendered_points(), tight=False, msg=when)
+
+
+def test_an_object_in_a_collection_disabled_in_renders_is_not_framed():
+    """#117 review 3: an object added late (D181) in a collection disabled in renders never renders,
+    so it isn't framed: only A is."""
+    _start(("A", (0, 0, 0), (1, 1, 1)))
+    helpers = bpy.data.collections.new("Helpers")
+    C.scene.collection.children.link(helpers)
+    helpers.hide_render = True
+    C.view_layer.active_layer_collection = C.view_layer.layer_collection.children["Helpers"]
+    _run(T.translate("A", (0, 0, 1)), T.add_primitive("cube", (30, 0, 0)))
+    added = [o for o in C.scene.objects if o.name != "A"]
+    assert [o.users_collection[0].name for o in added] == ["Helpers"], added
+    sc = C.scene
+    sc.hindsight.movie_mode = True
+    assert camrig.frame(sc)
+    _a_alone_tight("A alone")
+    from bpy_extras.object_utils import world_to_camera_view
+    helper = next(o for o in sc.objects if o.name != "A" and not rigmark.is_rig(o))   # made again by the walk
+    x, y, _z = world_to_camera_view(sc, camrig.rig(sc)["camera"], helper.matrix_world.translation)
+    assert not (0 <= x <= 1 and 0 <= y <= 1), ("the helper 30 m away is in the frame", x, y)
+
+
 def test_the_movie_never_walks_the_history():
     """A frame of the movie that takes the user's light away makes the lamps again and places them:
     from that step only, never by walking the history inside the frame change (where a mode switch
@@ -268,4 +319,6 @@ if __name__ == "__main__":
     H.run(test_deleted_midway_never_changed)
     H.run(test_child_of_a_moved_parent)
     H.run(test_a_backdrop_that_never_changes_is_not_framed)
+    H.run(test_added_late_never_changed_in_edit_mode)
+    H.run(test_an_object_in_a_collection_disabled_in_renders_is_not_framed)
     H.finish()
