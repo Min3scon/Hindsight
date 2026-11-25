@@ -17,6 +17,7 @@ from tests import oracle as O
 from tests import t1_ops as T
 from hindsight.bl import adapters, datarec, guard, idmap, runtime, selfcheck
 from hindsight.bl import prefs
+from hindsight.core.types import SETTINGS
 
 C = bpy.context
 ROWS = {"rna": ["obj.transforms", "obj.parenting"], "object": ["obj.constraints", "obj.collections"],
@@ -267,8 +268,31 @@ def test_strokes_while_the_recorder_is_off_are_one_step():
     assert all((H.snapshot(ob)[k] == v).all() for k, v in off.items())
 
 
+def test_changes_while_off_never_ask_to_drop_steps():
+    """#119 review: with 10 or more steps ahead of the cursor, Self-check's "Changes While Off" step drops them
+    without asking and keeps the strokes made while the recorder was off (never puts the mesh back)."""
+    H.fresh()
+    ob = H.make_mesh(400, name="Blob")
+    H.enter(ob, "SCULPT")
+    for seed in range(12):
+        H.fake_stroke(ob, seed)
+        H.commit(ob)
+    h = runtime.reg().history_for(runtime.obj_uid(ob))
+    runtime._goto_history(h, 1, True)               # 11 steps ahead of the cursor
+    SETTINGS.truncation_threshold = 10
+    guard.fail("recorder", RuntimeError("injected fault"))
+    H.fake_stroke(ob, 20)                           # made while the recorder is off
+    off = H.snapshot(ob)
+    selfcheck.run_checks(retry_failed=True)
+    assert guard.ok("recorder") and SETTINGS.truncation_threshold == 10
+    assert not runtime._PENDING_TRUNCATE
+    assert [e.meta.get("label") for e in h.entries][1:] == ["Changes While Off"] and h.cursor == 2
+    assert all((H.snapshot(ob)[k] == v).all() for k, v in off.items())
+
+
 for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults, test_edit_steps_fault,
            test_object_mode_mesh_check_fault, test_mesh_change_without_an_operator_is_recorded,
-           test_animated_constraint_settings_are_not_steps, test_strokes_while_the_recorder_is_off_are_one_step):
+           test_animated_constraint_settings_are_not_steps, test_strokes_while_the_recorder_is_off_are_one_step,
+           test_changes_while_off_never_ask_to_drop_steps):
     H.run(fn)
 H.finish()

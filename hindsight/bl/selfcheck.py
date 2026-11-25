@@ -262,10 +262,16 @@ def run_checks(retry_failed=True):
                 # D46, D95: the mesh changed while the recorder was off is one step of its own, not part of
                 # the next stroke's
                 from . import runtime
-                for uid in list(runtime._STATES):
-                    ob = runtime.find_object(uid)
-                    if ob is not None and ob.mode != "EDIT":
-                        runtime.commit(ob, label="Changes While Off", full=True)
+                from ..core.types import SETTINGS
+                thr = SETTINGS.truncation_threshold
+                SETTINGS.truncation_threshold = 0     # never ask (and never put the mesh back), as _bridge_paused
+                try:
+                    for uid in list(runtime._STATES):
+                        ob = runtime.find_object(uid)
+                        if ob is not None and ob.mode != "EDIT":
+                            runtime.commit(ob, label="Changes While Off", full=True)
+                finally:
+                    SETTINGS.truncation_threshold = thr
         log.info("Self-check switched these back on: " + ", ".join(names))
     results = []
     for fn in CHECKS:
