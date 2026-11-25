@@ -253,15 +253,11 @@ def run_checks(retry_failed=True):
         with contextlib.suppress(Exception):
             from . import scrubber
             scrubber.ensure_draw_handler()
-        with contextlib.suppress(Exception):
-            # data recorded again from now on: what changed while it was off isn't one big step
-            from . import datarec
-            datarec.rebaseline()
         if "recorder" in names:
             with contextlib.suppress(Exception):
-                # D46, D95: the mesh changed while the recorder was off is one step of its own, not part of
-                # the next stroke's
-                from . import runtime
+                # D46, D95: what changed on a recorded object while the recorder was off is one step of its
+                # own, not part of the next stroke's (before the data is read again below)
+                from . import datarec, runtime
                 from ..core.types import SETTINGS
                 thr = SETTINGS.truncation_threshold
                 SETTINGS.truncation_threshold = 0     # never ask (and never put the mesh back), as _bridge_paused
@@ -270,8 +266,15 @@ def run_checks(retry_failed=True):
                         ob = None
                         try:
                             ob = runtime.find_object(uid)
-                            if ob is not None and ob.mode != "EDIT":
+                            if ob is None or ob.mode == "EDIT":
+                                continue
+                            if datarec.is_tracked(ob) and ob.mode == "OBJECT":
+                                datarec.catch_up(ob, "Changes While Off")     # values and mesh: one step
+                            else:
+                                # #104: in Sculpt Mode the mesh is the sculpt history's even with Record everything
                                 runtime.commit(ob, label="Changes While Off", full=True)
+                                if datarec.is_tracked(ob):
+                                    datarec.catch_up(ob, "Changes While Off")
                         except Exception as e:      # one object failing never costs the others their step
                             name = getattr(ob, "name", uid)
                             log.error_once(("selfcheck", "changes_while_off", uid, str(e)),
@@ -279,6 +282,10 @@ def run_checks(retry_failed=True):
                                            f"recording was off: {e}", e)
                 finally:
                     SETTINGS.truncation_threshold = thr
+        with contextlib.suppress(Exception):
+            # data recorded again from now on: what changed while it was off isn't one big step
+            from . import datarec
+            datarec.rebaseline()
         log.info("Self-check switched these back on: " + ", ".join(names))
     results = []
     for fn in CHECKS:

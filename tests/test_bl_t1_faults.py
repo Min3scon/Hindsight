@@ -335,9 +335,46 @@ def test_changes_while_off_go_on_past_an_object_that_fails():
     assert len(hb.entries) == n + 1 and hb.entries[-1].meta.get("label") == "Changes While Off"
     assert any("no step for A" in line for line in log.tail(400))
 
+
+def test_changes_while_off_hold_the_values_too():
+    """#119 review (D46): with Record everything, Self-check's "Changes While Off" steps hold the values
+    changed while the recorder was off as well as the mesh, as Turn On does: going back over them gives
+    both from before the fault, in Object Mode and in Sculpt Mode."""
+    H.fresh()
+    prefs.FORCE["record_scope"] = "EVERYTHING"
+    a = H.make_mesh(400, name="A", location=(3, 0, 0))     # stays in Object Mode
+    b = H.make_mesh(400, name="B")                          # sculpted
+    for ob in (a, b):
+        datarec.set_tracked(ob, True)
+    a.location.x = 4.0
+    tick("move")
+    H.enter(b, "SCULPT")
+    H.fake_stroke(b, 0)
+    H.commit(b)
+    hs = {ob: runtime.reg().history_for(runtime.obj_uid(ob)) for ob in (a, b)}
+    n0 = {ob: len(h.entries) for ob, h in hs.items()}
+    assert all(n0.values()), n0
+    before = {ob: (H.snapshot(ob), ob.location.x) for ob in (a, b)}
+    guard.fail("recorder", RuntimeError("injected fault"))
+    for ob, seed in ((a, 1), (b, 2)):                       # values and mesh changed while it is off
+        ob.location.x += 1.5
+        H.fake_stroke(ob, seed)
+    off = {ob: (H.snapshot(ob), ob.location.x) for ob in (a, b)}
+    selfcheck.run_checks(retry_failed=True)
+    assert guard.ok("recorder")
+    for ob, h in hs.items():
+        n1 = len(h.entries)
+        labels = [e.meta.get("label") for e in h.entries[n0[ob]:]]
+        assert n1 > n0[ob] and set(labels) == {"Changes While Off"}, (ob.name, labels)
+        for pos, (snap, x) in ((n0[ob], before[ob]), (n1, off[ob])):
+            runtime._goto_history(h, pos, True)
+            assert abs(ob.location.x - x) < 1e-6, (ob.name, pos, ob.location.x, x)
+            assert all((H.snapshot(ob)[k] == v).all() for k, v in snap.items()), (ob.name, pos)
+
 for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults, test_edit_steps_fault,
            test_object_mode_mesh_check_fault, test_mesh_change_without_an_operator_is_recorded,
            test_animated_constraint_settings_are_not_steps, test_strokes_while_the_recorder_is_off_are_one_step,
-           test_changes_while_off_never_ask_to_drop_steps, test_changes_while_off_go_on_past_an_object_that_fails):
+           test_changes_while_off_never_ask_to_drop_steps, test_changes_while_off_go_on_past_an_object_that_fails,
+           test_changes_while_off_hold_the_values_too):
     H.run(fn)
 H.finish()
