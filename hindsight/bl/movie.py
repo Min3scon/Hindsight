@@ -104,11 +104,11 @@ def _apply(context, value) -> bool:
                 runtime.goto(context, target, final=True, vis=vis)
             else:
                 runtime.goto(context, target, final=True)
+        _lamps_follow(context.scene)   # #112: still in the handler, so placing them doesn't walk the history
     finally:
         runtime.goto._movie = prev
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
-    _lamps_follow(context.scene)
     _SHOWN.update(want=want, histories=_histories_key(vis))
     return True
 

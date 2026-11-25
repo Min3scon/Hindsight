@@ -734,8 +734,9 @@ def _bone_hull(ob, uid, local_basis, tx, ty):
     return out
 
 
-def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
-    """Extents (mesh space, camera axes) of a mesh with modifiers or shape keys, and its points now.
+def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter, now_only=False):
+    """Extents (mesh space, camera axes) of a mesh with modifiers or shape keys, and its points now
+    (`now_only`: of what renders now alone).
 
     Now: exact, from the evaluated object. Every other position of its history (only the base mesh
     is recorded): the envelope of the stack (framing.envelope: Mirror and Array exactly) around the
@@ -745,6 +746,8 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
     if not len(ev):
         ev = base.reshape(-1, 3)
     ext = framing.extents(ev, local_basis, tx, ty)
+    if now_only:
+        return ext, ev
     bs = base.reshape(-1, 3)
     if len(ev) == len(bs) and ob.mode != "EDIT" and deforms_only(ob):
         moved = _measure_deformed(ob, ev, bs, local_basis, tx, ty)
@@ -875,9 +878,10 @@ def _measure_other(ob, basis, tx, ty, dg):
     return ext, bnd
 
 
-def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
+def _measure(ob, basis, tx, ty, depsgraph=None, scene=None, now_only=False):
     """(extents in camera axes, world bounds) of one model object: what renders of it now and, for
-    a mesh with a history, every earlier and later shape; other types: _measure_other. The mesh is measured in its own space, so
+    a mesh with a history (unless `now_only`), every earlier and later shape at its transform now;
+    other types: _measure_other. The mesh is measured in its own space, so
     no world-space copy of it is made. `depsgraph`: a callable (refresh=False) that gives the
     evaluated depsgraph (only asked for when the mesh has modifiers or shape keys)."""
     if ob.type != "MESH":
@@ -897,11 +901,12 @@ def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
             if depsgraph is None:
                 def depsgraph(refresh=False):
                     return _depsgraph(scene, refresh)
-            ext, pts = _measure_stack(ob, pts, local_basis, tx, ty, scene, depsgraph)
+            ext, pts = _measure_stack(ob, pts, local_basis, tx, ty, scene, depsgraph, now_only)
         else:
             ext = framing.extents(pts, local_basis, tx, ty)
-            past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
-            ext = framing.merge(ext, None if past is None else past[0])
+            if not now_only:
+                past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
+                ext = framing.merge(ext, None if past is None else past[0])
         if ob.mode == "EDIT":                          # and the mesh being edited: its evaluated box
             box = np.array([c[:] for c in ob.bound_box], np.float32)
             ext = framing.merge(ext, framing.extents(box, local_basis, tx, ty))
@@ -958,6 +963,50 @@ def _basis_matrix(basis, location) -> Matrix:
     return m
 
 
+def _at_every_step(measure) -> bool:
+    """#112: measure() at every position of the global timeline (what the time lapse plays), then back
+    to where it was: every object as its recorded transform, parent and data place it at each step,
+    objects added late or deleted midway where they exist. False (nothing walked) without a timeline,
+    in Edit Mode (a jump there would leave it: what is edited is measured as it is), and in the movie's
+    frame change, a render or playback (where it would jump away from the step being shown).
+    shortcut: walks the whole history on every frame(); keep each step's hull if reframing gets slow."""
+    ctx = bpy.context
+    if getattr(ctx, "mode", "OBJECT").startswith("EDIT") or runtime.IN_HANDLER[0] or _render_running() or _playing():
+        return False
+    vis = runtime._visible_uids()
+    groups = runtime._groups(vis)
+    if not groups:
+        return False
+    was = {h.uid: h.cursor for h in runtime.reg().histories.values()}
+    here = runtime._position(vis, groups)
+    vl = ctx.view_layer
+    act = vl.objects.active
+    act, mode = (act.name, act.mode) if act is not None else (None, "OBJECT")
+    sel = {o.name for o in vl.objects if o.select_get()}
+    with runtime.suspended():
+        try:
+            for g in range(len(groups) + 1):
+                runtime.global_goto(ctx, g, False)        # not final: no undo entry, no mode switch
+                measure()
+        finally:
+            runtime.global_goto(ctx, here, False)
+            for h in runtime.reg().histories.values():     # a cursor the timeline can't name: as it was
+                if h.cursor != was.get(h.uid, h.cursor):
+                    runtime._goto_history(h, was[h.uid], False)
+            for o in vl.objects:                           # one made again on the way: selected,
+                if o.name in sel and not o.select_get():   # active and in its mode as before
+                    o.select_set(True)
+            ob = vl.objects.get(act) if act is not None else None
+            if ob is not None and vl.objects.active != ob:
+                vl.objects.active = ob
+            if ob is not None and ob.mode != mode:
+                try:
+                    bpy.ops.object.mode_set(mode=mode)
+                except RuntimeError as e:
+                    log.error_once(("camrig_mode", str(e)), f"framing could not go back to {mode}: {e}", e)
+    return True
+
+
 def frame(scene) -> bool:
     """Place the camera and lighting around the model. False when there is nothing to frame."""
     sh = _props(scene)
@@ -976,10 +1025,17 @@ def frame(scene) -> bool:
             dg[:] = [_depsgraph(scene, refresh)]
         return dg[0]
 
-    for ob in model_objects(scene):
-        e, b = _measure(ob, basis, tx, ty, depsgraph, scene)
-        ext = framing.merge(ext, e)
-        bnd = framing.merge_bounds(bnd, b)
+    def measure(now_only=False):
+        nonlocal ext, bnd
+        if now_only:                                   # a jump changed the scene: evaluate it again
+            depsgraph(True)                            # (matrix_world too, which a mesh is placed by)
+        for ob in model_objects(scene):
+            e, b = _measure(ob, basis, tx, ty, depsgraph, scene, now_only)
+            ext = framing.merge(ext, e)
+            bnd = framing.merge_bounds(bnd, b)
+
+    if not _at_every_step(lambda: measure(True)):
+        measure()
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
     with runtime.suspended():
         if fitted is None or bnd is None:
