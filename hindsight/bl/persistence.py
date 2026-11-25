@@ -52,9 +52,11 @@ LEFT_OUT_TEXT = ("{n} step{s} of '{obj}' from the interrupted session could not 
 UNREADABLE_PROP = "hindsight_data_unreadable"
 SAVE_ID_PROP = "save_id"         # which save of the history this .blend goes with (older builds ignore it)
 KEPT_LAST_SAVE_TEXT = ("The history could not be stored, so the .blend keeps the history of the save before "
-                       "this one. Free some memory and save again to keep your history")
+                       "this one: objects changed since that save may open without their history. Free some "
+                       "memory and save again to keep your history")
 NOT_STORED_TEXT = ("The history could not be stored in the .blend. Free some memory and save again to keep "
                    "your history")
+_SAVE_NOTES = (KEPT_LAST_SAVE_TEXT, NOT_STORED_TEXT)      # what a save says; the next save replaces it
 OTHER_SAVE_TEXT = ("Steps from an interrupted session were found, but they belong to another save of this "
                    "file. They were not brought back")
 STALE_SIDECAR_TEXT = "The history folder is from another save of this file"
@@ -411,6 +413,7 @@ def on_save_pre(*args) -> None:
                     text[key] = value
             old = None
             had = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text or text.get(SIDECAR_PROP))
+            _drop_save_notes()
             _note("ERROR", KEPT_LAST_SAVE_TEXT if had else NOT_STORED_TEXT)
         except Exception as e2:
             guard.fail("saving", e2, "could not put the last save's history back in the .blend")
@@ -443,6 +446,11 @@ def on_save_post(*args) -> None:
         _mark_saved(j, path, getattr(runtime.reg(), "save_id", None))
     except Exception as e:
         guard.fail("saving", e, "journal error on save")
+    _drop_save_notes()                 # the history is stored: an earlier save's failure no longer holds
+
+
+def _drop_save_notes() -> None:
+    runtime.load_notes[:] = [n for n in runtime.load_notes if n[1] not in _SAVE_NOTES]
 
 
 def _folder_message(path) -> None:

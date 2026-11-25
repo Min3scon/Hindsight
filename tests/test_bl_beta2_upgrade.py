@@ -211,6 +211,8 @@ def test_history_folder_file_saved_out_of_memory():
     SETTINGS.crash_recovery = "LAST_SAVED"
     open_file(blend)
     _out_of_memory_save()
+    assert persistence.KEPT_LAST_SAVE_TEXT in [t for _s, t in runtime.load_notes], \
+        ("the user isn't told the history wasn't stored", runtime.load_notes)
     with open(hsr, "rb") as fh:
         assert fh.read() == before, "beta 2's folder was written"
     open_file(blend)

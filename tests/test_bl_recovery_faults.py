@@ -174,7 +174,11 @@ def _save_fails_and_keeps_the_last_save(fails, tag, fake=None, save_as=False):
     text = bpy.data.texts[persistence.TEXT_NAME]
     assert persistence.DATA_BIN_PROP in text and text[persistence.SAVE_ID_PROP] == stored, \
         f"{tag}: the .blend doesn't keep the history of the save before"
-    assert getattr(persistence, "KEPT_LAST_SAVE_TEXT", None) in notes(), f"{tag}: the user isn't told"
+    kept = getattr(persistence, "KEPT_LAST_SAVE_TEXT", None)
+    assert kept in notes(), f"{tag}: the user isn't told"
+    # A changed since the save before, and opens below without the history it had then (unless a .blend1
+    # bridges it): the note must not promise more
+    assert "changed since" in kept, f"{tag}: the note says the .blend keeps more than it does"
     book.stroke(obs["B"], 30)            # recorded after the failed save, then interrupted
     # INTERRUPTED first: opening with LAST_SAVED starts the journal again
     for rec in ("INTERRUPTED", "LAST_SAVED"):
@@ -214,6 +218,23 @@ def test_embed_save_as_out_of_memory_takes_the_journal():
     """A Save As that can't store the history: the new .blend keeps the last save's history, so the crash
     journal since that save must go with it, or a crash loses every step since."""
     _save_fails_and_keeps_the_last_save("parts_to_bytes", "save_as", save_as=True)
+
+
+def test_save_failure_note_goes_when_a_save_works():
+    """#8 review: the note that a save couldn't store the history is shown once however many saves fail,
+    and goes as soon as a save stores it (it isn't left until the file is opened again)."""
+    setup()
+    obs = make(("A",))
+    Book().stroke(obs["A"], 0)
+    path = os.path.join(TMP, "note_goes.blend")
+    for name in ("NOT_STORED_TEXT", "KEPT_LAST_SAVE_TEXT"):     # first save, then a save with one before it
+        text = getattr(persistence, name)
+        with _no_room_in_blend():
+            save(path)
+            save(path)
+        assert notes().count(text) == 1, (name, notes())
+        save(path)
+        assert text not in notes(), f"{name}: still shown after a save that stored the history"
 
 
 def test_first_save_out_of_memory_keeps_the_history():
