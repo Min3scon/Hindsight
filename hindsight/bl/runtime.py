@@ -1402,11 +1402,6 @@ def tick() -> float:
         busy = busy or bool(datarec._DIRTY)
     except Exception as e:
         log.error_once(("datarec_tick", str(e)), f"data recorder error: {e}", e)
-    try:
-        from . import camrig
-        camrig.tick()
-    except Exception as e:
-        log.error_once(("camrig_tick", str(e)), f"Movie Mode camera error: {e}", e)
     return 0.02 if (_DIRTY or busy) else 0.1
 
 

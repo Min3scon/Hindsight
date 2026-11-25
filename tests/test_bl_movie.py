@@ -48,7 +48,7 @@ def step_fcurve(scene):
     return fc
 
 
-def test_quick_auto_key_and_playback():
+def test_create_time_lapse_and_playback():
     a, b, states = build()
     sc = C.scene
     sh = sc.hindsight
@@ -62,7 +62,7 @@ def test_quick_auto_key_and_playback():
     sc.frame_end = 5
     sh.frames_per_step = 2
     sc.frame_set(1)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     fc = step_fcurve(sc)
     kps = list(fc.keyframe_points)
     assert len(kps) == 2, len(kps)
@@ -71,7 +71,7 @@ def test_quick_auto_key_and_playback():
     assert all(k.interpolation == 'LINEAR' for k in kps)
     assert sc.frame_end == 9, sc.frame_end
     # re-keying replaces the keys instead of piling them up
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     assert len(step_fcurve(sc).keyframe_points) == 2
     seen = set()
     for f in [1, 3, 5, 7, 9, 2, 4, 6, 8, 5, 1, 9, 3]:
@@ -97,7 +97,7 @@ def test_off_pauses_and_keeps_keys():
     sc.frame_start = 1
     sh.frames_per_step = 3
     sc.frame_set(1)
-    bpy.ops.hindsight.quick_auto_key()
+    bpy.ops.hindsight.create_time_lapse()
     kps = list(step_fcurve(sc).keyframe_points)
     assert [tuple(k.co) for k in kps] == [(1.0, 0.0), (13.0, 4.0)]
     sc.frame_set(7)
@@ -131,7 +131,7 @@ def test_needs_global_history():
     sc.frame_start = 1
     sh.frames_per_step = 1
     sc.frame_set(1)
-    bpy.ops.hindsight.quick_auto_key()
+    bpy.ops.hindsight.create_time_lapse()
     sc.frame_set(3)
     check(a, b, states, 2)
     runtime.set_global(C, False)
@@ -145,7 +145,7 @@ def test_needs_global_history():
     sh.movie_step = 0
     H.assert_same(H.snapshot(a), snap_a)
     assert lengths() == before
-    assert not bpy.ops.hindsight.quick_auto_key.poll(), "Quick Auto Key needs global history"
+    assert not bpy.ops.hindsight.create_time_lapse.poll(), "Create time lapse needs global history"
 
 
 def test_manual_step_value():
@@ -179,11 +179,13 @@ def test_manual_step_value():
 def test_unregister_removes_handler():
     H.fresh()
     from hindsight.bl import movie
+    assert movie.on_frame_change not in bpy.app.handlers.frame_change_post, "#113: none before Movie Mode"
+    C.scene.hindsight.movie_mode = True
     assert movie.on_frame_change in bpy.app.handlers.frame_change_post
     import hindsight
     hindsight.unregister()
     assert movie.on_frame_change not in bpy.app.handlers.frame_change_post
-    assert not hasattr(bpy.types, "HINDSIGHT_OT_quick_auto_key")
+    assert not hasattr(bpy.types, "HINDSIGHT_OT_create_time_lapse")
     hindsight.register()
 
 
@@ -210,7 +212,7 @@ def key(fps=1, spf=1, start=1):
     sh.frames_per_step = fps
     sh.movie_steps_per_frame = spf
     sc.frame_set(start)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     return [tuple(k.co) for k in step_fcurve(sc).keyframe_points]
 
 
@@ -381,7 +383,7 @@ def test_movie_length():
     sc.render.fps, sc.render.fps_base = 30, 1.001
     r = movie.movie_length(sc)
     assert r["frames"] == 3 and math.isclose(r["seconds"], 3 / (30 / 1.001), rel_tol=1e-6), r  # fps_base is a float32
-    # it matches what Quick auto key keys
+    # it matches what Create time lapse keys
     keys = key(1, 3)
     assert keys[1][0] - keys[0][0] + 1 == movie.movie_length(sc)["frames"]
     runtime.set_global(C, False)
@@ -494,7 +496,7 @@ def test_visibility_change_on_the_same_frame():
     check(a, b, states, 3)
 
 
-def test_quick_auto_key_with_data_no_object_uses():
+def test_create_time_lapse_with_data_no_object_uses():
     """#104: with Record on Everything, a file with data no object uses (a material library; in the
     window the startup file's unused Grease Pencil materials) lost its timelapse. Movie Mode stopped
     reading that data, so it counted as deleted: a step at each jump's position, and after Quick auto
@@ -521,9 +523,9 @@ def test_quick_auto_key_with_data_no_object_uses():
     assert runtime.scrub_info(C)["len"] == n, ("turning Movie Mode on is no step", n, runtime.scrub_info(C))
     sc.hindsight.frames_per_step = 1
     sc.frame_set(sc.frame_start)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     assert "A" not in sc.objects, "step 0: before A was added"
-    L.tick_like("Quick auto key")               # what the timer does once the operator has finished
+    L.tick_like("Create time lapse")               # what the timer does once the operator has finished
     assert runtime.scrub_info(C)["len"] == n, ("no step at step 0, none lost", n, runtime.scrub_info(C))
     sc.frame_set(sc.frame_start + n)
     assert "A" in sc.objects, "the last frame shows the last step"
@@ -557,7 +559,7 @@ def test_lamps_follow_the_users_light_on_every_frame():
     assert lamps <= set(camrig.rig(sc)), camrig.rig(sc)
     sh.frames_per_step = 1
     sc.frame_set(sc.frame_start)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     for f, own in ((sc.frame_start, True), (sc.frame_start + 2, False), (sc.frame_start, True),
                    (sc.frame_start + 1, False)):
         sc.frame_set(f)
@@ -565,11 +567,11 @@ def test_lamps_follow_the_users_light_on_every_frame():
         assert (lamps & set(camrig.rig(sc))) == (set() if own else lamps), (f, sorted(camrig.rig(sc)))
 
 
-for f in [test_quick_auto_key_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
+for f in [test_create_time_lapse_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
           test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
-          test_quick_auto_key_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame]:
+          test_create_time_lapse_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame]:
     H.run(f)
 H.finish()

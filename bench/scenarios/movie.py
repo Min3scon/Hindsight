@@ -2,7 +2,7 @@
 
     <bpy python> bench/scenarios/movie.py CODE_ROOT [--quick] [--only a,b] [--reps N]
 
-Built with bench/bench_movie.py's helpers (grid mesh, 2% strokes, Quick auto key, a frame_set per
+Built with bench/bench_movie.py's helpers (grid mesh, 2% strokes, Create time lapse, a frame_set per
 frame as a render does). 150 steps with 2 frames per step = about 300 frames.
 Scenarios:
   movie_addon_ms_per_frame_100k   our frame_change_post and depsgraph handlers, mean ms per frame of

@@ -29,6 +29,10 @@ def _upd_redraw(self, context):
 
 def _upd_movie_rig(self, context):
     """Movie Mode or one of its camera and lighting settings changed."""
+    if self.movie_mode:
+        with contextlib.suppress(ImportError):
+            from . import movie
+            movie.start()
     with contextlib.suppress(ImportError):
         from . import camrig
         camrig.on_settings_changed(context)
@@ -48,24 +52,25 @@ class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
         description="When global history moves to another object's step, select that object and enter its mode")
     movie_mode: bpy.props.BoolProperty(
         name="Movie Mode", default=False, update=_upd_movie_rig,
-        description="Play the global history on the timeline. The history itself can't change while this is on")
+        description="On while the time lapse plays on the timeline (Create time lapse switches it on). "
+                    "Switch it off to change the history again: the time lapse's camera and lighting go with it")
     movie_step: bpy.props.IntProperty(
         name="Step", default=0, min=0, update=_upd_movie_step, options={'ANIMATABLE'},
         description="The global history step Movie Mode shows. Keyframe it to make a timelapse")
     frames_per_step: bpy.props.IntProperty(
         name="Frames per step", default=2, min=1, max=1000,
-        description="How many frames each step lasts when you use Quick auto key")
+        description="How many frames each step lasts in the time lapse")
     movie_steps_per_frame: bpy.props.IntProperty(
         name="Steps per frame", default=1, min=1, max=10000,
-        description="How many steps each frame moves on when you use Quick auto key. "
+        description="How many steps each frame of the time lapse moves on. "
                     "Above 1 the movie is shorter and renders sooner")
     movie_camera: bpy.props.BoolProperty(
         name="Camera", default=True, update=_upd_movie_rig,
-        description="While Movie Mode is on, keep a camera that has the whole model in frame. "
+        description="Create time lapse adds a camera that has the whole history in frame. "
                     "Your own camera isn't moved")
     movie_lighting: bpy.props.BoolProperty(
         name="Lighting", default=True, update=_upd_movie_rig,
-        description="While Movie Mode is on, add lighting when the scene has no light of its own")
+        description="Create time lapse adds lighting when the scene has no light of its own")
     movie_view_angle: bpy.props.FloatProperty(
         name="Angle", subtype='ANGLE', default=0.5235987755982988, min=-3.141592653589793,
         max=3.141592653589793, update=_upd_movie_rig, options={'HIDDEN'},

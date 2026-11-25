@@ -1,4 +1,4 @@
-"""Movie Mode playback cost: time scene.frame_set(f) over every frame of a Quick auto key movie
+"""Movie Mode playback cost: time scene.frame_set(f) over every frame of a Create time lapse movie
 (what a render does before drawing each frame), split by cProfile into where the time goes.
 
     <venv>/bin/python bench/bench_movie.py [--quick] [--render-only]
@@ -107,9 +107,9 @@ def key_movie(fps_step=2, spf=1):
     sh.frames_per_step = fps_step
     sh.movie_steps_per_frame = spf
     sc.frame_set(1)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
-    sc.frame_end = sc.frame_start + 1          # Quick auto key only makes the range longer
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
+    sc.frame_end = sc.frame_start + 1          # Create time lapse only makes the range longer
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     sc.frame_set(sc.frame_end)            # start from the end of the movie, as after keying
     return sc.frame_start, sc.frame_end
 

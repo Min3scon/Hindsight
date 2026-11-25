@@ -84,6 +84,10 @@ The step that the Morph History brush paints the mesh back towards.
 **Movie Mode**:
 Playing a history on Blender's timeline so it can be rendered as a timelapse.
 
+**Create time lapse**:
+The one action that switches Movie Mode on, keys the global history on the timeline, and only then adds
+the time lapse's camera and, when the scene has no light, its lighting, placed for the whole history.
+
 ## Keeping and saving history
 
 **Raw step**:

@@ -983,16 +983,21 @@ def _at_every_step(measure) -> bool:
     act = vl.objects.active
     act, mode = (act.name, act.mode) if act is not None else (None, "OBJECT")
     sel = {o.name for o in vl.objects if o.select_get()}
+    movie = getattr(runtime.goto, "_movie", False)
+    runtime.goto._movie = True          # #113: as the time lapse plays: the scene's camera and frame range stay
     with runtime.suspended():
         try:
             for g in range(len(groups) + 1):
                 runtime.global_goto(ctx, g, False)        # not final: no undo entry, no mode switch
                 measure()
         finally:
-            runtime.global_goto(ctx, here, False)
-            for h in runtime.reg().histories.values():     # a cursor the timeline can't name: as it was
-                if h.cursor != was.get(h.uid, h.cursor):
-                    runtime._goto_history(h, was[h.uid], False)
+            try:
+                runtime.global_goto(ctx, here, False)
+                for h in runtime.reg().histories.values():     # a cursor the timeline can't name: as it was
+                    if h.cursor != was.get(h.uid, h.cursor):
+                        runtime._goto_history(h, was[h.uid], False)
+            finally:
+                runtime.goto._movie = movie
             vl.update()                                    # its objects again, after those made and removed
             for o in vl.objects:                           # one made again on the way: selected,
                 if o.name in sel and not o.select_get():   # active and in its mode as before
@@ -1115,6 +1120,18 @@ def tick() -> None:
             runtime.tag_redraw_all()
 
 
+def _timer():
+    tick()
+    return INTERVAL
+
+
+def start() -> None:
+    """#113: the check that puts missing pieces back runs from Movie Mode going on (movie.start), never
+    before. Not persistent: loading a file stops it."""
+    if not bpy.app.timers.is_registered(_timer):
+        bpy.app.timers.register(_timer, first_interval=INTERVAL)
+
+
 def view_from_region(scene, view_rotation) -> None:
     """Set the view angle and height from a viewport rotation (RegionView3D.view_rotation)."""
     back = view_rotation @ Vector((0.0, 0.0, 1.0))
@@ -1213,6 +1230,8 @@ def register():
 
 
 def unregister():
+    if bpy.app.timers.is_registered(_timer):
+        bpy.app.timers.unregister(_timer)
     while _on_save_pre in bpy.app.handlers.save_pre:
         bpy.app.handlers.save_pre.remove(_on_save_pre)
     while _on_load_post in bpy.app.handlers.load_post:

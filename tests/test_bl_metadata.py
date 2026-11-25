@@ -128,7 +128,7 @@ def full_session(path, mode="BOTH"):
     sc.hindsight.use_global = True
     sc.hindsight.movie_mode = True
     sc.frame_set(1)
-    assert bpy.ops.hindsight.quick_auto_key() == {"FINISHED"}
+    assert bpy.ops.hindsight.create_time_lapse() == {"FINISHED"}
     sc.hindsight.movie_mode = False
     SETTINGS.save_mode = mode
     bpy.ops.wm.save_as_mainfile(filepath=path)

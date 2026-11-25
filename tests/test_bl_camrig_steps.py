@@ -191,7 +191,7 @@ def test_the_movie_never_walks_the_history():
     sh.movie_step = runtime.scrub_info(C)["len"]
     sh.frames_per_step = 1
     sc.frame_set(sc.frame_start)
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}
     jumps = []
     real = runtime.global_goto
     runtime.global_goto = lambda *a, **k: (jumps.append(a[1]), real(*a, **k))[1]

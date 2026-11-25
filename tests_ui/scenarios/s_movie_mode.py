@@ -2,7 +2,7 @@
 
 The camera and three lamps Movie Mode adds; "Use this view" turning the camera; the camera and a lamp
 put back after being deleted, but never in the middle of a stroke, a drag (G), playback or a render;
-and a timelapse (Quick auto key) rendered with Workbench and with EEVEE, its frames showing different
+and a timelapse (Create time lapse) rendered with Workbench and with EEVEE, its frames showing different
 steps. Strokes and the drag are simulated mouse input in the viewport.
 """
 import os
@@ -209,7 +209,7 @@ def run(d):
     # ------------------------------------------------------------------ a timelapse, rendered
     sh.frames_per_step = 1
     with d.override():
-        bpy.ops.hindsight.quick_auto_key()
+        bpy.ops.hindsight.create_time_lapse()
     yield 0.5
     fc = C.mod("movie")._step_fcurve(sc)
     sc.frame_end = int(max(k.co[0] for k in fc.keyframe_points))      # just the keyed frames

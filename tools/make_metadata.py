@@ -96,7 +96,7 @@ DESCRIBE = {
                           ("rim", "Hindsight Rim"))},
     "keyframes on hindsight.movie_step": (
         "animation keyframes on the scene", "in the .blend",
-        "only when you use Quick auto key in Movie Mode", "deleting the keyframes; Remove Hindsight data"),
+        "only when you use Create time lapse in Movie Mode", "deleting the keyframes; Remove Hindsight data"),
 }
 
 
