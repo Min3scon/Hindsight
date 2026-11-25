@@ -5,7 +5,7 @@ session. Read it in full before doing anything. The orchestrator's brief for a j
 the files you own. The status of the whole project is in `DEVELOPMENT.md`.
 
 Note on paths: the original text used `S`, the session's scratchpad folder
-(`/tmp/claude-0/.../scratchpad`). That folder exists only during one session and is deleted with it.
+(a per-session scratchpad). That folder exists only during one session and is deleted with it.
 Where a file now lives in the repository this text says so. Where the text still says "scratchpad" it
 means a temporary folder of your own session; nothing there is a record.
 
@@ -25,7 +25,7 @@ are in `dev/reports/`; the measured optimisation rounds are in `OPTIMISATION_LOG
 3. Edit only the files your brief says you own. If the right fix needs another file, do NOT edit it:
    put the exact patch (unified diff) in your report under "Patches for files I don't own".
 4. Do not edit shared docs (DEFECTS.md, DECISIONS.md, PERF_LOG.md, OPTIMISATION_LOG.md, DEVELOPMENT.md,
-   CHANGELOG.md, HANDOFF.md, README.md, COVERAGE.md, METADATA.md, anything in site/ or docs/). Put
+   CHANGELOG.md, HANDOFF.md, README.md, COVERAGE.md, METADATA.md, GLOSSARY.md, anything in docs/adr/). Put
    proposed text in your report.
 5. Never `pip install` into shared virtual environments. Private tools go in a venv or `--target`
    folder of your own.
@@ -54,11 +54,10 @@ are in `dev/reports/`; the measured optimisation rounds are in `OPTIMISATION_LOG
 ## Running things
 - Blender as a Python module: one virtual environment per version, `bpy42` (4.2.23), `bpy50` (5.0.1),
   `bpy51` (5.1.2), `bpy52` (5.2.2), `bpy53` (5.3.0), each with `bin/python`. They lived in
-  `/home/user/venvs/` in the 2026-11-18 container, built by hand (`pip install bpy==<version> numpy
+  `<venv root>` in the 2026-11-18 container, built by hand (`pip install bpy==<version> numpy
   zstandard hypothesis`). `tools/dev_env.sh` is planned to build them; when it exists, use it.
 - Tests: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py [substring]` (a substring picks
   matching test files). One file directly: `<venv>/bin/python tests/test_x.py`.
-  `HINDSIGHT_NATIVE=require` forces the Rust engine, `HINDSIGHT_NATIVE=0` forces Python. Test both.
 - Failures that are known and not yours: `test_bl_metadata::test_opens_without_hindsight` (needs a
   Blender binary) and `test_bl_t1_migrate` (needs `.tmp/old/b1.zip`), in the sandbox. On bpy42
   `test_bl_t1_gate::test_gate_parenting` and most of `test_bl_t1_reload`. See DEVELOPMENT.md section e.

@@ -7,7 +7,7 @@ import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 import numpy as np
-from bench_codec import load_corpus, frac, codec, idx_best, planes, zigzag
+from bench_codec import load_corpus, frac, codec, idx_best
 steps = load_corpus(sys.argv[1] if len(sys.argv) > 1 else "100k")
 comp, _ = codec("zstd3")
 def ent(r):

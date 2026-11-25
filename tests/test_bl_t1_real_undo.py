@@ -17,10 +17,10 @@ import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from tests.t1_real_undo import RealUndo
 from hindsight.core import globaltl
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps")
@@ -31,7 +31,7 @@ def setup(track=True):
     if track:
         L.track_all()
     else:
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
     runtime.reg().preserve_modes = False
 
 
@@ -48,7 +48,6 @@ def undo_ok(u, direction):
     assert not problems, f"{direction} to '{label}': {problems}"
 
 
-@covers("obj.addremove", "UNDO")
 def test_an_added_object_keeps_its_id():
     setup()
     u = RealUndo()
@@ -70,7 +69,6 @@ def test_an_added_object_keeps_its_id():
         u.close()
 
 
-@covers("obj.transforms", "UNDO")
 def test_an_object_switched_on_keeps_its_id():
     setup(track=False)
     u = RealUndo()
@@ -91,8 +89,6 @@ def test_an_object_switched_on_keeps_its_id():
         u.close()
 
 
-@covers("obj.collections", "UNDO")
-@covers("obj.addremove", "UNDO")
 def test_new_collection_and_duplicate_keep_their_ids():
     setup()
     u = RealUndo()
@@ -110,7 +106,6 @@ def test_new_collection_and_duplicate_keep_their_ids():
         u.close()
 
 
-@covers("obj.editsteps", "UNDO.MODES")
 def test_a_jump_made_in_edit_mode_is_undone():
     """D53: a jump on the grid's own history made in Edit Mode, then Blender's real Ctrl+Z and
     Ctrl+Shift+Z: the jump is undone and redone, and Hindsight never reverses Blender's undo."""
@@ -140,7 +135,6 @@ def test_a_jump_made_in_edit_mode_is_undone():
         u.close()
 
 
-@covers(ROWS, "UNDO")
 def test_real_undo_and_redo_for_every_row():
     """Each row's operations, then Blender's undo six times and redo six times, then a jump on the
     global timeline undone and redone, then two more undos and a new operation."""

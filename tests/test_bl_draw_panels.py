@@ -1,9 +1,9 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Redraw paths outside the slider draw the same thing for less: the viewport warning overlay checks
 only what gives an error (not every warning), and wrapped sidebar texts are kept between redraws."""
 
 import textwrap
-import traceback
 import types
 from types import SimpleNamespace
 
@@ -11,18 +11,6 @@ import bpy
 
 from hindsight.bl import ui_panel, warnings as W
 
-ok = True
-
-
-def run(fn):
-    global ok
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        ok = False
-        print("FAIL", fn.__name__)
-        traceback.print_exc()
 
 
 def _cube():
@@ -193,7 +181,6 @@ def test_warnings_panel_checks_once_per_redraw():
 
 for f in (test_overlay_errors_same_as_collect, test_overlay_draws_errors_without_other_checks,
           test_wrap_same_lines_kept, test_warnings_panel_checks_once_per_redraw):
-    run(f)
+    R.run(f)
 
-sys.stdout.flush()
-os._exit(0 if ok else 1)
+R.finish()

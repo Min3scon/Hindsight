@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """R072: the strong zstd level of idle recompression is 15 for data up to 1 MB (strokes) and stays 19 above
 (topology steps, compressed with a window as large as the data).
 
@@ -8,7 +9,6 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
              recompress leaves them alone (nothing is redone at the new level)
   steps      a recompressed stroke step and topology step hold the same step as before
   switch     `_strong_level` takes 0 (the rule) or 1 to 22 and nothing else"""
-import traceback
 
 import numpy as np
 
@@ -45,7 +45,6 @@ def test_level_by_size():
             other = at(15 if n > (1 << 20) else 19, lambda: codec.compress(d, "zstd", True))
             assert other != got, ("the other level would write other bytes", n)
         assert got[0] == codec.ZSTD_MAX and codec.is_strong(got) and codec.decompress(got, len(d)) == d
-    print("PASS test_level_by_size")
 
 
 def _strokes(n_steps=20, nv=100_000):
@@ -95,7 +94,7 @@ def test_old_strong_blobs_stay_as_they_are():
             n_small += new != old
             assert len(new) <= len(old) * 1.05, (len(new), len(old))
     assert n_small > 10, n_small
-    print(f"PASS test_old_strong_blobs_stay_as_they_are ({len(steps)} steps, {n_small} strokes written at level 15)")
+    print(f"  test_old_strong_blobs_stay_as_they_are ({len(steps)} steps, {n_small} strokes written at level 15)")
 
 
 def test_switch():
@@ -108,21 +107,13 @@ def test_switch():
         raise AssertionError(bad)
     assert ENGINE._strong_level() == 0
     assert at(12, ENGINE._strong_level) == 12 and ENGINE._strong_level() == 0
-    print("PASS test_switch")
 
 
 def main():
     tests = [test_level_by_size, test_old_strong_blobs_stay_as_they_are, test_switch]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

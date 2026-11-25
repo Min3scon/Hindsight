@@ -14,6 +14,7 @@ Crash Recovery (``SETTINGS.crash_recovery``):
 """
 from __future__ import annotations
 
+import contextlib
 import binascii
 import hashlib
 import os
@@ -164,10 +165,8 @@ def _close_journal(remove_untitled: bool = False) -> None:
         except Exception as e:
             guard.fail("saving", e, "journal close error")
         if remove_untitled and path == journal_path(""):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(path)
-            except OSError:
-                pass
 
 
 def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) -> Journal:
@@ -249,10 +248,8 @@ def _same_path(a: str, b: str) -> bool:
 def _drain_packer() -> None:
     p = runtime.packer
     if p is not None:
-        try:
+        with contextlib.suppress(Exception):
             p.drain(timeout=30.0)
-        except Exception:
-            pass
 
 
 def _mode() -> str:
@@ -486,15 +483,13 @@ def _load_registry(path: str, text):
             _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
             runtime.log.error_once(("embed_unreadable", str(e)), f"embedded history unreadable: {e}", e)
-            try:
+            with contextlib.suppress(Exception):
                 v = text[key]
                 if UNREADABLE_PROP in text:
                     # Blender cuts bytes at the first zero when it replaces a bytes property: a new one only
                     del text[UNREADABLE_PROP]
                 text[UNREADABLE_PROP] = v           # keep the data, out of the way
                 del v, text[key]
-            except Exception:
-                pass
             _note("ERROR", UNREADABLE_EMBED_TEXT)
         return None
 
@@ -651,15 +646,13 @@ def on_load_post(*args) -> None:
             guard.fail("loading", e, "journal error on load")
 
     if reg is not None:
-        try:
+        with contextlib.suppress(Exception):
             p = getattr(bpy.context.scene, "hindsight", None)
             if p is not None:
                 if hasattr(p, "use_global"):
                     reg.use_global = bool(p.use_global)
                 if hasattr(p, "preserve_modes"):
                     reg.preserve_modes = bool(p.preserve_modes)
-        except Exception:
-            pass
         runtime.set_registry(reg)
         try:
             runtime.restamp_overrides(getattr(reg, "saved", None))        # D109
@@ -686,11 +679,9 @@ def on_load_post(*args) -> None:
     problems = ([runtime.missing_message[0]] if runtime.missing_message[0] else []) +         [t for sev, t in runtime.load_notes if sev == "ERROR"]
     if problems:
         more = f" ({len(problems) - 1} more in the Undo History tab)" if len(problems) > 1 else ""
-        try:
+        with contextlib.suppress(Exception):
             from .selfcheck import flash_status
             flash_status("Hindsight: " + problems[0] + more, 15.0)
-        except Exception:
-            pass
 
 
 # ----------------------------------------------------------------------------- register
@@ -701,11 +692,9 @@ _HANDLERS = (
 
 
 def register() -> None:
-    try:
+    with contextlib.suppress(Exception):
         from .selfcheck import addon_version
         persist.WRITER = f"Hindsight {addon_version()}"
-    except Exception:
-        pass
     for name, fn in _HANDLERS:
         hl = getattr(bpy.app.handlers, name)
         if fn not in hl:

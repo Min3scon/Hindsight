@@ -182,24 +182,23 @@ def run(d):
     warm = [s for s in samples if s["t"] >= minutes * 60 / 4]
     half = [s for s in samples if s["t"] >= minutes * 60 / 2]
     if len(warm) < 3:
-        d.check("enough samples", False, len(samples), covers=", ".join(FOCUS_ROWS[focus]) + ": SOAK")
+        d.check("enough samples", False, len(samples))
         return
     base = warm[0]
     mem_max = max(s["mem"] for s in warm)
     climb = half[-1]["mem"] - half[0]["mem"] if len(half) >= 2 else 0
-    rows = ", ".join(FOCUS_ROWS[focus]) + ": SOAK"
     d.check("memory levels off (within 8% of its warm level, no steady climb in the second half)",
             mem_max <= base["mem"] * 1.08 and climb <= base["mem"] * 0.03,
             {"base_mb": round(base["mem"] / 1e6), "max_mb": round(mem_max / 1e6),
-             "second_half_climb_mb": round(climb / 1e6)}, covers=rows)
+             "second_half_climb_mb": round(climb / 1e6)})
     d.check("handles don't keep growing", max(s["handles"] for s in warm) <= base["handles"] + 50,
-            [s["handles"] for s in warm], covers=rows)
+            [s["handles"] for s in warm])
     d.check("threads don't keep growing", max(s["threads"] for s in warm) <= base["threads"] + 4 and
             max(s["py_threads"] for s in warm) <= base["py_threads"] + 1,
-            [(s["threads"], s["py_threads"]) for s in warm], covers=rows)
+            [(s["threads"], s["py_threads"]) for s in warm])
     d.check("Hindsight's handlers stay the same", all(s["hooks"] == samples[0]["hooks"] for s in samples),
-            samples[-1]["hooks"], covers=rows)
+            samples[-1]["hooks"])
     d.check("every history stayed within the step cap (60)", max(s["longest"] for s in samples) <= 60,
-            max(s["longest"] for s in samples), covers=rows)
+            max(s["longest"] for s in samples))
     errors = [l for l in d.console_since(mark).splitlines() if "Traceback" in l]
-    d.check("no Python errors in the whole session", not errors, errors[:3], covers=rows)
+    d.check("no Python errors in the whole session", not errors, errors[:3])

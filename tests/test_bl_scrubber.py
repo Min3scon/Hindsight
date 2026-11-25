@@ -1,23 +1,11 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 
-import traceback
 
 import bpy  # noqa: F401  (scrubber imports bpy at module level)
 
 from hindsight.bl import scrubber as S
 
-ok = True
-
-
-def run(fn):
-    global ok
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        ok = False
-        print("FAIL", fn.__name__)
-        traceback.print_exc()
 
 
 class P:  # prefs-like
@@ -223,7 +211,6 @@ def test_register():
 
 for f in (test_layout_basic, test_centred_on_the_viewport, test_ends, test_round_trip, test_hit, test_ui_scale_2,
           test_geometry, test_drag_throttle_and_final, test_register):
-    run(f)
+    R.run(f)
 
-sys.stdout.flush()
-os._exit(0 if ok else 1)
+R.finish()
