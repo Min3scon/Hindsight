@@ -542,7 +542,7 @@ def history_extents_multi(h, state, target_uid: str, bases, tans, batch: int = 6
     or None when it has none.
 
     Merged with the extents of the mesh at the cursor, a camera fitted to the result has every step
-    of the timelapse in frame, exactly. One walk over the history that looks only at the vertices
+    of the time lapse in frame, exactly. One walk over the history that looks only at the vertices
     each step moves, so it costs about as much as one scrub from end to end, whatever the mesh
     size. Works on private copies: the history, its entries and `state` are left unchanged; a
     direction stops at a JOIN or at a step that can't be applied.

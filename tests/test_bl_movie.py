@@ -613,12 +613,21 @@ def test_lamps_made_on_a_frame_leave_the_camera_where_it_is():
         same(m, made[r], f"{r} as the handler placed it")
 
 
+def test_setting_tooltips_are_one_sentence():
+    """STYLE.md: a tooltip is one sentence (#117 review 6: Steps per frame and Camera had two). Settings
+    the panel never draws (HIDDEN) have no tooltip to read."""
+    H.fresh()
+    two = [(p.identifier, p.description) for p in C.scene.hindsight.bl_rna.properties
+           if not p.is_hidden and ". " in p.description.rstrip(".")]
+    assert not two, two
+
+
 for f in [test_create_time_lapse_and_playback, test_off_pauses_and_keeps_keys, test_needs_global_history,
           test_manual_step_value, test_unregister_removes_handler, test_steps_per_frame_one_keeps_keys,
           test_steps_per_frame_four, test_same_step_does_no_history_work, test_subframes_keep_the_frames_step,
           test_playback_keeps_history_and_position, test_movie_length, test_new_step_after_playback_plays,
           test_frame_lists_objects_once, test_visibility_change_on_the_same_frame,
           test_create_time_lapse_with_data_no_object_uses, test_lamps_follow_the_users_light_on_every_frame,
-          test_lamps_made_on_a_frame_leave_the_camera_where_it_is]:
+          test_lamps_made_on_a_frame_leave_the_camera_where_it_is, test_setting_tooltips_are_one_sentence]:
     H.run(f)
 H.finish()

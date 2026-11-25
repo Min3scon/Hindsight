@@ -62,12 +62,12 @@ class HINDSIGHT_PG_scene(bpy.types.PropertyGroup):
         description="How many frames each step lasts in the time lapse")
     movie_steps_per_frame: bpy.props.IntProperty(
         name="Steps per frame", default=1, min=1, max=10000,
-        description="How many steps each frame of the time lapse moves on. "
-                    "Above 1 the movie is shorter and renders sooner")
+        description="How many steps each frame of the time lapse moves on, so above 1 the movie is "
+                    "shorter and renders sooner")
     movie_camera: bpy.props.BoolProperty(
         name="Camera", default=True, update=_upd_movie_rig,
-        description="Create time lapse adds a camera that has the whole history in frame. "
-                    "Your own camera isn't moved")
+        description="Create time lapse adds a camera that has the whole history in frame, leaving your own "
+                    "camera where it is")
     movie_lighting: bpy.props.BoolProperty(
         name="Lighting", default=True, update=_upd_movie_rig,
         description="Create time lapse adds lighting when the scene has no light of its own")
