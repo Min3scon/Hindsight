@@ -192,6 +192,27 @@ def test_shape_keys():
     every_step()
 
 
+def test_shape_key_values_going_back():
+    """#117 review 5, D183's other symptom ("going back shows 0 where 1.0 was"): a key left at the value
+    it was made with (1.0 in 5.0 and later, 0.0 in 4.2) shows that value again at step 0, and each
+    later value at its step."""
+    _start(("A", (0, 0, 0), (1, 1, 1)))
+    a = _ob("A")
+    a.shape_key_add(name="Basis")
+    a.shape_key_add(name="Big")
+    start = a.data.shape_keys.key_blocks["Big"].value
+    L.track_all()
+    for v in (0.3, 0.6):
+        a.data.shape_keys.key_blocks["Big"].value = v
+        C.view_layer.update()
+        L.tick_like("shape key")
+    assert glen() == 2, glen()
+    for g, want in ((0, start), (1, 0.3), (2, 0.6), (0, start)):
+        runtime.global_goto(C, g, True)
+        got = _ob("A").data.shape_keys.key_blocks["Big"].value
+        assert math.isclose(got, want, abs_tol=1e-6), ("step", g, got, want)
+
+
 # ----------------------------------------------------------------------------- camera and render
 def _two_cubes():
     _start(("A", (0, 0, 0), (1, 1, 1)), ("B", (6, 2, 0), (2, 1, 1)))
@@ -378,6 +399,7 @@ if __name__ == "__main__":
               test_joined_and_separated, test_a_flat_plane_stood_up, test_a_100_to_1_shape_turned,
               test_far_from_the_origin, test_mirror, test_array, test_subdivision, test_displace,
               test_displace_by_a_texture, test_geometry_nodes, test_armature, test_shape_keys,
+              test_shape_key_values_going_back,
               test_image_shapes_and_sensor_fits, test_lenses_18_to_135_mm,
               test_angle_and_height_at_their_extremes, test_random_histories,
               test_random_histories_with_random_cameras, test_keyframe_animated_object,
