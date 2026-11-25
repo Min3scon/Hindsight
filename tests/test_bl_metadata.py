@@ -11,7 +11,9 @@
 - A file saved with Hindsight data opens in a Blender without Hindsight: everything loads, the
   meshes and objects are as saved.
 - Remove Hindsight data from this file takes all of it out (the folder only when asked) and changes
-  nothing else.
+  nothing else. It offers a history folder only when V1 left one next to the file.
+- METADATA.md and the manifest's file permission say what V2 writes: no save writes a history folder
+  (#48) and there is no Save mode (#51); a V1 folder is only read (#52).
 
 Run: blender -b --factory-startup --python tests/test_bl_metadata.py (or tests/run_tests.py).
 """
@@ -228,6 +230,7 @@ def test_remove_hindsight_data():
         path = os.path.join(TMP, f"remove_{int(delete_folder)}", "scene.blend")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         full_session(path)
+        assert cleanup.report()["folder"] is None, "#52: a folder is offered only when V1 left one"
         persist.save_sidecar(runtime.reg(), path)    # #48: no save writes a folder; V1's Both did
         geometry = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
         r = cleanup.report()
@@ -247,6 +250,27 @@ def test_remove_hindsight_data():
         assert files == (set() if delete_folder else {"<file>_hindsight/", "<file>_hindsight/history.hsr",
                                                        "<file>_hindsight/index.json"}), files
         assert done["ids"] == r["ids"]
+
+
+def test_the_list_says_no_save_writes_a_folder():
+    """#52: METADATA.md has no Save mode (gone, #51) and says this version never writes the history
+    folder or its files (#48); the set-aside copy of an unreadable V1 history file is the one exception."""
+    text = open(os.path.join(H.ROOT, "METADATA.md"), encoding="utf-8").read()
+    assert "Save mode" not in text, "METADATA.md still names Save mode"
+    rows = dict(re.findall(r"^\| `([^`]+)` \|[^|]*\|[^|]*\| ([^|]*) \|", text, re.M))
+    folder = os.path.basename(persist.sidecar_dir("<file>.blend")) + "/"
+    for name in (folder, folder + persist.HSR_NAME, folder + persist.INDEX_NAME):
+        assert rows[name].startswith("never by this version"), (name, rows[name])
+
+
+def test_the_file_permission_says_what_is_written():
+    """#52: the manifest's file permission (shown when the extension is installed) no longer says the
+    history is saved next to the .blend: only the crash journal is written, a V1 folder is read."""
+    import tomllib
+    m = tomllib.load(open(os.path.join(H.ROOT, "hindsight", "blender_manifest.toml"), "rb"))
+    reason = m["permissions"]["files"]
+    assert "next to" not in reason and "journal" in reason, reason
+    assert len(reason) <= 64 and not reason.endswith("."), reason     # Blender's limit for a reason
 
 
 def test_movie_mode_objects_are_listed_and_removed():
@@ -281,6 +305,7 @@ def test_movie_mode_objects_are_listed_and_removed():
 
 for fn in (test_session_writes_only_what_is_listed, test_saving_an_unrecorded_file_adds_nothing,
            test_opening_a_file_changes_nothing, test_opens_without_hindsight, test_remove_hindsight_data,
+           test_the_list_says_no_save_writes_a_folder, test_the_file_permission_says_what_is_written,
            test_movie_mode_objects_are_listed_and_removed):
     H.run(fn)
 H.finish()
