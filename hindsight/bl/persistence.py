@@ -50,10 +50,10 @@ LEFT_OUT_TEXT = ("{n} step{s} of '{obj}' from the interrupted session could not 
                  "They were made after going back past the last save. '{obj}' is as you saved it")
 UNREADABLE_PROP = "hindsight_data_unreadable"
 SAVE_ID_PROP = "save_id"         # which save of the history this .blend goes with (older builds ignore it)
-EMBED_FALLBACK_TEXT = ("The history could not be stored in the .blend. It is saved in the history folder "
-                       "next to it instead")
-SIDECAR_FAILED_TEXT = ("The history folder could not be written, so it still holds the last save before "
-                       "this one. Save again to keep your history")
+KEPT_LAST_SAVE_TEXT = ("The history could not be stored, so the .blend keeps the history of the save before "
+                       "this one. Free some memory and save again to keep your history")
+NOT_STORED_TEXT = ("The history could not be stored in the .blend. Free some memory and save again to keep "
+                   "your history")
 OTHER_SAVE_TEXT = ("Steps from an interrupted session were found, but they belong to another save of this "
                    "file. They were not brought back")
 STALE_SIDECAR_TEXT = "The history folder is from another save of this file"
@@ -64,7 +64,8 @@ _PROTECT = {"sidecar": False, "embed": False}
 _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 
 _J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12]}    # live journal of the session file
-_FALLBACK = {"sidecar": False}   # the history couldn't be stored in the .blend: write the folder instead
+# the history couldn't be stored in the .blend, which keeps the last save's: on_save_post keeps the journal
+_FALLBACK = {"kept": False}
 
 
 # ----------------------------------------------------------------------------- journal
@@ -340,7 +341,7 @@ def on_save_pre(*args) -> None:
     runtime.end_paused(now=True)      # D153: and a Dyntopo visit that paused recording
     runtime.drop_unused_uids()
     drop_default_settings()
-    _FALLBACK["sidecar"] = False
+    _FALLBACK["kept"] = False
     if not _writes_anything(_handler_path(args)):
         return
     reg = runtime.reg()
@@ -357,49 +358,47 @@ def on_save_pre(*args) -> None:
     except Exception as e:
         log.error_once(("saved_prints", str(e)), f"could not note the recorded objects for saving: {e}", e)
     text = None
+    old = {}             # #48: the last save's copy, held until the new one is built
     try:
         _drain_packer()
         text = bpy.data.texts.get(TEXT_NAME)
         if text is None:
             text = bpy.data.texts.new(TEXT_NAME)
         text.use_fake_user = True
-        # #48: whatever Save history says, the history goes in the .blend. A folder from a newer
-        # Hindsight stays pointed at, so that Hindsight still finds it.
-        text[SIDECAR_PROP] = _PROTECT["sidecar"]
-        if _PROTECT["embed"]:
-            pass   # history from a newer Hindsight: keep it exactly as it was
-        else:
+        if not _PROTECT["embed"]:          # else: history from a newer Hindsight, kept exactly as it was
             # The parts are the step blobs themselves (no copy); anything that can go wrong in
             # putting them together happens here, before the stored copy is touched.
             parts = persist.registry_parts(reg, _codec())
             for key in (DATA_PROP, DATA_BIN_PROP):
                 if key in text:
-                    # Blender's copy of the last saved history goes before the new one is built:
-                    # otherwise the old copy, the new bytes and Blender's new copy are all held at once.
+                    # Blender's copy of the last saved history goes before the new one is built (held here
+                    # until then): otherwise the old copy, the new bytes and Blender's new copy are all held.
+                    old[key] = text[key]
                     del text[key]
             # R061: the bytes themselves (base64 cost time and a third more). Both keys are gone by now, which
             # matters: Blender cuts bytes at the first zero when it replaces an existing bytes property.
             data = persist.parts_to_bytes(parts)
             del parts
+            old.clear()
             text[DATA_BIN_PROP] = data
             del data
-        if not _PROTECT["embed"]:
             text[SAVE_ID_PROP] = reg.save_id
+        # #48: whatever Save history says, the history goes in the .blend. A folder from a newer
+        # Hindsight stays pointed at, so that Hindsight still finds it.
+        text[SIDECAR_PROP] = _PROTECT["sidecar"]
     except Exception as e:
         guard.fail("saving", e, "could not store undo history in the .blend")
-        if text is not None and not _PROTECT["embed"]:
-            # The new copy couldn't be made (out of memory, most likely). A copy of the last save still in
-            # the .blend stays; without one (removed first, or never there) the .blend would be saved with
-            # no history at all: the history folder gets it instead, and the .blend says so.
-            # shortcut: the last path that writes a folder, until the owner picks its replacement (#48)
-            try:
-                if DATA_PROP not in text and DATA_BIN_PROP not in text:
-                    text[SIDECAR_PROP] = True
-                    text[SAVE_ID_PROP] = reg.save_id
-                    _FALLBACK["sidecar"] = True
-                    _note("ERROR", EMBED_FALLBACK_TEXT)
-            except Exception as e2:
-                guard.fail("saving", e2, "could not point the .blend at its history folder")
+        # #48 (option A), no folder: the .blend keeps the last save's history (put back if it was taken
+        # out), its save id and where it pointed, and on_save_post keeps the crash journal that goes with it
+        _FALLBACK["kept"] = True
+        try:
+            for key, value in old.items():
+                text[key] = value
+            old.clear()
+            had = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text or text.get(SIDECAR_PROP))
+            _note("ERROR", KEPT_LAST_SAVE_TEXT if had else NOT_STORED_TEXT)
+        except Exception as e2:
+            guard.fail("saving", e2, "could not put the last save's history back in the .blend")
 
 
 @bpy.app.handlers.persistent
@@ -408,26 +407,13 @@ def on_save_post(*args) -> None:
     path = _handler_path(args)
     if not path or not _writes_anything(path):
         return
-    folder = _FALLBACK["sidecar"]      # #48: only when the history couldn't go in the .blend
-    _FALLBACK["sidecar"] = False
-    folder_failed = False
-    if folder and _PROTECT["sidecar"] and os.path.isfile(persist.sidecar_file(path)):
-        runtime.log.warn("history folder left untouched: it was saved by a newer Hindsight")
-    elif folder:
-        try:
-            _drain_packer()
-            persist.save_sidecar(runtime.reg(), path)
-        except Exception as e:
-            guard.fail("saving", e, "could not write the undo history folder")
-            folder_failed = True
-            _note("ERROR", SIDECAR_FAILED_TEXT)
+    kept = _FALLBACK["kept"]
+    _FALLBACK["kept"] = False
     current = _current_blend()
     if current and not _same_path(path, current):
         return   # "Save Copy": the session file itself did not change
-    if folder_failed:
-        # The folder still holds the save before this one, and the journal goes with that save:
-        # keep it. The .blend names this save, so opening it knows the folder is older and its
-        # check of every mesh leaves out the histories that no longer fit (D46).
+    if kept:
+        # The .blend still holds the save before this one, and the journal goes with that save: keep it
         runtime.missing_message[0] = None
         return
     try:

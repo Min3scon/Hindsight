@@ -12,6 +12,7 @@ file alone (its folder gone) must still hold all of it.
 import base64
 import json
 import shutil
+import struct
 import tempfile
 
 import bpy
@@ -19,6 +20,7 @@ import numpy as np
 
 import tests.harness as H
 from hindsight.bl import persistence, runtime
+from hindsight.core import persist
 from hindsight.core.types import SETTINGS
 
 FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "beta2")
@@ -129,10 +131,65 @@ def test_moved_without_its_folder():
     assert positions(bpy.data.objects["S"]) == want["S"][-1]
 
 
+def _out_of_memory_save():
+    real = persist.parts_to_bytes
+
+    def boom(parts):
+        raise MemoryError("test: out of memory building the stored history")
+    persist.parts_to_bytes = boom
+    try:
+        bpy.ops.wm.save_mainfile()
+    finally:
+        persist.parts_to_bytes = real
+
+
+def test_history_folder_file_saved_out_of_memory():
+    """#48 (option A): the history can't be stored in the .blend at the first save of a beta 2 folder file
+    (out of memory). No folder is written: the .blend keeps pointing at beta 2's folder, left as it was."""
+    blend, want = place("folder")
+    hsr = persist.sidecar_file(blend)
+    with open(hsr, "rb") as fh:
+        before = fh.read()
+    SETTINGS.crash_recovery = "LAST_SAVED"
+    open_file(blend)
+    _out_of_memory_save()
+    with open(hsr, "rb") as fh:
+        assert fh.read() == before, "beta 2's folder was written"
+    open_file(blend)
+    check(want["S"], want["O"], "folder file saved out of memory")
+
+
+def test_a_newer_hindsights_folder_stays_pointed_at():
+    """A history folder saved by a newer Hindsight is never written, and saving keeps the .blend pointing at
+    it, so that Hindsight still finds it (every other save stops pointing at a folder, #48)."""
+    blend, want = place("both")
+    hsr = persist.sidecar_file(blend)
+    with open(hsr, "rb") as fh:
+        blob = fh.read()
+    (jlen,) = struct.unpack_from("<I", blob, 4)
+    doc = json.loads(blob[8:8 + jlen])
+    doc["format"] = doc["version"] = persist.FORMAT_VERSION + 1
+    js = json.dumps(doc).encode()
+    newer = persist.REG_MAGIC + struct.pack("<I", len(js)) + js + blob[8 + jlen:]
+    with open(hsr, "wb") as fh:
+        fh.write(newer)
+    SETTINGS.crash_recovery = "LAST_SAVED"
+    for what in ("opened", "saved and opened again"):
+        open_file(blend)
+        assert persistence._PROTECT["sidecar"], f"{what}: the folder isn't taken for a newer Hindsight's"
+        check(want["S"], want["O"], f"newer folder, {what}")      # the history comes from the .blend
+        bpy.ops.wm.save_mainfile()
+        assert bpy.data.texts[persistence.TEXT_NAME].get(persistence.SIDECAR_PROP), \
+            f"{what}: the .blend no longer points at the newer Hindsight's folder"
+        with open(hsr, "rb") as fh:
+            assert fh.read() == newer, f"{what}: the newer Hindsight's folder was written"
+
+
 if __name__ == "__main__":
     try:
         for t in (test_history_folder_file, test_history_inside_the_blend, test_saved_both_ways,
-                  test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash, test_moved_without_its_folder):
+                  test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash, test_moved_without_its_folder,
+                  test_history_folder_file_saved_out_of_memory, test_a_newer_hindsights_folder_stays_pointed_at):
             H.run(t)
     finally:
         shutil.rmtree(TMP, ignore_errors=True)
