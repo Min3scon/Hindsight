@@ -993,6 +993,7 @@ def _at_every_step(measure) -> bool:
             for h in runtime.reg().histories.values():     # a cursor the timeline can't name: as it was
                 if h.cursor != was.get(h.uid, h.cursor):
                     runtime._goto_history(h, was[h.uid], False)
+            vl.update()                                    # its objects again, after those made and removed
             for o in vl.objects:                           # one made again on the way: selected,
                 if o.name in sel and not o.select_get():   # active and in its mode as before
                     o.select_set(True)
