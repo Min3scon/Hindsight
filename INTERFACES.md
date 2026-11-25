@@ -213,8 +213,7 @@ def atomic_write_json(path: str, obj) -> None
 def registry_to_bytes(reg, codec: str = "auto") -> bytes      # complete compacted serialisation
 def registry_from_bytes(b: bytes) -> "Registry"
 def sidecar_dir(blend_path: str) -> str          # "<dir>/<blend stem>_hindsight"
-def save_sidecar(reg, blend_path: str) -> None   # writes sidecar_dir/history.hsr atomically (+ index.json
-                                                 # {"version":1,"blend":basename,"saved_at":time})
+# (no save_sidecar: V2 never writes a history folder, #53; tests write V1's with tests/reference/persist.py)
 def load_sidecar(blend_path: str) -> "Registry | None"    # None if folder/file missing
 def sidecar_missing(blend_path: str, expected: bool) -> bool   # True if expected but folder absent
 def replay(reg, records: list[tuple[str, dict, bytes]]) -> int

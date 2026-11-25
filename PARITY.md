@@ -106,7 +106,7 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | # | Original behaviour | Where | Test | Status |
 |---|---|---|---|---|
 | 65 | Save Mode in Add-on Preferences: Sidecar / Embed / Both (V2: removed, the history is always inside the .blend; #51) | bl/persistence.py | test_bl_panels | [x] |
-| 66 | Sidecar: history folder beside the .blend | core/persist.save_sidecar | test_core_journal, test_bl_persistence | [x] |
+| 66 | Sidecar: history folder beside the .blend (V1's; read only since #48, never written, #53) | core/persist.load_sidecar | test_core_journal, test_bl_persistence | [x] |
 | 67 | Embed: inside the .blend (one file to share) | persistence Text ID property | test_bl_persistence | [x] |
 | 68 | Both | persistence | test_bl_persistence | [x] |
 | 69 | Renamed/moved .blend without folder -> "Undo History Not Found" | persistence missing_message | test_bl_persistence | [x] |

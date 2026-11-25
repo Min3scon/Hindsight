@@ -30,6 +30,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
+from tests.reference import persist as v1_persist   # V1's folder writer, for V1 files
 from hindsight.bl import camrig, cleanup, persistence, rigmark, runtime
 from hindsight.core import persist
 
@@ -231,7 +232,7 @@ def test_remove_hindsight_data():
         os.makedirs(os.path.dirname(path), exist_ok=True)
         full_session(path)
         assert cleanup.report()["folder"] is None, "#52: a folder is offered only when V1 left one"
-        persist.save_sidecar(runtime.reg(), path)    # #48: no save writes a folder; V1's Both did
+        v1_persist.save_sidecar(runtime.reg(), path)    # #48: no save writes a folder; V1's Both did
         geometry = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
         r = cleanup.report()
         assert r["ids"] and r["text"] and r["keyframes"] and r["folder"], r
