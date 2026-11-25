@@ -267,9 +267,16 @@ def run_checks(retry_failed=True):
                 SETTINGS.truncation_threshold = 0     # never ask (and never put the mesh back), as _bridge_paused
                 try:
                     for uid in list(runtime._STATES):
-                        ob = runtime.find_object(uid)
-                        if ob is not None and ob.mode != "EDIT":
-                            runtime.commit(ob, label="Changes While Off", full=True)
+                        ob = None
+                        try:
+                            ob = runtime.find_object(uid)
+                            if ob is not None and ob.mode != "EDIT":
+                                runtime.commit(ob, label="Changes While Off", full=True)
+                        except Exception as e:      # one object failing never costs the others their step
+                            name = getattr(ob, "name", uid)
+                            log.error_once(("selfcheck", "changes_while_off", uid, str(e)),
+                                           f"Self-check could not record what changed on {name} while "
+                                           f"recording was off: {e}", e)
                 finally:
                     SETTINGS.truncation_threshold = thr
         log.info("Self-check switched these back on: " + ", ".join(names))

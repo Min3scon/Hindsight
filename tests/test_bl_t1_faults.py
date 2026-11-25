@@ -16,7 +16,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_ops as T
 from hindsight.bl import adapters, datarec, guard, idmap, runtime, selfcheck
-from hindsight.bl import prefs
+from hindsight.bl import log, prefs
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -239,15 +239,23 @@ def test_animated_constraint_settings_are_not_steps():
 
 def test_strokes_while_the_recorder_is_off_are_one_step():
     """#118 (D46, D95): strokes made while a fault had the recorder switched off become one step of
-    their own when Self-check switches it back on; the next stroke is the step after it."""
+    their own when Self-check switches it back on; the next stroke is the step after it, and going back
+    over it gives the mesh from before the fault. A recorded object not changed meanwhile gets no step."""
     H.fresh()
+    other = H.make_mesh(400, name="Other", location=(3, 0, 0))
     ob = H.make_mesh(400, name="Blob")
+    H.enter(other, "SCULPT")
+    H.fake_stroke(other, 9)
+    H.commit(other)
     H.enter(ob, "SCULPT")
+    ho = runtime.reg().history_for(runtime.obj_uid(other))
+    n_other = len(ho.entries)
     for seed in (0, 1):
         H.fake_stroke(ob, seed)
         H.commit(ob)
     h = runtime.reg().history_for(runtime.obj_uid(ob))
     assert len(h.entries) == 2
+    before = H.snapshot(ob)
     real = runtime._observe
     runtime._observe = boom
     try:
@@ -261,11 +269,15 @@ def test_strokes_while_the_recorder_is_off_are_one_step():
     off = H.snapshot(ob)
     selfcheck.run_checks(retry_failed=True)         # what the Self-check button runs
     assert guard.ok("recorder")
+    assert len(ho.entries) == n_other               # nothing changed on it: no step
     H.fake_stroke(ob, 4)
     H.commit(ob)
     assert len(h.entries) == 4, [e.meta.get("label") for e in h.entries]
+    assert h.entries[2].meta.get("label") == "Changes While Off"
     runtime._goto_history(h, 3, True)               # back one step: only the last stroke is undone
     assert all((H.snapshot(ob)[k] == v).all() for k, v in off.items())
+    runtime._goto_history(h, 2, True)               # back over "Changes While Off": the mesh before the fault
+    assert all((H.snapshot(ob)[k] == v).all() for k, v in before.items())
 
 
 def test_changes_while_off_never_ask_to_drop_steps():
@@ -290,9 +302,42 @@ def test_changes_while_off_never_ask_to_drop_steps():
     assert all((H.snapshot(ob)[k] == v).all() for k, v in off.items())
 
 
+
+def test_changes_while_off_go_on_past_an_object_that_fails():
+    """#119 review: if one object's "Changes While Off" step raises, the other objects still get theirs and
+    the failure is logged."""
+    H.fresh()
+    a = H.make_mesh(400, name="A", location=(3, 0, 0))
+    b = H.make_mesh(400, name="B")
+    for ob in (a, b):
+        H.enter(ob, "SCULPT")
+        H.fake_stroke(ob, 0)
+        H.commit(ob)
+    ua, ub = runtime.obj_uid(a), runtime.obj_uid(b)
+    assert [u for u in runtime._STATES if u in (ua, ub)] == [ua, ub]     # A's step is tried first
+    hb = runtime.reg().history_for(ub)
+    n = len(hb.entries)
+    guard.fail("recorder", RuntimeError("injected fault"))
+    H.fake_stroke(a, 1)
+    H.fake_stroke(b, 1)                             # both changed while the recorder is off
+    real = runtime.commit
+
+    def flaky(ob, **kw):
+        if ob == a:
+            raise RuntimeError("no step for A")
+        return real(ob, **kw)
+
+    runtime.commit = flaky
+    try:
+        selfcheck.run_checks(retry_failed=True)
+    finally:
+        runtime.commit = real
+    assert len(hb.entries) == n + 1 and hb.entries[-1].meta.get("label") == "Changes While Off"
+    assert any("no step for A" in line for line in log.tail(400))
+
 for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults, test_edit_steps_fault,
            test_object_mode_mesh_check_fault, test_mesh_change_without_an_operator_is_recorded,
            test_animated_constraint_settings_are_not_steps, test_strokes_while_the_recorder_is_off_are_one_step,
-           test_changes_while_off_never_ask_to_drop_steps):
+           test_changes_while_off_never_ask_to_drop_steps, test_changes_while_off_go_on_past_an_object_that_fails):
     H.run(fn)
 H.finish()
