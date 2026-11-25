@@ -3,17 +3,17 @@
 # LIMITS-B report: "Not recorded in this version", audit and recording design
 
 Agent LIMITS-B. Audit and design only: no repository file was changed, nothing was committed.
-Worktree `/home/user/Hindsight/.claude/worktrees/agent-acaba07647b1798d6` at 66fcdf8.
-Everything below was measured headless with the `bpy` modules in /home/user/venvs (4.2.23, 5.0.1,
+Worktree `/home/user/Hindsight/.claude/worktrees/agent-acaba07647b1798d6` at 66fcdf8. <!-- precheck: allow -->
+Everything below was measured headless with the `bpy` modules in /home/user/venvs (4.2.23, 5.0.1, <!-- precheck: allow -->
 5.1.2, 5.2.2, 5.3.0). There is no Blender binary, no window and no GPU here: no real brush stroke,
 no UI drag, no screenshot was possible.
 
-Folder S/agents/LIMITS-B/ (S = /tmp/claude-0/-home-user-Hindsight/4a339202-445d-5357-a8ee-013fb190a1d0/scratchpad):
+Folder S/agents/LIMITS-B/ (S = /tmp/claude-0/-home-user-Hindsight/4a339202-445d-5357-a8ee-013fb190a1d0/scratchpad): <!-- precheck: allow -->
 
 | File | What |
 |---|---|
 | probe_limits.py | 80 cases: makes each change with Record > Everything on (every object and the scene recorded, every data kind on, `FORCE_SCOPE`/`FORCE_KINDS` like the tier 1 tests), runs `runtime._tick_once()` and `datarec.finish_operation(label)` (what the timer does when an operator ends), leaves the mode if any, then jumps the global timeline back and forward and compares an independent read of the data. Two controls (tier 1 move, Edit Mode step) must pass. `PROBE_DEBUG=1` prints the values that differ, `PROBE_STEPS=1` the recorded steps. |
-| out42.txt, out50.txt, out51.txt, out52.txt, out53.txt | Its output on each Blender. Command: `/home/user/venvs/bpyNN/bin/python probe_limits.py <worktree>` |
+| out42.txt, out50.txt, out51.txt, out52.txt, out53.txt | Its output on each Blender. Command: `/home/user/venvs/bpyNN/bin/python probe_limits.py <worktree>` | <!-- precheck: allow -->
 | compare.py | `python3 compare.py` prints the rows that differ between versions; `compare.py all` the whole table. |
 | gncheck.py, gn3.py, gn4.py, gn5.py | Where Geometry Nodes modifier inputs live per version. |
 | seamcheck.py, seamcheck2.py, apicheck.py | Seam attributes, embedded node tree pointers, list reorder operators, custom normals storage, `modifiers.move`. Output in api42/50/53.txt, seam42/53.txt. |
@@ -34,7 +34,7 @@ HANDOFF.md line 287 names it: local branch `tier2`, worktree `.tmp/wt3b`, commit
 - `git stash list`: empty.
 - `git fsck --lost-found`: two dangling commits (f9e08b8 "WIP on claude/lucid-brahmagupta-9gsdsn" and 1da6f89 "memwork-check-13930", both from today, store/meshio/persist work) and three dangling trees whose adapter files match the current ones. No tier 2 code.
 - `git log --all -G "class [A-Za-z]*(Modifier|Material|NodeTree|Node)[A-Za-z]*Adapter"`: no match in any commit.
-- `/home/user/Hindsight/.tmp` holds only `migrate`, `old_builds`, `results`; no `wt3b`, no patch. `find / -name tier2_wip.patch`: nothing.
+- `/home/user/Hindsight/.tmp` holds only `migrate`, `old_builds`, `results`; no `wt3b`, no patch. `find / -name tier2_wip.patch`: nothing. <!-- precheck: allow -->
 
 Verdict: the tier 2 code is lost. Only its description survives (TEST_AUDIT.md line 112: "object
 adapter: stack, settings, GN inputs, slots; node tree adapter: nodes, links, values, ramps, curves,
@@ -325,7 +325,7 @@ reads only the groups (needs the small `runtime._observe` parameter, section 5).
 mirror change other groups too, which is why every group is read, not only the active one.
 
 Custom normals (5.0+): add `"INT16_2D": (np.int16, 2, "value")` to `core/types.CHANNEL_TYPES`; the
-Rust engine's diff and apply must accept int16 (its dtype table is in `native/`); a beta 3 build that
+Rust engine's diff and apply must accept int16 (its dtype table is in `native/`); a V2 build from before format 5 that
 meets a delta with that type fails with KeyError (CorruptStep), so a history with such a delta is
 written as format 5 (section 5). 4.2 and 4.x: custom normals can't be read or written exactly
 through Python; record nothing, show a note on objects with `has_custom_normals`.
@@ -653,16 +653,16 @@ kind whose adapter is loaded; kinds of families not written yet aren't shown.
 - Each history's JSON gets `"adapters": [ids]` (adapters with records in it), kept up to date on push
   and on load (from step metas: commit writes `extra["adapters"]` on DATA steps, which is in the meta).
 - `FORMAT_VERSION` becomes 5. A registry is written as format 4 when every history's adapters are in
-  `{"rna", "object", "scene"}` and no delta uses a channel type beta 3 lacks; else as 5. Beta 3 and
-  older refuse format 5 with `NewerFormatError` ("history format 5 is newer than this Hindsight
-  understands"): nothing guessed, nothing overwritten. That is better than what beta 3 would do with
+  `{"rna", "object", "scene"}` and no delta uses a channel type the pre-format-5 V2 build lacks; else as 5. V1 and the pre-format-5 V2 build
+  refuse format 5 with `NewerFormatError` ("history format 5 is newer than this Hindsight
+  understands"): nothing guessed, nothing overwritten. That is better than what that build would do with
   unknown records in format 4: load them, write nothing for them on a jump, then record their
   disappearance as a change on the next operation (`_diff` sees MISSING on the Blender side and
   `kind_of` gives None, so `kind_on("")` is True).
 - Steps keep blob version 4: records are JSON, new adapters only add records; no new header flag (a
-  flag beta 3 doesn't know makes its header length check fail and drops the history from there).
+  flag the pre-format-5 V2 build doesn't know makes its header length check fail and drops the history from there).
 - Tests: format 4 file still written when only tier 1 adapters were used; format 5 file refused by
-  the beta 3 code in `S/baseline` (checked out at 66fcdf8) and by `.tmp/old_builds` with the message;
+  the pre-format-5 V2 code in `S/baseline` (checked out at 66fcdf8) and by `.tmp/old_builds` with the message;
   this build reads format 4 and 5.
 
 ### 5.6 Notes and COVERAGE (warnings.py, tools)
@@ -719,7 +719,7 @@ Every package copies the tier 1 shape (tests/t1_gate_lib.py, t1_ops.py, oracle.p
 5. Undo: `datarec.on_undo` emulation as test_bl_t1_real_undo.py does; mode switches (Weight Paint,
    Texture Paint, Pose, armature/curve/text Edit Mode).
 6. Save and reload: sidecar, embed, both; rename; append; Shift+D and Alt+D for shared data (owner
-   rule); format 4 vs 5 written as expected; beta 3 refuses format 5 (S/baseline).
+   rule); format 4 vs 5 written as expected; the pre-format-5 V2 build refuses format 5 (S/baseline).
 7. Hypothesis: 2,000 sequences per adapter mixing its operations with tier 1 ones; corpus in
    `tests/corpus/<package>/`.
 8. Mutation testing of each adapter's diff and write code (as TEST_AUDIT describes for tier 1).
@@ -783,7 +783,7 @@ history engine needs no change." (Owner decides before P3 starts.)
 
 ## 10. Risks
 
-- Files written by these packages need format 5, which beta 3 and older refuse: anyone going back
+- Files written by these packages need format 5, which V1 and the pre-format-5 V2 build refuse: anyone going back
   to an older build loses access to that file's history (the file itself opens).
 - Node trees: hundreds of node types, add-on nodes, zone pairing, interface panels, version changes
   between 4.2 and 5.3 (compositor became a node group in 5.0, `use_nodes` deprecated). Largest risk
