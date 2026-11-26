@@ -1,6 +1,5 @@
 import os, sys, time, json, statistics
 ROOT = sys.argv[1]; sys.path.insert(0, ROOT); sys.path.insert(1, os.path.join(ROOT, "bench", "scenarios"))
-import bpy
 import tests.harness as H
 import _common as K
 BL = K.load_bench_module("bench_bl")

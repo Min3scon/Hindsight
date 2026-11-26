@@ -25,6 +25,7 @@ K.use_root(opts.root)
 import bpy  # noqa: E402
 import tests.harness as H  # noqa: E402
 from hindsight.bl import datarec, idmap, runtime  # noqa: E402
+from hindsight.bl import prefs
 
 K.import_checked(opts.root)
 C = bpy.context
@@ -38,7 +39,7 @@ for i in range(N):
     if i % 3 == 0:
         C.active_object.constraints.new("COPY_ROTATION")
 obs = list(C.scene.objects)
-datarec.FORCE_SCOPE[0] = "EVERYTHING"
+prefs.FORCE["record_scope"] = "EVERYTHING"
 for o in obs:
     datarec.set_tracked(o, True)
 datarec.set_tracked(C.scene, True)

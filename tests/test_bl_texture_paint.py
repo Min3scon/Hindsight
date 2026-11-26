@@ -10,7 +10,7 @@ import bpy
 import numpy as np
 import tests.harness as H
 from hindsight.bl import meshio, runtime
-from hindsight.core import step as stepmod
+from hindsight.bl import prefs
 
 C = bpy.context
 NAME = "Canvas"
@@ -38,7 +38,7 @@ def setup(side=64, float_buffer=False, second=False):
 
 
 def enter(ob):
-    runtime.FORCE_TEXTURE[0] = True
+    prefs.FORCE["record_texture_painting"] = True
     H.enter(ob, "TEXTURE_PAINT")
 
 
@@ -76,7 +76,7 @@ def run_case(float_buffer, second=False):
 
 
 def test_off_by_default_records_nothing():
-    runtime.FORCE_TEXTURE[0] = None
+    prefs.FORCE["record_texture_painting"] = None
     ob, imgs = setup()
     H.enter(ob, "TEXTURE_PAINT")
     paint(imgs[0], 1)
@@ -84,8 +84,6 @@ def test_off_by_default_records_nothing():
     assert H.commit(ob) is None
     h = runtime.history_of(ob)
     assert h is None or not h.entries
-    p = bpy.types.AddonPreferences
-    from hindsight.bl import prefs
     assert prefs.HINDSIGHT_AP_prefs.__annotations__["record_texture_painting"].keywords["default"] is False
     print("PASS test_off_by_default_records_nothing")
 
@@ -180,7 +178,7 @@ def test_painting_in_the_image_editor():
     materials: each stroke is a Texture Paint step of that object, which stays in Object Mode. An image
     of no recorded object isn't recorded. (Headless there is no Image Editor: what it shows is given.)"""
     ob, imgs = setup()
-    runtime.FORCE_TEXTURE[0] = True
+    prefs.FORCE["record_texture_painting"] = True
     C.view_layer.objects.active = ob
     assert ob.mode == "OBJECT"
     other = bpy.data.images.new("Loose", 16, 16)
@@ -222,5 +220,5 @@ if __name__ == "__main__":
               test_steps_are_small_and_counted, test_leaving_the_mode_and_painting_again,
               test_stroke_seen_from_its_operator, test_painting_in_the_image_editor):
         H.run(t)
-    runtime.FORCE_TEXTURE[0] = None
+    prefs.FORCE["record_texture_painting"] = None
     H.finish()

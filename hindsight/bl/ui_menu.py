@@ -6,6 +6,8 @@ None of these operators carries 'UNDO': they must never create native undo steps
 """
 
 import bpy
+
+from . import reg
 from .ctx import active_object as _ctx_active
 
 MORPH_TOOL_ID = "hindsight.morph_history"
@@ -285,13 +287,8 @@ classes = (
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    reg.register_classes(classes)
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

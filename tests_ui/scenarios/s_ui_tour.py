@@ -2,6 +2,7 @@
 
 Run with --fresh --no-install: the zip is installed through Blender's own Install from Disk.
 """
+import contextlib
 import bpy
 
 import common as C
@@ -16,6 +17,11 @@ def run(d):
     mark = d.console_mark()
     r = C.install_like_user(d)
     yield 1.5
+    # the notice comes 0.8 s after enabling; a yield counts from the start of the step, so a 1.5 s install ate it
+    for _ in range(30):
+        if "Hindsight is on." in d.console_since(mark):
+            break
+        yield 0.1
     log = d.console_since(mark)
     d.check("installed and enabled", C.enabled() and r == {'FINISHED'}, r)
     d.check("no traceback on install", "Traceback" not in log, log[-1500:])
@@ -23,7 +29,7 @@ def run(d):
     d.shot("A_first_run_status_bar")
 
     # ---------------------------------------------------------------- object mode, no history
-    ob = C.fresh_sphere(d)
+    C.fresh_sphere(d)
     C.frame_view(d)
     yield from C.show_sidebar_tab(d)
     win, area, reg, ui, space = d.view3d()
@@ -160,10 +166,8 @@ def run(d):
     old_type = area.type
     area.type = 'PREFERENCES'
     bpy.context.preferences.active_section = 'ADDONS'
-    try:
+    with contextlib.suppress(Exception):
         wm.addon_search = "Hindsight"
-    except Exception:
-        pass
     yield 0.4
     yield 0.3
     # click the disclosure arrow of the (only) listed add-on, like a user
