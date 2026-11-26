@@ -146,4 +146,157 @@ def test_index_part_round_trip_bit_exact():
 for fn in (test_engine_api_11, test_step_part_round_trip_bit_exact, test_step_part_bytes, test_empty_step_part,
            test_damaged_step_part, test_wrong_arguments_refused, test_index_part_round_trip_bit_exact):
     R.run(fn)
+
+
+# ---------------------------------------------------------------- #64 64b: a registry saved as format 5 and read back
+from hindsight.core import persist as P
+from hindsight.core.history import History
+from hindsight.core.registry import Registry
+
+
+def _registry():
+    """Two histories holding every kind of step: the five saved steps (bytes, CRC, meta) and a raw stroke that a
+    save still has to encode; settings, cursor, morph target and save id set."""
+    reg = Registry()
+    steps = _steps()
+    a = History("0123456789abcdef", ["objA"])
+    a.entries = [Entry(blob=b, meta=m, crc=c) for b, c, m in steps]
+    rng = np.random.default_rng(7)
+    old = rng.random(300, dtype=np.float32)
+    raw = Step(seq=9, label="Stroke 9", mode="SCULPT", target="objA", time=9.0, kind=DELTA,
+               deltas=[D.diff(POSITION_KEY, old, old + 1, (True, True))])
+    a.entries.append(Entry(step=raw))
+    a.cursor, a.morph_target = 4, 2
+    b = History("fedcba9876543210", ["objB", "objC"])
+    b.entries = [Entry(blob=bb, meta=m, crc=c) for bb, c, m in steps[:2]]
+    b.cursor, b.enabled = 2, False
+    reg.histories = {a.uid: a, b.uid: b}
+    reg.by_object = {"objA": a.uid, "objB": b.uid, "objC": b.uid}
+    reg.next_seq, reg.use_global, reg.preserve_modes = 12, True, False
+    reg.disabled, reg.everything, reg.saved = {"objD"}, {"matE"}, {"objA": {"mesh": "f1"}}
+    reg.save_id = "a1b2c3d4e5f6"
+    return reg
+
+
+def _taker(parts):
+    """What the add-on's open does with Blender's copy: hands each step part over once, then it is gone."""
+    asked = []
+
+    def take(uid, i):
+        asked.append((uid, i))
+        return parts.get(uid, {}).pop(str(i), None)
+    return take, asked
+
+
+def _group(parts):
+    return {uid: {str(i): p for i, p in enumerate(ps)} for uid, ps in parts.items()}
+
+
+def test_registry_format5_round_trip_bit_exact():
+    reg = _registry()
+    want = {h.uid: [e.blob_crc()[0] or e.to_bytes("auto", 0) for e in h.entries] for h in reg.histories.values()}
+    index, parts = P.registry_to_format5(reg)
+    doc = json.loads(N.index_read(index))
+    assert doc["format"] == 5 and doc["save_id"] == "a1b2c3d4e5f6", doc        # it says it is format 5
+    group = _group(parts)
+    take, asked = _taker(group)
+    back = P.registry_from_format5(index, index, take)
+    assert all(not g for g in group.values()), "a step part was left in Blender's copy"
+    assert len(asked) == sum(len(ps) for ps in parts.values())
+    assert back.load_report["format"] == 5 and back.load_report["damaged"] == []
+    assert back.save_id == reg.save_id and back.next_seq == 12 and back.use_global and not back.preserve_modes
+    assert back.by_object == reg.by_object and back.disabled == {"objD"} and back.everything == {"matE"}
+    assert back.saved == reg.saved
+    for uid, h in reg.histories.items():
+        g = back.histories[uid]
+        assert g.members == h.members and g.cursor == h.cursor and g.enabled == h.enabled
+        assert g.morph_target == h.morph_target
+        assert [e.blob for e in g.entries] == want[uid], uid                   # every step bit-exact
+        assert [e.blob_crc()[1] for e in g.entries] == [crc32(b) & 0xFFFFFFFF for b in want[uid]]
+        assert [e.meta for e in g.entries] == [P._meta_for_json(e.meta) for e in h.entries]
+    raw = back.histories["0123456789abcdef"].entries[-1].load()
+    assert raw.label == "Stroke 9" and raw.kind == DELTA
+
+
+def test_registry_format5_step_parts_split():
+    """Steps fill a step part up to the limit; a step bigger than it gets a step part of its own."""
+    reg = _registry()
+    h = reg.histories["0123456789abcdef"]
+    sizes = [len(e.blob_crc()[0] or e.to_bytes("auto", 0)) for e in h.entries]
+    old = P.PART_LIMIT
+    P.PART_LIMIT = max(sizes) - 1
+    try:
+        index, parts = P.registry_to_format5(reg)
+    finally:
+        P.PART_LIMIT = old
+    ps = parts[h.uid]
+    assert len(ps) > 1, sizes
+    listed = [hd for hd in json.loads(N.index_read(index))["histories"] if hd["uid"] == h.uid][0]["parts"]
+    assert [p["n"] for p in listed] and sum(p["n"] for p in listed) == len(h.entries)
+    assert [p["len"] for p in listed] == [len(p) for p in ps]
+    assert [p["crc"] for p in listed] == [crc32(p) & 0xFFFFFFFF for p in ps]
+    take, _ = _taker(_group(parts))
+    back = P.registry_from_format5(index, None, take)
+    assert [e.blob for e in back.histories[h.uid].entries] == [e.blob_crc()[0] or e.to_bytes("auto", 0)
+                                                               for e in h.entries]
+
+
+def test_registry_format5_index_copy():
+    """`index` damaged: `index_copy` is read. Both damaged: nothing is guessed."""
+    index, parts = P.registry_to_format5(_registry())
+    bad = bytearray(index)
+    bad[20] ^= 1
+    take, _ = _taker(_group(parts))
+    assert P.registry_from_format5(bytes(bad), index, take).save_id == "a1b2c3d4e5f6"
+    take, asked = _taker(_group(parts))
+    try:
+        P.registry_from_format5(bytes(bad), None, take)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("a damaged index part was read")
+    assert not asked
+
+
+def test_registry_format5_newer_refused():
+    doc = json.dumps({"format": 6, "histories": []}).encode()
+    try:
+        P.registry_from_format5(N.index_build(doc), None, lambda uid, i: None)
+    except P.NewerFormatError as e:
+        assert e.found == 6
+    else:
+        raise AssertionError("format 6 was read")
+
+
+def test_registry_format5_damaged_step_part():
+    """A step part whose CRC-32 doesn't match the index part: its steps are never applied; the history keeps the
+    steps reachable from its saved cursor, as formats 3 and 4 do (#69 adds the finer checks)."""
+    reg = _registry()
+    old = P.PART_LIMIT
+    P.PART_LIMIT = 1
+    try:
+        index, parts = P.registry_to_format5(reg)          # one step per step part
+    finally:
+        P.PART_LIMIT = old
+    uid = "0123456789abcdef"
+    p = bytearray(parts[uid][5])
+    p[-1] ^= 1
+    parts[uid][5] = bytes(p)
+    take, _ = _taker(_group(parts))
+    back = P.registry_from_format5(index, None, take)
+    h = back.histories[uid]
+    assert len(h.entries) == 5 and h.cursor == 4
+    assert back.load_report["damaged"] == [{"uid": uid, "members": ["objA"], "kept": 5, "lost": 1,
+                                            "before_saved": False, "lost_before": 0}]
+    group = _group(parts)
+    del group[uid]["0"]                                     # a missing step part counts as damaged too
+    take, _ = _taker(group)
+    h = P.registry_from_format5(index, None, take).histories[uid]
+    assert (len(h.entries), h.cursor, h.morph_target) == (4, 3, 1)
+
+
+for fn in (test_registry_format5_round_trip_bit_exact, test_registry_format5_step_parts_split,
+           test_registry_format5_index_copy, test_registry_format5_newer_refused,
+           test_registry_format5_damaged_step_part):
+    R.run(fn)
 R.finish()

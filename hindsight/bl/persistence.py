@@ -35,6 +35,8 @@ TEXT_NAME = ".hindsight_history"
 DATA_PROP = "hindsight_data"            # base64 text: earlier builds (read; never written since R061)
 DATA_BIN_PROP = "hindsight_data_bin"    # R061: the registry's bytes as they are (no base64)
 SIDECAR_PROP = "sidecar"
+PARTS_PROP = "hindsight_parts"          # format 5: the index part and the step parts (dev/FORMAT5_LAYOUT.md)
+UNREADABLE_PARTS_PROP = "hindsight_parts_unreadable"
 MISSING_TEXT = "History folder missing. Keep '{folder}' next to the .blend to see this file's history"
 NEWER_TEXT = ("This history was saved by a newer Hindsight (format {found}). Update Hindsight to see it. "
               "It is left untouched until then")
@@ -489,6 +491,8 @@ def _load_registry(path: str, text):
             del v
             return persist.registry_from_bytes(raw)
         except persist.NewerFormatError as e:
+            if e.found == persist.FORMAT5:
+                return None     # format 5's stub without its parts (an autosave): no history (#11's 11.9 adds the note)
             _PROTECT["embed"] = True
             _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
@@ -522,6 +526,38 @@ def _load_registry(path: str, text):
             _note("ERROR", UNREADABLE_TEXT.format(name=os.path.basename(moved or persist.HSR_NAME)))
         return None
 
+    def from_parts():
+        group = text[PARTS_PROP]
+
+        def take(uid, i):
+            g, k = group.get(uid), str(i)
+            if g is None or k not in g:
+                return None
+            b = g[k]
+            del g[k]            # Blender's copy goes as soon as Hindsight holds the part (#41)
+            return b
+        try:
+            reg = persist.registry_from_format5(group.get("index"), group.get("index_copy"), take)
+        except persist.NewerFormatError as e:
+            _PROTECT["embed"] = True        # kept exactly as it is, and saved back so
+            _note("ERROR", NEWER_TEXT.format(found=e.found))
+            return None
+        except Exception as e:
+            runtime.log.error_once(("parts_unreadable", str(e)), f"embedded history unreadable: {e}", e)
+            with contextlib.suppress(Exception):
+                if UNREADABLE_PARTS_PROP in text:
+                    del text[UNREADABLE_PARTS_PROP]
+                text[UNREADABLE_PARTS_PROP] = text.pop(PARTS_PROP)      # kept, out of the way of the next save
+            _note("ERROR", UNREADABLE_EMBED_TEXT)
+            return None
+        del text[PARTS_PROP]    # its step parts are gone already; parts the index part doesn't list go with it
+        return reg
+
+    if text is not None and PARTS_PROP in text:
+        reg = from_parts()
+        if reg is not None:
+            _report_load(reg)
+        return reg
     want = text.get(SAVE_ID_PROP) if text is not None else None
     # a V1 folder first, only while the .blend still points at it; then the .blend
     reg = from_sidecar()

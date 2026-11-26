@@ -29,6 +29,7 @@ in ``reg.load_report``.
 """
 from __future__ import annotations
 
+import binascii
 import json
 import os
 import struct
@@ -139,34 +140,47 @@ def registry_parts(reg, codec: str = "auto") -> list:
     blobs = []
     hjson = []
     for h in hists:
-        metas = []
-        crcs = []
-        for e in h.entries:
-            b, crc = e.blob_crc()               # R046: packed steps carry their CRC-32
-            if b is None:
-                hit = pre.get(id(e))
-                if hit is not None:
-                    b, crc = hit
-                else:
-                    b = e.to_bytes(codec, 0)    # raw steps: the quick form (main thread)
-                    crc = crc32(b) & 0xFFFFFFFF
-            blobs.append(b)
-            crcs.append(crc)
-            metas.append(_meta_for_json(e.meta))
-        mt = h.morph_target
-        hjson.append({
-            "uid": h.uid,
-            "members": list(h.members),
-            "cursor": int(h.cursor),
-            "enabled": bool(h.enabled),
-            "morph_target": None if mt is None else int(mt),
-            "n_entries": len(h.entries),
-            "metas": metas,
-            "crcs": crcs,
-        })
+        b, crcs, metas = _hist_steps(h, pre, codec)
+        blobs += b
+        hjson.append(dict(_hist_doc(h), metas=metas, crcs=crcs))
+    js = _registry_doc(reg, FORMAT_VERSION, hjson)
+    parts = [REG_MAGIC, _U32.pack(len(js)), js]
+    for b in blobs:
+        parts.append(_U64.pack(len(b)))
+        parts.append(b)
+    parts += [TRAILER, _U32.pack(crc32(js) & 0xFFFFFFFF)]
+    return parts
+
+
+def _hist_steps(h, pre, codec: str):
+    """A history's steps as a save writes them: (bytes, CRC-32s, metas). Packed steps as they are, raw ones in
+    the quick encoding (from `pre` when they were encoded on threads)."""
+    blobs, crcs, metas = [], [], []
+    for e in h.entries:
+        b, crc = e.blob_crc()               # R046: packed steps carry their CRC-32
+        if b is None:
+            hit = pre.get(id(e))
+            if hit is not None:
+                b, crc = hit
+            else:
+                b = e.to_bytes(codec, 0)    # raw steps: the quick form (main thread)
+                crc = crc32(b) & 0xFFFFFFFF
+        blobs.append(b)
+        crcs.append(crc)
+        metas.append(_meta_for_json(e.meta))
+    return blobs, crcs, metas
+
+
+def _hist_doc(h) -> dict:
+    mt = h.morph_target
+    return {"uid": h.uid, "members": list(h.members), "cursor": int(h.cursor), "enabled": bool(h.enabled),
+            "morph_target": None if mt is None else int(mt), "n_entries": len(h.entries)}
+
+
+def _registry_doc(reg, fmt: int, hjson: list) -> bytes:
     doc = {
-        "version": FORMAT_VERSION,
-        "format": FORMAT_VERSION,
+        "version": fmt,
+        "format": fmt,
         "writer": WRITER,
         "next_seq": int(reg.next_seq),
         "use_global": bool(reg.use_global),
@@ -180,13 +194,87 @@ def registry_parts(reg, codec: str = "auto") -> list:
     sid = getattr(reg, "save_id", None)
     if sid:
         doc["save_id"] = str(sid)       # ties the crash journal to this save (ignored by older builds)
-    js = json.dumps(doc, separators=(",", ":"), default=_json_default).encode("utf-8")
-    parts = [REG_MAGIC, _U32.pack(len(js)), js]
-    for b in blobs:
-        parts.append(_U64.pack(len(b)))
-        parts.append(b)
-    parts += [TRAILER, _U32.pack(crc32(js) & 0xFFFFFFFF)]
-    return parts
+    return json.dumps(doc, separators=(",", ":"), default=_json_default).encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# format 5: the index part and the step parts (dev/FORMAT5_LAYOUT.md; their bytes are the engine's, format5.rs)
+# ---------------------------------------------------------------------------
+FORMAT5 = 5
+PART_LIMIT = 4 << 20            # a step part is full at this many bytes of steps (a starting value, #41)
+# The stub on V1's Text: a V1 history header with no steps, so older builds say "saved by a newer Hindsight"
+# and keep the Text as it is. V2 writes it and never reads it: it knows format 5 by its parts.
+_STUB_JSON = b'{"format":5,"version":5,"writer":"Hindsight 2.0.0"}'
+STUB = binascii.b2a_base64(REG_MAGIC + _U32.pack(len(_STUB_JSON)) + _STUB_JSON, newline=False).decode("ascii")
+
+
+def registry_to_format5(reg, codec: str = "auto"):
+    """(index part, {history uid: [step parts]}): every step of the registry, in step parts of up to PART_LIMIT
+    bytes of steps (a bigger step gets one of its own). The steps are copied, never decoded."""
+    from .native import ENGINE
+    hists = list(reg.histories.values())
+    pre = _encode_raw(hists, codec)
+    hjson, out = [], {}
+    for h in hists:
+        blobs, crcs, metas = _hist_steps(h, pre, codec)
+        listed, parts, i = [], [], 0
+        while i < len(blobs):
+            j, size = i + 1, len(blobs[i])
+            while j < len(blobs) and size + len(blobs[j]) <= PART_LIMIT:
+                size += len(blobs[j])
+                j += 1
+            ms = json.dumps(metas[i:j], separators=(",", ":"), default=_json_default).encode("utf-8")
+            part, begin, crc = ENGINE.part_build(i, blobs[i:j], crcs[i:j], ms)
+            parts.append(part)
+            listed.append({"n": j - i, "len": len(part), "crc": crc, "begin": begin})
+            i = j
+        out[h.uid] = parts
+        hjson.append(dict(_hist_doc(h), parts=listed))
+    return ENGINE.index_build(_registry_doc(reg, FORMAT5, hjson)), out
+
+
+def registry_from_format5(index, index_copy, take):
+    """The registry from its index part (`index_copy` when `index` is damaged) and its step parts, asked for one
+    at a time: take(history uid, number) gives a part's bytes, or None when it is missing (the add-on deletes
+    Blender's copy as it hands it over). ValueError when neither index part can be read, NewerFormatError for
+    a format from the future. A step part that is missing or doesn't match the index part loses its steps
+    (never applied), cut as registry_from_bytes cuts damaged steps (#69 adds the finer checks)."""
+    from .history import History
+    from .native import ENGINE
+    from .registry import Registry
+    js = None
+    for b in (index, index_copy):
+        if js is None and b is not None:
+            js = ENGINE.index_read(b)
+    if js is None:
+        raise ValueError("damaged Hindsight history index (both copies)")
+    doc = json.loads(bytes(js).decode("utf-8"))
+    found = int(doc.get("format", 0) or 0)
+    if found > FORMAT5:
+        raise NewerFormatError(found)
+    reg = Registry()
+    report = _settings_from_doc(reg, doc, found)
+    strings, max_seq = {}, [0]
+    for hd in doc.get("histories", []):
+        slots = []
+        for i, pd in enumerate(hd.get("parts", [])):
+            n, p, got = int(pd["n"]), take(hd["uid"], i), None
+            if p is not None and len(p) == int(pd["len"]) and crc32(p) & 0xFFFFFFFF == int(pd["crc"]):
+                try:
+                    _first, offs, lens, crcs, metas = ENGINE.part_read(p)
+                    metas = json.loads(bytes(metas).decode("utf-8")) if metas is not None else []
+                    if len(offs) == n:
+                        got = [_entry(p[o:o + ln], metas[k] if k < len(metas) else None, c, strings, max_seq)
+                               for k, (o, ln, c) in enumerate(zip(offs, lens, crcs))]
+                except Exception:
+                    got = None
+            del p
+            slots += got if got is not None else [None] * n
+        _put_history(reg, History(hd["uid"], list(hd.get("members", []))), hd, slots, report)
+    if reg.next_seq <= max_seq[0]:
+        reg.next_seq = max_seq[0] + 1
+    reg.load_report = report
+    return reg
 
 
 def parts_to_bytes(parts) -> bytes:
@@ -245,21 +333,8 @@ def registry_from_bytes(b):
             raise ValueError("damaged Hindsight registry header (checksum)")
 
     reg = Registry()
-    report = {"format": found, "writer": doc.get("writer", "Hindsight 1.0.0-beta.1 or older"),
-              "migrated": found < FORMAT_VERSION, "damaged": []}
-    reg.next_seq = int(doc.get("next_seq", 1))
-    reg.use_global = bool(doc.get("use_global", False))
-    reg.preserve_modes = bool(doc.get("preserve_modes", True))
-    reg.by_object = dict(doc.get("by_object", {}))
-    saved = doc.get("saved")
-    reg.saved = dict(saved) if isinstance(saved, dict) else {}
-    sid = doc.get("save_id")
-    reg.save_id = str(sid) if sid else None
-    if hasattr(reg, "disabled"):
-        reg.disabled = set(doc.get("disabled", []))
-    if hasattr(reg, "everything"):
-        reg.everything = set(doc.get("everything", []))
-    max_seq = 0
+    report = _settings_from_doc(reg, doc, found)
+    max_seq = [0]
     strings = {}                     # per load: label, mode, target and kind values shared between steps
     truncated = False
     size = len(mv)
@@ -286,55 +361,83 @@ def registry_from_bytes(b):
             if crcs is not None and i < len(crcs) and crc != int(crcs[i]):
                 slots.append(None)
                 continue
-            meta = metas[i] if i < len(metas) else None
-            if meta is None:
-                try:
-                    from .step import step_from_bytes
-                    meta = step_from_bytes(blob).meta()
-                except Exception:
-                    slots.append(None)
-                    continue
-            if type(meta) is dict:
-                for k in _SHARED_META:      # equal strings become one object (json makes one per step)
-                    v = meta.get(k)
-                    if type(v) is str:
-                        meta[k] = strings.setdefault(v, v)
-            slots.append(Entry(blob=blob, meta=meta, crc=crc))
-            try:
-                max_seq = max(max_seq, int(meta.get("seq", 0)))
-            except (TypeError, ValueError):
-                pass
-        saved_cursor = max(0, min(int(hd.get("cursor", want)), want))
-        bad = [i for i, e in enumerate(slots) if e is None]
-        mt = hd.get("morph_target")
-        mt = None if mt is None else int(mt)
-        if not bad:
-            entries, cursor = slots, saved_cursor
-        else:
-            # Every step undoes and redoes itself, so a damaged step cuts the history in two: the
-            # object was saved after the steps up to the cursor, and only the steps between the last
-            # damaged one before the cursor and the first damaged one after it can be reached from
-            # there. That run is kept (as if the oldest steps had been dropped by the step cap).
-            early = [i for i in bad if i < saved_cursor]
-            late = [i for i in bad if i >= saved_cursor]
-            lo = early[-1] + 1 if early else 0
-            hi = late[0] if late else want
-            entries, cursor = slots[lo:hi], saved_cursor - lo
-            if mt is not None:
-                mt = mt - lo if lo <= mt <= hi else None
-            report["damaged"].append({"uid": h.uid, "members": list(h.members), "kept": len(entries),
-                                      "lost": want - len(entries), "before_saved": bool(early),
-                                      "lost_before": lo})
-        h.entries = entries
-        h.cursor = cursor
-        h.enabled = bool(hd.get("enabled", True))
-        h.morph_target = mt
-        _clamp_hist(h)
-        reg.histories[h.uid] = h
-    if reg.next_seq <= max_seq:
-        reg.next_seq = max_seq + 1
+            slots.append(_entry(blob, metas[i] if i < len(metas) else None, crc, strings, max_seq))
+        _put_history(reg, h, hd, slots, report)
+    if reg.next_seq <= max_seq[0]:
+        reg.next_seq = max_seq[0] + 1
     reg.load_report = report
     return reg
+
+
+def _settings_from_doc(reg, doc, found) -> dict:
+    """The registry's settings from a saved header (format 1 to 5); the load report to fill in."""
+    report = {"format": found, "writer": doc.get("writer", "Hindsight 1.0.0-beta.1 or older"),
+              "migrated": found < FORMAT_VERSION, "damaged": []}
+    reg.next_seq = int(doc.get("next_seq", 1))
+    reg.use_global = bool(doc.get("use_global", False))
+    reg.preserve_modes = bool(doc.get("preserve_modes", True))
+    reg.by_object = dict(doc.get("by_object", {}))
+    saved = doc.get("saved")
+    reg.saved = dict(saved) if isinstance(saved, dict) else {}
+    sid = doc.get("save_id")
+    reg.save_id = str(sid) if sid else None
+    if hasattr(reg, "disabled"):
+        reg.disabled = set(doc.get("disabled", []))
+    if hasattr(reg, "everything"):
+        reg.everything = set(doc.get("everything", []))
+    return report
+
+
+def _entry(blob, meta, crc, strings: dict, max_seq: list):
+    """A saved step as an Entry, or None when it has no meta and its own bytes can't give one."""
+    if meta is None:
+        try:
+            from .step import step_from_bytes
+            meta = step_from_bytes(blob).meta()
+        except Exception:
+            return None
+    if type(meta) is dict:
+        for k in _SHARED_META:      # equal strings become one object (json makes one per step)
+            v = meta.get(k)
+            if type(v) is str:
+                meta[k] = strings.setdefault(v, v)
+    try:
+        max_seq[0] = max(max_seq[0], int(meta.get("seq", 0)))
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return Entry(blob=blob, meta=meta, crc=crc)
+
+
+def _put_history(reg, h, hd, slots: list, report: dict) -> None:
+    """History `h` from its saved header and its steps (None where one is damaged or missing), into `reg`."""
+    want = len(slots)
+    saved_cursor = max(0, min(int(hd.get("cursor", want)), want))
+    bad = [i for i, e in enumerate(slots) if e is None]
+    mt = hd.get("morph_target")
+    mt = None if mt is None else int(mt)
+    if not bad:
+        entries, cursor = slots, saved_cursor
+    else:
+        # Every step undoes and redoes itself, so a damaged step cuts the history in two: the
+        # object was saved after the steps up to the cursor, and only the steps between the last
+        # damaged one before the cursor and the first damaged one after it can be reached from
+        # there. That run is kept (as if the oldest steps had been dropped by the step cap).
+        early = [i for i in bad if i < saved_cursor]
+        late = [i for i in bad if i >= saved_cursor]
+        lo = early[-1] + 1 if early else 0
+        hi = late[0] if late else want
+        entries, cursor = slots[lo:hi], saved_cursor - lo
+        if mt is not None:
+            mt = mt - lo if lo <= mt <= hi else None
+        report["damaged"].append({"uid": h.uid, "members": list(h.members), "kept": len(entries),
+                                  "lost": want - len(entries), "before_saved": bool(early),
+                                  "lost_before": lo})
+    h.entries = entries
+    h.cursor = cursor
+    h.enabled = bool(hd.get("enabled", True))
+    h.morph_target = mt
+    _clamp_hist(h)
+    reg.histories[h.uid] = h
 
 
 # ---------------------------------------------------------------------------
