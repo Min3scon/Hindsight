@@ -171,6 +171,18 @@ def stored_registry(path):
     return persist.registry_from_format5(g["index"], g.get("index_copy"), lambda uid, i: g.get(uid, {}).get(str(i)))
 
 
+def saved_steps(reg):
+    """A registry as a save keeps it: its settings, and each history's members, cursor, morph target and steps,
+    each step as (bytes, CRC-32, meta). A step recorded since the last save has no bytes yet: (None, None, meta)."""
+    from hindsight.core import persist
+    out = {"settings": (reg.next_seq, reg.use_global, reg.preserve_modes, dict(reg.by_object), set(reg.disabled),
+                        set(reg.everything))}
+    for uid, h in reg.histories.items():
+        out[uid] = (list(h.members), h.cursor, h.morph_target,
+                    [(*e.blob_crc(), persist._meta_for_json(e.meta)) for e in h.entries])
+    return out
+
+
 def save_format4(path, **kw):
     """Saves `path` with its history in format 4, as builds before format 5 wrote it (the bytes and the save id on
     the Text, Blender keeping its copy): for the tests of reading formats 1 to 4, which is unchanged."""

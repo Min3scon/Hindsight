@@ -10,6 +10,7 @@ when "Unsaved steps" is chosen, and not when it isn't; and after one save with t
 file alone (its folder gone) must still hold all of it, and the folder is never read again (#50).
 """
 import base64
+import hashlib
 import json
 import shutil
 import struct
@@ -37,6 +38,11 @@ def place(case):
         os.replace(hsj, persistence.journal_path(blend))
     with open(os.path.join(dst, "expect.json"), encoding="utf-8") as fh:
         return blend, json.load(fh)
+
+
+def sha(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
 
 
 def positions(ob) -> str:
@@ -78,8 +84,25 @@ def quiet(what):
 
 
 def into_the_blend_and_alone(blend, want_s, want_o, what):
-    """Saved once by this build with the default preferences, then opened with its folder gone (#50)."""
+    """Saved once by this build with the default preferences, then opened with its folder gone (#50). That save is
+    the move-in (#67): the .blend holds format 5, its parts every step beta 2 saved as its bytes, CRC-32 and meta,
+    and the folder is left byte for byte, with a note that it is no longer used."""
+    folder = persist.sidecar_file(blend)
+    had = sha(folder) if os.path.isfile(folder) else None
+    held = H.saved_steps(runtime.reg())
     bpy.ops.wm.save_mainfile(filepath=blend)
+    stored = H.stored_text(blend)
+    assert stored.get(persistence.DATA_PROP) == persist.STUB and not stored[persistence.SIDECAR_PROP], what
+    assert persistence.PARTS_PROP in stored and persistence.DATA_BIN_PROP not in stored, (what, list(stored))
+    got = H.saved_steps(H.stored_registry(blend))
+    assert got["settings"] == held["settings"] and set(got) == set(held), what
+    for uid in held:
+        if uid != "settings":     # a step from the crash journal has its bytes only from this save
+            assert got[uid][:3] == held[uid][:3] and len(got[uid][3]) == len(held[uid][3]), (what, uid)
+            assert all(b[0] is None or a == b for a, b in zip(got[uid][3], held[uid][3])), (what, uid)
+    if had:
+        assert sha(folder) == had, f"{what}: the history folder changed"
+        assert [t for _s, t in runtime.load_notes] == [persistence.MOVED_IN_TEXT.format(folder="scene_hindsight")]
     shutil.rmtree(os.path.splitext(blend)[0] + "_hindsight", ignore_errors=True)
     open_file(blend)
     check(want_s, want_o, what + ", saved once and opened without its folder")

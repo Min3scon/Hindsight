@@ -220,6 +220,21 @@ New ones the build ticket adds, each also on the files above:
   afterwards is not read, and the note says so beforehand.
 - The full suites on Blender 4.2, 5.0, 5.1, 5.2 and 5.3.
 
+### What #67 built
+
+- **The move-in**: `tests/test_bl_v1_move_in.py` puts formats 1 to 3 (`beta1_format1.hsr`, `beta2wip_format2.hsr`
+  and the new `beta2wip_format3.hsr`, written by the format 3 build's own code, fc2b6d3) in a .blend in each save
+  mode. Opened, the file holds every step as saved. After one save the Text holds the stub, `sidecar` False, the
+  parts and no `hindsight_data_bin` or save id; the parts hold every step's bytes, CRC-32 and meta as V1 saved them,
+  and every position plays back bit for bit from the .blend alone. `test_bl_beta2_upgrade.py` checks the same of
+  beta 2's own files (format 4), crash journal included. `test_core_migration.py` now covers format 3 too.
+- **Blender's copy goes** at open, and closing without saving leaves the .blend's SHA-256 as it was.
+- **The folder note** shows once, after the save that moves a folder's history in.
+- **Not built here**: the missing-folder note keeps #8's wording and rule (a save made while the folder is missing
+  still points at it, and the folder is read again once it is back, #120 review), not the one above. The round trip
+  (a format 5 file V1 saved again) is #68's. The mixed-encodings fixture and the old builds' own .blend files for
+  `test_bl_t1_migrate.py` need a real Blender running the old builds, and are not made.
+
 ## For the owner to check
 
 A format 5 file that V1 records in loses V1's steps as separate steps. At best, D107 keeps them as one step. In V1's

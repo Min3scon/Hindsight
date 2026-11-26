@@ -65,6 +65,7 @@ _SAVE_NOTES = (KEPT_LAST_SAVE_TEXT, NOT_STORED_TEXT)      # what a save says; th
 OTHER_SAVE_TEXT = ("Steps from an interrupted session were found, but they belong to another save of this "
                    "file. They were not brought back")
 STALE_SIDECAR_TEXT = "The history folder is from another save of this file"
+MOVED_IN_TEXT = "The history is now inside the .blend. The folder '{folder}' beside it is no longer used"
 
 # Set while loading a file whose history this version must not overwrite (newer format); "sidecar" also
 # when the history folder it points at is missing: saving keeps pointing at that folder.
@@ -75,6 +76,8 @@ _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 _J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12]}    # live journal of the session file
 # the history couldn't be stored in the .blend, which keeps the last save's: on_save_post keeps the journal
 _FALLBACK = {"kept": False}
+# this save moves a V1 folder's history into the .blend (dev/FORMAT5_V1.md): on_save_post says so, once
+_MOVED_IN = {"folder": False}
 
 
 # ----------------------------------------------------------------------------- journal
@@ -358,6 +361,7 @@ def on_save_pre(*args) -> None:
     runtime.drop_unused_uids()
     drop_default_settings()
     _FALLBACK["kept"] = False
+    _MOVED_IN["folder"] = False
     if not _writes_anything(_handler_path(args)):
         return
     reg = runtime.reg()
@@ -397,6 +401,8 @@ def on_save_pre(*args) -> None:
             del group
         # #48: the history always goes in the .blend. A folder from a newer Hindsight, or one that
         # is missing, stays pointed at, so its history is still found there.
+        _MOVED_IN["folder"] = (bool(text.get(SIDECAR_PROP)) and not _PROTECT["sidecar"]
+                               and _same_path(_handler_path(args), _current_blend()))
         text[SIDECAR_PROP] = _PROTECT["sidecar"]
         old = None
     except Exception as e:
@@ -509,6 +515,9 @@ def on_save_post(*args) -> None:
         guard.fail("saving", e, "journal error on save")
     _take_parts_back()
     _drop_save_notes()                 # the history is stored: an earlier save's failure no longer holds
+    if _MOVED_IN["folder"] and os.path.isdir(persist.sidecar_dir(path)):
+        _note("INFO", MOVED_IN_TEXT.format(folder=os.path.basename(persist.sidecar_dir(path))))
+    _MOVED_IN["folder"] = False
 
 
 @bpy.app.handlers.persistent
@@ -520,7 +529,8 @@ def on_save_post_fail(*args) -> None:
 
 
 def _drop_save_notes() -> None:
-    runtime.load_notes[:] = [n for n in runtime.load_notes if n[1] not in _SAVE_NOTES]
+    moved = MOVED_IN_TEXT.split("{")[0]          # shown once, after the save that moved the history in
+    runtime.load_notes[:] = [n for n in runtime.load_notes if n[1] not in _SAVE_NOTES and not n[1].startswith(moved)]
 
 
 def _folder_message(path) -> None:
@@ -649,6 +659,13 @@ def _load_registry(path: str, text):
             reg = other
         elif getattr(reg, "save_id", None) is not None:
             _note("WARNING", STALE_SIDECAR_TEXT)
+    if reg is not None and embedded and not _PROTECT["embed"]:
+        # Blender's copy goes (dev/FORMAT5_V1.md): the history is held once, and until the next save the Text
+        # holds the stub, as after a format 5 save, so an autosave is a stub without parts
+        for key in (DATA_PROP, DATA_BIN_PROP):
+            if key in text:
+                del text[key]
+        text[DATA_PROP] = persist.STUB
     if reg is not None:
         _report_load(reg)
     return reg
