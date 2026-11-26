@@ -384,7 +384,9 @@ def judge(b, stats):
     ra = outcome(ref_read, b)
     ea = outcome(stepmod.step_from_bytes, b)
     if ea[0] == "err":
-        assert ea[1] in ("CorruptStep", "ValueError"), (ea, b[:40])      # never a panic or a leaked type
+        assert ea[1] in ("CorruptStep", "ValueError", "UnknownEncoding"), (ea, b[:40])      # never a panic or a leaked type
+        # #66: UnknownEncoding only for an intact step prefix that names a later encoding (byte 10 above 4)
+        assert ea[1] != "UnknownEncoding" or (stepmod.is_unknown(b) and b[10] > 4), (ea, b[:40])
         assert "internal error" not in ea[2], ea
     if ra[0] == "ok":
         assert ea[0] == "ok" and stepmod.same_step(ra[1], ea[1]), (str(ea)[:200] if ea[0] == "err" else "different data", b[:60])

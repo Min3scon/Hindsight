@@ -340,6 +340,7 @@ def registry_from_format5(index, index_copy, take):
         raise NewerFormatError(found)
     reg = Registry()
     report = _settings_from_doc(reg, doc, found)
+    report["unknown"] = []      # #66: only format 5 holds steps in a later encoding; formats 1 to 4 report as before
     strings, max_seq = {}, [0]
     for hd in doc.get("histories", []):
         slots = []
@@ -465,7 +466,7 @@ def registry_from_bytes(b):
 def _settings_from_doc(reg, doc, found) -> dict:
     """The registry's settings from a saved header (format 1 to 5); the load report to fill in."""
     report = {"format": found, "writer": doc.get("writer", "Hindsight 1.0.0-beta.1 or older"),
-              "migrated": found < FORMAT_VERSION, "damaged": [], "unknown": []}
+              "migrated": found < FORMAT_VERSION, "damaged": []}
     reg.next_seq = int(doc.get("next_seq", 1))
     reg.use_global = bool(doc.get("use_global", False))
     reg.preserve_modes = bool(doc.get("preserve_modes", True))

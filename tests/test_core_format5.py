@@ -57,8 +57,9 @@ def _metas(metas):
     return json.dumps(metas, separators=(",", ":")).encode()
 
 
-def test_engine_api_11():
-    assert native.API == 11 and N.API == 11, (native.API, N.API)
+def test_engine_api_12():
+    # API 12 (#66): step_encoding, ENCODINGS, UnknownEncoding; decoding a later encoding raises UnknownEncoding
+    assert native.API == 12 and N.API == 12, (native.API, N.API)
 
 
 def test_step_part_round_trip_bit_exact():
@@ -143,7 +144,7 @@ def test_index_part_round_trip_bit_exact():
         assert N.index_read(bad) is None
 
 
-for fn in (test_engine_api_11, test_step_part_round_trip_bit_exact, test_step_part_bytes, test_empty_step_part,
+for fn in (test_engine_api_12, test_step_part_round_trip_bit_exact, test_step_part_bytes, test_empty_step_part,
            test_damaged_step_part, test_wrong_arguments_refused, test_index_part_round_trip_bit_exact):
     R.run(fn)
 
