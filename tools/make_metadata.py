@@ -67,7 +67,9 @@ DESCRIBE = {
     "<file>_hindsight/": (
         "folder", "next to the .blend",
         "never by this version: 1.0.0-beta.2 and earlier saved the history there; it is read until the "
-        "file's next save puts the history in the .blend", "Remove Hindsight data (ticked) or "
+        "file's next save puts the history in the .blend; a missing folder, or a newer Hindsight's, stays pointed "
+        "at after saves (see `.hindsight_history[sidecar]`), and once a missing one is back its histories go on "
+        "for the objects the .blend has none for", "Remove Hindsight data (ticked) or "
         "deleting the folder; the .blend opens fine without it"),
     "<file>_hindsight/history.hsr": (
         "file (the history, and how each recorded object was when saved: a fingerprint of its mesh and its "
