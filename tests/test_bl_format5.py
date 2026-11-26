@@ -9,6 +9,7 @@ first and then takes Blender's copy of the parts back; a save Blender can't writ
 Run: blender -b --factory-startup --python tests/test_bl_format5.py (or tests/run_tests.py).
 """
 import hashlib
+import json
 import tempfile
 
 import bpy
@@ -370,9 +371,65 @@ def test_step_in_an_unknown_encoding_is_kept_and_saved_back():
     assert len(SAVED[uid]) == 5
 
 
+def _two_histories():
+    H.fresh()
+    for name in ("F5A", "F5B"):
+        ob = H.make_mesh(600, name=name)
+        H.enter(ob, "SCULPT")
+        for s in range(3):
+            H.fake_stroke(ob, s, n=40)
+            assert H.commit(ob) is not None
+        H.enter(ob, "OBJECT")
+
+
+def _save_with_index(path, change):
+    """Saves `path` with `change(index doc)` applied to the index part; (index part, {uid: step parts}) saved."""
+    real, saved = persist.registry_to_format5, {}
+
+    def build(*a, **k):
+        index, parts = real(*a, **k)
+        doc = json.loads(bytes(ENGINE.index_read(index)).decode("utf-8"))
+        change(doc)
+        index = ENGINE.index_build(json.dumps(doc).encode("utf-8"))
+        saved.update(index=index, parts={uid: [bytes(p) for p in ps] for uid, ps in parts.items()})
+        return index, parts
+    persist.registry_to_format5 = build
+    try:
+        _save(path)
+    finally:
+        persist.registry_to_format5 = real
+    return saved["index"], saved["parts"]
+
+
+def _check_kept_whole(index, parts, copy=None):
+    """The group is out of the way of saves, byte for byte: every step part and both index parts."""
+    text = bpy.data.texts[persistence.TEXT_NAME]
+    assert PARTS not in text
+    g = text[persistence.UNREADABLE_PARTS_PROP]
+    assert bytes(g["index"]) == index and bytes(g["index_copy"]) == (index if copy is None else copy)
+    for uid, ps in parts.items():
+        got = g.get(uid, {})
+        assert [bytes(got[str(i)]) if str(i) in got else None for i in range(len(ps))] == ps,             f"step parts of {uid} were lost"
+
+
+def test_load_that_fails_midway_keeps_every_part():
+    """#11 review 1: a load that fails after taking step parts (the last history's cursor can't be read) gives
+    them all back: the group is kept whole, out of the way, and every save after keeps it byte for byte."""
+    _two_histories()
+    path = os.path.join(TMP, "load_fails.blend")
+    index, parts = _save_with_index(path, lambda doc: doc["histories"][-1].update(cursor="x"))
+    assert len(parts) == 2
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert any(t == persistence.UNREADABLE_EMBED_TEXT for _sev, t in runtime.load_notes), runtime.load_notes
+    _check_kept_whole(index, parts)
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    _check_kept_whole(index, parts)
+
+
 for fn in (test_rows_reopen_from_format5, test_sculpt_steps_and_crash_journal_after_format5,
            test_save_blender_cannot_write_keeps_the_journal, test_recovery_that_fails_opens_the_last_save,
            test_saves_after_new_steps_save_as_and_save_copy, test_crash_after_a_save_of_new_steps_brings_them_back,
-           test_step_in_an_unknown_encoding_is_kept_and_saved_back):
+           test_step_in_an_unknown_encoding_is_kept_and_saved_back, test_load_that_fails_midway_keeps_every_part):
     H.run(fn)
 H.finish()

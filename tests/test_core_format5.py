@@ -296,8 +296,28 @@ def test_registry_format5_damaged_step_part():
     assert (len(h.entries), h.cursor, h.morph_target) == (4, 3, 1)
 
 
+def test_registry_format5_failure_that_is_not_damage_fails_the_load():
+    """#11 review 1: an error that isn't damage (out of memory reading a big step part) fails the load, so the
+    add-on keeps every part; its steps are never cut as damaged (the next save would drop them)."""
+    index, parts = P.registry_to_format5(_registry())
+    real = N.part_read
+
+    def out_of_memory(p):
+        raise MemoryError
+    N.part_read = out_of_memory
+    try:
+        take, _ = _taker(_group(parts))
+        P.registry_from_format5(index, None, take)
+    except MemoryError:
+        pass
+    else:
+        raise AssertionError("a step part that ran out of memory was read as damaged")
+    finally:
+        N.part_read = real
+
+
 for fn in (test_registry_format5_round_trip_bit_exact, test_registry_format5_step_parts_split,
            test_registry_format5_index_copy, test_registry_format5_newer_refused,
-           test_registry_format5_damaged_step_part):
+           test_registry_format5_damaged_step_part, test_registry_format5_failure_that_is_not_damage_fails_the_load):
     R.run(fn)
 R.finish()

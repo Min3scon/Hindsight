@@ -318,6 +318,19 @@ def registry_to_format5(reg, codec: str = "auto"):
     return index, out
 
 
+NEWER_STEP_LABEL = "Saved by a newer Hindsight"     # an unknown step whose meta is lost
+
+
+def index_doc(index, index_copy):
+    """The index part's JSON as a dict (`index_copy`'s when `index` is damaged), None when neither can be read."""
+    from .native import ENGINE
+    for b in (index, index_copy):
+        js = ENGINE.index_read(b) if b is not None else None
+        if js is not None:
+            return json.loads(bytes(js).decode("utf-8"))
+    return None
+
+
 def registry_from_format5(index, index_copy, take):
     """The registry from its index part (`index_copy` when `index` is damaged) and its step parts, asked for one
     at a time: take(history uid, number) gives a part's bytes, or None when it is missing (the add-on deletes
@@ -328,13 +341,9 @@ def registry_from_format5(index, index_copy, take):
     from .native import ENGINE
     from .registry import Registry
     from .step import is_unknown as _is_unknown
-    js = None
-    for b in (index, index_copy):
-        if js is None and b is not None:
-            js = ENGINE.index_read(b)
-    if js is None:
+    doc = index_doc(index, index_copy)
+    if doc is None:
         raise ValueError("damaged Hindsight history index (both copies)")
-    doc = json.loads(bytes(js).decode("utf-8"))
     found = int(doc.get("format", 0) or 0)
     if found > FORMAT5:
         raise NewerFormatError(found)
@@ -352,12 +361,19 @@ def registry_from_format5(index, index_copy, take):
                     _first, offs, lens, crcs, metas = ENGINE.part_read(p)
                     metas = json.loads(bytes(metas).decode("utf-8")) if metas is not None else []
                     if len(offs) == n:
-                        got = [_entry(p[o:o + ln], metas[k] if k < len(metas) else None, c, strings, max_seq)
-                               for k, (o, ln, c) in enumerate(zip(offs, lens, crcs))]
+                        got = []
+
+                        def lost():     # #11 review 3: an unknown step whose meta is lost (dev/FORMAT5_DAMAGE.md)
+                            prev = next((e for e in reversed(slots + got) if e is not None), None)
+                            return {"seq": prev.seq if prev is not None else 0, "label": NEWER_STEP_LABEL,
+                                    "target": (hd.get("members") or [""])[0]}
+                        for k, (o, ln, c) in enumerate(zip(offs, lens, crcs)):
+                            got.append(_entry(p[o:o + ln], metas[k] if k < len(metas) else None, c, strings,
+                                              max_seq, lost))
                         if None not in got:         # #65: the next save hands these bytes over again
                             held.append(_Part(p, _first, dict(pd), got, offs, lens, crcs))
-                except Exception:
-                    got = None
+                except ValueError:          # damage (the engine's Corrupt* are ValueErrors); anything else fails
+                    got = None              # the load, which keeps every part (#11 review 1)
             del p
             slots += got if got is not None else [None] * n
         h = History(hd["uid"], list(hd.get("members", [])))
@@ -482,12 +498,19 @@ def _settings_from_doc(reg, doc, found) -> dict:
     return report
 
 
-def _entry(blob, meta, crc, strings: dict, max_seq: list):
-    """A saved step as an Entry, or None when it has no meta and its own bytes can't give one."""
+def _entry(blob, meta, crc, strings: dict, max_seq: list, lost=None):
+    """A saved step as an Entry, or None when it has no meta and its own bytes can't give one; a step in an
+    unknown encoding gets the meta `lost()` gives instead, when there is a `lost`."""
     if meta is None:
+        from .step import UnknownEncoding, step_from_bytes
         try:
-            from .step import step_from_bytes
             meta = step_from_bytes(blob).meta()
+        except UnknownEncoding:
+            if lost is None:
+                return None
+            meta = lost()
+        except MemoryError:
+            raise                       # not damage: the load fails and keeps every part (#11 review 1)
         except Exception:
             return None
     if type(meta) is dict:

@@ -605,7 +605,7 @@ def _load_registry(path: str, text):
         return None
 
     def from_parts():
-        group = text[PARTS_PROP]
+        group, taken = text[PARTS_PROP], []
 
         def take(uid, i):
             g, k = group.get(uid), str(i)
@@ -613,6 +613,7 @@ def _load_registry(path: str, text):
                 return None
             b = g[k]
             del g[k]            # Blender's copy goes as soon as Hindsight holds the part (#41)
+            taken.append((g, k, b))         # until the registry is built: a failure puts it back (#11 review 1)
             return b
         try:
             reg = persist.registry_from_format5(group.get("index"), group.get("index_copy"), take)
@@ -622,6 +623,9 @@ def _load_registry(path: str, text):
             return None
         except Exception as e:
             runtime.log.error_once(("parts_unreadable", str(e)), f"embedded history unreadable: {e}", e)
+            with contextlib.suppress(Exception):
+                for g, k, b in taken:
+                    g[k] = b
             with contextlib.suppress(Exception):
                 if UNREADABLE_PARTS_PROP in text:
                     del text[UNREADABLE_PARTS_PROP]
@@ -873,8 +877,16 @@ def register() -> None:
         if fn not in hl:
             hl.append(fn)
     runtime.journal_hook = _on_journal
-    if has_data():            # #124: the session still holds the history unregister() put on the Text
-        _take_parts_back()
+    with contextlib.suppress(AttributeError):      # bpy.data is restricted while Blender starts
+        text = bpy.data.texts.get(TEXT_NAME)
+        if text is not None and PARTS_PROP in text and not _PROTECT["embed"]:
+            g, sid = text[PARTS_PROP], None
+            with contextlib.suppress(Exception):
+                sid = (persist.index_doc(g.get("index"), g.get("index_copy")) or {}).get("save_id")
+            if sid and sid == getattr(runtime.reg(), "save_id", None):
+                _take_parts_back()  # #124: the session still holds the history unregister() put on the Text
+            else:
+                on_load_post()      # #11 review 2: a file opened while Hindsight was off: its parts are read
 
 
 def unregister() -> None:

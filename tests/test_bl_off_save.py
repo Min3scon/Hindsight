@@ -108,9 +108,34 @@ def test_turned_off_without_saving_still_recovers_from_the_journal():
         SETTINGS.crash_recovery = "LAST_SAVED"
 
 
+def test_turned_on_after_opening_another_file_reads_its_parts():
+    """#11 review 2: Hindsight off, another format 5 file opened (no load handler runs), Hindsight on: that file's
+    parts are read, not deleted, and its next save keeps its own history, not the one opened before."""
+    H.fresh()
+    _steps(H.make_mesh(1200, name="ONE"), range(3))
+    one = os.path.join(TMP, "one.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=one)
+    H.fresh()
+    _steps(H.make_mesh(1200, name="TWO"), range(2))
+    two = os.path.join(TMP, "two.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=two)
+    bpy.ops.wm.open_mainfile(filepath=one)
+    _off()
+    try:
+        bpy.ops.wm.open_mainfile(filepath=two)
+    finally:
+        _on()
+    assert _count("TWO") == 2, f"{_count('TWO')} steps"
+    assert persistence.PARTS_PROP not in bpy.data.texts[persistence.TEXT_NAME], "the history is held twice"
+    bpy.ops.wm.save_as_mainfile(filepath=two)
+    bpy.ops.wm.open_mainfile(filepath=two)
+    assert _count("TWO") == 2 and len(runtime.reg().histories) == 1, (_count("TWO"), runtime.reg().histories)
+
+
 H.run(test_save_after_turning_off_keeps_history)
 H.run(test_turned_off_without_saving_still_recovers_from_the_journal)
 H.run(test_journal_of_the_last_save_is_not_replayed_onto_them)
 H.run(test_turned_on_again_holds_the_history_once_and_saves_it)
+H.run(test_turned_on_after_opening_another_file_reads_its_parts)
 shutil.rmtree(TMP, ignore_errors=True)
 H.finish()

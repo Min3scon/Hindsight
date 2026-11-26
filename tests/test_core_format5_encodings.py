@@ -8,6 +8,8 @@ says so, apart from damage.
 Plain Python plus numpy (no bpy needed); also runs inside Blender with `blender -b --python`.
 """
 import hashlib
+import json
+import zlib
 
 import numpy as np
 
@@ -147,8 +149,38 @@ def test_unknown_step_after_the_cursor_holds_the_history():
     assert plain.histories[UID].reach() == (0, 6)
 
 
+def _metas_damaged(index, parts):
+    """(index part, parts) with the metas of the history's first step part damaged (the index part lists the
+    damaged step part's CRC-32, as a part damaged after it was written in the .blend would not be: its metas'
+    own CRC-32 is what fails)."""
+    p = bytearray(parts[UID][0])
+    n, ml = int.from_bytes(p[12:16], "little"), int.from_bytes(p[16:20], "little")
+    at = 24 + 12 * n + 4            # dev/FORMAT5_LAYOUT.md: the metas start after the step table and its CRC
+    assert ml > 0
+    p[at] ^= 0xFF
+    doc = json.loads(bytes(N.index_read(index)).decode("utf-8"))
+    doc["histories"][0]["parts"][0].update(len=len(p), crc=zlib.crc32(bytes(p)) & 0xFFFFFFFF)
+    return N.index_build(json.dumps(doc).encode("utf-8")), dict(parts, **{UID: [bytes(p)] + list(parts[UID][1:])})
+
+
+def test_unknown_step_whose_meta_is_lost_is_listed_not_damaged():
+    """#11 review 3 (dev/FORMAT5_DAMAGE.md): the metas damaged, every step's meta comes from its own bytes; the
+    unknown step, which can't give one, is listed as a step saved by a newer Hindsight, not cut as damage."""
+    index, parts, unknown = _saved_with_unknown(at=2, cursor=6)
+    reg = _reopen(*_metas_damaged(index, parts))
+    h = reg.histories[UID]
+    assert reg.load_report["damaged"] == [], reg.load_report
+    assert reg.load_report["unknown"] == [{"uid": UID, "members": ["objA"], "n": 1, "held": False}]
+    assert len(h.entries) == 6 and h.cursor == 6 and h.entries[2].blob == unknown
+    assert [e.meta["label"] for e in h.entries[:2]] == ["Stroke 1", "Stroke 2"]
+    e = h.entries[2]
+    assert "newer Hindsight" in e.meta["label"] and e.target == "objA" and e.seq == 2, e.meta
+    assert h.reach() == (3, 6)
+
+
 for fn in (test_every_saved_step_says_its_encoding, test_reading_picks_the_decoder_from_the_encoding,
            test_unknown_step_opens_plays_back_and_saves_back_byte_for_byte,
-           test_unknown_step_after_the_cursor_holds_the_history):
+           test_unknown_step_after_the_cursor_holds_the_history,
+           test_unknown_step_whose_meta_is_lost_is_listed_not_damaged):
     R.run(fn)
 R.finish()
