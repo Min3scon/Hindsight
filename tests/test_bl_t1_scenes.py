@@ -202,6 +202,17 @@ def test_the_tooltip_names_the_window_layout():
     assert "the window layout (workspaces, screens)" in text, text
 
 
+def test_the_window_layout_cant_be_put_back():
+    """Why the window layout isn't recorded (#110): Python can't make or remove a screen, and can't set an
+    area's place or size or split and join areas (only operators can, in a real window, at mouse positions).
+    If this fails, Blender has gained that API: look at recording the layout again."""
+    assert not hasattr(bpy.data.screens, "new") and not hasattr(bpy.data.screens, "remove")
+    assert not hasattr(bpy.data.workspaces, "new") and not hasattr(bpy.data.window_managers, "new")
+    area = bpy.types.Area.bl_rna.properties
+    assert all(area[k].is_readonly for k in ("x", "y", "width", "height"))
+    assert bpy.types.Screen.bl_rna.properties["areas"].is_readonly
+
+
 if __name__ == "__main__":
     H.run(test_a_scene_made_changed_and_deleted)
     H.run(test_a_scene_made_again_keeps_its_history)
@@ -211,4 +222,5 @@ if __name__ == "__main__":
     H.run(test_blenders_undo_and_redo_of_a_making)
     H.run(test_a_scene_and_its_view_layer_renamed)
     H.run(test_the_tooltip_names_the_window_layout)
+    H.run(test_the_window_layout_cant_be_put_back)
     H.finish()
