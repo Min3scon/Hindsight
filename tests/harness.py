@@ -142,6 +142,58 @@ def assert_same(a, b, msg=""):
         assert x.view(np.uint8).tobytes() == y.view(np.uint8).tobytes(), f"{msg} {k} differs"
 
 
+def stored_text(path):
+    """{key: value} of the history Text in the .blend at `path`, as it is on disk (groups as dicts): since format 5,
+    Blender lets go of the parts once the file is written. A copy is read: Blender won't load the open file."""
+    from hindsight.bl import persistence
+    tmp = os.path.join(tempfile.mkdtemp(), "stored.blend")
+    shutil.copyfile(path, tmp)
+    known = set(bpy.data.libraries)
+    out = {}
+    try:
+        with bpy.data.libraries.load(tmp) as (src, dst):
+            dst.texts = [persistence.TEXT_NAME] if persistence.TEXT_NAME in src.texts else []
+        for t in dst.texts:
+            out = {k: (t[k].to_dict() if hasattr(t[k], "to_dict") else t[k]) for k in t.keys()}
+            bpy.data.texts.remove(t)
+    finally:
+        for lib in [lib for lib in bpy.data.libraries if lib not in known]:
+            bpy.data.libraries.remove(lib)
+        shutil.rmtree(os.path.dirname(tmp), ignore_errors=True)
+    return out
+
+
+def stored_registry(path):
+    """The registry the .blend at `path` holds on disk, read from its format 5 parts."""
+    from hindsight.bl import persistence
+    from hindsight.core import persist
+    g = stored_text(path)[persistence.PARTS_PROP]
+    return persist.registry_from_format5(g["index"], g.get("index_copy"), lambda uid, i: g.get(uid, {}).get(str(i)))
+
+
+def save_format4(path, **kw):
+    """Saves `path` with its history in format 4, as builds before format 5 wrote it (the bytes and the save id on
+    the Text, Blender keeping its copy): for the tests of reading formats 1 to 4, which is unchanged."""
+    from hindsight.bl import persistence
+    from hindsight.core import persist
+
+    @bpy.app.handlers.persistent
+    def as_format4(*_a):
+        text = bpy.data.texts.get(persistence.TEXT_NAME)
+        if text is None or persistence.PARTS_PROP not in text:
+            return
+        reg = runtime.reg()
+        for key in (persistence.DATA_PROP, persistence.PARTS_PROP):
+            del text[key]
+        text[persistence.DATA_BIN_PROP] = persist.parts_to_bytes(persist.registry_parts(reg))
+        text[persistence.SAVE_ID_PROP] = reg.save_id
+    bpy.app.handlers.save_pre.append(as_format4)
+    try:
+        return bpy.ops.wm.save_as_mainfile(filepath=path, **kw)
+    finally:
+        bpy.app.handlers.save_pre.remove(as_format4)
+
+
 def _cleanup():
     if _OWN_TMP and not os.environ.get("HS_KEEP_TMP"):
         shutil.rmtree(_OWN_TMP, ignore_errors=True)

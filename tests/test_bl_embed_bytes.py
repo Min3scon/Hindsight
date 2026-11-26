@@ -1,7 +1,9 @@
 """R061: Save mode Embed keeps the history in the .blend as bytes (custom property hindsight_data_bin) instead
 of base64 text (hindsight_data): no encoding when saving and no decoding when opening, and a quarter less in the
 file. Files from earlier builds (base64 text) open as before; when both are there, the text is the newer one
-(an earlier build saved the file after this one) and is used. A damaged copy is kept aside, as before."""
+(an earlier build saved the file after this one) and is used. A damaged copy is kept aside, as before.
+Since format 5 (#64) a save writes the parts instead; these files are saved in format 4 (H.save_format4), which
+every build still reads."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import binascii
 import tempfile
@@ -44,7 +46,7 @@ def test_saved_as_bytes_and_read_back():
         runtime.goto(C, pos)
         states.append(positions(ob))
     p = path()
-    bpy.ops.wm.save_as_mainfile(filepath=p)
+    H.save_format4(p)
     text = bpy.data.texts[persistence.TEXT_NAME]
     assert persistence.DATA_BIN_PROP in text and persistence.DATA_PROP not in text, list(text.keys())
     assert isinstance(text[persistence.DATA_BIN_PROP], bytes)
@@ -60,7 +62,7 @@ def test_saved_as_bytes_and_read_back():
 def test_older_builds_text_still_opens():
     recorded()
     p = path()
-    bpy.ops.wm.save_as_mainfile(filepath=p)
+    H.save_format4(p)
     raw = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
     persistence.unregister()                        # the file as an earlier build left it: base64 text only
     try:
@@ -79,10 +81,10 @@ def test_older_builds_text_still_opens():
 def test_text_wins_when_both_are_there():
     recorded(5)
     p = path()
-    bpy.ops.wm.save_as_mainfile(filepath=p)
+    H.save_format4(p)
     old = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
     recorded(2)                                         # what an earlier build saved over it later
-    bpy.ops.wm.save_as_mainfile(filepath=p)
+    H.save_format4(p)
     newer = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
     persistence.unregister()
     try:
@@ -96,16 +98,17 @@ def test_text_wins_when_both_are_there():
     bpy.ops.wm.open_mainfile(filepath=p)
     h = runtime.history_of(bpy.data.objects["E"])
     assert h is not None and len(h.entries) == 2, h and len(h.entries)
-    # the next save writes the bytes and leaves no text behind
+    # the next save writes format 5 (#64) and leaves neither format 4 copy behind
     bpy.ops.wm.save_mainfile(filepath=p)
-    text = bpy.data.texts[persistence.TEXT_NAME]
-    assert persistence.DATA_PROP not in text and persistence.DATA_BIN_PROP in text
+    text = H.stored_text(p)
+    assert text[persistence.DATA_PROP] == persist.STUB and persistence.DATA_BIN_PROP not in text, list(text)
+    assert persistence.PARTS_PROP in text, list(text)
 
 
 def test_damaged_bytes_are_kept_aside(older=None):
     recorded()
     p = path()
-    bpy.ops.wm.save_as_mainfile(filepath=p)
+    H.save_format4(p)
     raw = bytearray(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])
     raw[:4] = b"JUNK"
     persistence.unregister()
@@ -135,7 +138,7 @@ def test_damaged_bytes_replace_an_older_unreadable_copy_whole():
 def test_file_is_smaller():
     recorded(40)
     p = path()
-    bpy.ops.wm.save_as_mainfile(filepath=p)
+    H.save_format4(p)
     text = bpy.data.texts[persistence.TEXT_NAME]
     n = len(text[persistence.DATA_BIN_PROP])
     assert n == len(persist.registry_to_bytes(runtime.reg())), n      # the registry's bytes, not their base64

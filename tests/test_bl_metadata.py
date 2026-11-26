@@ -148,7 +148,7 @@ def test_session_writes_only_what_is_listed():
     # #48: no save writes the history folder any more, Save history Both included
     assert not any(n.startswith("<file>_hindsight/") for n in files), files
     for must in ("_hindsight_uid", "Scene.hindsight", ".hindsight_history", ".hindsight_history[sidecar]",
-                 ".hindsight_history[hindsight_data_bin]", "keyframes on hindsight.movie_step"):
+                 ".hindsight_history[hindsight_data]", "keyframes on hindsight.movie_step"):
         assert matches(must, blend | files) or must in blend | files, f"the session didn't write {must}"
     j = persistence.journal_path(path)
     assert matches("journal/" + os.path.basename(j), want)

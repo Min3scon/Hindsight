@@ -371,32 +371,27 @@ def on_save_pre(*args) -> None:
     except Exception as e:
         log.error_once(("saved_prints", str(e)), f"could not note the recorded objects for saving: {e}", e)
     text = None
-    old = None           # #48: the last save's copy and its save id, held until the new ones are in
+    old = None           # #48: the last save's copy, held until the new one is in
     try:
+        drain_journal_writer()             # R079: a crash while the save is built or written loses no step
         _drain_packer()
         text = bpy.data.texts.get(TEXT_NAME)
         if text is None:
             text = bpy.data.texts.new(TEXT_NAME)
         text.use_fake_user = True
         if not _PROTECT["embed"]:          # else: history from a newer Hindsight, kept exactly as it was
-            # The parts are the step blobs themselves (no copy); anything that can go wrong in
-            # putting them together happens here, before the stored copy is touched.
-            parts = persist.registry_parts(reg, _codec())
-            # Blender's copy of the last saved history goes before the new one is built (held here instead).
-            # The held copy goes only once Blender holds the new one (#8 review): until then a failure puts
-            # it back. Cost: while Blender copies the new bytes, the last save's copy is held too.
-            old = {}
-            for key in (DATA_PROP, DATA_BIN_PROP, SAVE_ID_PROP):
-                if key in text:
-                    old[key] = text[key]
-                    del text[key]
-            # R061: the bytes themselves (base64 cost time and a third more). Both keys are gone by now, which
-            # matters: Blender cuts bytes at the first zero when it replaces an existing bytes property.
-            data = persist.parts_to_bytes(parts)
-            del parts
-            text[DATA_BIN_PROP] = data
-            del data
-            text[SAVE_ID_PROP] = reg.save_id
+            # Format 5 (dev/FORMAT5_LAYOUT.md): the stub, and the parts, which on_save_post takes back. Anything
+            # that can go wrong in building them happens here, before the stored copy is touched.
+            index, parts = persist.registry_to_format5(reg, _codec())
+            group = {"index": index, "index_copy": index}
+            group.update({uid: {str(i): p for i, p in enumerate(ps)} for uid, ps in parts.items()})
+            del index, parts
+            # The held copy goes only once Blender holds the new one (#8 review): until then a failure puts it
+            # back. Every key goes first: Blender cuts bytes at the first zero when it replaces a bytes property.
+            old = {key: text.pop(key) for key in _STORED if key in text}
+            text[DATA_PROP] = persist.STUB
+            text[PARTS_PROP] = group
+            del group
         # #48: the history always goes in the .blend. A folder from a newer Hindsight, or one that
         # is missing, stays pointed at, so its history is still found there.
         text[SIDECAR_PROP] = _PROTECT["sidecar"]
@@ -408,17 +403,73 @@ def on_save_pre(*args) -> None:
         _FALLBACK["kept"] = True
         try:
             if old is not None:
-                for key in (DATA_BIN_PROP, SAVE_ID_PROP):      # this save's, as far as it got
+                for key in _STORED:            # this save's, as far as it got
                     if key in text:
                         del text[key]
                 for key, value in old.items():
                     text[key] = value
             old = None
-            had = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text or text.get(SIDECAR_PROP))
+            if text is not None:
+                _keep_last_saved(text)
+            had = text is not None and (_holds_history(text) or text.get(SIDECAR_PROP))
             _drop_save_notes()
             _note("ERROR", KEPT_LAST_SAVE_TEXT if had else NOT_STORED_TEXT)
         except Exception as e2:
             guard.fail("saving", e2, "could not put the last save's history back in the .blend")
+
+
+_STORED = (DATA_PROP, DATA_BIN_PROP, SAVE_ID_PROP, PARTS_PROP)      # what a save replaces on the Text
+
+
+def _holds_history(text) -> bool:
+    """The Text holds a saved history: format 5's parts, or a format 1 to 4 history (not format 5's stub)."""
+    return (PARTS_PROP in text or DATA_BIN_PROP in text
+            or (DATA_PROP in text and text[DATA_PROP] != persist.STUB))
+
+
+def _keep_last_saved(text) -> None:
+    """The Text gets the history its last save stored: the copy still on it, else the one in the session's .blend
+    on disk (format 5's parts go from Blender as they are read, so they are read back only now, when needed)."""
+    if _holds_history(text):
+        return
+    src = _current_blend()
+    if not src or not os.path.isfile(src):
+        return                          # never saved: the history stays in the session until a save works
+    # Blender won't load the open file itself (4.2 crashes): a hard link under another name, else a copy
+    link = os.path.join(os.path.dirname(src), f".{uuid.uuid4().hex[:12]}.hindsight.blend")
+    known = set(bpy.data.libraries)
+    try:
+        try:
+            os.link(src, link)
+        except OSError:
+            link = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}.blend")
+            shutil.copyfile(src, link)
+        with bpy.data.libraries.load(link) as (stored, into):
+            into.texts = [TEXT_NAME] if TEXT_NAME in stored.texts else []
+        for saved in into.texts:
+            try:
+                for key in (SIDECAR_PROP,) + _STORED:
+                    if key in saved:
+                        if key in text:
+                            del text[key]
+                        text[key] = saved.pop(key)
+            finally:
+                bpy.data.texts.remove(saved)
+    finally:
+        for lib in [lib for lib in bpy.data.libraries if lib not in known]:
+            bpy.data.libraries.remove(lib)          # 4.2 keeps the library it appended from
+        with contextlib.suppress(OSError):
+            os.remove(link)
+
+
+def _take_parts_back() -> None:
+    """Blender's copy of the parts goes once it has written the file, or failed to: Hindsight holds the history."""
+    text = bpy.data.texts.get(TEXT_NAME)
+    if text is not None and not _PROTECT["embed"] and PARTS_PROP in text:
+        try:
+            del text[PARTS_PROP]
+        except Exception as e:
+            guard.fail("saving", e, "could not let go of Blender's copy of the history")
 
 
 @bpy.app.handlers.persistent
@@ -426,11 +477,13 @@ def on_save_pre(*args) -> None:
 def on_save_post(*args) -> None:
     path = _handler_path(args)
     if not path or not _writes_anything(path):
+        _take_parts_back()
         return
     kept = _FALLBACK["kept"]
     _FALLBACK["kept"] = False
     current = _current_blend()
     if current and not _same_path(path, current):
+        _take_parts_back()
         return   # "Save Copy": the session file itself did not change
     _folder_message(path)
     if kept:
@@ -440,7 +493,10 @@ def on_save_post(*args) -> None:
             _carry_journal(path)
         except Exception as e:
             guard.fail("saving", e, "journal error on save")
+        _take_parts_back()
         return
+    # The journal starts again first (dev/FORMAT5_JOURNAL.md): the file on disk and the journal name different
+    # saves only between Blender putting the file in place and this handler
     try:
         j = _open_journal(path)
         drain_journal_writer()
@@ -448,7 +504,16 @@ def on_save_post(*args) -> None:
         _mark_saved(j, path, getattr(runtime.reg(), "save_id", None))
     except Exception as e:
         guard.fail("saving", e, "journal error on save")
+    _take_parts_back()
     _drop_save_notes()                 # the history is stored: an earlier save's failure no longer holds
+
+
+@bpy.app.handlers.persistent
+@guard.guarded("saving")
+def on_save_post_fail(*args) -> None:
+    # Blender couldn't write the file: the .blend on disk is as it was and its crash journal stays with it
+    _FALLBACK["kept"] = False
+    _take_parts_back()
 
 
 def _drop_save_notes() -> None:
@@ -698,6 +763,8 @@ def on_load_post(*args) -> None:
                     # replay may have changed part of the history before it failed: start again
                     # from the file alone
                     notes = list(runtime.load_notes)
+                    with contextlib.suppress(Exception):
+                        _keep_last_saved(text)       # format 5's parts went from Blender as they were read
                     reg = _load_registry(path, text) or Registry()
                     runtime.load_notes[:] = notes
 
@@ -755,7 +822,7 @@ def on_load_post(*args) -> None:
 
 # ----------------------------------------------------------------------------- register
 _HANDLERS = (
-    ("save_pre", on_save_pre), ("save_post", on_save_post),
+    ("save_pre", on_save_pre), ("save_post", on_save_post), ("save_post_fail", on_save_post_fail),
     ("load_pre", on_load_pre), ("load_post", on_load_post),
 )
 

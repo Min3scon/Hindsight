@@ -27,8 +27,9 @@ def save_and_reopen(path):
     assert not os.path.isdir(persist.sidecar_dir(path)), "#48: a save writes no history folder"
     bpy.ops.wm.open_mainfile(filepath=path)
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    assert text is not None and "hindsight_data_bin" in text
-    assert "hindsight_data" not in text           # R061: the base64 copy is never written
+    assert text is not None and persistence.PARTS_PROP not in text     # Blender let go of the parts as they were read
+    stored = H.stored_text(path)                  # the history is in the .blend, in format 5 (#64)
+    assert persistence.PARTS_PROP in stored and stored[persistence.DATA_PROP] == persist.STUB, list(stored)
 
 
 def recheck(r):
