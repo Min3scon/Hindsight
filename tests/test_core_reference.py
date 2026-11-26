@@ -402,7 +402,7 @@ def judge(b, stats):
         assert ea[0] == "err", ("the engine accepted what the reference refused", ra, b[:60])
         stats["both refuse"] += 1
         if ra[1] in ("CorruptStep",):
-            assert ea[1] == "CorruptStep", (ra, ea)
+            assert ea[1] in ("CorruptStep", "UnknownEncoding"), (ra, ea)     # #66: the latter checked above
     r1, e1 = outcome(ref_recompress, b), outcome(stepmod.recompress, b)
     if r1[0] == "ok" and e1 != r1 and _subnormal_time(b):
         # The reference writes `float(time or 0.0)`: where the process flushes subnormals to zero
