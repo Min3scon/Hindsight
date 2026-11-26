@@ -114,6 +114,9 @@ In format 5:
   5.3.0): Hindsight takes each part back and deletes Blender's copy of it straight away, then deletes the group. On
   5.3, deleting the group after a save leaves `bpy.data.is_dirty` False; in the 4.2 bpy module `is_dirty` was already
   True straight after `save_as_mainfile`, so that check says nothing there and #9 checks it in a real 4.2 window.
+  A step part taken back is checked against its length and CRC-32 in the index part (#125). One that is gone or
+  changed (something deleted the Text during the save) takes its packed steps with it, and the history is cut as a
+  damaged step part cuts it; raw steps keep their own data.
 
 For hand-over to work, Hindsight must hold each full step part as one bytes object and read its steps out of it by
 offset (a copy of one step when a jump needs it), instead of one bytes object per step as today. Otherwise a step

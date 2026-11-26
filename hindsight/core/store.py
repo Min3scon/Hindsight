@@ -83,7 +83,7 @@ class Packer:
         had = bool(self._strong)
         strong, ref, can_gain = self._strong, weakref.ref, _can_gain
         for e in entries:
-            b = e.blob
+            b = e._bc[0]                # a Slice is read by index, not copied (#125)
             if b is not None and can_gain(b):
                 strong.append(ref(e))
         if self._strong and not had and not self._stopped:
@@ -178,7 +178,10 @@ class Packer:
         """Idle work: recompress one packed step (oldest first), then rest in proportion."""
         while self._strong and not self._stopped:
             entry = self._strong.popleft()()
-            blob = getattr(entry, "blob", None)
+            if entry is None:
+                continue
+            bc = entry._bc              # the bytes as held: a step read out of its step part copies them (#125)
+            blob = entry.blob
             if blob is None or len(blob) > STRONG_MAX_BYTES or not _can_gain(blob):
                 continue
             t = time.perf_counter()
@@ -188,7 +191,7 @@ class Packer:
                 self.errors += 1
                 self.last_error = repr(e)
                 return
-            if new is not None and entry.blob is blob:
+            if new is not None and entry._bc is bc:
                 entry.blob = new
                 self.recompressed += 1
             dt = time.perf_counter() - t

@@ -195,8 +195,8 @@ def save_format4(path, **kw):
         if text is None or persistence.PARTS_PROP not in text:
             return
         reg = runtime.reg()
-        for key in (persistence.DATA_PROP, persistence.PARTS_PROP):
-            del text[key]
+        persistence._take_parts_back()      # #125: format 5's save handed the step parts over; an older build kept its copy
+        del text[persistence.DATA_PROP]
         text[persistence.DATA_BIN_PROP] = persist.parts_to_bytes(persist.registry_parts(reg))
         text[persistence.SAVE_ID_PROP] = reg.save_id
     bpy.app.handlers.save_pre.append(as_format4)

@@ -214,7 +214,7 @@ class History:
         lo, hi = 0, len(self.entries)
         if self.unknown:
             for i, e in enumerate(self.entries):
-                if e.step is None and _is_unknown(e.blob):
+                if e.step is None and _is_unknown(e._bc[0]):
                     if i >= self.cursor:
                         return lo, i
                     lo = i + 1

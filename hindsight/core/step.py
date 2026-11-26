@@ -240,7 +240,7 @@ def is_unknown(b) -> bool:
     """Do step bytes `b` say they use an encoding this build has no decoder for (a later build's)? Read from the
     step prefix alone (dev/FORMAT5_ENCODINGS.md); bytes that aren't a step are damage, not unknown."""
     try:
-        return _N.step_encoding(b) not in _N.ENCODINGS
+        return _N.step_encoding(b[:11]) not in _N.ENCODINGS     # the prefix alone: a Slice isn't copied (#125)
     except CorruptStep:
         return False
 

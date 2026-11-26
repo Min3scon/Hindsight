@@ -392,14 +392,20 @@ def on_save_pre(*args, turning_off=False) -> None:
             # that can go wrong in building them happens here, before the stored copy is touched.
             index, parts = persist.registry_to_format5(reg, _codec())
             group = {"index": index, "index_copy": index}
-            group.update({uid: {str(i): p for i, p in enumerate(ps)} for uid, ps in parts.items()})
-            del index, parts
+            group.update({uid: {} for uid in parts})
+            del index                   # #125: the step parts go over one at a time (hand_over)
             # The held copy goes only once Blender holds the new one (#8 review): until then a failure puts it
             # back. Every key goes first: Blender cuts bytes at the first zero when it replaces a bytes property.
             old = {key: text.pop(key) for key in _STORED if key in text}
             text[DATA_PROP] = persist.STUB
             text[PARTS_PROP] = group
             del group
+            group = text[PARTS_PROP]
+
+            def put(uid, i, b):
+                group[uid][str(i)] = b
+            persist.hand_over(reg, parts, put)  # Blender's copy is the only one until on_save_post takes it back
+            del parts
         # #48: the history always goes in the .blend. A folder from a newer Hindsight, or one that
         # is missing, stays pointed at, so its history is still found there.
         _MOVED_IN["folder"] = (bool(text.get(SIDECAR_PROP)) and not _PROTECT["sidecar"]
@@ -413,6 +419,7 @@ def on_save_pre(*args, turning_off=False) -> None:
         _FALLBACK["kept"] = True
         try:
             if old is not None:
+                _take_parts_back()         # #125: the step parts handed over so far come back first
                 for key in _STORED:            # this save's, as far as it got
                     if key in text:
                         del text[key]
@@ -473,13 +480,28 @@ def _keep_last_saved(text) -> None:
 
 
 def _take_parts_back() -> None:
-    """Blender's copy of the parts goes once it has written the file, or failed to: Hindsight holds the history."""
+    """Once Blender has written the file, or failed to, Hindsight takes back each step part it handed over and
+    deletes Blender's copy of it straight away, then the group (#125): Hindsight holds the history again."""
+    if _PROTECT["embed"]:
+        return                          # a newer Hindsight's history: kept on the Text exactly as it was
     text = bpy.data.texts.get(TEXT_NAME)
-    if text is not None and not _PROTECT["embed"] and PARTS_PROP in text:
-        try:
+    group = text.get(PARTS_PROP) if text is not None else None
+
+    def take(uid, i):
+        g = group.get(uid) if group is not None else None
+        if g is None or str(i) not in g:
+            return None
+        b = g[str(i)]
+        del g[str(i)]
+        return b
+    try:
+        lost = persist.take_back(runtime.reg(), take)
+        if group is not None:
             del text[PARTS_PROP]
-        except Exception as e:
-            guard.fail("saving", e, "could not let go of Blender's copy of the history")
+        if lost:
+            raise RuntimeError(f"{lost} steps were lost: Blender's copy of their step part was gone after saving")
+    except Exception as e:
+        guard.fail("saving", e, "could not take the history back from Blender's copy")
 
 
 @bpy.app.handlers.persistent
@@ -893,6 +915,10 @@ def register() -> None:
                 _take_parts_back()  # #124: the session still holds the history unregister() put on the Text
             else:
                 on_load_post()      # #11 review 2: a file opened while Hindsight was off: its parts are read
+        elif not _PROTECT["embed"]:
+            # #125: step parts unregister() handed over to a Text that has gone since (another file was opened
+            # while Hindsight was off, so the session's history was that file's): their steps go, without a note
+            persist.take_back(runtime.reg(), lambda uid, i: None)
 
 
 def unregister() -> None:

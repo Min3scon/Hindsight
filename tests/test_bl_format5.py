@@ -452,10 +452,63 @@ def test_both_index_parts_damaged_keeps_the_group_whole():
         _check_kept_whole(index, parts)
 
 
+def test_history_held_once_through_a_save():
+    """#125: while a save runs, and when Blender can't write the file, Blender's copy of the step parts is the only
+    one (checked from a handler that runs before Hindsight's); afterwards Hindsight holds them again, reads every
+    saved step out of them, Blender's copy is gone, and every step undoes and redoes."""
+    H.fresh()
+    ob = H.make_mesh(800, name="F5H")
+    _strokes(ob, range(4))
+    path = os.path.join(TMP, "held_once.blend")
+    _save(path)
+    _check_opened(_open(path))          # every step packed, read out of its step part
+    ob = bpy.data.objects["F5H"]
+    seen = []
+
+    def during(*_a):
+        reg = runtime.reg()
+        group = bpy.data.texts[persistence.TEXT_NAME].get(PARTS)
+        seen.append((all(p.bytes is None for ps in reg.parts.values() for p in ps),
+                     group is not None and all(len(group[uid]) == len(ps) for uid, ps in reg.parts.items())))
+    for handlers in (bpy.app.handlers.save_post, bpy.app.handlers.save_post_fail):
+        handlers.insert(0, during)
+    try:
+        _save(path)
+        H.enter(ob, "SCULPT")
+        top = H.snapshot(ob)
+        H.enter(ob, "OBJECT")
+        os.mkdir(path + "@")         # Blender writes "<file>@" first, then renames it: a folder there stops it
+        try:
+            T.select()
+            try:
+                bpy.ops.wm.save_as_mainfile(filepath=path)
+            except RuntimeError:
+                pass
+        finally:
+            os.rmdir(path + "@")
+    finally:
+        for handlers in (bpy.app.handlers.save_post, bpy.app.handlers.save_post_fail):
+            handlers.remove(during)
+    assert seen == [(True, True), (True, True)], seen
+    reg, h = runtime.reg(), runtime.history_of(bpy.data.objects["F5H"])
+    assert PARTS not in bpy.data.texts[persistence.TEXT_NAME]
+    assert all(p.bytes is not None for ps in reg.parts.values() for p in ps)
+    assert all(type(e._bc[0]).__name__ == "Slice" for e in h.entries), [type(e._bc[0]).__name__ for e in h.entries]
+    assert [e.blob for e in h.entries] == SAVED[h.uid]
+    ob = bpy.data.objects["F5H"]
+    H.enter(ob, "SCULPT")
+    runtime.goto(bpy.context, 0)
+    runtime.goto(bpy.context, 4)
+    H.assert_same(H.snapshot(ob), top, "every step undone and redone after the failed save")
+    H.enter(ob, "OBJECT")
+    _save(path)
+    _check_opened(_open(path))
+
+
 for fn in (test_rows_reopen_from_format5, test_sculpt_steps_and_crash_journal_after_format5,
            test_save_blender_cannot_write_keeps_the_journal, test_recovery_that_fails_opens_the_last_save,
            test_saves_after_new_steps_save_as_and_save_copy, test_crash_after_a_save_of_new_steps_brings_them_back,
            test_step_in_an_unknown_encoding_is_kept_and_saved_back, test_load_that_fails_midway_keeps_every_part,
-           test_both_index_parts_damaged_keeps_the_group_whole):
+           test_both_index_parts_damaged_keeps_the_group_whole, test_history_held_once_through_a_save):
     H.run(fn)
 H.finish()

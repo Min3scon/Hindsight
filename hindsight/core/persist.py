@@ -40,7 +40,7 @@ from .crc import crc32
 
 import numpy as np
 
-from .types import Entry
+from .types import Entry, Slice
 
 REG_MAGIC = b"HSR1"
 FORMAT_VERSION = 4
@@ -215,17 +215,30 @@ _NOWHERE = (None, -1)
 
 class _Part:
     """A step part as Hindsight last built or read it (#65). A save hands the same bytes over again while its steps
-    are the same Entry objects with the same bytes, and copies a raw step's bytes out of it, by offset.
-    shortcut: held beside each step's own bytes, so the history is held twice between saves; 11.8 (#11) reads the
-    steps out of the step parts by offset and hands the parts over, which leaves one copy."""
+    are the same Entry objects with the same bytes, and copies a raw step's bytes out of it, by offset. #125: its
+    packed steps are read out of it by offset (types.Slice), so the history is held once; `bytes` is None while
+    Blender holds it during a save (hand_over, take_back)."""
     __slots__ = ("bytes", "first", "listed", "keys", "offs", "lens", "crcs", "size")
 
-    def __init__(self, part, first, listed, entries, offs, lens, crcs):
+    def __init__(self, part, first, listed, offs, lens, crcs):
         self.bytes, self.first, self.listed = part, int(first), listed
-        # weak: a step that goes (cut, dropped) isn't kept alive by the last save's step parts
-        self.keys = [(weakref.ref(e), id(e.blob_crc())) for e in entries]
         self.offs, self.lens, self.crcs = list(offs), list(lens), list(crcs)
         self.size = sum(self.lens)
+        self.keys = []
+
+    def hold(self, entries) -> None:
+        """Its steps, in order: weakly (a step that goes, cut or dropped, isn't kept alive by the last save's step
+        parts), each with the bytes it holds (the packer swaps them whole, which a save then sees)."""
+        self.keys = [(weakref.ref(e), id(e._bc)) for e in entries]
+
+    def own(self) -> None:
+        """#125: each packed step whose bytes this step part was built from is read out of it from now on, so it
+        lets go of its own bytes (a raw step stays raw for the packer)."""
+        for k, (ref, bc) in enumerate(self.keys):
+            e = ref()
+            if e is not None and e.step is None and id(e._bc) == bc:
+                e._bc = (Slice(self, self.offs[k], self.lens[k]), self.crcs[k])
+                self.keys[k] = (ref, id(e._bc))
 
 
 def _located(cached) -> dict:
@@ -235,17 +248,17 @@ def _located(cached) -> dict:
     for p in cached:
         for k, (ref, bc) in enumerate(p.keys):
             e = ref()
-            if e is not None and id(e.blob_crc()) == bc:
+            if e is not None and id(e._bc) == bc:
                 loc[id(e)] = (p, k)
     return loc
 
 
-def _history_parts(h, cached, loc, step_bytes) -> list:
+def _history_parts(h, cached, loc, step_bytes, built: list) -> list:
     """The history's step parts: each step part in `cached` whose steps are all still there, in order, under the
     same numbers, handed over as it is (the open one only while no new step fits in it); the rest built, each up
     to PART_LIMIT bytes of steps and never across the start of a step part that may be reused.
     A step part numbers its first step from the first step the history ever recorded (#65): dropping the
-    oldest steps rebuilds only the step part they were in."""
+    oldest steps rebuilds only the step part they were in. The step parts built are added to `built` too."""
     from .native import ENGINE
     ents = h.entries
     # numbered from the first step still in a step part: the steps before it may be from a damaged one (#69)
@@ -280,8 +293,12 @@ def _history_parts(h, cached, loc, step_bytes) -> list:
         part, begin, crc = ENGINE.part_build(base + i, blobs, crcs, ms)
         SAVE_WORK["built"] += 1
         lens = [len(b) for b in blobs]
-        out.append(_Part(part, base + i, {"n": j - i, "len": len(part), "crc": crc, "begin": begin}, ents[i:j],
-                         accumulate(lens[:-1], initial=begin), lens, crcs))
+        del blobs
+        p = _Part(part, base + i, {"n": j - i, "len": len(part), "crc": crc, "begin": begin},
+                  accumulate(lens[:-1], initial=begin), lens, crcs)
+        p.hold(ents[i:j])
+        out.append(p)
+        built.append(p)
         i = j
     return out
 
@@ -299,9 +316,9 @@ def registry_to_format5(reg, codec: str = "auto"):
     done = _encode_raw(raw, codec)
 
     def step_bytes(e, loc):
-        b, c = e.blob_crc()             # R046: packed steps carry their CRC-32
+        b, c = e._bc                    # R046: packed steps carry their CRC-32
         if b is not None:
-            return b, c
+            return (b.view() if type(b) is Slice else b), c
         hit = loc.get(id(e))
         if hit is not None:             # saved before: copied out of its step part, not encoded again
             p, k = hit
@@ -312,16 +329,61 @@ def registry_to_format5(reg, codec: str = "auto"):
             hit = done[id(e)] = (b, crc32(b) & 0xFFFFFFFF)
         return hit
 
-    hjson, out, new = [], {}, {}
+    hjson, out, new, built = [], {}, {}, []
     for h in hists:
         loc = locs[h.uid]
-        ps = new[h.uid] = _history_parts(h, old.get(h.uid, ()), loc, lambda e: step_bytes(e, loc))
+        ps = new[h.uid] = _history_parts(h, old.get(h.uid, ()), loc, lambda e: step_bytes(e, loc), built)
         out[h.uid] = [p.bytes for p in ps]
         hjson.append(dict(_hist_doc(h), parts=[p.listed for p in ps]))
     from .native import ENGINE
     index = ENGINE.index_build(_registry_doc(reg, FORMAT5, hjson))
+    del locs, done
+    for p in built:                     # only once every step part is built: a save that fails changes no step
+        p.own()
     reg.parts = new
     return index, out
+
+
+def hand_over(reg, parts, put) -> None:
+    """#125: while a save runs, Blender's copy of the step parts is the only one. put(history uid, number, bytes)
+    gives Blender each step part in `parts` (registry_to_format5's), and Hindsight lets go of it straight away,
+    there and in reg.parts (the peak is one step part above the history). The packer is drained first: nothing
+    may read a saved step until take_back."""
+    for uid, ps in parts.items():
+        held = reg.parts.get(uid, ())
+        for i in range(len(ps)):
+            put(uid, i, ps[i])
+            ps[i] = None
+            if i < len(held):
+                held[i].bytes = None
+
+
+def take_back(reg, take) -> int:
+    """#125: after the save (or a failed one), each step part handed over comes back: take(history uid, number)
+    gives Blender's copy and lets go of it, or None when it is gone. A step part that is gone or isn't the bytes
+    handed over (length and CRC-32 as listed) takes its packed steps with it, and the history is cut as damage
+    cuts it. Returns how many steps were lost."""
+    from .step import is_unknown as _is_unknown
+    lost = 0
+    for uid, ps in reg.parts.items():
+        gone = set()
+        for i, p in enumerate(ps):
+            if p.bytes is None:
+                b = take(uid, i)
+                if b is not None and len(b) == p.listed["len"] and crc32(b) & 0xFFFFFFFF == p.listed["crc"]:
+                    p.bytes = b
+                else:
+                    gone.add(id(p))
+        h = reg.histories.get(uid)
+        if not gone or h is None:
+            continue
+        slots = [None if type(e._bc[0]) is Slice and id(e._bc[0].part) in gone else e for e in h.entries]
+        _put_history(reg, h, _hist_doc(h), slots, {"damaged": []})
+        lost += len(slots) - len(h.entries)
+        h.unknown = sum(1 for e in h.entries if e.step is None and _is_unknown(e._bc[0]))
+    for uid, ps in reg.parts.items():
+        reg.parts[uid] = [p for p in ps if p.bytes is not None]
+    return lost
 
 
 NEWER_STEP_LABEL = "Saved by a newer Hindsight"     # an unknown step whose meta is lost
@@ -365,13 +427,14 @@ def registry_from_format5(index, index_copy, take):
         slots = []
         held = reg.parts[hd["uid"]] = []
         for i, pd in enumerate(hd.get("parts", [])):
-            n, p, got, rows = int(pd["n"]), take(hd["uid"], i), None, None
+            n, p, got, rows, part = int(pd["n"]), take(hd["uid"], i), None, None, None
             if p is not None:
                 try:
                     whole = len(p) == int(pd["len"]) and crc32(p) & 0xFFFFFFFF == int(pd["crc"])
                     if whole:
                         _first, offs, lens, crcs, metas = ENGINE.part_read(p)
                         rows = list(zip(offs, lens, crcs)) if len(offs) == n else None
+                        part = _Part(p, _first, dict(pd), offs, lens, crcs)     # #125: steps read out of it
                     else:           # #69: checked finer; its steps found from the step table or by prefix
                         metas, rows = ENGINE.part_salvage(p, n, int(pd.get("begin", 0)))
                     metas = json.loads(bytes(metas).decode("utf-8")) if metas is not None else []
@@ -384,19 +447,20 @@ def registry_from_format5(index, index_copy, take):
                                     "target": (hd.get("members") or [""])[0]}
                         for k, r in enumerate(rows):
                             got.append(None if r is None else _entry(
-                                p[r[0]:r[0] + r[1]], metas[k] if k < len(metas) else None, r[2], strings,
-                                max_seq, lost))
+                                Slice(part, r[0], r[1]) if whole else p[r[0]:r[0] + r[1]],
+                                metas[k] if k < len(metas) else None, r[2], strings, max_seq, lost))
                         if None not in got and whole:       # #65: the next save hands these bytes over again
-                            held.append(_Part(p, _first, dict(pd), got, offs, lens, crcs))
+                            part.hold(got)
+                            held.append(part)
                         elif None not in got:   # every step found: nothing lost; the next save rebuilds it
                             report["mended"].append({"uid": hd["uid"], "part": i})
                 except ValueError:          # damage (the engine's Corrupt* are ValueErrors); anything else fails
                     got = None              # the load, which keeps every part (#11 review 1)
-            del p
+            del p, part
             slots += got if got is not None else [None] * n
         h = History(hd["uid"], list(hd.get("members", [])))
         _put_history(reg, h, hd, slots, report)
-        h.unknown = sum(1 for e in h.entries if _is_unknown(e.blob))     # #66: kept as bytes, never decoded
+        h.unknown = sum(1 for e in h.entries if _is_unknown(e._bc[0]))   # #66: kept as bytes, never decoded
         if h.unknown:
             report["unknown"].append({"uid": h.uid, "members": list(h.members), "n": h.unknown, "held": h.held()})
     if reg.next_seq <= max_seq[0]:
@@ -522,7 +586,7 @@ def _entry(blob, meta, crc, strings: dict, max_seq: list, lost=None):
     if meta is None:
         from .step import UnknownEncoding, step_from_bytes
         try:
-            meta = step_from_bytes(blob).meta()
+            meta = step_from_bytes(blob[:]).meta()      # a Slice gives a copy
         except UnknownEncoding:
             if lost is None:
                 return None
