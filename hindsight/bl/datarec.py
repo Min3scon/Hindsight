@@ -845,6 +845,7 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
         _DIRTY.pop(u, None)
     began = _CLOCK["batch"]          # when the changes recorded now began (D147)
     _CLOCK["batch"] = None
+    _scenes_made(targets)
     # the scene first: a collection or object it brings back gets the lower step number, so it
     # exists before an object's own step from the same operation is replayed (and is removed last)
     scenes = set(_scene_uids_in(targets))
@@ -858,7 +859,8 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
         if uid not in tracked:
             continue
         idb = idmap.find(uid)
-        if idb is None or is_linked(idb):
+        gone = idb is None and _scene_deleted(uid)      # #110: every value of the scene goes with it
+        if (idb is None and not gone) or (idb is not None and is_linked(idb)):
             continue
         if isinstance(idb, bpy.types.Object) and rt.is_excluded(idb):
             _EXCLUDED.add(uid)       # D54: nothing is recorded for it (caught up when it's back)
@@ -874,20 +876,26 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
                     except Exception as e:
                         _adapter_failed("object_mesh", e, "capture")
         st = _state(uid)
-        is_scene = isinstance(idb, bpy.types.Scene)
-        if is_scene and _BODY_DIRTY:
+        is_scene = gone or isinstance(idb, bpy.types.Scene)
+        if is_scene and _BODY_DIRTY and not gone:
             refresh_bodies(idb, only=set(_BODY_DIRTY))
-        if not st.values:
+        made = not st.values and uid in _MADE   # #110: made now: its first values are its making's step
+        _MADE.discard(uid)
+        if not st.values and not made:
             st.values = capture(idb)          # first sight: just a baseline
             if is_scene:
                 refresh_bodies(idb)
             if mesh_step is not None:
                 rt._apply_to_state(st, mesh_step)
             continue
-        new = capture(idb)
-        changes = {} if fast and _same_values(st.values, new) else _diff(st.values, new)
-        if changes:
-            _owner_moves(st, changes)
+        if gone:
+            changes = {k: (v, MISSING) for k, v in st.values.items() if not k[1].startswith("body:")}
+            new = {}
+        else:
+            new = capture(idb)
+            changes = {} if fast and _same_values(st.values, new) else _diff(st.values, new)
+        if changes and not (made or gone):
+            _owner_moves(st, changes)         # (made or deleted: everything comes or goes with it)
         if changes:
             adapters.drop_changed_refs(uid, changes)
         if changes and uid in _BODIES and isinstance(idb, bpy.types.Object):
@@ -909,7 +917,8 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
             old_objs, new_objs = by_adapter["scene"]["objects"]
             old_set = set(old_objs) if old_objs is not MISSING else set()
             new_set = set(new_objs) if new_objs is not MISSING else set()
-            refresh_bodies(idb, only=new_set - old_set)
+            if not gone:
+                refresh_bodies(idb, only=new_set - old_set)
             for ou in sorted(new_set - old_set):
                 _track_new(ou)
             tracked = tracked_uids()
@@ -926,6 +935,8 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
             if snaps:
                 extra["_snapshots"] = snaps
             _BODY_DIRTY.clear()
+        if is_scene and MISSING in by_adapter.get("scene", {}).get(adapters.SCENE_NAME, ()):
+            extra["scene"] = "deleted" if gone else "made"     # runtime: the history of a scene that can be gone
         records = [DataChange(a, uid, ch) for a, ch in sorted(by_adapter.items())]
         h = rt.reg().history_for(uid)
         if h is not None and not h.enabled:
@@ -975,6 +986,60 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
         drop_undone_jumps()   # a new step: Blender can no longer redo the jumps it undid
         rt.tag_redraw_all()
     return steps
+
+
+_SCENES_SEEN = [None]   # #110: the ids of the local scenes at the last commit (None: not read yet)
+_MADE: set = set()      # scenes made since, recorded from their making
+
+
+def _scenes_made(targets: list) -> None:
+    """#110: a scene made while the file's scenes are recorded is recorded too, from its making (a step that
+    makes it). A scene there was when recording began, or that a jump made again, is no making."""
+    ev = tracked_uids()
+    known = _SCENES_SEEN[0]
+    if not (known & ev if known is not None else _scene_uids_in(ev)):
+        _SCENES_SEEN[0] = None
+        return
+    now = {u for sc in bpy.data.scenes if sc.library is None and (u := idmap.claim(sc))}
+    _SCENES_SEEN[0] = now
+    reg = _rt().reg()
+    for u in sorted(now - known) if known is not None else ():
+        if u not in reg.everything and u not in reg.disabled:
+            reg.everything.add(u)
+            _rt()._journal("META_EVERYTHING", {"uid": u, "on": True})
+            _MADE.add(u)
+            targets.append(u)
+
+
+def _scene_deleted(uid: str) -> bool:
+    """A recorded scene that isn't there any more, though its values say it is (a jump that removed it
+    leaves none)."""
+    st = _rt()._STATES.get(uid)
+    return st is not None and ("scene", adapters.SCENE_NAME) in st.values
+
+
+def scene_here(uid: str, sc, st):
+    """#110: a jump went over a scene's making, deletion or renaming: make it again with its id (the writers
+    that follow put its values back), remove it, or give it its name back. Returns the scene, or None."""
+    name = st.values.get(("scene", adapters.SCENE_NAME))
+    if sc is not None and not isinstance(sc, bpy.types.Scene):
+        return sc
+    try:
+        if name is None:
+            if sc is not None:
+                idmap.unnote(sc)
+                bpy.data.scenes.remove(sc)        # (the window shows another scene; what only it held stays)
+            return None
+        if sc is None:
+            sc = bpy.data.scenes.new(name)
+            sc[idmap.UID_PROP] = uid
+            idmap.note(sc, uid)
+        elif sc.name != name:
+            sc.name = name
+    except Exception as e:
+        log.error_once(("scene_here", str(e)), f"could not make or remove the scene {name or sc.name}: {e}", e)
+        return sc if name is not None else None
+    return sc
 
 
 def _same_value(a, b) -> bool:
@@ -1352,6 +1417,8 @@ def _on_undo(direction: str):
         idb = idmap.find(uid)
         if idb is not None:
             seen[uid] = capture(idb)
+        elif _scene_deleted(uid):
+            seen[uid] = {}        # #110: Blender's undo took a scene away (its making, or a jump's)
     if not seen:
         return set()
     moved = set()
@@ -1379,7 +1446,9 @@ def _on_undo(direction: str):
             # deep: an undone Edit Mode step can change the edges alone (Sort Mesh Elements)
             mesh_step = rt._observe(idb, st, True, "Undo", "OBJECT", deep=True)
             rt._NATIVE_PENDING.discard(uid)
-        diff = _data_diff(st.values, vals)
+        key = ("scene", adapters.SCENE_NAME)
+        # a scene that came or went: everything comes or goes with it (no ownership moves, see _commit)
+        diff = _diff(st.values, vals) if (key in st.values) != (key in vals) else _data_diff(st.values, vals)
         if (diff or mesh_step is not None) and h is not None and h.uid not in moved:
             # the direction Blender went first: after a step that returned to an earlier state,
             # both neighbours can match
@@ -1461,6 +1530,8 @@ def forget() -> None:
     _BODIES.clear()
     _BODY_DIRTY.clear()
     _SCENE_UIDS.clear()
+    _SCENES_SEEN[0] = None
+    _MADE.clear()
     _JUMPS.clear()
     _MESH_DIRTY.clear()
     _MESH_USERS.clear()

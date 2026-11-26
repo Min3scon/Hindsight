@@ -45,7 +45,7 @@ from .keys import (  # noqa: F401
     ACT_PREFIX, ANIMATED, ANIM_KEY, BONES, COLL_NAMES, COLL_SETTINGS, COMP_TREE, DATA_PREFIX, DATA_VALUES,
     GEOM, IDPROPS_KEY, INV_GROUPS, INV_LOOSE, LMAT_PREFIX, LOOSE_PREFIXES, LPROPS_PREFIX, LWORLD_PREFIX,
     MATA_PREFIX, MATP_PREFIX, MAT_PREFIX, META_PREFIX, NGA_PREFIX, NG_PREFIX, PART_PREFIX, POSE_KEY,
-    REF_KEY, SETTINGS_KEY, SK_PREFIX, SYSPROPS_KEY, TEXT_PREFIX, WORLDP_PREFIX, WORLD_PREFIX, _ACT_CACHE,
+    REF_KEY, SCENE_NAME, SETTINGS_KEY, SK_PREFIX, SYSPROPS_KEY, TEXT_PREFIX, WORLDP_PREFIX, WORLD_PREFIX, _ACT_CACHE,
     _BONES_CACHE, _EXT_CACHE, _EXT_DEPS, _GEOM_CACHE, _MAT_CACHE, _NO_SLOTS, _OBMAT_CACHE, _RECREATED,
     _VAL_CACHE)
 from .loose import (  # noqa: F401
@@ -88,7 +88,7 @@ _OBJECT_KINDS = {"collections": "collections", "hide": "visibility", "constraint
 def kind_of(adapter_id: str, path: str):
     """The data kind (KINDS) a recorded path belongs to, or None."""
     if adapter_id == "scene":
-        if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings", COMP_TREE) or path.startswith(
+        if path in (IDPROPS_KEY, SYSPROPS_KEY, "settings", COMP_TREE, SCENE_NAME) or path.startswith(
                 (WORLD_PREFIX, WORLDP_PREFIX, NG_PREFIX, NGA_PREFIX)):
             return None
         return "scene_collections" if path in ("collections", COLL_SETTINGS) else "objects"

@@ -11,7 +11,7 @@ from .extparts import _upd
 from .idprops import anim_of, id_props, write_anim_of, write_id_props
 from .keys import (
     ANIMATED, COLL_SETTINGS, COMP_TREE, INV_GROUPS, LOOSE_PREFIXES, META_PREFIX, NGA_PREFIX, NG_PREFIX,
-    WORLDP_PREFIX, WORLD_PREFIX)
+    SCENE_NAME, WORLDP_PREFIX, WORLD_PREFIX)
 from .loose import _make_loose_again, _queue_left_action, _queue_loose_removals, _snapshots_back, scene_loose, write_loose
 from .materials import capture_tree, group_owner_map, group_record, write_group, write_material, write_tree
 from .objects import _recreate_object, _remove_object
@@ -24,7 +24,7 @@ class SceneAdapter(Adapter):
     id_types = ("Scene",)
 
     def capture(self, idb) -> dict:
-        out = {}
+        out = {SCENE_NAME: idb.name}             # #110: its making and deletion are steps
         if kind_on("scene_collections"):
             out["collections"] = collection_tree(idb)
             out[COLL_SETTINGS] = collection_settings(idb)       # D127
@@ -178,6 +178,15 @@ def write_scene_settings(sc, rec) -> None:
                 set_struct_values(st, rec[path] or {})
         if isinstance(rec.get("anim"), dict):
             write_anim_of(sc, rec["anim"])
+        want = rec.get("view_layers") or {}       # #110: view layers made, deleted or renamed since
+        missing = [n for n in want if n not in sc.view_layers]
+        extra = [vl for vl in sc.view_layers if vl.name not in want] if want else []
+        if len(missing) == len(extra) == 1:
+            extra.pop().name = missing.pop()        # renamed: it keeps what isn't recorded of it
+        for name in missing:
+            sc.view_layers.new(name)
+        for vl in extra:
+            sc.view_layers.remove(vl)
         for vl in sc.view_layers:
             r = (rec.get("view_layers") or {}).get(vl.name)
             if not isinstance(r, dict):

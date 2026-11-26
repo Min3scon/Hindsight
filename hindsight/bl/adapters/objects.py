@@ -263,6 +263,11 @@ def _remove_object(ob) -> None:
 
 
 def _recreate_object(scene, uid, body, snap):
+    ob = idmap.find(uid)
+    if isinstance(ob, bpy.types.Object):    # #110: still in the file (a deleted scene left it): linked again
+        if scene.objects.get(ob.name) != ob:
+            scene.collection.objects.link(ob)
+        return ob
     if not isinstance(body, dict):
         log.warn("an object can't be brought back: its details weren't recorded")
         return None
