@@ -162,8 +162,11 @@ reused (#65).
   replayed onto steps the parts hold; recovery's "belong to another save" note looks for records after the marker
   only, so none is shown.
 - **Not saved**: the file and its journal still match, the marker is ignored, recovery is as before.
-- **Not covered**: steps recorded after Hindsight is turned on again, followed by a crash before a save, are not
-  replayed onto a file saved while it was off (that file had no history at all before #124).
+- **Turned on again, then a crash**: the marker that names the opened file's save id counts as the journal's SAVE
+  (#11 review 7), so steps recorded after Hindsight is turned on again are replayed onto a file saved while it was off.
+- **Another file opened while off**: no load handler runs, so `register()` tells it by the scenes' `session_uid`
+  (new for every file opened) and reads that file as a load does (#70). What the first file held went onto its
+  own Text when Hindsight was turned off, so nothing of it is carried into the other file.
 
 ## The journal's record format does not change
 

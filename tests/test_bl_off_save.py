@@ -132,6 +132,37 @@ def test_turned_on_after_opening_another_file_reads_its_parts():
     assert _count("TWO") == 2 and len(runtime.reg().histories) == 1, (_count("TWO"), runtime.reg().histories)
 
 
+def test_turned_on_after_opening_a_file_without_parts_reads_that_file():
+    """#125's edge case: Hindsight off, a file without format 5 parts opened (a V1 history, or none), Hindsight on:
+    the session is that file's, not what is left of the one turned off in, and its next save keeps its own history."""
+    H.fresh()
+    _steps(H.make_mesh(1200, name="TWO"), range(2))
+    two = os.path.join(TMP, "two_v1.blend")
+    H.save_format4(two)
+    H.fresh()
+    H.make_mesh(1200, name="THREE")
+    three = os.path.join(TMP, "three_none.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=three)
+    H.fresh()
+    _steps(H.make_mesh(1200, name="ONE"), range(3))
+    one = os.path.join(TMP, "one_f5.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=one)
+    for other, name, n in ((two, "TWO", 2), (three, "THREE", None)):
+        bpy.ops.wm.open_mainfile(filepath=one)
+        _steps(bpy.data.objects["ONE"], range(3, 4))
+        _off()
+        try:
+            bpy.ops.wm.open_mainfile(filepath=other)
+        finally:
+            _on()
+        held = {u: len(h.entries) for u, h in runtime.reg().histories.items()}
+        assert _count(name) == n and len(held) == (n is not None), (name, _count(name), held)
+        bpy.ops.wm.save_as_mainfile(filepath=other)
+        bpy.ops.wm.open_mainfile(filepath=other)
+        held = {u: len(h.entries) for u, h in runtime.reg().histories.items()}
+        assert _count(name) == n and len(held) == (n is not None), (name, _count(name), held)
+
+
 def test_steps_after_turning_on_again_come_back_after_a_crash():
     """#11 review 7 (#124's "not covered"): off, saved while off, on again, more steps, then a crash: the steps
     recorded after turning on are replayed onto the file saved while off, whose parts are the journal's marker's."""
@@ -184,6 +215,7 @@ H.run(test_turned_off_without_saving_still_recovers_from_the_journal)
 H.run(test_journal_of_the_last_save_is_not_replayed_onto_them)
 H.run(test_turned_on_again_holds_the_history_once_and_saves_it)
 H.run(test_turned_on_after_opening_another_file_reads_its_parts)
+H.run(test_turned_on_after_opening_a_file_without_parts_reads_that_file)
 H.run(test_steps_after_turning_on_again_come_back_after_a_crash)
 H.run(test_turning_off_never_waits_for_the_packer)
 shutil.rmtree(TMP, ignore_errors=True)

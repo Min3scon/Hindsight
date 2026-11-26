@@ -71,6 +71,9 @@ MOVED_IN_TEXT = "The history is now inside the .blend. The folder '{folder}' bes
 # when the history folder it points at is missing: saving keeps pointing at that folder.
 _PROTECT = {"sidecar": False, "embed": False}
 
+# The scenes of the file Hindsight was turned off in (session_uid is new for every file opened): see register()
+_OFF_IN = [set()]
+
 _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 
 _J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12]}    # live journal of the session file
@@ -907,7 +910,11 @@ def register() -> None:
     runtime.journal_hook = _on_journal
     with contextlib.suppress(AttributeError):      # bpy.data is restricted while Blender starts
         text = bpy.data.texts.get(TEXT_NAME)
-        if text is not None and PARTS_PROP in text and not _PROTECT["embed"]:
+        if not _OFF_IN[0] & {s.session_uid for s in bpy.data.scenes}:
+            # #125: another file was opened while Hindsight was off (no load handler ran), or it was never on:
+            # the session is that file's, never what is left of the one turned off in
+            on_load_post()
+        elif text is not None and PARTS_PROP in text and not _PROTECT["embed"]:
             g, sid = text[PARTS_PROP], None
             with contextlib.suppress(Exception):
                 sid = (persist.index_doc(g.get("index"), g.get("index_copy")) or {}).get("save_id")
@@ -916,14 +923,14 @@ def register() -> None:
             else:
                 on_load_post()      # #11 review 2: a file opened while Hindsight was off: its parts are read
         elif not _PROTECT["embed"]:
-            # #125: step parts unregister() handed over to a Text that has gone since (another file was opened
-            # while Hindsight was off, so the session's history was that file's): their steps go, without a note
+            # #125: step parts unregister() handed over to a Text deleted since, in this file: their steps go
             persist.take_back(runtime.reg(), lambda uid, i: None)
 
 
 def unregister() -> None:
     # #124: a save without Hindsight writes the Text as it is: the parts go back on it (a save's build, new save id)
     with contextlib.suppress(AttributeError):      # bpy.data is restricted while Blender starts
+        _OFF_IN[0] = {s.session_uid for s in bpy.data.scenes}
         if bpy.data.texts.get(TEXT_NAME) is not None:
             on_save_pre(turning_off=True)
             j, sid = _J["journal"], getattr(runtime.reg(), "save_id", None)
