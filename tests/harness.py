@@ -3,7 +3,6 @@ import os
 import shutil
 import sys
 import tempfile
-import traceback
 
 # Every temporary file of this test process (the crash journals of its sessions, saved test files,
 # history folders) goes into one folder that finish() removes. Headless Blender never unregisters the
@@ -24,14 +23,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from tests import runner  # noqa: E402
 import hindsight  # noqa: E402
 from hindsight.bl import runtime, meshio  # noqa: E402
-from hindsight.core.types import (  # noqa: E402
-    POSITION_KEY, MASK_KEY, FACE_SET_KEY, HIDE_VERT_KEY, HIDE_POLY_KEY,
-)
+from hindsight.bl import prefs
 
 _registered = [False]
-_failures = []
 
 
 def fresh(register=True):
@@ -47,12 +44,13 @@ def fresh(register=True):
     _registered[0] = True
     runtime.set_registry(runtime.Registry())
     runtime.reg().disabled.clear()
-    from hindsight.bl import datarec, guard, idmap
+    from hindsight.bl import datarec, guard, idmap, persistence
     datarec.forget()          # module state from an earlier test must not leak into this one
     idmap.forget()
+    persistence._PROTECT.update(sidecar=False, embed=False)     # what loading a file resets (no handler ran)
     guard.reset()
-    datarec.FORCE_SCOPE[0] = None
-    datarec.FORCE_KINDS[0] = None
+    prefs.FORCE["record_scope"] = None
+    prefs.FORCE["record_kinds"] = None
 
 
 def make_mesh(n_verts_approx=2000, name="Obj", location=(0, 0, 0)):
@@ -144,23 +142,7 @@ def assert_same(a, b, msg=""):
         assert x.view(np.uint8).tobytes() == y.view(np.uint8).tobytes(), f"{msg} {k} differs"
 
 
-def run(fn):
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        traceback.print_exc()
-        print("FAIL", fn.__name__)
-        _failures.append(fn.__name__)
-
-
-def finish(code=None):
-    if code is None:
-        code = 1 if _failures else 0
-    if _failures:
-        print("FAILED:", ", ".join(_failures))
-    sys.stdout.flush()
-    sys.stderr.flush()
+def _cleanup():
     if _OWN_TMP and not os.environ.get("HS_KEEP_TMP"):
         shutil.rmtree(_OWN_TMP, ignore_errors=True)
         # Blender's own temporary folder (made at start-up, before this module): exiting with os._exit
@@ -168,4 +150,7 @@ def finish(code=None):
         bt = getattr(bpy.app, "tempdir", "") or ""
         if os.path.basename(os.path.normpath(bt)).startswith("blender_"):
             shutil.rmtree(bt, ignore_errors=True)
-    os._exit(code)
+
+
+runner.on_finish.append(_cleanup)
+run, finish = runner.run, runner.finish

@@ -51,6 +51,29 @@ def _activate(d, name, frame=True):
     return ob
 
 
+def _as_v1_folder(d, blend):
+    """#48: no save writes a history folder. The history this save put in the .blend is moved into one, as
+    V1 saved it (Save history next to the .blend, its default), and the .blend saved again with
+    Hindsight's save handlers off (they would put the history back in)."""
+    ps = C.mod("persistence")
+    t = bpy.data.texts[ps.TEXT_NAME]
+    folder = blend[:-len(".blend")] + "_hindsight"
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, "history.hsr"), "wb") as fh:
+        fh.write(bytes(t[ps.DATA_BIN_PROP]))
+    del t[ps.DATA_BIN_PROP]
+    t[ps.SIDECAR_PROP] = True
+    off = [(bpy.app.handlers.save_pre, ps.on_save_pre), (bpy.app.handlers.save_post, ps.on_save_post)]
+    for hl, fn in off:
+        hl.remove(fn)
+    try:
+        with d.override():
+            bpy.ops.wm.save_mainfile()
+    finally:
+        for hl, fn in off:
+            hl.append(fn)
+
+
 def _warnings(d, ob):
     with d.override():
         return C.mod("runtime").warnings_for(bpy.context, ob)
@@ -236,7 +259,8 @@ def run(d):
     d.check("undo brings the object back with its history", ob is not None and rt.history_of(ob) is not None
             and len(rt.history_of(ob).entries) == n_saved, None if ob is None else rt.history_of(ob))
 
-    # ------------------------------------------------------------ history files
+    # ------------------------------------------------------------ history files (a V1 history folder)
+    _as_v1_folder(d, blend)
     folder = blend[:-len(".blend")] + "_hindsight"
     hsr = os.path.join(folder, "history.hsr")
     good = open(hsr, "rb").read()

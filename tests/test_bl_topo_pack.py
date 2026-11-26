@@ -12,6 +12,7 @@ import numpy as np
 
 import tests.harness as H
 from hindsight.bl import meshio, runtime
+from hindsight.bl import prefs
 from hindsight.core import topopack
 from hindsight.core.history import MeshState
 
@@ -147,7 +148,7 @@ def test_edit_mode_compares_packed_topology_by_checksum():
     from hindsight.bl import datarec
     H.fresh()
     runtime.TOPO_PACK_MIN[0] = 0
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = H.make_mesh(20_000, name="E")
     datarec.set_tracked(ob, True)
     datarec.finish_operation("baseline")

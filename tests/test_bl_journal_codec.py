@@ -4,7 +4,6 @@ replay, this checks what is written and that a recovered session matches)."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import struct
 
-import bpy
 import tests.harness as H
 from hindsight.bl import runtime
 from hindsight.core import codec

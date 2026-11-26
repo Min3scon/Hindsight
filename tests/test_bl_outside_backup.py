@@ -17,7 +17,6 @@ NAME = "Sculpty"
 
 def setup():
     H.fresh()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "LAST_SAVED"
     C.preferences.filepaths.save_version = 1
 

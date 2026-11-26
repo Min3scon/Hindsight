@@ -10,6 +10,7 @@ Run it alternating the two roots under test, each with its own engine first on t
   check, open         opening the saved file with those meshes: runtime.check_outside_changes alone, and
                       the whole bpy.ops.wm.open_mainfile
 plus the engine's version and API, to show which one ran."""
+import contextlib
 import json, os, statistics, sys, tempfile, time, tracemalloc
 ROOT = os.path.abspath(sys.argv[1])
 K = int(sys.argv[2]) if len(sys.argv) > 2 else 3
@@ -21,7 +22,6 @@ import _common as C
 import hindsight_native
 BL = C.load_bench_module("bench_bl")
 from hindsight.bl import runtime
-from hindsight.core.types import SETTINGS
 assert runtime.__file__.startswith(ROOT), runtime.__file__
 
 
@@ -40,13 +40,10 @@ def med(xs):
 
 
 res = {"engine": getattr(hindsight_native, "__version__", None) or "?", "api": hindsight_native.API}
-try:
+with contextlib.suppress(Exception):
     from importlib.metadata import version
     res["engine"] = version("hindsight_native")
-except Exception:
-    pass
 H.fresh()
-SETTINGS.save_mode = "SIDECAR"
 ob = BL.make_mesh(100_000, name="S")
 res["fp_100k"] = med(timed(lambda: runtime.mesh_fingerprint(ob), 9))
 bpy.data.objects.remove(ob)

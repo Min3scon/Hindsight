@@ -4,8 +4,8 @@ Run: <python with numpy, zstandard and hindsight_native> bench/bench_native.py
 Writes bench/results_native.json (one entry per Python version). At 100k and 1M vertices, with a sculpt-like stroke over about 2%
 of the vertices of a grid mesh (a brush disc: runs of vertices along each row, smooth falloff):
 diff of the position channel, applying one step, packing and unpacking one step (the record alone
-and the whole step with zstd), and a jump over 300 packed steps. Python path = native.lib set to
-None in the same process. Times: median of repeated runs (ms). Memory: the peak of the operation
+and the whole step with zstd), and a jump over 300 packed steps. Python path = the numpy code of tests/reference
+in the same process. Times: median of repeated runs (ms). Memory: the peak of the operation
 over what was held before it, as tracemalloc (Python allocations, numpy's included) and VmHWM
 (the process peak, reset through /proc/self/clear_refs before each run; native allocations show
 only here).
@@ -30,6 +30,7 @@ engine as they were). Alternating rounds in one process; min and median ms, then
 of one write and one read (tracemalloc, and VmHWM over VmRSS). Needs the zstandard and lz4 Python
 packages for the reference side.
 """
+import contextlib
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests"))
@@ -47,8 +48,7 @@ from reference.history import History as RefHistory
 from reference import pure
 from hindsight.core.types import DELTA, POSITION_KEY, Entry, Step
 
-LIB = native.lib
-assert LIB is not None, f"hindsight_native not loaded: {native.ERROR}"
+LIB = native.ENGINE
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results_native.json")
 rng = np.random.default_rng(11)
 
@@ -345,11 +345,9 @@ def main():
     out = {"date": time.strftime("%Y-%m-%d"), "machine": platform.platform(), "cpu": platform.processor(),
            "cpus": os.cpu_count(), "python": sys.version.split()[0], "numpy": np.__version__,
            "codecs": codec.available(), "native": LIB.__file__, "load": os.getloadavg(), "cases": []}
-    try:
+    with contextlib.suppress(OSError, StopIteration):
         with open("/proc/cpuinfo") as fh:
             out["cpu"] = next(l.split(":", 1)[1].strip() for l in fh if l.startswith("model name"))
-    except (OSError, StopIteration):
-        pass
     print(out["machine"], out["cpu"], "Python", out["python"], "numpy", out["numpy"])
     for nv in (100_000, 1_000_000):
         out["cases"].append(case(nv))

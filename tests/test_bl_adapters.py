@@ -14,7 +14,8 @@ import bpy
 import numpy as np
 
 import tests.harness as H
-from hindsight.bl import adapters, datarec, idmap, runtime
+from hindsight.bl import adapters, datarec, idmap, persistence, runtime
+from hindsight.bl import prefs
 from hindsight.core import persist
 from hindsight.core.types import DATA, DELTA
 
@@ -37,7 +38,7 @@ def same_bits(a, b):
 
 def setup(scope="EVERYTHING"):
     H.fresh()
-    datarec.FORCE_SCOPE[0] = scope
+    prefs.FORCE["record_scope"] = scope
     ob = H.make_mesh(800, name="A")
     bpy.ops.object.select_all(action="DESELECT")
     C.view_layer.objects.active = ob
@@ -109,11 +110,10 @@ def test_packed_and_saved():
     d = tempfile.mkdtemp(prefix="hs_adapt_")
     path = os.path.join(d, "a.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    side = persist.sidecar_file(path)
-    with open(side, "rb") as f:
-        assert persist.registry_from_bytes(f.read()).load_report["format"] == 4
+    stored = bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP]     # #48: in the .blend
+    assert persist.registry_from_bytes(stored).load_report["format"] == 4
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = bpy.data.objects["A"]
     C.view_layer.objects.active = ob
     h = runtime.history_of(ob)
@@ -129,7 +129,7 @@ def test_scope_and_opt_in():
     ob.location = (1, 2, 3)
     assert not datarec.commit(uids=[runtime.obj_uid(ob)])
     assert runtime.history_of(ob) is None
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     other = H.make_mesh(300, name="B")
     other.location = (5, 5, 5)                          # never switched on
     assert not datarec.commit(uids=[idmap.claim(other)])
@@ -268,5 +268,5 @@ for t in (test_records_transforms_and_plays_back, test_rotation_mode_switches, t
           test_ids_survive_copies, test_capture_budget, test_animation_is_not_recorded, test_partly_animated_and_muted,
           test_awkward_values_round_trip):
     H.run(t)
-datarec.FORCE_SCOPE[0] = None
+prefs.FORCE["record_scope"] = None
 H.finish()

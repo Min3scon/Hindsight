@@ -8,14 +8,14 @@ import bpy
 import tests.harness as H
 import _common as K
 BL = K.load_bench_module("bench_bl")
-from hindsight.bl import runtime, persistence
+from hindsight.bl import runtime
 from hindsight.core.types import SETTINGS
 def kb(tag):
     for line in open("/proc/self/status"):
         if line.startswith(tag):
             return int(line.split()[1])
 H.fresh()
-SETTINGS.save_mode = "SIDECAR"; SETTINGS.crash_recovery = "INTERRUPTED"; SETTINGS.max_steps = 100000
+SETTINGS.crash_recovery = "INTERRUPTED"; SETTINGS.max_steps = 100000
 ob = BL.make_mesh(100_000, name="M")
 tmp = tempfile.mkdtemp(prefix="hs_replay_")
 path = os.path.join(tmp, "r.blend")
