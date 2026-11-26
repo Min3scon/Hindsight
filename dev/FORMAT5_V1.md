@@ -134,10 +134,11 @@ leave the stub and the parts untouched (#41, measured in all 9 cases). What happ
 - **Embedded:** V1 writes nothing (tag, lines 226 to 227), so its steps are gone.
 
 **V2 opens the format 5 parts, and V1's folder only for objects the parts have no history for.** V2 can't tell this
-folder from one that was missing at V2's save (neither has a save id), so both are read the same way (#8's rule, kept
-by 31d3600): a whole history of the folder goes on for each object the parts have none for (an object V1 recorded and
-V2 never did), and nothing is joined onto a history from the parts. Changes V1 made to objects the parts have a
-history for are changes made without Hindsight, and D46 handles them as it does today:
+folder from one that was missing at V2's save (V1's folders have no save id; the main-branch build's has one of its
+own, never the parts', since V2 writes no folder), so all are read the same way (#8's rule, kept by 31d3600; the
+main-branch build's folder too since #68): a whole history of the folder goes on for each object the parts have none
+for (an object V1 recorded and V2 never did), and nothing is joined onto a history from the parts. Changes V1 made to
+objects the parts have a history for are changes made without Hindsight, and D46 handles them as it does today:
 
 - If `.blend1` still holds the mesh V2 saved (V1 saved once, with Save Versions on), D107 turns the change into one
   topology step.
@@ -241,6 +242,23 @@ New ones the build ticket adds, each also on the files above:
   still points at it, and the folder is read again once it is back, #120 review), not the one above. The round trip
   (a format 5 file V1 saved again) is #68's. The mixed-encodings fixture and the old builds' own .blend files for
   `test_bl_t1_migrate.py` need a real Blender running the old builds, and are not made.
+
+### What #68 built
+
+- **The round trip**: `tests/test_bl_older_builds.py` opens `tests/fixtures/older_builds`, made by
+  `make_older_build_files.py`: a format 5 file this build saved, then opened by V1 (beta 2) and by the main-branch
+  build, each run as it was by its own code in bpy 4.2, in each save mode. There it opened with no history, only the
+  "newer Hindsight" note and no error; the build made a stroke on a mesh with a history, a history of its own on a
+  new object and an unrecorded move, and saved over the file. The stub and the parts come back byte for byte. Opened
+  by V2, every saved step is bit-exact and every position plays back both ways; D107 makes the stroke one step (from
+  the `.blend1` that save left) and D46 the move; the new object gets the folder's history (none in the embedded
+  mode). The next save writes `sidecar` False and shows the folder note once, the folder stays byte for byte, and the
+  file opened alone holds all of it.
+- **Fixed**: next to the parts, the main-branch build's folder was skipped because it has a save id, so the
+  histories it recorded on new objects were lost; they now come in as V1's do.
+- **Not built here**: the mixed-encodings fixture and the old builds' .blend files for `test_bl_t1_migrate.py`. They
+  need no Blender binary: the older builds run in the bpy module, as this fixture maker does. The first V1 build's
+  file still needs the beta 1 release zip.
 
 ## For the owner to check
 

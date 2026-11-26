@@ -639,9 +639,11 @@ def _load_registry(path: str, text):
     if text is not None and PARTS_PROP in text:
         reg = from_parts()
         # Saved while a V1 folder was missing or newer, the .blend still points at it (#120 review): a newer one
-        # stays protected, and one back again gives its histories to every object the parts have none for
+        # stays protected, and one back again gives its histories to every object the parts have none for. So
+        # does the folder of an older build that saved the file after this one (#68); the main-branch build's
+        # has a save id of its own, never the parts'
         folder = from_sidecar()
-        if reg is not None and folder is not None and getattr(folder, "save_id", None) is None:
+        if reg is not None and folder is not None:
             _take_folder_histories(reg, folder)
         if reg is not None:
             _report_load(reg)
