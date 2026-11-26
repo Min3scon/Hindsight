@@ -15,6 +15,7 @@ import bpy
 import numpy as np
 import tests.harness as H
 from hindsight.bl import multires, runtime
+from hindsight.bl import prefs
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -57,7 +58,7 @@ def mesh_hash(ob):
 
 def setup(levels=2):
     H.fresh()
-    multires.FORCE[0] = True
+    prefs.FORCE["record_multires"] = True
     multires.SETTLE[0] = 0.0
     bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3)
     ob = C.active_object
@@ -132,7 +133,7 @@ def check_positions(ob, states, order):
 
 def test_off_by_default_pauses_as_before():
     ob = setup()
-    multires.FORCE[0] = None
+    prefs.FORCE["record_multires"] = None
     assert not multires.enabled()
     from hindsight.bl import warnings as W
     assert W.blocking(C, ob), "Multires must still pause recording when the preference is off"
@@ -141,7 +142,6 @@ def test_off_by_default_pauses_as_before():
     runtime._tick_once()
     h = runtime.history_of(ob)
     assert h is None or not h.entries
-    from hindsight.bl import prefs
     assert prefs.HINDSIGHT_AP_prefs.__annotations__["record_multires"].keywords["default"] is False
     print("PASS test_off_by_default_pauses_as_before")
 
@@ -191,7 +191,7 @@ def test_save_and_reload():
     path = os.path.join(TMP, "mr.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
-    multires.FORCE[0] = True
+    prefs.FORCE["record_multires"] = True
     ob = bpy.data.objects[NAME]
     h = runtime.history_of(ob)
     assert h is not None and len(h.entries) == 3 and h.cursor == 3, "history not restored"
@@ -212,7 +212,7 @@ def test_crash_recovery_replays_the_visits():
     states.append(visit(ob, 2))                            # only in the journal
     runtime.missing_message[0] = None
     bpy.ops.wm.open_mainfile(filepath=path)                # the session ends without saving
-    multires.FORCE[0] = True
+    prefs.FORCE["record_multires"] = True
     ob = bpy.data.objects[NAME]
     h = runtime.history_of(ob)
     assert h is not None and len(h.entries) == 2, (None if h is None else len(h.entries))
@@ -306,6 +306,6 @@ if __name__ == "__main__":
               test_crash_recovery_replays_the_visits, test_steps_are_counted_by_the_caps,
               test_stroke_before_the_baseline_settles_stays_in_the_step):
         H.run(t)
-    multires.FORCE[0] = None
+    prefs.FORCE["record_multires"] = None
     H.finish()
     shutil.rmtree(TMP, ignore_errors=True)

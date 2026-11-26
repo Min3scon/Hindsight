@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """The on-screen slider draws exactly what it drew before its batches were kept between redraws.
 
 gpu and blf are replaced by recorders (there is no GPU here). Every gpu and blf call of the draw,
@@ -8,7 +9,6 @@ miss the caches. Also: S4-1, the digit counts kept per region are bounded and fo
 """
 
 import math
-import traceback
 import types
 from types import SimpleNamespace
 
@@ -16,18 +16,6 @@ import bpy
 
 from hindsight.bl import scrubber as S
 
-ok = True
-
-
-def run(fn):
-    global ok
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        ok = False
-        print("FAIL", fn.__name__)
-        traceback.print_exc()
 
 
 # ----------------------------------------------------------------------------- gpu / blf recorders
@@ -434,7 +422,6 @@ def test_digits_bounded_and_forgotten_on_load():
 
 for f in (test_draw_same_as_before, test_geometry_same_as_before, test_redraw_builds_nothing_new,
           test_cache_follows_changes, test_digits_bounded_and_forgotten_on_load):
-    run(f)
+    R.run(f)
 
-sys.stdout.flush()
-os._exit(0 if ok else 1)
+R.finish()

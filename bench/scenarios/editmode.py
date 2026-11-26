@@ -20,6 +20,7 @@ import bpy  # noqa: E402
 import bmesh  # noqa: E402
 import tests.harness as H  # noqa: E402
 from hindsight.bl import datarec, runtime  # noqa: E402
+from hindsight.bl import prefs
 import statistics  # noqa: E402
 
 K.import_checked(opts.root)
@@ -28,7 +29,7 @@ K.import_checked(opts.root)
 def case(nv, reps):
     H.fresh()
     ob = H.make_mesh(nv, name="M")
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     datarec.set_tracked(ob, True)
     datarec.finish_operation("baseline")
     H.enter(ob, "EDIT")

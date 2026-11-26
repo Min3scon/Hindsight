@@ -7,6 +7,10 @@ it stands at the saved one with the file's mesh, and the slider puts back the me
 the four recovered ones included. A second open with Last saved (the default) has the three saved steps
 and an empty journal (R067).
 
+As s_crash_topo (R079) it runs with topo=True: a real Voxel Remesh (to about 200k vertices: a step of far more than
+4 MB, so its record is packed and written on the helper thread) is among the
+unsaved steps before Blender is killed.
+
 args: phase=make|check  dir=<folder for the file and the expected states>
 """
 import hashlib
@@ -42,7 +46,7 @@ def _set_recovery(value):
     _core("types").SETTINGS.crash_recovery = value
 
 
-def make(d, folder):
+def make(d, folder, topo=False):
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, "crash.blend")
     yield 1.0
@@ -60,12 +64,26 @@ def make(d, folder):
     with d.override():
         bpy.ops.wm.save_as_mainfile(filepath=path)
     yield 0.5
-    for k in range(3, 7):
+    if topo:
+        yield from C.real_stroke(d, 3)
+        states.append(_state(d))
+        with d.override():
+            bpy.context.active_object.data.remesh_voxel_size = 0.012
+            bpy.ops.object.voxel_remesh()
+        yield 1.5
+        states.append(_state(d))
+    for k in (4, 5) if topo else range(3, 7):
         yield from C.real_stroke(d, k)
         states.append(_state(d))
     i = C.info(d)
-    ok = d.check("seven strokes, seven steps, three of them saved", i is not None and i["len"] == 7 and len(set(states)) == 8,
-                 (i, states))
+    with d.override():
+        nv = len(bpy.context.active_object.data.vertices)
+    if topo:
+        ok = d.check("three saved strokes, a stroke, a Voxel Remesh (big), two strokes: seven steps",
+                     i is not None and i["len"] == 7 and len(set(states)) == 8 and nv > 100_000, (i, nv, states))
+    else:
+        ok = d.check("seven strokes, seven steps, three of them saved",
+                     i is not None and i["len"] == 7 and len(set(states)) == 8, (i, states))
     with open(os.path.join(folder, "expected.json"), "w", encoding="utf-8") as fh:
         json.dump({"states": states, "saved_at": 3, "file": path, "made_ok": ok}, fh)
     yield 0.3
@@ -119,9 +137,9 @@ def check(d, folder):
             and recs is not None and not [r for r in recs if r[0] == "STEP"], (i, None if recs is None else [r[0] for r in recs]))
 
 
-def run(d):
+def run(d, topo=False):
     folder = os.path.abspath(d.args.get("dir") or os.path.join(d.out, "files"))
     if d.args.get("phase") == "check":
         yield from check(d, folder)
     else:
-        yield from make(d, folder)
+        yield from make(d, folder, topo)
