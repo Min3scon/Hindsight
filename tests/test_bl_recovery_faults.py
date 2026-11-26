@@ -207,7 +207,7 @@ def test_embed_save_out_of_memory_keeps_the_history():
 
 def test_embed_save_fails_before_the_old_copy_is_touched():
     """Packing one history's steps fails, before the last save's copy is touched."""
-    _save_fails_and_keeps_the_last_save("_hist_steps", "parts")
+    _save_fails_and_keeps_the_last_save("_history_parts", "parts")
 
 
 def test_embed_save_fails_as_blender_stores_it():
