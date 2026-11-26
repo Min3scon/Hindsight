@@ -155,11 +155,36 @@ def test_steps_after_turning_on_again_come_back_after_a_crash():
         SETTINGS.crash_recovery = "LAST_SAVED"
 
 
+def test_turning_off_never_waits_for_the_packer():
+    """#11 review 8: quitting Blender turns Hindsight off, which puts the parts back on the Text; that never waits
+    for the packer (a save waits up to 30 s): steps it hasn't packed go in their quick form. The parts still hold
+    every step."""
+    H.fresh()
+    ob = H.make_mesh(1200, name="OFF")
+    _steps(ob, range(3))
+    path = os.path.join(TMP, "quit.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    _steps(ob, range(3, 5))
+    p, waited = runtime.packer, []
+    assert p is not None
+    p.drain = lambda *a, **k: waited.append(a or k)
+    try:
+        _off()
+    finally:
+        del p.drain
+        _on()
+    assert not waited, f"turning off waited for the packer: {waited}"
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert _count("OFF") == 5, f"{_count('OFF')} steps"
+
+
 H.run(test_save_after_turning_off_keeps_history)
 H.run(test_turned_off_without_saving_still_recovers_from_the_journal)
 H.run(test_journal_of_the_last_save_is_not_replayed_onto_them)
 H.run(test_turned_on_again_holds_the_history_once_and_saves_it)
 H.run(test_turned_on_after_opening_another_file_reads_its_parts)
 H.run(test_steps_after_turning_on_again_come_back_after_a_crash)
+H.run(test_turning_off_never_waits_for_the_packer)
 shutil.rmtree(TMP, ignore_errors=True)
 H.finish()

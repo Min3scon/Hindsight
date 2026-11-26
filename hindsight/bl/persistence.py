@@ -355,7 +355,7 @@ def _bridge_paused(reg) -> int:
 
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
-def on_save_pre(*args) -> None:
+def on_save_pre(*args, turning_off=False) -> None:
     runtime.multires.flush()          # a Multires visit that has just ended is a step before the save
     runtime.end_paused(now=True)      # D153: and a Dyntopo visit that paused recording
     runtime.drop_unused_uids()
@@ -381,7 +381,8 @@ def on_save_pre(*args) -> None:
     old = None           # #48: the last save's copy, held until the new one is in
     try:
         drain_journal_writer()             # R079: a crash while the save is built or written loses no step
-        _drain_packer()
+        if not turning_off:         # #11 review 8: quitting turns Hindsight off; unpacked steps go quick
+            _drain_packer()
         text = bpy.data.texts.get(TEXT_NAME)
         if text is None:
             text = bpy.data.texts.new(TEXT_NAME)
@@ -893,7 +894,7 @@ def unregister() -> None:
     # #124: a save without Hindsight writes the Text as it is: the parts go back on it (a save's build, new save id)
     with contextlib.suppress(AttributeError):      # bpy.data is restricted while Blender starts
         if bpy.data.texts.get(TEXT_NAME) is not None:
-            on_save_pre()
+            on_save_pre(turning_off=True)
             j, sid = _J["journal"], getattr(runtime.reg(), "save_id", None)
             if j is not None and not j.closed and sid:
                 runtime._journal("META", {"parts": sid})      # the parts of save `sid` hold every step journaled so far
