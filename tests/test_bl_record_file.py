@@ -8,13 +8,14 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.bl import datarec, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 
 
 def test_one_switch_for_the_file():
     L.fresh_scene()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     assert not datarec.file_tracked()
     bpy.ops.hindsight.record_file(on=True)
     assert datarec.file_tracked()
@@ -37,7 +38,7 @@ def test_one_switch_for_the_file():
 
 def test_switch_is_quick_with_many_objects():
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     me = bpy.data.meshes.new("M")
     me.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
     for i in range(300):
@@ -55,7 +56,7 @@ def test_collections_made_and_deleted_with_the_file_switch():
     """L13: with the one switch for the file, making a collection, moving an object into it and deleting a
     collection are recorded (in the scene's history) and come back both ways."""
     L.fresh_scene()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     bpy.ops.hindsight.record_file(on=True)
     L.tick_like("baseline")
     sc = C.scene
@@ -93,12 +94,20 @@ def test_collections_made_and_deleted_with_the_file_switch():
         assert read() == states[n - k], (k, read(), states[n - k])
     sc.hindsight.use_global = False
     bpy.ops.hindsight.record_file(on=False)
-    datarec.FORCE_SCOPE[0] = None
+    prefs.FORCE["record_scope"] = None
     print("PASS test_collections_made_and_deleted_with_the_file_switch")
+
+
+def test_the_tooltip_says_what_is_never_recorded():
+    """#13: what can never be recorded is said where the switch is (the Undo History tab)."""
+    text = bpy.ops.hindsight.record_file.get_rna_type().description
+    for what in ("linked from another .blend", "files on disk", "preferences"):
+        assert what in text, (what, text)
 
 
 if __name__ == "__main__":
     H.run(test_one_switch_for_the_file)
+    H.run(test_the_tooltip_says_what_is_never_recorded)
     H.run(test_switch_is_quick_with_many_objects)
     H.run(test_collections_made_and_deleted_with_the_file_switch)
     H.finish()

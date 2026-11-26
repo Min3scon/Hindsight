@@ -145,27 +145,26 @@ def main():
     out = {"n": N, "steps": n_entries, "history_mb": round(hist_bytes / 2 ** 20, 2)}
     tmp = tempfile.mkdtemp(prefix="hs_saveload_")
     try:
-        for mode in ("SIDECAR", "EMBED"):
-            SETTINGS.save_mode = mode
-            blend = os.path.join(tmp, f"s_{mode}.blend")
-            rows = {"save": [], "load": []}
-            for _ in range(REPS):
-                if runtime.packer is not None:
-                    runtime.packer.drain(60)
-                with Peak() as p:
-                    bpy.ops.wm.save_as_mainfile(filepath=blend)
-                rows["save"].append(p)
-                with Peak() as p:
-                    bpy.ops.wm.open_mainfile(filepath=blend)
-                rows["load"].append(p)
-                got = sum(len(x.entries) for x in runtime.reg().histories.values())
-                assert got == n_entries, (mode, got, n_entries)   # (nothing here keeps the registry)
-            for k, ps in rows.items():
-                out[f"{k}_{mode}"] = {
-                    "ms_med": round(statistics.median(p.ms for p in ps), 1),
-                    "ms_min": round(min(p.ms for p in ps), 1),
-                    "py_mb": round(max(p.py for p in ps) / 2 ** 20, 2),
-                    "rss_mb": round(statistics.median(p.rss for p in ps) / 2 ** 20, 2)}
+        mode = "EMBED"  # #48: every save puts the history in the .blend (V1's name for that in the keys)
+        blend = os.path.join(tmp, f"s_{mode}.blend")
+        rows = {"save": [], "load": []}
+        for _ in range(REPS):
+            if runtime.packer is not None:
+                runtime.packer.drain(60)
+            with Peak() as p:
+                bpy.ops.wm.save_as_mainfile(filepath=blend)
+            rows["save"].append(p)
+            with Peak() as p:
+                bpy.ops.wm.open_mainfile(filepath=blend)
+            rows["load"].append(p)
+            got = sum(len(x.entries) for x in runtime.reg().histories.values())
+            assert got == n_entries, (mode, got, n_entries)   # (nothing here keeps the registry)
+        for k, ps in rows.items():
+            out[f"{k}_{mode}"] = {
+                "ms_med": round(statistics.median(p.ms for p in ps), 1),
+                "ms_min": round(min(p.ms for p in ps), 1),
+                "py_mb": round(max(p.py for p in ps) / 2 ** 20, 2),
+                "rss_mb": round(statistics.median(p.rss for p in ps) / 2 ** 20, 2)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print("RESULT " + json.dumps(out))

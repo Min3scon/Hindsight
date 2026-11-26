@@ -4,6 +4,7 @@ write, 344 ms of the 532 ms the step cost) are encoded and written on a helper t
 (any record behind a pending one waits for it), and everything that reads, empties or switches the journal waits
 for the helper first, so recovery sees exactly what it saw before. The threshold is lowered here so every step
 goes through the helper."""
+import contextlib
 import shutil
 import tempfile
 import threading
@@ -23,7 +24,6 @@ MAIN = threading.get_ident()
 
 def setup(big=0):
     H.fresh()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "INTERRUPTED"
     persistence.BIG_RECORD[0] = big
 
@@ -40,13 +40,9 @@ def start(tag, n):
     return ob, after, os.path.join(TMP, f"{tag}.blend")
 
 
-def test_big_records_are_encoded_off_the_main_thread_in_order():
-    setup(big=0)
-    ob, _after, path = start("order", 1)
-    H.enter(ob, "OBJECT")
-    bpy.ops.wm.save_as_mainfile(filepath=path)
-    ob = bpy.data.objects["W"]
-    H.enter(ob, "SCULPT")
+@contextlib.contextmanager
+def encode_threads():
+    """The thread id of every step encoding while inside the block."""
     threads = []
     real = stepmod.step_to_bytes
 
@@ -55,6 +51,19 @@ def test_big_records_are_encoded_off_the_main_thread_in_order():
         return real(*a, **k)
     stepmod.step_to_bytes = spy
     try:
+        yield threads
+    finally:
+        stepmod.step_to_bytes = real
+
+
+def test_big_records_are_encoded_off_the_main_thread_in_order():
+    setup(big=0)
+    ob, _after, path = start("order", 1)
+    H.enter(ob, "OBJECT")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    ob = bpy.data.objects["W"]
+    H.enter(ob, "SCULPT")
+    with encode_threads() as threads:
         for s in range(6):
             H.fake_stroke(ob, 40 + s, n=80)
             assert H.commit(ob) is not None
@@ -62,8 +71,6 @@ def test_big_records_are_encoded_off_the_main_thread_in_order():
                 runtime.goto(C, 2)                     # a CURSOR record between steps
                 runtime.goto(C, len(runtime.history_of(ob).entries))
         persistence.drain_journal_writer()
-    finally:
-        stepmod.step_to_bytes = real
     assert threads and all(t != MAIN for t in threads), "big records were encoded on the main thread"
     recs = J.Journal(persistence.journal_path(path)).read()
     steps = [r for r in recs if r[0] == "STEP"]
@@ -116,18 +123,9 @@ def test_small_records_stay_on_the_main_thread():
     bpy.ops.wm.save_as_mainfile(filepath=path)
     ob = bpy.data.objects["W"]
     H.enter(ob, "SCULPT")
-    threads = []
-    real = stepmod.step_to_bytes
-
-    def spy(*a, **k):
-        threads.append(threading.get_ident())
-        return real(*a, **k)
-    stepmod.step_to_bytes = spy
-    try:
+    with encode_threads() as threads:
         H.fake_stroke(ob, 99, n=80)
         assert H.commit(ob) is not None
-    finally:
-        stepmod.step_to_bytes = real
     assert threads and all(t == MAIN for t in threads), threads
 
 

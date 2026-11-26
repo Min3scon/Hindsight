@@ -80,7 +80,12 @@ def main():
     tmp = tempfile.mkdtemp(prefix="hs_speed_core_")
     try:
         blend = os.path.join(tmp, "a.blend")
-        out["save_sidecar"] = med(lambda: persist.save_sidecar(reg, blend), 9)
+        if hasattr(persist, "save_sidecar"):     # builds before #53; V2 writes no history folder, only reads V1's
+            out["save_sidecar"] = med(lambda: persist.save_sidecar(reg, blend), 9)
+        else:
+            os.makedirs(persist.sidecar_dir(blend))
+            with open(persist.sidecar_file(blend), "wb") as fh:
+                fh.write(persist.registry_to_bytes(reg))
         out["load_sidecar"] = med(lambda: persist.load_sidecar(blend), 9)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

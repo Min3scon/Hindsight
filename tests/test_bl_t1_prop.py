@@ -20,7 +20,6 @@ import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 
 sys.path.insert(0, os.path.join(H.ROOT, ".tools", "pylib"))
 try:
@@ -276,7 +275,6 @@ def _property(specs):
         raise
 
 
-@covers(ROWS, "PROP")
 def test_t1_random_sequences():
     if os.path.isdir(CORPUS):
         for f in sorted(os.listdir(CORPUS)):

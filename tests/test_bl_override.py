@@ -8,6 +8,7 @@ import tempfile
 import bpy
 import tests.harness as H
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -44,9 +45,8 @@ def make_override(lib):
 def test_override_keeps_its_history_on_reload():
     lib = make_library()
     H.fresh()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "LAST_SAVED"
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     o = make_override(lib)
     datarec.set_tracked(o, True)
     uid = idmap.uid_of(o)
@@ -57,7 +57,7 @@ def test_override_keeps_its_history_on_reload():
     path = os.path.join(TMP, "scene.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     o = next(x for x in bpy.data.objects if x.name.startswith("Statue") and x.override_library is not None)
     h = runtime.history_of(o) or runtime.reg().history_for(idmap.uid_of(o) or "")
     assert idmap.uid_of(o) == uid, "the override has its id back"
@@ -72,6 +72,6 @@ if __name__ == "__main__":
     try:
         H.run(test_override_keeps_its_history_on_reload)
     finally:
-        datarec.FORCE_SCOPE[0] = None
+        prefs.FORCE["record_scope"] = None
         shutil.rmtree(TMP, ignore_errors=True)
     H.finish()

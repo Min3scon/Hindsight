@@ -10,14 +10,12 @@ import bpy
 import tests.harness as H
 from hindsight.bl import persistence, runtime
 from hindsight.core import persist
-from hindsight.core.types import SETTINGS
 
 C = bpy.context
 
 
 def recorded(n=5):
     H.fresh()
-    SETTINGS.save_mode = "EMBED"
     ob = H.make_mesh(3000, name="E")
     H.enter(ob, "SCULPT")
     for k in range(n):
@@ -60,7 +58,7 @@ def test_saved_as_bytes_and_read_back():
 
 
 def test_older_builds_text_still_opens():
-    ob = recorded()
+    recorded()
     p = path()
     bpy.ops.wm.save_as_mainfile(filepath=p)
     raw = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])

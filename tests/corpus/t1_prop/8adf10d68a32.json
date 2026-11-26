@@ -1,0 +1,1 @@
+[["rotate", "A", 0.0, "X"], ["con_add", "A", "COPY_LOCATION"], ["edit", "E", "grab", 0], ["key", "B", 1], ["delete", "B"], ["mat", "A", 1]]

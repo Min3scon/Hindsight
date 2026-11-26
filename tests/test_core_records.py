@@ -6,10 +6,10 @@ records, several datablocks) at every position in random order; damaged record s
 accounting; file format 4.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import math
 import random
 import struct
-import traceback
 import zlib
 
 import numpy as np
@@ -17,7 +17,7 @@ import numpy as np
 from hindsight.core import codec, delta, persist, step as stepmod
 from hindsight.core.history import History, MeshState
 from hindsight.core.registry import Registry
-from hindsight.core.types import (ADD, DATA, DELTA, MISSING, POSITION_KEY, DataChange, Entry, Step)
+from hindsight.core.types import DATA, DELTA, MISSING, POSITION_KEY, DataChange, Step
 
 stepmod.VERIFY = True
 WEIRD = [0.0, -0.0, math.inf, -math.inf, 5e-324, -5e-324, 1.1754943508222875e-38, 3.4028234663852886e+38,
@@ -84,7 +84,6 @@ def test_round_trip_every_codec():
     # a step without records keeps the version 3 layout
     plain = Step(5, "Stroke", "SCULPT", "o", 0.0, DELTA, [])
     assert stepmod.step_to_bytes(plain, "zlib")[10] == 3
-    print("PASS test_round_trip_every_codec")
 
 
 def test_playback_every_position():
@@ -157,7 +156,6 @@ def test_playback_every_position():
                     (packed, obj, p)
                 for key in changed.get(obj, ()):
                     assert isinstance(key, str) or key[0] == "@"
-    print("PASS test_playback_every_position")
 
 
 def test_reverse_order_within_a_step():
@@ -171,7 +169,6 @@ def test_reverse_order_within_a_step():
     assert st.values[("a", "x")] == 3.0
     h.goto(0, {"o": st})
     assert st.values[("a", "x")] == 1.0
-    print("PASS test_reverse_order_within_a_step")
 
 
 def _patch_records(blob, fn):
@@ -213,7 +210,6 @@ def test_damaged_records_refused():
         except ValueError:
             continue
         raise AssertionError(f"accepted a flipped byte at {i}")
-    print("PASS test_damaged_records_refused")
 
 
 def test_memory_and_file_format():
@@ -231,21 +227,14 @@ def test_memory_and_file_format():
     h2 = reg2.history_for("o")
     assert [e.load().records[0].changes for e in h2.entries][1] == {"name": ("a", "b")}
     assert records_equal(h2.entries[0].load().records, recs)
-    print("PASS test_memory_and_file_format")
 
 
 def main():
-    ok = True
     for t in (test_round_trip_every_codec, test_playback_every_position, test_reverse_order_within_a_step,
               test_damaged_records_refused, test_memory_and_file_format):
-        try:
-            t()
-        except Exception:
-            ok = False
-            print("FAIL", t.__name__)
-            traceback.print_exc()
-    return ok
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main() else 1)
+    main()

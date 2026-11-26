@@ -4,7 +4,7 @@
 
 Runs inside Blender. The list of names comes from the code, not from memory: the properties Blender
 gains when Hindsight registers (compared with before), the fields of its property groups, and the
-names the code writes with (the id property, the Text datablock and its properties, the history
+names the code writes with (the id property, the Text datablock and its properties, a V1 history
 folder and its files, the crash journal, the Movie Mode keyframes). Every name found must have a
 description below and every description must belong to a name found, or this script fails.
 tests/test_bl_metadata.py checks that a session that uses every feature writes nothing that isn't
@@ -43,7 +43,8 @@ DESCRIBE = {
         "when a file that has history is saved", "Remove Hindsight data from this file"),
     ".hindsight_history[sidecar]": (
         "custom property (on/off)", "in the .blend, on the Text above",
-        "when a file that has history is saved: on when the history is in the folder next to the file",
+        "when a file that has history is saved: on only while the file points at a history folder this "
+        "version can't read (missing, or saved by a newer Hindsight), so its history comes back with the folder",
         "Remove Hindsight data from this file"),
     ".hindsight_history[save_id]": (
         "custom property (text: a random id of the save)", "in the .blend, on the Text above",
@@ -53,29 +54,34 @@ DESCRIBE = {
         "custom property (bytes: the whole history, and how each recorded object was when saved: a fingerprint "
         "of its mesh and its recorded values, to notice changes made without Hindsight)", "in the .blend, on the "
         "Text above",
-        "when saving with Save mode set to Embed or Both", "saving with Save mode Sidecar; Remove Hindsight data"),
+        "when a file that has history is saved", "Remove Hindsight data from this file"),
     ".hindsight_history[hindsight_data]": (
         "custom property (text: the same history as base64, written by 1.0.0-beta.2 and earlier)", "in the .blend, "
         "on the Text above",
         "never by this version: read when a file has it, and replaced by hindsight_data_bin at the next save",
-        "the next save; saving with Save mode Sidecar; Remove Hindsight data"),
+        "the next save; Remove Hindsight data from this file"),
     ".hindsight_history[hindsight_data_unreadable]": (
         "custom property (bytes, or text from an earlier version)", "in the .blend, on the Text above",
         "only when an embedded history couldn't be read: it is kept, unchanged, in case it can be recovered",
         "Remove Hindsight data from this file"),
     "<file>_hindsight/": (
         "folder", "next to the .blend",
-        "when a file that has history is saved with Save mode Sidecar or Both", "Remove Hindsight data (ticked) or "
+        "never by this version: 1.0.0-beta.2 and earlier saved the history there; it is read until the "
+        "file's next save puts the history in the .blend; a missing folder, or a newer Hindsight's, stays pointed "
+        "at after saves (see `.hindsight_history[sidecar]`), and once a missing one is back its histories go on "
+        "for the objects the .blend has none for", "Remove Hindsight data (ticked) or "
         "deleting the folder; the .blend opens fine without it"),
     "<file>_hindsight/history.hsr": (
         "file (the history, and how each recorded object was when saved: a fingerprint of its mesh and its "
-        "recorded values)", "in the folder above", "on save (Sidecar or Both)", "as the folder"),
+        "recorded values)", "in the folder above", "never by this version (see the folder)", "as the folder"),
     "<file>_hindsight/index.json": (
-        "file (format, version, file name, time saved)", "in the folder above", "on save (Sidecar or Both)",
+        "file (format, version, file name, time saved)", "in the folder above",
+        "never by this version (see the folder)",
         "as the folder"),
     "<file>_hindsight/history.hsr.unreadable-<date>": (
         "file (a history file that couldn't be read, set aside)", "in the folder above",
-        "only when a history file couldn't be read, so the next save can't overwrite it", "as the folder"),
+        "only when the folder's history file couldn't be read: it is kept in case it can be recovered",
+        "as the folder"),
     "journal/<id>.hsj": (
         "file (crash journal)", "outside: the extension's user data folder (or hindsight_journal in the "
         "system temp folder when that isn't available)",
@@ -163,11 +169,13 @@ into a .blend or next to it that isn't listed here.
 - While Movie Mode is on, Hindsight keeps a camera and, when the scene has no light of its own, three
   sun lamps in the scene. They are ordinary objects, never recorded, and go again when Movie Mode is
   switched off. Your own camera and light objects are never moved or deleted.
-- Saving a file that has no history writes nothing of Hindsight's: no Text, no folder, no journal.
+- Saving a file that has no history writes nothing of Hindsight's: no Text, no journal. No save writes
+  a history folder next to the .blend; one saved by 1.0.0-beta.2 or earlier is only read.
 - A file saved with Hindsight data opens fine without Hindsight: the id properties and the Text stay
   as plain data and do nothing.
 - Undo History > Advanced > Remove Hindsight data from this file takes all of it out again (the
-  folder only if you tick it). Geometry and your other settings aren't touched.
+  history folder from an earlier version only if you tick it). Geometry and your other settings
+  aren't touched.
 
 """
 

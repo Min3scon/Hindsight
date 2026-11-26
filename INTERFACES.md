@@ -44,7 +44,7 @@ Read the file. Key points:
   (`seq,label,mode,target,time,kind,extra`). `.load() -> Step`, `.pack(codec)`, `.to_bytes(codec)`,
   `.nbytes()`, `.is_packed()`.
 - `Settings` dataclass + module global `SETTINGS` (max_steps=10000, memory_limit_mb=4096, raw_steps=64,
-  compression="auto", truncation_threshold=10, save_mode="SIDECAR", crash_recovery="LAST_SAVED").
+  compression="auto", truncation_threshold=10, crash_recovery="LAST_SAVED").
 
 ## 2. Storage engine — `core/codec.py`, `core/delta.py`, `core/step.py`, `core/store.py`
 
@@ -123,7 +123,7 @@ Step.records: list[DataChange]                  # on any step kind
 MeshState.values: dict[(adapter, path), value]  # recorded data of the datablock
 MeshState.apply_record(rec, forward) -> set     # changed keys ("@", adapter, path)
 
-# bl/adapters.py
+# bl/adapters/ (a package, one module per data kind; adapters.X still resolves every name)
 class Adapter: id, id_types, budget_ms; capture(idb) -> {path: value}; write(idb, values, recorded)
 ALLOWLIST: {ID type: ((path, "value" | "ref"), ...)}; DEPENDENTS: {path: (paths rewritten after it)}
 animated_paths(idb) -> set                      # never recorded by the generic adapter
@@ -213,8 +213,7 @@ def atomic_write_json(path: str, obj) -> None
 def registry_to_bytes(reg, codec: str = "auto") -> bytes      # complete compacted serialisation
 def registry_from_bytes(b: bytes) -> "Registry"
 def sidecar_dir(blend_path: str) -> str          # "<dir>/<blend stem>_hindsight"
-def save_sidecar(reg, blend_path: str) -> None   # writes sidecar_dir/history.hsr atomically (+ index.json
-                                                 # {"version":1,"blend":basename,"saved_at":time})
+# (no save_sidecar: V2 never writes a history folder, #53; tests write V1's with tests/reference/persist.py)
 def load_sidecar(blend_path: str) -> "Registry | None"    # None if folder/file missing
 def sidecar_missing(blend_path: str, expected: bool) -> bool   # True if expected but folder absent
 def replay(reg, records: list[tuple[str, dict, bytes]]) -> int
@@ -242,7 +241,7 @@ class Registry:
     def remove_object(self, obj_uid: str) -> None
     def all(self) -> list[History]
 # global timeline (core/globaltl.py, P3)
-def global_order(reg, visible: set[str] | None = None) -> list[tuple[int, str, int]]   # (seq, hist_uid, entry_index) sorted
+def global_groups(reg, visible: set[str] | None = None) -> list[list[tuple[int, str, int]]]   # one list of (seq, hist_uid, entry_index) per operation, in order of first step
 def global_position(reg, visible=None) -> int                  # number of applied entries in global order prefix
 def plan_global_goto(reg, g: int, visible=None) -> dict[str, int]   # hist_uid -> cursor for global position g
 ```
@@ -285,13 +284,13 @@ Scene properties (`bl/props.py`, main session): `scene.hindsight` (HINDSIGHT_PG_
 Add-on preferences (`bl/prefs.py`): class `HINDSIGHT_AP_prefs(bpy.types.AddonPreferences)`, `bl_idname = __package__`
 of the extension root (`base_package` passed from `__init__`), properties (each `update=` copies into
 `core.types.SETTINGS` via `bl.prefs.sync_settings(prefs)`):
-`save_mode` Enum SIDECAR/EMBED/BOTH ("Save Mode"), `crash_recovery` Enum LAST_SAVED/INTERRUPTED ("Crash Recovery",
+`crash_recovery` Enum LAST_SAVED/INTERRUPTED ("Crash Recovery",
 items "Last Saved", "Interrupted Session"), `truncation_threshold` Int 10 ("Truncation Warning Threshold"),
 `max_steps` Int 10000 ("Max Undo Steps", 1..10000), `memory_limit_mb` Int 4096 ("Memory Limit (MB)"),
 `raw_steps` Int 64 ("Uncompressed Recent Steps"), `compression` Enum AUTO/ZSTD/LZ4/ZLIB/NONE ("Compression"),
 scrubber appearance: `scrub_height` Int 6 px, `scrub_margin` Int 18 px, `scrub_color` FloatVector(4, COLOR_GAMMA)
 (1.0, 0.6, 0.24, 1.0), `scrub_bg_color` (0.1, 0.1, 0.1, 0.6), `scrub_show_counter` Bool True, `scrub_width_pct` Int 60.
-Helper: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`.
+Helpers: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`; `value(name, default)` (the one preference reader: `prefs.FORCE[name]` if a test set it, else the preference, else `default`); `SCRUB_DEFAULTS` (the six slider defaults above, shared with the scrubber).
 
 Operator idnames (all `bl_idname = "hindsight.<name>"`, labels exactly as listed):
 - `hindsight.step_back` "Step Back" / `hindsight.step_forward` "Step Forward" (Ctrl+Z / Ctrl+Shift+Z, `oskey` variants)
@@ -373,7 +372,7 @@ def merge(a, b)                                        # union of two extents (N
 def fit(ext, basis, tan_x, tan_y, min_distance=1e-3) -> dict | None   # location, near, far, center, depth
 def bounds(points); def merge_bounds(a, b)             # min xyz, max xyz
 def light_rig(basis, center, radius) -> list[dict]     # key, fill, rim: direction, location, strength, angle, color
-def history_extents(h, state, target_uid, basis, tan_x, tan_y)   # extents over every other history position
+def history_extents_multi(h, state, target_uid, bases, tans)   # (k, 6) extents over every other history position, one row per basis
 
 # hindsight/bl/camrig.py
 NAMES; MARGIN
