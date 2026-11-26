@@ -13,7 +13,7 @@ history.py call the engine. The Python versions are in tests/reference/.
 """
 from __future__ import annotations
 
-API = 10                    # the module's API number (native/src/lib.rs) this code is written for
+API = 11                    # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
 # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
 # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
@@ -23,10 +23,11 @@ API = 10                    # the module's API number (native/src/lib.rs) this c
 # API 8: + same_values (strict equality of the data recorder's values, R070).
 # API 9: + morph_dab (one dab of the Morph History brush in one pass, R083).
 # API 10: + extents_into (the Movie Mode camera's extents of points, in place, R085).
+# API 11: + index_build, index_read, part_build, part_read (format 5's index part and step parts, #64).
 
 
 class EngineMissing(ImportError):
-    """The Rust engine (hindsight_native, API 10) is missing, broken or the wrong version."""
+    """The Rust engine (hindsight_native, API 11) is missing, broken or the wrong version."""
 
 
 def _load():

@@ -14,12 +14,12 @@ copyright = ["2026 Min3scon"]
 # The native engine (native/ at the repository root): Blender installs the wheel that matches the
 # platform; anywhere else the add-on uses its Python code (same results).
 wheels = [
-  "./wheels/hindsight_native-0.11.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
-  "./wheels/hindsight_native-0.11.0-cp311-abi3-win_amd64.whl",
-  "./wheels/hindsight_native-0.11.0-cp311-abi3-macosx_11_0_arm64.whl",
-  "./wheels/hindsight_native-0.11.0-cp311-abi3-macosx_10_12_x86_64.whl",
-  "./wheels/hindsight_native-0.11.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
-  "./wheels/hindsight_native-0.11.0-cp311-abi3-win_arm64.whl",
+  "./wheels/hindsight_native-0.12.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+  "./wheels/hindsight_native-0.12.0-cp311-abi3-win_amd64.whl",
+  "./wheels/hindsight_native-0.12.0-cp311-abi3-macosx_11_0_arm64.whl",
+  "./wheels/hindsight_native-0.12.0-cp311-abi3-macosx_10_12_x86_64.whl",
+  "./wheels/hindsight_native-0.12.0-cp311-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+  "./wheels/hindsight_native-0.12.0-cp311-abi3-win_arm64.whl",
 ]
 
 [permissions]
