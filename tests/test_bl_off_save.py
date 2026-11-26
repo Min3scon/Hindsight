@@ -132,10 +132,34 @@ def test_turned_on_after_opening_another_file_reads_its_parts():
     assert _count("TWO") == 2 and len(runtime.reg().histories) == 1, (_count("TWO"), runtime.reg().histories)
 
 
+def test_steps_after_turning_on_again_come_back_after_a_crash():
+    """#11 review 7 (#124's "not covered"): off, saved while off, on again, more steps, then a crash: the steps
+    recorded after turning on are replayed onto the file saved while off, whose parts are the journal's marker's."""
+    H.fresh()
+    ob = H.make_mesh(1200, name="OFF")
+    _steps(ob, range(3))
+    path = os.path.join(TMP, "crash.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    _off()
+    try:
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+    finally:
+        _on()
+    _steps(bpy.data.objects["OFF"], range(3, 5))
+    SETTINGS.crash_recovery = "INTERRUPTED"
+    try:
+        bpy.ops.wm.open_mainfile(filepath=path)          # the session ended without a save
+        assert _count("OFF") == 5, f"{_count('OFF')} steps"
+        assert persistence.OTHER_SAVE_TEXT not in [t for _s, t in runtime.load_notes], runtime.load_notes
+    finally:
+        SETTINGS.crash_recovery = "LAST_SAVED"
+
+
 H.run(test_save_after_turning_off_keeps_history)
 H.run(test_turned_off_without_saving_still_recovers_from_the_journal)
 H.run(test_journal_of_the_last_save_is_not_replayed_onto_them)
 H.run(test_turned_on_again_holds_the_history_once_and_saves_it)
 H.run(test_turned_on_after_opening_another_file_reads_its_parts)
+H.run(test_steps_after_turning_on_again_come_back_after_a_crash)
 shutil.rmtree(TMP, ignore_errors=True)
 H.finish()

@@ -607,17 +607,25 @@ def journal_belongs(reg, records: list) -> bool:
     journal again. A journal whose last SAVE names another save (the .blend was replaced by another
     save of the same path: a .blend1 renamed back, a copy, a crash between writing the file and
     resetting the journal) describes positions in a different history and must not be replayed.
-    Files and journals of builds without save ids have none on either side and match as before."""
-    sid = None
-    found = False
-    for rtype, header, _p in records:
-        if rtype == "SAVE":
-            found = True
-            sid = (header or {}).get("save_id") or None
+    Files and journals of builds without save ids have none on either side and match as before.
+    A marker that the parts of this save hold every step journaled before it (#124) counts as its SAVE."""
     rid = getattr(reg, "save_id", None) or None
-    if not found:
+    at = _save_point(records, rid)
+    if at < 0:
         return not records or rid is None
-    return sid == rid
+    rtype, header, _p = records[at]
+    return ((header or {}).get("parts" if rtype == "META" else "save_id") or None) == rid
+
+
+def _save_point(records: list, rid) -> int:
+    """Where the journal starts again on top of save `rid`: its last SAVE, or a later marker that the parts of save
+    `rid` hold every step journaled before it (put on the Text when Hindsight was turned off, #124; #11 review 7).
+    -1 when there is neither."""
+    at = -1
+    for i, (rtype, header, _p) in enumerate(records):
+        if rtype == "SAVE" or (rid and rtype == "META" and not header.get("hist") and header.get("parts") == rid):
+            at = i
+    return at
 
 
 def _journal_entry(payload, strings: dict, decode) -> Entry:
@@ -686,10 +694,7 @@ def replay(reg, records: list) -> int:
     from .step import step_from_bytes
 
     strings = {}                     # label, mode, target and kind values shared between the steps
-    start = 0
-    for i, rec in enumerate(records):
-        if rec[0] == "SAVE":
-            start = i + 1
+    start = _save_point(records, getattr(reg, "save_id", None)) + 1
     owner = (records[start - 1][1] or {}).get("s") if start else None
     known_members = {}
     for rtype, header, _p in records[:start]:
