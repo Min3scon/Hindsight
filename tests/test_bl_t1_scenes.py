@@ -11,7 +11,7 @@ import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from hindsight.core import globaltl
-from hindsight.bl import datarec, idmap, log, prefs, runtime
+from hindsight.bl import adapters, datarec, idmap, log, prefs, runtime
 
 
 def _r(v):
@@ -64,26 +64,26 @@ def delete():
 OPS = (("New Scene", make), ("change", change), ("Delete Scene", delete))
 
 
-def _run(ops=OPS):
+def _run(ops=OPS, look=read):
     L.fresh_scene()
     L.track_all()
     L.tick_like("baseline")
-    states, seqs = [read()], [L.max_seq()]
+    states, seqs = [look()], [L.max_seq()]
     for label, fn in ops:
         fn()
         L.tick_like(label)
-        states.append(read())
+        states.append(look())
         seqs.append(L.max_seq())
     return states, seqs
 
 
-def _walk(states, seqs, where=""):
+def _walk(states, seqs, where="", look=read):
     errors, keep = [], log.error_once
     log.error_once = lambda key, text, exc=None: errors.append(text)
     try:
         for i in list(range(len(states) - 1, -1, -1)) + list(range(len(states))):
             L.goto_after(seqs[i])
-            assert read() == states[i], (where, i, read(), states[i])
+            assert look() == states[i], (where, i, look(), states[i])
     finally:
         log.error_once = keep
     assert not errors, errors
@@ -150,6 +150,47 @@ def test_a_deleted_scene_comes_back_after_save_and_reload():
         _walk(states, seqs, "reopened")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_an_object_another_scene_uses_comes_back_in_its_collection():
+    """#123: MadeTri is also in the first scene, so it stays in the file after save and reopen while the
+    collection only "Made" had is dropped. Going back over the deletion puts it in that collection made
+    again, not in the scene's own collection."""
+    def share():
+        bpy.data.scenes["Scene"].collection.objects.link(bpy.data.objects["MadeTri"])
+
+    def look():
+        sc = bpy.data.scenes.get("Made")
+        return (read(), sorted(o.name for o in bpy.data.scenes["Scene"].collection.objects),
+                sc and tuple((c.name, tuple(o.name for o in c.objects)) for c in sc.collection.children))
+    tmp = tempfile.mkdtemp(prefix="hs_scenes123_")
+    try:
+        states, seqs = _run(OPS[:1] + (("share", share), OPS[2]), look)
+        path = os.path.join(tmp, "f.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        prefs.FORCE["record_scope"] = "EVERYTHING"
+        assert bpy.data.objects.get("MadeTri") and not bpy.data.collections.get("MadeColl"), "what Blender kept"
+        assert states[2][2] == (("MadeColl", ("MadeTri",)),) and "MadeTri" in states[3][1], states
+        _walk(states, seqs, "reopened", look)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_an_object_still_in_the_file_is_linked_where_it_was_recorded():
+    """#123: making a scene again links an object still in the file into the collections it was recorded in,
+    not into the scene's own collection (the test above passes only because resolve_missing_refs moved it
+    afterwards)."""
+    L.fresh_scene()
+    sc, c = bpy.data.scenes.new("Made"), bpy.data.collections.new("MadeColl")
+    sc.collection.children.link(c)
+    first = bpy.data.scenes["Scene"]
+    ob = bpy.data.objects.new("Shared", None)
+    first.collection.objects.link(ob)
+    body = {"collections": [idmap.claim(c), "scene:" + idmap.claim(first)]}
+    assert adapters._recreate_object(sc, idmap.claim(ob), body, None) is ob
+    assert sorted(x.name for x in ob.users_collection) == ["MadeColl", "Scene Collection"], ob.users_collection
+    assert ob.name not in sc.collection.objects
 
 
 def test_going_over_a_step_of_an_object_in_another_scene():
@@ -259,6 +300,8 @@ if __name__ == "__main__":
     H.run(test_a_scene_made_again_keeps_its_history)
     H.run(test_the_first_scene_deleted)
     H.run(test_a_deleted_scene_comes_back_after_save_and_reload)
+    H.run(test_an_object_another_scene_uses_comes_back_in_its_collection)
+    H.run(test_an_object_still_in_the_file_is_linked_where_it_was_recorded)
     H.run(test_going_over_a_step_of_an_object_in_another_scene)
     H.run(test_blenders_undo_and_redo_of_a_making)
     H.run(test_blenders_undo_and_redo_of_global_jumps_over_a_making_and_a_deletion)

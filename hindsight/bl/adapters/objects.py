@@ -262,11 +262,23 @@ def _remove_object(ob) -> None:
     bpy.data.objects.remove(ob, do_unlink=True)      # its data stays (it may come back)
 
 
+def _link_recorded(scene, ob, body) -> None:
+    """Link ob into the collections it was recorded in, or the scene's own one if none of them is here."""
+    linked = False
+    for ref in (body.get("collections") or ()) if isinstance(body, dict) else ():
+        c = _coll_from_ref(ref)
+        if c is not None:
+            if c.objects.get(ob.name) != ob:
+                c.objects.link(ob)
+            linked = True
+    if not linked and scene.objects.get(ob.name) != ob:
+        scene.collection.objects.link(ob)
+
+
 def _recreate_object(scene, uid, body, snap):
     ob = idmap.find(uid)
     if isinstance(ob, bpy.types.Object):    # #110: still in the file (a deleted scene left it): linked again
-        if scene.objects.get(ob.name) != ob:
-            scene.collection.objects.link(ob)
+        _link_recorded(scene, ob, body)
         return ob
     if not isinstance(body, dict):
         log.warn("an object can't be brought back: its details weren't recorded")
@@ -292,14 +304,7 @@ def _recreate_object(scene, uid, body, snap):
     ob[idmap.UID_PROP] = uid
     idmap.note(ob, uid)
     note_name(ob, body.get("name") or "Object")
-    linked = False
-    for ref in body.get("collections") or ():
-        c = _coll_from_ref(ref)
-        if c is not None:
-            c.objects.link(ob)
-            linked = True
-    if not linked:
-        scene.collection.objects.link(ob)
+    _link_recorded(scene, ob, body)
     ob.matrix_basis = to_rna(body["matrix"])
     for slot_mat, mu in zip(range(len(body.get("materials") or ())), body.get("materials") or ()):
         if data is not None and len(ob.material_slots) <= slot_mat and hasattr(data, "materials"):
