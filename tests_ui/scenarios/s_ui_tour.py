@@ -17,6 +17,11 @@ def run(d):
     mark = d.console_mark()
     r = C.install_like_user(d)
     yield 1.5
+    # the notice comes 0.8 s after enabling; a yield counts from the start of the step, so a 1.5 s install ate it
+    for _ in range(30):
+        if "Hindsight is on." in d.console_since(mark):
+            break
+        yield 0.1
     log = d.console_since(mark)
     d.check("installed and enabled", C.enabled() and r == {'FINISHED'}, r)
     d.check("no traceback on install", "Traceback" not in log, log[-1500:])

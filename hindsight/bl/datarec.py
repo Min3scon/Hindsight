@@ -34,11 +34,12 @@ def _now() -> float:
 
 def _note_update(now: float) -> None:
     """D147: a UI drag (a slider in a panel) sends an update per redraw, slow redraws far apart. The gap
-    between the last two updates (only gaps under CONTINUE count) is how long the next one is awaited."""
+    between the last two updates (only gaps under CONTINUE count) is how long the next one is awaited.
+    The first update after a commit has no gap: the update before it belongs to a step already recorded."""
     last = _CLOCK["last"]
     if _CLOCK["batch"] is None:
-        _CLOCK["batch"] = now
-    if last is not None and now > last:
+        _CLOCK.update(batch=now, gap=0.0)
+    elif last is not None and now > last:
         _CLOCK["gap"] = now - last if now - last < CONTINUE else 0.0
     _CLOCK["last"] = now
 

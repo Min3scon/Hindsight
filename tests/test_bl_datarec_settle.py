@@ -235,10 +235,30 @@ def test_a_drag_after_an_operator_is_one_step():
     print("PASS test_a_drag_after_an_operator_is_one_step")
 
 
+def test_a_change_soon_after_a_step_waits_only_the_settle_time():
+    """Window scenarios adapters and tier1: a change 0.7 s after the updates of a step already recorded waited
+    1.5 x 0.7 s, the gap taken across that step as if it were a drag's redraws, so an operator ending in that
+    time took the change into its own step. A gap only counts between updates of changes not yet recorded."""
+    ob, uid = setup()
+    try:
+        update(ob, uid, 0.6)
+        advance(0.7)
+        assert len(steps_of(ob)) == 1
+        ob.location.x += 1.0                      # another kind of data, 0.7 s after the last update
+        datarec._DIRTY[uid] = clock[0]
+        datarec._note_update(clock[0])
+        advance(0.35)
+        assert len(steps_of(ob)) == 2, "a change 0.7 s after a recorded step waited past the settle time"
+    finally:
+        teardown()
+    print("PASS test_a_change_soon_after_a_step_waits_only_the_settle_time")
+
+
 if __name__ == "__main__":
     for t in (test_a_slow_drag_is_one_step, test_a_single_change_commits_after_the_settle_time,
               test_the_wait_follows_the_gap_between_updates, test_a_drag_back_to_where_it_started_leaves_no_step,
               test_only_the_newest_step_is_continued, test_a_merged_step_comes_back_after_a_crash,
-              test_a_drag_back_to_the_start_leaves_no_step_after_a_crash, test_a_drag_after_an_operator_is_one_step):
+              test_a_drag_back_to_the_start_leaves_no_step_after_a_crash, test_a_drag_after_an_operator_is_one_step,
+              test_a_change_soon_after_a_step_waits_only_the_settle_time):
         H.run(t)
     H.finish()
