@@ -98,8 +98,16 @@ def test_collections_made_and_deleted_with_the_file_switch():
     print("PASS test_collections_made_and_deleted_with_the_file_switch")
 
 
+def test_the_tooltip_says_what_is_never_recorded():
+    """#13: what can never be recorded is said where the switch is (the Undo History tab)."""
+    text = bpy.ops.hindsight.record_file.get_rna_type().description
+    for what in ("linked from another .blend", "files on disk", "preferences"):
+        assert what in text, (what, text)
+
+
 if __name__ == "__main__":
     H.run(test_one_switch_for_the_file)
+    H.run(test_the_tooltip_says_what_is_never_recorded)
     H.run(test_switch_is_quick_with_many_objects)
     H.run(test_collections_made_and_deleted_with_the_file_switch)
     H.finish()

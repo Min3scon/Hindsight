@@ -6,7 +6,7 @@ import contextlib
 from .. import idmap, log
 from .core import ALLOWLIST, _UI_PROPS, animated_paths, set_struct_values, struct_values
 from .keys import (
-    ANIMATED, REF_KEY, _ACT_CACHE, _BONES_CACHE, _EXT_CACHE, _EXT_DEPS, _GEOM_CACHE, _MAT_CACHE,
+    ANIMATED, REF_KEY, SETTINGS_KEY, _ACT_CACHE, _BONES_CACHE, _EXT_CACHE, _EXT_DEPS, _GEOM_CACHE, _MAT_CACHE,
     _OBMAT_CACHE, _VAL_CACHE)
 from .materials import group_owner_map
 
@@ -162,12 +162,14 @@ def settings_of(idb, skip, nested=()) -> dict:
     return v
 
 
-def write_settings(idb, v, nested=()) -> None:
+def write_settings(idb, v, nested=(), owner=None) -> None:
+    """owner: the object whose settings these are; a datablock they point to that isn't there yet (the scene
+    makes a deleted collection again after the objects, D178) is put in once it is back (D37)."""
     if not isinstance(v, dict):
         return
     _VAL_CACHE.pop(idb.session_uid, None)
     try:
-        set_struct_values(idb, {k: x for k, x in v.items() if k not in nested})
+        set_struct_values(idb, {k: x for k, x in v.items() if k not in nested}, owner, "", SETTINGS_KEY)
         for n in nested:
             st = getattr(idb, n, None)
             if st is not None and isinstance(v.get(n), dict):

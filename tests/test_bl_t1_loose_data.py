@@ -7,8 +7,8 @@ many unused materials an operation reads a bounded number of them, so the cost d
 file (a changed one is found within a few operations).
 D152: making or deleting a text, an unused material or world or a node group (D133) is taken back too: going
 back over the making removes the datablock (when nothing uses it), going back over its deletion makes it
-again with what was recorded; forward the other way round. Images, actions, palettes, brushes... are not
-made again (nothing records enough to rebuild them); their properties are recorded as before."""
+again with what was recorded; forward the other way round. Images, actions, palettes, brushes... are made
+again from a snapshot (D154, test_bl_t1_file_datablocks); their properties are recorded as before."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bpy
 import tests.harness as H
@@ -54,9 +54,12 @@ def run_ops(ops, read):
     return states
 
 
-def texts_walk(read, ops):
-    """Run `ops` on the scene, then walk the scene's history over every position both ways."""
+def texts_walk(read, ops, setup=None):
+    """Run `ops` on the scene (setup() first, before the baseline), then walk the scene's history over every
+    position both ways."""
     L.fresh_scene()
+    if setup is not None:
+        setup()
     L.track_all()
     L.tick_like("baseline")
     states = run_ops(ops, read)
@@ -222,7 +225,9 @@ def test_no_extra_work_without_loose_datablocks():
     L.track_all()
     L.tick_like("baseline")
     sc = C.scene
-    assert adapters.scene_loose(sc) == {adapters.INV_LOOSE: []}, adapters.scene_loose(sc)
+    from hindsight.bl.adapters import loose
+    kinds = sorted("@" + k for k in loose._SNAP_COLLS)      # #102 review 7: the kinds the inventory holds
+    assert adapters.scene_loose(sc) == {adapters.INV_LOOSE: kinds}, adapters.scene_loose(sc)
     assert adapters.scene_groups(sc).get(adapters.INV_GROUPS) == [] and \
         not [k for k in adapters.scene_groups(sc) if k.startswith(("@ng:", "@lx:"))]
     calls = [0]

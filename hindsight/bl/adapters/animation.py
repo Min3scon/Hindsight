@@ -184,7 +184,7 @@ def action_record(action, ident) -> dict:
             continue                    # Hindsight's own keys (Movie Mode's step) are never recorded
         r = {"path": fc.data_path, "index": int(fc.array_index),
              "group": fc.group.name if fc.group is not None else "", "mute": bool(fc.mute),
-             "extrapolation": fc.extrapolation, "lock": bool(fc.lock)}
+             "extrapolation": fc.extrapolation, "lock": bool(fc.lock), "color_mode": fc.color_mode}   # D157
         r.update(_keys_of(fc))
         rows.append(r)
     rec = {"name": action.name, "fcurves": rows}
@@ -252,8 +252,9 @@ def write_action(key: str, rec) -> None:
     a = idmap.find(au)
     try:
         if a is None:
-            # gone from the file (nothing used it when it was saved): made again under its id
-            a = bpy.data.actions.new(rec.get("name") or "Action")
+            # gone from the file (nothing used it when it was saved, a jump took it away): made again under its id
+            from .loose import made_again
+            a = made_again(au) or bpy.data.actions.new(rec.get("name") or "Action")
             a[idmap.UID_PROP] = au
             idmap.note(a, au)
         _ACT_CACHE.pop(a.session_uid, None)
@@ -278,6 +279,8 @@ def write_action(key: str, rec) -> None:
             fc.lock = r.get("lock", False)
             if fc.extrapolation != r.get("extrapolation", fc.extrapolation):
                 fc.extrapolation = r["extrapolation"]
+            if fc.color_mode != r.get("color_mode", fc.color_mode):
+                fc.color_mode = r["color_mode"]
             _set_keys(fc, r)
         _ACT_CACHE.pop(a.session_uid, None)
     except Exception as e:
@@ -285,6 +288,7 @@ def write_action(key: str, rec) -> None:
 
 
 def write_anim(ob, want) -> None:
+    old = getattr(ob.animation_data, "action", None)
     try:
         if want is None:
             if ob.animation_data is not None:      # animated later than this: it had none then
@@ -307,3 +311,7 @@ def write_anim(ob, want) -> None:
             _write_nla(ad, want.get("nla") or [])
     except Exception as e:
         log.error_once(("anim", str(e)), f"could not restore which animation {ob.name} plays: {e}", e)
+    finally:
+        if old is not None and getattr(ob.animation_data, "action", None) != old:
+            from .loose import queue_left
+            queue_left(old, "actions")
