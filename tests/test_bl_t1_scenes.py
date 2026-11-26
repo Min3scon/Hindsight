@@ -10,7 +10,8 @@ import tempfile
 import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
-from hindsight.bl import idmap, log, prefs, runtime
+from hindsight.core import globaltl
+from hindsight.bl import datarec, idmap, log, prefs, runtime
 
 
 def _r(v):
@@ -170,6 +171,46 @@ def test_blenders_undo_and_redo_of_a_making():
         assert len(h.entries) == 1 and h.cursor == want, [e.meta["label"] for e in h.entries]
 
 
+def test_blenders_undo_and_redo_of_global_jumps_over_a_making_and_a_deletion():
+    """#123: a global jump back over the deletion and the change makes the scene again, one forward over them
+    takes it away. Blender's undo of both and its redo of both follow the jumps (several steps each, so a
+    one-step match is not enough): every cursor is where the jump left it, and nothing is recorded."""
+    states, seqs = _run()
+    reg = runtime.reg()
+
+    def cursors():
+        return {hid: h.cursor for hid, h in reg.histories.items()}
+
+    def lengths():
+        return {hid: len(h.entries) for hid, h in reg.histories.items()}
+
+    def pos(seq):
+        return sum(1 for g in globaltl.global_groups(reg, runtime._visible_uids()) if g[-1][0] <= seq)
+    want = {3: cursors()}
+    datarec.PUSH_IN_BACKGROUND[0] = True                      # headless: the jumps go on Blender's undo
+    try:
+        L.goto_after(seqs[1])
+        want[1] = cursors()
+        L.goto_after(seqs[3])
+    finally:
+        datarec.PUSH_IN_BACKGROUND[0] = False
+    assert cursors() == want[3] and want[1] != want[3] and len(datarec._JUMPS) == 2, (cursors(), want)
+    n = lengths()
+    for direction, s in (("undo", 1), ("undo", 3), ("redo", 1), ("redo", 3)):
+        at, saved = cursors(), {}
+        for h in reg.histories.values():
+            saved.update(L._saved_states(h))
+        runtime.global_goto(bpy.context, pos(seqs[s]), False)   # the data Blender puts back
+        for hid, c in at.items():
+            reg.histories[hid].cursor = c
+        L._restore_states(saved)
+        runtime.UNDO_DIRECTION[0] = direction
+        datarec.on_undo(direction)
+        assert cursors() == want[s] and read() == states[s], (direction, s, cursors(), want[s], read())
+        L.tick_like("next")
+        assert lengths() == n and cursors() == want[s], (direction, s, lengths(), n)
+
+
 def test_a_scene_and_its_view_layer_renamed():
     """Renaming a scene or one of its view layers is a step: going back gives the old names back (to the same
     view layer, which keeps what isn't recorded of it)."""
@@ -220,6 +261,7 @@ if __name__ == "__main__":
     H.run(test_a_deleted_scene_comes_back_after_save_and_reload)
     H.run(test_going_over_a_step_of_an_object_in_another_scene)
     H.run(test_blenders_undo_and_redo_of_a_making)
+    H.run(test_blenders_undo_and_redo_of_global_jumps_over_a_making_and_a_deletion)
     H.run(test_a_scene_and_its_view_layer_renamed)
     H.run(test_the_tooltip_names_the_window_layout)
     H.run(test_the_window_layout_cant_be_put_back)

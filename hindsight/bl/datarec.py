@@ -1388,8 +1388,8 @@ def _jump_matches(j, seen: dict) -> bool:
     if not all(uid in seen and not _data_diff(vals, seen[uid]) for uid, vals in want.items()):
         return False
     # a datablock that exists on the other side of the jump only (brought back or removed by it)
-    # must not exist now
-    if any(uid in seen for uid in set(j["va"] if back else j["vb"]) - set(want)):
+    # must not exist now (a gone scene is in seen as {}, #110)
+    if any(seen.get(uid) for uid in set(j["va"] if back else j["vb"]) - set(want)):
         return False
     for uid, (fb, fa) in j["meshes"].items():
         ob = rt.find_object(uid)
