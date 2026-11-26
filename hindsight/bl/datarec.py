@@ -1036,6 +1036,7 @@ def scene_here(uid: str, sc, st):
             idmap.note(sc, uid)
         elif sc.name != name:
             sc.name = name
+        adapters.note_name(sc, name)              # D47: another scene may hold the name (#123)
     except Exception as e:
         log.error_once(("scene_here", str(e)), f"could not make or remove the scene {name or sc.name}: {e}", e)
         return sc if name is not None else None
@@ -1229,8 +1230,23 @@ def sync_taken_names() -> None:
         if idb is None:
             continue
         st = _state(u)
-        if st.values.get(("rna", "name")) == wanted and idb.name != wanted:
-            st.values[("rna", "name")] = idb.name
+        for k in _NAME_KEYS:
+            if st.values.get(k) == wanted and idb.name != wanted:
+                st.values[k] = idb.name
+
+
+_NAME_KEYS = (("rna", "name"), ("scene", adapters.SCENE_NAME))     # a scene's name is its own key (#110)
+
+
+def _sync_hidden_keys() -> None:
+    """#123: an object's Hidden is keyed by scene name ("Made/ViewLayer"), so while a scene made again can't
+    have its recorded name, every object's recorded Hidden is what Blender has (as D47 does for the name)."""
+    if not any(isinstance(idmap.find(u), bpy.types.Scene) for u in adapters.NAME_TAKEN):
+        return
+    for u in tracked_uids():
+        st, ob = _rt()._STATES.get(u), idmap.find(u)
+        if st is not None and isinstance(ob, bpy.types.Object) and ("object", "hide") in st.values:
+            st.values[("object", "hide")] = adapters._hidden(ob)
 
 
 _ID_DATA = {"OBJECT": "objects", "MESH": "meshes", "MATERIAL": "materials", "COLLECTION": "collections",
@@ -1264,8 +1280,9 @@ def resolve_taken_names() -> int:
             adapters.note_name(idb, wanted)
             if idb.name == wanted:
                 st = _rt()._STATES.get(u)
-                if st is not None and ("rna", "name") in st.values:
-                    st.values[("rna", "name")] = wanted
+                for k in _NAME_KEYS if st is not None else ():
+                    if k in st.values:
+                        st.values[k] = wanted
                 moved += 1
         done += moved
         if not moved:
@@ -1278,7 +1295,8 @@ def resolve_missing_refs() -> None:
     the recorded references in now, so Blender matches the history again. D55: then collections
     Hindsight made again that the jump took out and left empty are removed."""
     resolve_taken_names()
-    adapters.flush_loose_removals()           # D152: datablocks the jump went back over the making of
+    _sync_hidden_keys()
+    adapters.flush_loose_removals()          # D152: datablocks the jump went back over the making of
     if not adapters.MISSING_REFS:
         adapters.drop_recreated_orphans()
         return

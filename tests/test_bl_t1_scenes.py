@@ -152,6 +152,25 @@ def test_a_deleted_scene_comes_back_after_save_and_reload():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_a_scene_made_again_while_another_holds_its_name():
+    """#123: after the deletion the user makes another "Made" while Record everything is off, so no jump
+    takes it away. Going back over the deletion makes the scene again as "Made.001" (with its id), and the
+    next commit records nothing: Blender's name is taken as the recorded one (D47)."""
+    states, seqs = _run()
+    prefs.FORCE["record_scope"] = "SCULPT"
+    other = bpy.data.scenes.new("Made")
+    L.tick_like("other")
+    prefs.FORCE["record_scope"] = "EVERYTHING"
+    L.tick_like("on again")
+    L.goto_after(seqs[2])
+    back = bpy.data.scenes.get("Made.001")
+    assert back is not None and idmap.uid_of(back) == states[2][0] and bpy.data.scenes["Made"] == other, \
+        [s.name for s in bpy.data.scenes]
+    s = L.max_seq()
+    L.tick_like("next")
+    assert L.max_seq() == s and back.name == "Made.001", (L.max_seq(), s, back.name)
+
+
 def test_an_object_another_scene_uses_comes_back_in_its_collection():
     """#123: MadeTri is also in the first scene, so it stays in the file after save and reopen while the
     collection only "Made" had is dropped. Going back over the deletion puts it in that collection made
@@ -300,6 +319,7 @@ if __name__ == "__main__":
     H.run(test_a_scene_made_again_keeps_its_history)
     H.run(test_the_first_scene_deleted)
     H.run(test_a_deleted_scene_comes_back_after_save_and_reload)
+    H.run(test_a_scene_made_again_while_another_holds_its_name)
     H.run(test_an_object_another_scene_uses_comes_back_in_its_collection)
     H.run(test_an_object_still_in_the_file_is_linked_where_it_was_recorded)
     H.run(test_going_over_a_step_of_an_object_in_another_scene)
