@@ -40,8 +40,9 @@ V1's crash journal (`HSJ1`) can sit beside any of them.
 In this order, on the Text `.hindsight_history`:
 
 1. No Text: no saved history.
-2. A `hindsight_parts` group: format 5 (#41, #43). If `sidecar` is True as well, an older build saved the file after
-   V2 (see "A format 5 file that V1 saved again").
+2. A `hindsight_parts` group: format 5 (#41, #43). If `sidecar` is True as well, the file still points at a V1
+   folder: V2 saved it while the folder was missing or newer (#8), or an older build saved it after V2 (see "A
+   format 5 file that V1 saved again"). The folder is read too (see there).
 3. `hindsight_data` equal to the stub and no `hindsight_parts`: a copy without its parts, such as Blender's autosave
    (#44). V2 knows the stub by its text, which never changes (#41); it does not decode it.
 4. Anything else: a V1 history, read as below.
@@ -102,9 +103,11 @@ The same for every format:
   `sidecar` is False. So V2 says once, after that save: "The history is now inside the .blend. The folder '{folder}'
   beside it is no longer used". The move-in deletes nothing outside the .blend. Blender's Save Versions keeps the
   V1 file as `.blend1`.
-- **A folder file opened without its folder** saves with no history for those objects, and the folder is not read
-  again even if it comes back. So V2's missing-folder note says: "History folder missing. Put '{folder}' next to the
-  .blend and open it again to see this file's history. Once the file is saved, the folder is no longer read".
+- **A folder file opened without its folder** saves with no history for those objects, and still points at the
+  folder (`sidecar` stays True, #8's rule, `METADATA.md`): once it is back, opening the file gives its histories to
+  every object the parts have none for. A newer Hindsight's folder stays pointed at the same way, and protected.
+  V2's missing-folder note says: "History folder missing. Keep '{folder}' next to the .blend to see this file's
+  history".
 
 ## V1 steps keep their own encoding
 
@@ -130,18 +133,22 @@ leave the stub and the parts untouched (#41, measured in all 9 cases). What happ
   the file, and sets `sidecar` True.
 - **Embedded:** V1 writes nothing (tag, lines 226 to 227), so its steps are gone.
 
-**V2 opens the format 5 parts and does not read V1's folder.** Changes V1 made to recorded objects are changes made
-without Hindsight, and D46 handles them as it does today:
+**V2 opens the format 5 parts, and V1's folder only for objects the parts have no history for.** V2 can't tell this
+folder from one that was missing at V2's save (neither has a save id), so both are read the same way (#8's rule, kept
+by 31d3600): a whole history of the folder goes on for each object the parts have none for (an object V1 recorded and
+V2 never did), and nothing is joined onto a history from the parts. Changes V1 made to objects the parts have a
+history for are changes made without Hindsight, and D46 handles them as it does today:
 
 - If `.blend1` still holds the mesh V2 saved (V1 saved once, with Save Versions on), D107 turns the change into one
   topology step.
 - Otherwise that object's history is left out, with D46's message.
 
-When V2 sees `sidecar` True next to `hindsight_parts` (V2 always writes False, so only an older build sets it), it
-adds a note: "This file was saved by an older Hindsight after this one. The steps it recorded are in '{folder}' and
-were not brought back". The next save writes `sidecar` False. The folder stays as it was.
+V2's next save writes `sidecar` False once the folder has been read (True again only while it is missing or newer).
+The folder stays as it was. A history taken whole from the folder keeps V1's sequence numbers, which can repeat the
+parts' (see below): within the history the order is right; on the global timeline its steps may sort among the
+parts' steps of the same numbers.
 
-V1's steps are not joined onto the format 5 history, for three reasons:
+V1's steps are not joined onto a format 5 history, for three reasons:
 
 - **Sequence numbers clash.** V1 recorded with a fresh registry (`next_seq` starts at 1, `hindsight/core/registry.py`
   17), so its sequence numbers repeat the format 5 history's. They are in each step's bytes as well as in its meta
