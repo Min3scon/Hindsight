@@ -67,6 +67,9 @@ def move_in(name, mode):
     folder = persist.sidecar_file(blend)
     had = sha(folder) if mode != "embed" else None
     on_disk = sha(blend)
+    H.fresh(register=False)
+    bpy.ops.wm.open_mainfile(filepath=blend)
+    unchanged = bpy.data.is_dirty          # what opening alone says: the bpy module of 4.2 says changed after any open
 
     open_file(blend)
     assert H.saved_steps(runtime.reg()) == want, f"{what}: opened"
@@ -74,7 +77,7 @@ def move_in(name, mode):
     text = bpy.data.texts[persistence.TEXT_NAME]
     assert not persistence._holds_history(text), f"{what}: Blender still holds its copy of the history"
     assert mode == "folder" or text[persistence.DATA_PROP] == persist.STUB, what
-    assert not bpy.data.is_dirty, f"{what}: opening marked the file as changed"
+    assert bpy.data.is_dirty == unchanged, f"{what}: opening marked the file as changed"
     H.fresh()
     assert sha(blend) == on_disk, f"{what}: closed without saving, the .blend changed"
 
