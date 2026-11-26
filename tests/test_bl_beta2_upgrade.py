@@ -159,6 +159,31 @@ def test_saved_without_its_folder():
     check(want["S"], want["O"], "saved without its folder, then the folder put back")
 
 
+def test_steps_made_without_its_folder():
+    """#120 review, problem 1: steps recorded on S while the folder was away, and saved, are still there once the
+    folder is back, and after the next save without it. O, not changed meanwhile, gets its folder history back."""
+    blend, want = place("folder")
+    folder = os.path.splitext(blend)[0] + "_hindsight"
+    os.replace(folder, folder + "_away")
+    SETTINGS.crash_recovery = "LAST_SAVED"
+    open_file(blend)
+    s = bpy.data.objects["S"]
+    H.enter(s, "SCULPT")
+    new = []
+    for seed in (11, 12):
+        H.fake_stroke(s, seed, n=80)
+        assert H.commit(s) is not None, f"no step for seed {seed}"
+        new.append(positions(s))
+    bpy.ops.object.mode_set(mode="OBJECT")
+    bpy.ops.wm.save_mainfile()
+    os.replace(folder + "_away", folder)
+    for what in ("the folder put back", "saved and opened without its folder"):
+        open_file(blend)
+        check([want["S"][-1]] + new, want["O"], f"steps made without its folder, {what}")
+        bpy.ops.wm.save_mainfile()
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def test_folder_not_read_after_the_save():
     """#50: once a save has put the history in the .blend, beta 2's folder is never read again. A damaged
     folder, or one a newer Hindsight changed, left beside the file changes nothing and shows no message."""
@@ -249,7 +274,7 @@ if __name__ == "__main__":
     try:
         for t in (test_history_folder_file, test_history_inside_the_blend, test_saved_both_ways,
                   test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash, test_moved_without_its_folder,
-                  test_saved_without_its_folder, test_folder_not_read_after_the_save, test_history_folder_file_saved_out_of_memory,
+                  test_saved_without_its_folder, test_steps_made_without_its_folder, test_folder_not_read_after_the_save, test_history_folder_file_saved_out_of_memory,
                   test_a_newer_hindsights_folder_stays_pointed_at):
             H.run(t)
     finally:
