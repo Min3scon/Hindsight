@@ -8,8 +8,9 @@
 //!                | n x (u64 step length, u32 step CRC-32)
 //!
 //! Little-endian. The steps lie back to back from `begin` (24 + 12 n + metas length + 4, also kept in the index
-//! part) to the part's end. A step table whose CRC-32 or lengths don't match the part is damaged as a whole
-//! (#69 adds the search by prefix); damaged metas leave the steps readable.
+//! part) to the part's end. A step table whose CRC-32 or lengths don't match the part is damaged as a whole;
+//! damaged metas leave the steps readable. A step part that fails its CRC-32 is checked finer by `part_salvage`
+//! (#69): its steps are found from the step table, or by their prefix when the step table is damaged.
 
 use super::*;
 
@@ -156,10 +157,97 @@ fn part_read<'py>(py: Python<'py>, part: &Bound<'py, PyAny>) -> PyResult<PyObjec
     })
 }
 
+/// The steps of a step part that failed its CRC-32 (dev/FORMAT5_DAMAGE.md), told `n` and `begin` by the index
+/// part: (metas JSON or None when they are damaged, n x ((offset, length, CRC-32) or None for a step that is
+/// damaged, cut off or can't be found)). An intact step table says where each step is, and each step is checked
+/// against its CRC-32. A damaged one is replaced by the steps' prefix: a step starts at "HSS3" with the CRC-32 of
+/// its bytes from 8 to the next such start (or the part's end), found forward from `begin` to the first gap and
+/// backward from the end to the last; every step between is lost. Encoding 1 has no prefix CRC: never found so.
+#[pyfunction]
+fn part_salvage<'py>(
+    py: Python<'py>,
+    part: &Bound<'py, PyAny>,
+    n: usize,
+    begin: usize,
+) -> PyResult<(Option<Bound<'py, PyBytes>>, Vec<Option<(usize, u64, u32)>>)> {
+    guard(|| {
+        let p = Buf::new(part, false)?;
+        let b = p.bytes();
+        let end = b.len();
+        let mut slots: Vec<Option<(usize, u64, u32)>> = vec![None; n];
+        let table = TABLE_FIXED as u128 + ROW as u128 * n as u128;
+        let intact = end >= TABLE_FIXED + 4
+            && &b[..4] == PART_MAGIC
+            && u32_le(b, 12) as usize == n
+            && table + 4 <= end as u128
+            && crc(&b[..table as usize]) == u32_le(b, table as usize);
+        let begin = if intact { table as usize + 4 + u32_le(b, 16) as usize + 4 } else { begin };
+        let metas = (begin as u128 >= table + 8 && begin <= end)
+            .then(|| (&b[table as usize + 4..begin - 4], u32_le(b, begin - 4)))
+            .filter(|(m, c)| crc(m) == *c)
+            .map(|(m, _)| PyBytes::new_bound(py, m));
+        if intact {
+            let mut o = begin as u128;
+            for (i, s) in slots.iter_mut().enumerate() {
+                let r = TABLE_FIXED + ROW * i;
+                let (l, c) = (u64_le(b, r), u32_le(b, r + 8));
+                if o + l as u128 <= end as u128 && crc(&b[o as usize..(o + l as u128) as usize]) == c {
+                    *s = Some((o as usize, l, c));
+                }
+                o += l as u128;
+            }
+            return Ok((metas, slots));
+        }
+        const STEP: &[u8; 4] = b"HSS3";
+        let starts: Vec<usize> = if begin < end {
+            b[begin..].windows(4).enumerate().filter(|(_, w)| *w == STEP).map(|(i, _)| begin + i).collect()
+        } else {
+            Vec::new()
+        };
+        let row = |s: usize, e: usize| Some((s, (e - s) as u64, crc(&b[s..e])));
+        // forward: each step ends at the first later start (or the end) where its prefix CRC matches
+        let (mut at, mut found) = (begin, 0);
+        while found < n && at + 8 <= end && &b[at..at + 4] == STEP {
+            let want = u32_le(b, at + 4);
+            let mut h = crc32fast::Hasher::new();
+            let mut done = at + 8;
+            let next = starts.iter().copied().filter(|&q| q >= at + 8).chain(std::iter::once(end)).find(|&q| {
+                h.update(&b[done..q]);
+                done = q;
+                h.clone().finalize() == want
+            });
+            let Some(q) = next else { break };
+            slots[found] = row(at, q);
+            found += 1;
+            at = q;
+        }
+        // backward from the end: the CRC of [c + 8, hi) grows one piece at a time towards the front
+        let (lo, mut hi, mut back) = (at, end, n);
+        while back > found {
+            let mut acc = crc32fast::Hasher::new();
+            let mut from = hi;
+            let hit = starts.iter().rev().copied().filter(|&c| c >= lo && c + 8 <= hi).find(|&c| {
+                let mut piece = crc32fast::Hasher::new();
+                piece.update(&b[c + 8..from]);
+                piece.combine(&acc);
+                acc = piece;
+                from = c + 8;
+                acc.clone().finalize() == u32_le(b, c + 4)
+            });
+            let Some(c) = hit else { break };
+            back -= 1;
+            slots[back] = row(c, hi);
+            hi = c;
+        }
+        Ok((metas, slots))
+    })
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(index_build, m)?)?;
     m.add_function(wrap_pyfunction!(index_read, m)?)?;
     m.add_function(wrap_pyfunction!(part_build, m)?)?;
     m.add_function(wrap_pyfunction!(part_read, m)?)?;
+    m.add_function(wrap_pyfunction!(part_salvage, m)?)?;
     Ok(())
 }

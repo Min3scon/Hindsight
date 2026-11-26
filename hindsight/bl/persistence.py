@@ -723,6 +723,9 @@ def _report_load(reg) -> None:
         else:
             text = DAMAGED_PART_TEXT if kept else DAMAGED_ALL_TEXT
         _note("ERROR", text.format(lost=lost, s="" if lost == 1 else "s", obj=obj, kept=kept))
+    if rep.get("mended"):       # #69: damage that lost nothing gets a line in the log, not a note
+        runtime.log.warn(f"damaged history parts read with no step lost, written again at the next save: "
+                         f"{rep['mended']}")
     if rep.get("migrated"):
         runtime.log.info(f"loaded history format {rep.get('format')} ({rep.get('writer')}); "
                          f"it is saved as format {persist.FORMAT_VERSION} from now on")

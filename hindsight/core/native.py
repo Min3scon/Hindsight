@@ -13,7 +13,7 @@ history.py call the engine. The Python versions are in tests/reference/.
 """
 from __future__ import annotations
 
-API = 12                    # the module's API number (native/src/lib.rs) this code is written for
+API = 13                    # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
 # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
 # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
@@ -26,6 +26,7 @@ API = 12                    # the module's API number (native/src/lib.rs) this c
 # API 11: + index_build, index_read, part_build, part_read (format 5's index part and step parts, #64).
 # API 12: + step_encoding, ENCODINGS, UnknownEncoding: a step's encoding from its step prefix; decoding a step
 # in an encoding this build doesn't know raises UnknownEncoding, not CorruptStep; recompress leaves it (#66).
+# API 13: + part_salvage: a damaged step part's steps, from its step table or by their prefix (#69).
 
 
 class EngineMissing(ImportError):

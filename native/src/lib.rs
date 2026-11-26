@@ -35,7 +35,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 12;
+const API: u32 = 13;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;

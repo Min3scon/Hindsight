@@ -248,8 +248,13 @@ def _history_parts(h, cached, loc, step_bytes) -> list:
     oldest steps rebuilds only the step part they were in."""
     from .native import ENGINE
     ents = h.entries
-    at = loc.get(id(ents[0])) if ents else None
-    base = at[0].first + at[1] if at else (cached[0].first if cached else 0)
+    # numbered from the first step still in a step part: the steps before it may be from a damaged one (#69)
+    at = next(((i, hit) for i, e in enumerate(ents) if (hit := loc.get(id(e))) is not None), None)
+    if at is not None:
+        i, (p, k) = at
+        base = max(0, p.first + k - i)
+    else:
+        base = cached[0].first if cached else 0
     out, i = [], 0
     while i < len(ents):
         p, k = loc.get(id(ents[i]), _NOWHERE)
@@ -336,8 +341,9 @@ def registry_from_format5(index, index_copy, take):
     """The registry from its index part (`index_copy` when `index` is damaged) and its step parts, asked for one
     at a time: take(history uid, number) gives a part's bytes, or None when it is missing (the add-on deletes
     Blender's copy as it hands it over). ValueError when neither index part can be read, NewerFormatError for
-    a format from the future. A step part that is missing or doesn't match the index part loses its steps
-    (never applied), cut as registry_from_bytes cuts damaged steps (#69 adds the finer checks)."""
+    a format from the future. A step part that doesn't match the index part is checked finer (#69,
+    dev/FORMAT5_DAMAGE.md): the steps that are damaged, missing or can't be found are never applied, cut as
+    registry_from_bytes cuts damaged steps; damage that lost nothing is listed in the report's "mended"."""
     from .history import History
     from .native import ENGINE
     from .registry import Registry
@@ -351,28 +357,39 @@ def registry_from_format5(index, index_copy, take):
     reg = Registry()
     report = _settings_from_doc(reg, doc, found)
     report["unknown"] = []      # #66: only format 5 holds steps in a later encoding; formats 1 to 4 report as before
+    report["mended"] = []       # #69: damage that lost nothing (an index copy, a step part's metas or step table)
     strings, max_seq = {}, [0]
+    if index is None or ENGINE.index_read(index) is None:
+        report["mended"].append({"index": 0})       # read from index_copy; the next save writes both
     for hd in doc.get("histories", []):
         slots = []
         held = reg.parts[hd["uid"]] = []
         for i, pd in enumerate(hd.get("parts", [])):
-            n, p, got = int(pd["n"]), take(hd["uid"], i), None
-            if p is not None and len(p) == int(pd["len"]) and crc32(p) & 0xFFFFFFFF == int(pd["crc"]):
+            n, p, got, rows = int(pd["n"]), take(hd["uid"], i), None, None
+            if p is not None:
                 try:
-                    _first, offs, lens, crcs, metas = ENGINE.part_read(p)
+                    whole = len(p) == int(pd["len"]) and crc32(p) & 0xFFFFFFFF == int(pd["crc"])
+                    if whole:
+                        _first, offs, lens, crcs, metas = ENGINE.part_read(p)
+                        rows = list(zip(offs, lens, crcs)) if len(offs) == n else None
+                    else:           # #69: checked finer; its steps found from the step table or by prefix
+                        metas, rows = ENGINE.part_salvage(p, n, int(pd.get("begin", 0)))
                     metas = json.loads(bytes(metas).decode("utf-8")) if metas is not None else []
-                    if len(offs) == n:
+                    if rows is not None:
                         got = []
 
                         def lost():     # #11 review 3: an unknown step whose meta is lost (dev/FORMAT5_DAMAGE.md)
                             prev = next((e for e in reversed(slots + got) if e is not None), None)
                             return {"seq": prev.seq if prev is not None else 0, "label": NEWER_STEP_LABEL,
                                     "target": (hd.get("members") or [""])[0]}
-                        for k, (o, ln, c) in enumerate(zip(offs, lens, crcs)):
-                            got.append(_entry(p[o:o + ln], metas[k] if k < len(metas) else None, c, strings,
-                                              max_seq, lost))
-                        if None not in got:         # #65: the next save hands these bytes over again
+                        for k, r in enumerate(rows):
+                            got.append(None if r is None else _entry(
+                                p[r[0]:r[0] + r[1]], metas[k] if k < len(metas) else None, r[2], strings,
+                                max_seq, lost))
+                        if None not in got and whole:       # #65: the next save hands these bytes over again
                             held.append(_Part(p, _first, dict(pd), got, offs, lens, crcs))
+                        elif None not in got:   # every step found: nothing lost; the next save rebuilds it
+                            report["mended"].append({"uid": hd["uid"], "part": i})
                 except ValueError:          # damage (the engine's Corrupt* are ValueErrors); anything else fails
                     got = None              # the load, which keeps every part (#11 review 1)
             del p
