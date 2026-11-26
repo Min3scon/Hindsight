@@ -527,18 +527,42 @@ def _load_registry(path: str, text):
     reg = from_sidecar()
     if reg is None and embedded:
         reg = from_text()
-    elif reg is not None and want and getattr(reg, "save_id", None) not in (None, want):
+    elif reg is not None and want and getattr(reg, "save_id", None) != want:
         # the folder wasn't written by the last save of this .blend (writing it failed, or the
         # .blend is an older or newer save of it): the history stored in the .blend, if it is
         # the right one, goes first
         other = from_text() if embedded else None
         if other is not None and getattr(other, "save_id", None) == want:
+            if getattr(reg, "save_id", None) is None:
+                # a V1 folder back after this build saved the .blend without it (#120 review): the .blend's
+                # histories are the newer ones, the folder's go on for every object the .blend has none for
+                _take_folder_histories(other, reg)
             reg = other
-        else:
+        elif getattr(reg, "save_id", None) is not None:
             _note("WARNING", STALE_SIDECAR_TEXT)
     if reg is not None:
         _report_load(reg)
     return reg
+
+
+def _take_folder_histories(reg, folder) -> None:
+    """Into `reg` (the .blend's), the folder's histories of objects `reg` has no history for, nor turned off."""
+    have = set(reg.by_object) | reg.disabled
+    taken = {h.uid for h in folder.all() if have.isdisjoint(h.members)}
+    for d in (folder.load_report or {}).get("damaged", []):
+        if d.get("uid") in taken:                     # reported with the .blend's own (_report_load)
+            reg.load_report["damaged"].append(d)
+    for h in folder.all():
+        if h.uid in taken:
+            reg.histories[h.uid] = h
+            for m in h.members:
+                reg.by_object[m] = h.uid
+                if m in folder.saved:
+                    reg.saved[m] = folder.saved[m]
+    reg.everything |= folder.everything - have
+    # shortcut: step numbers aren't made unique, so the global timeline may take a folder step and a .blend
+    # step as one operation; renumber the packed steps if that matters
+    reg.next_seq = max(reg.next_seq, folder.next_seq)
 
 
 def _report_load(reg) -> None:
