@@ -557,7 +557,8 @@ def test_no_add_on_code_writes_a_history_folder():
     folder_names = {"sidecar_dir", "sidecar_file", "HSR_NAME", "INDEX_NAME", "folder", "folder_files", "_FOLDER_FILES"}
     folder_words = ("_hindsight", "history.hsr", "index.json")
     write_calls = {"makedirs", "mkdir", "atomic_write", "atomic_write_json", "write_bytes", "write_text",
-                   "copy", "copy2", "copyfile", "copytree", "move", "rename"}
+                   "copy", "copy2", "copyfile", "copytree", "move", "rename", "renames", "replace", "touch",
+                   "link", "symlink", "hardlink_to", "symlink_to"}
 
     def node_name(n):
         return n.id if isinstance(n, ast.Name) else n.attr if isinstance(n, ast.Attribute) else None
@@ -572,21 +573,39 @@ def test_no_add_on_code_writes_a_history_folder():
             return True
         if node_name(call.func) != "open":
             return False
-        mode = call.args[1] if len(call.args) > 1 else next((k.value for k in call.keywords if k.arg == "mode"), None)
+        f = call.func     # open(path, mode) and os.open(path, flags); a Path's .open(mode)
+        at = 0 if isinstance(f, ast.Attribute) and not (isinstance(f.value, ast.Name) and f.value.id in ("os", "io")) else 1
+        mode = call.args[at] if len(call.args) > at else next((k.value for k in call.keywords
+                                                                if k.arg in ("mode", "flags")), None)
         return mode is not None and not (isinstance(mode, ast.Constant) and not any(c in str(mode.value) for c in "wax+"))
+
+    def scan(source, path):
+        bad = []
+        for fn in ast.walk(ast.parse(source, path)):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                nodes = list(ast.walk(fn))
+                if any(names_the_folder(n) for n in nodes) and any(isinstance(n, ast.Call) and writes_a_file(n)
+                                                                   for n in nodes):
+                    bad.append(fn.name)
+        return bad
+
+    # #120 review: the scan catches every way of writing, copying or moving a file into the folder, and no read
+    writers = ["os.replace(tmp, sidecar_file(p))", "Path(sidecar_file(p)).open('w')", "open(sidecar_file(p), 'wb')",
+               "open(sidecar_file(p), mode='a')", "os.rename(tmp, sidecar_file(p))", "shutil.move(tmp, sidecar_dir(p))",
+               "shutil.copy2(src, sidecar_dir(p))", "os.makedirs(sidecar_dir(p))",
+               "Path(sidecar_file(p)).write_bytes(b'')", "os.open(sidecar_file(p), os.O_WRONLY)"]
+    readers = ["open(sidecar_file(p), 'rb')", "Path(sidecar_file(p)).open()", "Path(sidecar_file(p)).open('rb')",
+               "os.remove(sidecar_file(p))"]
+    sample = "".join(f"def w{i}(p):\n    {c}\n" for i, c in enumerate(writers))
+    sample += "".join(f"def r{i}(p):\n    {c}\n" for i, c in enumerate(readers))
+    assert scan(sample, "sample") == [f"w{i}" for i in range(len(writers))], scan(sample, "sample")
 
     bad = []
     for base, _dirs, files in os.walk(root):
         for f in files:
-            if not f.endswith(".py"):
-                continue
-            path = os.path.join(base, f)
-            for fn in ast.walk(ast.parse(open(path, encoding="utf-8").read(), path)):
-                if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    nodes = list(ast.walk(fn))
-                    if any(names_the_folder(n) for n in nodes) and any(isinstance(n, ast.Call) and writes_a_file(n)
-                                                                       for n in nodes):
-                        bad.append(f"{os.path.relpath(path, root)}:{fn.name}")
+            if f.endswith(".py"):
+                path = os.path.join(base, f)
+                bad += [f"{os.path.relpath(path, root)}:{n}" for n in scan(open(path, encoding="utf-8").read(), path)]
     assert not bad, f"add-on code that writes a history folder: {bad}"
 
 
