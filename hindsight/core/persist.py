@@ -256,7 +256,8 @@ def _history_parts(h, cached, loc, step_bytes) -> list:
         n = len(p.keys) if p is not None else 0
         if (k == 0 and p.first == base + i and i + n <= len(ents)
                 and all(loc.get(id(ents[i + j])) == (p, j) for j in range(n))
-                and (i + n == len(ents) or p.size + len(step_bytes(ents[i + n])[0]) > PART_LIMIT)):
+                and (i + n == len(ents) or loc.get(id(ents[i + n]), _NOWHERE)[1] == 0     # a build stops there too
+                     or p.size + len(step_bytes(ents[i + n])[0]) > PART_LIMIT)):
             out.append(p)
             i += n
             continue

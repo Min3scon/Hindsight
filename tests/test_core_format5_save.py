@@ -157,6 +157,9 @@ def test_oldest_steps_dropped_rebuild_one_step_part():
     firsts = [N.part_read(p)[0] for p in parts[A]]
     assert firsts[0] == 2 and firsts == sorted(firsts), firsts
     _check_bit_exact(reg, index, parts)
+    _index, again, work = _save(reg)        # #11 review 6: the step part cut short is not built again at each save
+    assert work == {"encoded": 0, "built": 0}, work
+    assert all(p is q for p, q in zip(again[A], parts[A])) and len(again[A]) == len(parts[A])
     a.entries = a.entries[N.part_read(old[2])[0] - 2:]          # every step of the first two step parts goes
     a.cursor = len(a.entries)
     index, parts, work = _save(reg)
