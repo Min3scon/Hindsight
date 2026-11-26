@@ -31,6 +31,8 @@ const MAX_OUT: u64 = 2 * codec::MAX_RAW;
 
 pub enum StepErr {
     Corrupt(String),
+    /// Intact, in an encoding this build has no decoder for (a later build's, dev/FORMAT5_ENCODINGS.md).
+    Unknown(u8),
     Value(String),
     Mem,
 }
@@ -329,6 +331,11 @@ pub fn parse_head(b: &[u8]) -> Result<Head<'_>, StepErr> {
     if crc32fast::hash(&b[8..]) as usize != u32le(b, 4).unwrap() {
         return corrupt("step blob: checksum mismatch");
     }
+    if let Some(&n) = b.get(10) {
+        if n > 4 {
+            return Err(StepErr::Unknown(n)); // the prefix CRC covers byte 10: a later encoding, not damage
+        }
+    }
     let hl = u16le(b, 8).unwrap();
     let h = b.get(10..10 + hl).ok_or_else(|| StepErr::Corrupt("step blob: header cut short".into()))?;
     let bad = |m: &str| StepErr::Corrupt(format!("step blob: bad header ({m})"));
@@ -555,6 +562,20 @@ fn decode_v1(b: &[u8]) -> Result<Dec, StepErr> {
     })
 }
 
+/// The encodings this build decodes (dev/FORMAT5_ENCODINGS.md).
+pub const ENCODINGS: [u8; 3] = [1, 3, 4];
+
+/// The encoding a step's bytes say they use: 1 for `HSS1`, byte 10 of the step prefix for `HSS3` (5 to 255: a later
+/// build's). The prefix CRC is not checked: where this is asked (at open) the step part's CRC-32 vouches for the
+/// bytes, and decoding checks it. HSS3 numbers 0 to 2 were never given out, so they are damage.
+pub fn encoding(b: &[u8]) -> Result<u8, StepErr> {
+    match (b.get(..4), b.get(10)) {
+        (Some(m), _) if m == MAGIC_V1 => Ok(1),
+        (Some(m), Some(&n)) if m == MAGIC_V3 && n >= 3 => Ok(n),
+        _ => corrupt("step blob: not a Hindsight step (wrong header)"),
+    }
+}
+
 pub fn decode(b: &[u8]) -> Result<Dec, StepErr> {
     match b.get(..4) {
         Some(m) if m == MAGIC_V3 => decode_v3(b),
@@ -731,8 +752,11 @@ pub fn recompress_core(b: &[u8]) -> Result<Option<Vec<u8>>, StepErr> {
         return Ok(None);
     }
     if magic == Some(MAGIC_V3) {
-        // nothing to gain, told from the header alone (the body is not read)
-        let h = parse_head(b)?;
+        // nothing to gain, told from the header alone (the body is not read); an unknown step is never re-packed
+        let h = match parse_head(b) {
+            Err(StepErr::Unknown(_)) => return Ok(None),
+            h => h?,
+        };
         let id = *h.payload.first().ok_or_else(|| StepErr::Corrupt("step blob: empty body".into()))?;
         if codec::is_strong(id) && !h.quick {
             return Ok(None);
@@ -776,6 +800,7 @@ use pyo3::types::{PyByteArray, PyList, PyTuple};
 fn err(e: StepErr) -> PyErr {
     match e {
         StepErr::Corrupt(s) => CorruptStep::new_err(s),
+        StepErr::Unknown(n) => UnknownEncoding::new_err(format!("step blob: encoding {n}, written by a newer Hindsight")),
         StepErr::Value(s) => PyValueError::new_err(s),
         StepErr::Mem => pyo3::exceptions::PyMemoryError::new_err("hindsight_native: out of memory"),
     }
@@ -824,6 +849,15 @@ fn resolve_name(name: &str) -> u8 {
         return codec::ZSTD;
     }
     codec::id_of(&n).unwrap_or(codec::ZLIB)
+}
+
+/// step_encoding(blob) -> the encoding number its bytes say they use (encoding() above); CorruptStep if not a step.
+#[pyfunction]
+fn step_encoding(blob: &Bound<'_, PyAny>) -> PyResult<u8> {
+    guard(|| {
+        let inp = input(blob)?;
+        encoding(inp.get()).map_err(err)
+    })
 }
 
 #[pyfunction]
@@ -1330,6 +1364,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(snapshot_decode, m)?)?;
     m.add_function(wrap_pyfunction!(step_decode, m)?)?;
     m.add_function(wrap_pyfunction!(step_info, m)?)?;
+    m.add_function(wrap_pyfunction!(step_encoding, m)?)?;
     m.add_function(wrap_pyfunction!(step_encode, m)?)?;
     m.add_function(wrap_pyfunction!(record, m)?)?;
     m.add_function(wrap_pyfunction!(recompress, m)?)?;
@@ -1337,6 +1372,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_strong_level, m)?)?;
     let py = m.py();
     m.add("CorruptStep", py.get_type_bound::<CorruptStep>())?;
+    m.add("UnknownEncoding", py.get_type_bound::<UnknownEncoding>())?;
+    m.add("ENCODINGS", PyTuple::new_bound(py, ENCODINGS))?;
     m.add("CorruptBlob", py.get_type_bound::<CorruptBlob>())?;
     m.add("CorruptDelta", py.get_type_bound::<CorruptDelta>())?;
     m.add("NewerFormatError", py.get_type_bound::<NewerFormatError>())?;

@@ -28,13 +28,14 @@ use pyo3::prelude::*;
 use lz4_sys as _; // links the C library the codec module calls
 
 pyo3::create_exception!(hindsight_native, CorruptStep, PyValueError, "A step blob is damaged or not a step at all.");
+pyo3::create_exception!(hindsight_native, UnknownEncoding, PyValueError, "A step in an encoding this build has no decoder for (a newer Hindsight's).");
 pyo3::create_exception!(hindsight_native, CorruptBlob, PyValueError, "Compressed data is damaged.");
 pyo3::create_exception!(hindsight_native, CorruptDelta, PyValueError, "A packed delta is damaged or not a delta at all.");
 pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A file format newer than this build reads.");
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 11;
+const API: u32 = 12;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;

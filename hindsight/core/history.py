@@ -15,6 +15,7 @@ import numpy as np
 
 from . import delta as _delta
 from . import native as _native
+from .step import is_unknown as _is_unknown
 from .types import (
     DATA, DELTA, JOIN, MISSING, TOPO,
     ChannelDelta, DataChange, Entry, Snapshot, Step,
@@ -196,6 +197,7 @@ class History:
         self.cursor = 0
         self.enabled = True
         self.morph_target = None
+        self.unknown = 0        # steps read at open in an encoding this build doesn't know (#66)
 
     def __len__(self) -> int:
         return len(self.entries)
@@ -205,6 +207,23 @@ class History:
 
     def future_count(self) -> int:
         return len(self.entries) - self.cursor
+
+    def reach(self) -> tuple:
+        """(first, last) position the cursor can reach. Every step undoes and redoes itself, so the cursor can't
+        cross a step in an encoding this build doesn't know (dev/FORMAT5_ENCODINGS.md)."""
+        lo, hi = 0, len(self.entries)
+        if self.unknown:
+            for i, e in enumerate(self.entries):
+                if e.step is None and _is_unknown(e.blob):
+                    if i >= self.cursor:
+                        return lo, i
+                    lo = i + 1
+        return lo, hi
+
+    def held(self) -> bool:
+        """Is a step this build can't read after the cursor? Recording would cut it, so the history is held: kept
+        as it is and not recorded into."""
+        return self.reach()[1] < len(self.entries)
 
     # ----------------------------------------------------------- editing list
     def truncate_future(self) -> list:
@@ -246,8 +265,8 @@ class History:
 
     # ------------------------------------------------------------------ goto
     def goto(self, pos: int, states: dict, join_hook=None) -> dict:
-        n = len(self.entries)
-        pos = max(0, min(int(pos), n))
+        lo, hi = self.reach()
+        pos = max(lo, min(int(pos), hi))
         changed: dict = {}
         cur = self.cursor
         if pos != cur:

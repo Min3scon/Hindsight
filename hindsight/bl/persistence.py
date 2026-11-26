@@ -49,6 +49,9 @@ DAMAGED_PART_TEXT = ("{lost} step{s} of '{obj}' could not be kept because part o
                      "The {kept} steps next to where it was saved are fine")
 DAMAGED_ALL_TEXT = ("The history of '{obj}' is damaged before the step it was saved at, so none of it could be "
                     "kept ({lost} step{s}). '{obj}' itself is as you saved it")
+UNKNOWN_TEXT = ("{n} step{s} of '{obj}' {were} saved by a newer Hindsight, so {they} kept untouched. Update "
+                "Hindsight to go back past {them}")
+HELD_TEXT = ". Until then '{obj}' isn't recorded, as recording would cut {them}"
 LEFT_OUT_TEXT = ("{n} step{s} of '{obj}' from the interrupted session could not be brought back. "
                  "They were made after going back past the last save. '{obj}' is as you saved it")
 UNREADABLE_PROP = "hindsight_data_unreadable"
@@ -671,23 +674,31 @@ def _take_folder_histories(reg, folder) -> None:
     reg.next_seq = max(reg.next_seq, folder.next_seq)
 
 
+def _obj_name(members) -> str:
+    for m in members:
+        ob = runtime.find_object(m)
+        if ob is not None:
+            return ob.name
+    return "an object"
+
+
 def _report_load(reg) -> None:
     rep = getattr(reg, "load_report", None) or {}
+    for d in rep.get("unknown", []):          # #66: kept as their bytes, saved back as they are
+        n, obj = int(d["n"]), _obj_name(d.get("members", []))
+        one = n == 1
+        words = dict(n=n, s="" if one else "s", obj=obj, were="was" if one else "were",
+                     they="it is" if one else "they are", them="it" if one else "them")
+        _note("WARNING", UNKNOWN_TEXT.format(**words) + (HELD_TEXT.format(**words) if d.get("held") else ""))
     for d in rep.get("damaged", []):
-        obj = None
-        for m in d.get("members", []):
-            ob = runtime.find_object(m)
-            if ob is not None:
-                obj = ob.name
-                break
+        obj = _obj_name(d.get("members", []))
         lost = int(d.get("lost", 0))
         kept = int(d.get("kept", 0))
         if not d.get("before_saved"):
             text = DAMAGED_TEXT
         else:
             text = DAMAGED_PART_TEXT if kept else DAMAGED_ALL_TEXT
-        _note("ERROR", text.format(lost=lost, s="" if lost == 1 else "s", obj=obj or "an object",
-                                   kept=kept))
+        _note("ERROR", text.format(lost=lost, s="" if lost == 1 else "s", obj=obj, kept=kept))
     if rep.get("migrated"):
         runtime.log.info(f"loaded history format {rep.get('format')} ({rep.get('writer')}); "
                          f"it is saved as format {persist.FORMAT_VERSION} from now on")

@@ -327,6 +327,7 @@ def registry_from_format5(index, index_copy, take):
     from .history import History
     from .native import ENGINE
     from .registry import Registry
+    from .step import is_unknown as _is_unknown
     js = None
     for b in (index, index_copy):
         if js is None and b is not None:
@@ -358,7 +359,11 @@ def registry_from_format5(index, index_copy, take):
                     got = None
             del p
             slots += got if got is not None else [None] * n
-        _put_history(reg, History(hd["uid"], list(hd.get("members", []))), hd, slots, report)
+        h = History(hd["uid"], list(hd.get("members", [])))
+        _put_history(reg, h, hd, slots, report)
+        h.unknown = sum(1 for e in h.entries if _is_unknown(e.blob))     # #66: kept as bytes, never decoded
+        if h.unknown:
+            report["unknown"].append({"uid": h.uid, "members": list(h.members), "n": h.unknown, "held": h.held()})
     if reg.next_seq <= max_seq[0]:
         reg.next_seq = max_seq[0] + 1
     reg.load_report = report
@@ -460,7 +465,7 @@ def registry_from_bytes(b):
 def _settings_from_doc(reg, doc, found) -> dict:
     """The registry's settings from a saved header (format 1 to 5); the load report to fill in."""
     report = {"format": found, "writer": doc.get("writer", "Hindsight 1.0.0-beta.1 or older"),
-              "migrated": found < FORMAT_VERSION, "damaged": []}
+              "migrated": found < FORMAT_VERSION, "damaged": [], "unknown": []}
     reg.next_seq = int(doc.get("next_seq", 1))
     reg.use_global = bool(doc.get("use_global", False))
     reg.preserve_modes = bool(doc.get("preserve_modes", True))

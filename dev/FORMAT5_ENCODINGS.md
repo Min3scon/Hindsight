@@ -101,7 +101,15 @@ kept untouched and saved back as it was, the user is told, and it is never misre
   holding it is handed over as it is (#41).
 - **Remove Hindsight data**: removes it with everything else, as the user asked.
 
-**Today** the engine reads both cases as damage. Measured on this branch (bpy 5.3.0, a throwaway script, not merged):
+**Built in #66** (engine 0.13.0, API 12): `step_encoding` reads the encoding from the step prefix, decoding a step
+in an encoding this build doesn't know raises `UnknownEncoding` (not `CorruptStep`), and `recompress` leaves it.
+At open its history counts it (`History.unknown`, the load report's `unknown`), the cursor stays within
+`History.reach()`, and a history with one after the cursor is `held()`: strokes, `commit` and data steps don't
+record into it. Not yet: Movie Mode, a time lapse and a morph target beyond an unknown step rely on the jump
+stopping, without a message of their own; a join still cuts a held history's steps after the cursor
+(`bl/joinsep.py`), and the crash journal's replay doesn't look for unknown steps.
+
+**Before #66** the engine read both cases as damage. Measured on this branch (bpy 5.3.0, a throwaway script, not merged):
 a format 3 step with byte 10 set to 5 or 255 and its prefix CRC fixed gives `CorruptStep: step blob: bad header` from
 both `step_from_bytes` and `recompress`; with its first 4 bytes set to `HSS9`, `CorruptStep: step blob: not a
 Hindsight step (wrong header)`. The packer survives that (a failed re-pack leaves the step as it is,

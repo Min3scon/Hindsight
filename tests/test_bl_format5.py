@@ -8,6 +8,7 @@ first and then takes Blender's copy of the parts back; a save Blender can't writ
 
 Run: blender -b --factory-startup --python tests/test_bl_format5.py (or tests/run_tests.py).
 """
+import hashlib
 import tempfile
 
 import bpy
@@ -15,6 +16,7 @@ import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
+from tests.f5_unknown import as_encoding, steps, swap_step
 from hindsight.bl import persistence, prefs, runtime
 from hindsight.core import persist
 from hindsight.core.native import ENGINE
@@ -314,8 +316,63 @@ def test_crash_after_a_save_of_new_steps_brings_them_back():
         SETTINGS.crash_recovery, persist.PART_LIMIT = old
 
 
+def test_step_in_an_unknown_encoding_is_kept_and_saved_back():
+    """#66: a .blend saved with a step in an encoding this build doesn't know after the cursor (as a later build
+    saves it) opens whole, nothing reported damaged, with a note saying so; the steps before it play back and a
+    jump stops at it; the history is held (a stroke isn't recorded, it would cut the step); a save gives the
+    step back byte for byte."""
+    H.fresh()
+    ob = H.make_mesh(1200, name="F5U")
+    shapes = [H.snapshot(ob)]
+    H.enter(ob, "SCULPT")
+    for s in range(5):
+        H.fake_stroke(ob, s, n=60)
+        assert H.commit(ob) is not None
+        shapes.append(H.snapshot(ob))
+    H.enter(ob, "OBJECT")
+    C = bpy.context
+    C.view_layer.objects.active = ob
+    runtime.goto(C, 2)
+    uid = runtime.history_of(ob).uid
+    real, unknown = persist.registry_to_format5, []
+
+    def later_build(*a, **k):           # the step after the cursor written in encoding 255
+        index, parts = real(*a, **k)
+        unknown[:] = [as_encoding(steps(parts[uid])[3])]
+        return swap_step(index, parts, uid, 3, unknown[0])
+    path = os.path.join(TMP, "unknown_encoding.blend")
+    persist.registry_to_format5 = later_build
+    try:
+        _save(path)
+    finally:
+        persist.registry_to_format5 = real
+    assert SAVED[uid][3] == unknown[0]
+    _check_opened(_open(path))
+    rep = runtime.reg().load_report
+    assert [(d["n"], d["held"]) for d in rep["unknown"]] == [(1, True)], rep["unknown"]
+    assert any("F5U" in t and "newer Hindsight" in t for _sev, t in runtime.load_notes), runtime.load_notes
+    ob = bpy.data.objects["F5U"]
+    h = runtime.history_of(ob)
+    assert (len(h.entries), h.cursor, h.reach()) == (5, 2, (0, 3)), (len(h.entries), h.cursor, h.reach())
+    C.view_layer.objects.active = ob
+    runtime.goto(C, 0)
+    H.assert_same(H.snapshot(ob), shapes[0], "the steps before the unknown step play back")
+    runtime.goto(C, 5)
+    assert h.cursor == 3, h.cursor
+    H.assert_same(H.snapshot(ob), shapes[3], "the jump stops at the unknown step")
+    assert not runtime.can_record(ob)
+    H.enter(ob, "SCULPT")
+    H.fake_stroke(ob, 9, n=60)
+    assert H.commit(ob) is None and len(h.entries) == 5, "a held history was recorded into"
+    H.enter(ob, "OBJECT")
+    _save(os.path.join(TMP, "unknown_encoding_again.blend"))
+    assert hashlib.sha256(SAVED[uid][3]).digest() == hashlib.sha256(unknown[0]).digest()
+    assert len(SAVED[uid]) == 5
+
+
 for fn in (test_rows_reopen_from_format5, test_sculpt_steps_and_crash_journal_after_format5,
            test_save_blender_cannot_write_keeps_the_journal, test_recovery_that_fails_opens_the_last_save,
-           test_saves_after_new_steps_save_as_and_save_copy, test_crash_after_a_save_of_new_steps_brings_them_back):
+           test_saves_after_new_steps_save_as_and_save_copy, test_crash_after_a_save_of_new_steps_brings_them_back,
+           test_step_in_an_unknown_encoding_is_kept_and_saved_back):
     H.run(fn)
 H.finish()
