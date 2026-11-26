@@ -192,6 +192,9 @@ def save_and_change_outside(path, change, keep_backup=True, prints=None):
         bpy.ops.wm.save_as_mainfile(filepath=path)
     hindsight.unregister()
     H._registered[0] = False
+    # A session without Hindsight starts by opening the file: Blender holds the history parts only as read from
+    # disk (format 5: after a save Hindsight holds them, not Blender)
+    bpy.ops.wm.open_mainfile(filepath=path)
     change()
     bpy.ops.wm.save_as_mainfile(filepath=path)
     outside = state()

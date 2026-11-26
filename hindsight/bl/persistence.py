@@ -620,6 +620,11 @@ def _load_registry(path: str, text):
 
     if text is not None and PARTS_PROP in text:
         reg = from_parts()
+        # Saved while a V1 folder was missing or newer, the .blend still points at it (#120 review): a newer one
+        # stays protected, and one back again gives its histories to every object the parts have none for
+        folder = from_sidecar()
+        if reg is not None and folder is not None and getattr(folder, "save_id", None) is None:
+            _take_folder_histories(reg, folder)
         if reg is not None:
             _report_load(reg)
         return reg
@@ -718,12 +723,13 @@ def on_load_post(*args) -> None:
     runtime.missing_message[0] = None
     path = _current_blend()
     text = bpy.data.texts.get(TEXT_NAME)
+    by_v2 = text is not None and (PARTS_PROP in text or SAVE_ID_PROP in text)     # read before the parts go
     reg = _load_registry(path, text)
 
     # The folder's history wasn't read: none came from the .blend, or the .blend's was saved by this build while
-    # the folder was missing (a beta 2 file saved both ways holds the folder's own copy, and no save id). Saving
-    # keeps pointing at the folder until it is back (#8 review).
-    if (path and text is not None and text.get(SIDECAR_PROP) and (reg is None or SAVE_ID_PROP in text)
+    # the folder was missing (format 5's parts, or a main-branch build's save id: a beta 2 file saved both ways
+    # holds the folder's own copy, and neither). Saving keeps pointing at the folder until it is back (#8 review).
+    if (path and text is not None and text.get(SIDECAR_PROP) and (reg is None or by_v2)
             and persist.sidecar_missing(path, True)):
         _PROTECT["sidecar"] = True
     _folder_message(path)

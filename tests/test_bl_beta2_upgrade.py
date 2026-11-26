@@ -215,15 +215,15 @@ def test_folder_not_read_after_the_save():
 
 
 def _out_of_memory_save():
-    real = persist.parts_to_bytes
+    real = persist.registry_to_format5      # format 5's save builds the stored history here
 
-    def boom(parts):
+    def boom(*_a, **_k):
         raise MemoryError("test: out of memory building the stored history")
-    persist.parts_to_bytes = boom
+    persist.registry_to_format5 = boom
     try:
         bpy.ops.wm.save_mainfile()
     finally:
-        persist.parts_to_bytes = real
+        persist.registry_to_format5 = real
 
 
 def test_history_folder_file_saved_out_of_memory():
