@@ -1511,9 +1511,10 @@ def _find_any(uid):
 
 
 def _scene_history(h) -> bool:
-    """#110: the history of a scene whose making or deletion is a step (the scene can be gone)."""
-    return any(isinstance(m := e.meta, dict) and isinstance(x := m.get("extra"), dict) and "scene" in x
-               for e in h.entries)
+    """#110: the history of a scene that is gone at its cursor: the step before it deleted the scene, or the
+    step after it makes it (a scene can't change while it's gone, so no other step is between)."""
+    return any(0 <= i < len(h.entries) and isinstance(m := h.entries[i].meta, dict)
+               and isinstance(x := m.get("extra"), dict) and "scene" in x for i in (h.cursor - 1, h.cursor))
 
 
 def _after_mesh_write(ob) -> None:
