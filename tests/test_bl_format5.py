@@ -26,9 +26,10 @@ PARTS = "hindsight_parts"     # dev/FORMAT5_LAYOUT.md
 SAVED = {}          # {history uid: [step bytes]} as the last stand-in save wrote them
 
 
-def _save(path):
+def _save(path, copy=False):
     """Saves `path` with Hindsight's own save (format 5), noting the steps it wrote and checking that the crash
-    journal starts again before Blender's copy of the parts goes (dev/FORMAT5_JOURNAL.md)."""
+    journal starts again before Blender's copy of the parts goes (dev/FORMAT5_JOURNAL.md; a Save Copy leaves the
+    journal alone)."""
     T.select()
     real_build, real_mark = persist.registry_to_format5, persistence._mark_saved
     marked = []
@@ -49,11 +50,11 @@ def _save(path):
     SAVED.clear()
     persist.registry_to_format5, persistence._mark_saved = build, mark
     try:
-        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.save_as_mainfile(filepath=path, copy=copy)
     finally:
         persist.registry_to_format5, persistence._mark_saved = real_build, real_mark
     assert SAVED, "the save wrote no step parts"
-    assert marked == [True], f"the crash journal didn't start again before the parts were taken back: {marked}"
+    assert marked == ([] if copy else [True]), f"the crash journal didn't start again before the parts were taken back: {marked}"
     text = bpy.data.texts[persistence.TEXT_NAME]
     assert PARTS not in text, "Blender's copy of the parts is kept after saving"
     for key in (persistence.DATA_BIN_PROP, persistence.SAVE_ID_PROP):
@@ -233,7 +234,88 @@ def test_recovery_that_fails_opens_the_last_save():
         SETTINGS.crash_recovery = old
 
 
+def _strokes(ob, seqs):
+    H.enter(ob, "SCULPT")
+    for s in seqs:
+        H.fake_stroke(ob, s, n=60)
+        assert H.commit(ob) is not None
+    H.enter(ob, "OBJECT")
+
+
+def test_saves_after_new_steps_save_as_and_save_copy():
+    """#65: saves in a row each encode only the strokes made since the last one and build only their step parts
+    (one step per step part here, so every reuse shows), and the packer's work; Save As and Save Copy to a new
+    file still write every step part, and each file reopens with every step bit-exact."""
+    old = persist.PART_LIMIT
+    persist.PART_LIMIT = 1
+    try:
+        H.fresh()
+        ob = H.make_mesh(1200, name="F5N")
+        _strokes(ob, range(3))
+        path = os.path.join(TMP, "incremental.blend")
+        _save(path)
+        total = 3
+        for n in (1, 4, 0):
+            h = runtime.history_of(bpy.data.objects["F5N"])
+            raw = {id(e) for e in h.entries if e.step is not None}
+            _strokes(bpy.data.objects["F5N"], range(10 * n, 10 * n + n))
+            if runtime.packer is not None:
+                runtime.packer.drain(timeout=30.0)
+            packed = sum(id(e) in raw and e.step is None for e in h.entries)
+            _save(path)
+            work = dict(persist.SAVE_WORK)
+            assert work["encoded"] <= n and work["built"] == n + packed, (n, packed, work)
+            total += n
+            assert len(SAVED[h.uid]) == len(h.entries) == total, (len(SAVED[h.uid]), len(h.entries), total)
+        _check_opened(_open(path))
+        h = runtime.history_of(bpy.data.objects["F5N"])
+        assert len(h.entries) == 8 and h.cursor == 8, (len(h.entries), h.cursor)
+        _strokes(bpy.data.objects["F5N"], [70])
+        for name, copy in (("incremental_as.blend", False), ("incremental_copy.blend", True)):
+            _save(os.path.join(TMP, name), copy=copy)
+            assert len(SAVED[h.uid]) == 9, name
+            _check_opened(_open(os.path.join(TMP, name)))
+            h = runtime.history_of(bpy.data.objects["F5N"])
+            assert len(h.entries) == 9, name
+    finally:
+        persist.PART_LIMIT = old
+
+
+def test_crash_after_a_save_of_new_steps_brings_them_back():
+    """#65: a crash after a save that built only the new strokes' step parts brings back, from the crash journal,
+    the strokes made since; every step saved before it reopens bit-exact."""
+    old = SETTINGS.crash_recovery, persist.PART_LIMIT
+    SETTINGS.crash_recovery, persist.PART_LIMIT = "INTERRUPTED", 1
+    try:
+        H.fresh()
+        ob = H.make_mesh(1200, name="F5C")
+        _strokes(ob, range(3))
+        path = os.path.join(TMP, "incremental_crash.blend")
+        _save(path)
+        _strokes(bpy.data.objects["F5C"], [5, 6])
+        _save(path)
+        assert persist.SAVE_WORK["encoded"] <= 2, persist.SAVE_WORK
+        assert len(SAVED[runtime.history_of(bpy.data.objects["F5C"]).uid]) == 5
+        _strokes(bpy.data.objects["F5C"], [8, 9])
+        ob = bpy.data.objects["F5C"]
+        H.enter(ob, "SCULPT")
+        after = H.snapshot(ob)
+        H.enter(ob, "OBJECT")
+        _open(path)                                         # the session ends without saving
+        ob = bpy.data.objects["F5C"]
+        h = runtime.history_of(ob)
+        assert h is not None and len(h.entries) == 7, None if h is None else len(h.entries)
+        assert [e.blob for e in h.entries[:5]] == SAVED[h.uid], "a saved step isn't bit-exact"
+        H.enter(ob, "SCULPT")
+        runtime.goto(bpy.context, 7)
+        H.assert_same(H.snapshot(ob), after, "the strokes after the save, brought back by the journal")
+        H.enter(ob, "OBJECT")
+    finally:
+        SETTINGS.crash_recovery, persist.PART_LIMIT = old
+
+
 for fn in (test_rows_reopen_from_format5, test_sculpt_steps_and_crash_journal_after_format5,
-           test_save_blender_cannot_write_keeps_the_journal, test_recovery_that_fails_opens_the_last_save):
+           test_save_blender_cannot_write_keeps_the_journal, test_recovery_that_fails_opens_the_last_save,
+           test_saves_after_new_steps_save_as_and_save_copy, test_crash_after_a_save_of_new_steps_brings_them_back):
     H.run(fn)
 H.finish()

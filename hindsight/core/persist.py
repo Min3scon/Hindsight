@@ -34,6 +34,8 @@ import json
 import os
 import struct
 import time
+import weakref
+from itertools import accumulate
 from .crc import crc32
 
 import numpy as np
@@ -112,13 +114,12 @@ _PAR_MIN_BYTES = 4 << 20        # raw bytes to encode before threads pay
 ENCODED_ON_THREADS = [0]        # tests: raw steps the last save encoded on threads
 
 
-def _encode_raw(hists, codec: str) -> dict:
-    """{id(entry): (bytes, crc)} of the raw steps, encoded on threads; {} when one thread is the better
-    choice (then registry_parts encodes them in place, as it always did). The bytes are the same."""
+def _encode_raw(raw, codec: str) -> dict:
+    """{id(entry): (bytes, crc)} of the raw steps `raw`, encoded on threads; {} when one thread is the better
+    choice (then the save encodes them in place, as it always did). The bytes are the same."""
     ENCODED_ON_THREADS[0] = 0
     if _ENCODE_THREADS < 2:
         return {}
-    raw = [e for h in hists for e in h.entries if e.step is not None]
     if len(raw) < 2 or sum(e.nbytes() for e in raw) < _PAR_MIN_BYTES:
         return {}
     from concurrent.futures import ThreadPoolExecutor
@@ -136,7 +137,7 @@ def registry_parts(reg, codec: str = "auto") -> list:
     """The registry blob as a list of buffers (the step blobs themselves, not copies): written to a
     file one after another, the history is never held twice while saving."""
     hists = list(reg.histories.values())
-    pre = _encode_raw(hists, codec)
+    pre = _encode_raw([e for h in hists for e in h.entries if e.step is not None], codec)
     blobs = []
     hjson = []
     for h in hists:
@@ -208,29 +209,113 @@ _STUB_JSON = b'{"format":5,"version":5,"writer":"Hindsight 2.0.0"}'
 STUB = binascii.b2a_base64(REG_MAGIC + _U32.pack(len(_STUB_JSON)) + _STUB_JSON, newline=False).decode("ascii")
 
 
+SAVE_WORK = {"encoded": 0, "built": 0}     # tests (#65): raw steps the last format 5 save encoded, step parts built
+_NOWHERE = (None, -1)
+
+
+class _Part:
+    """A step part as Hindsight last built or read it (#65). A save hands the same bytes over again while its steps
+    are the same Entry objects with the same bytes, and copies a raw step's bytes out of it, by offset.
+    shortcut: held beside each step's own bytes, so the history is held twice between saves; 11.8 (#11) reads the
+    steps out of the step parts by offset and hands the parts over, which leaves one copy."""
+    __slots__ = ("bytes", "first", "listed", "keys", "offs", "lens", "crcs", "size")
+
+    def __init__(self, part, first, listed, entries, offs, lens, crcs):
+        self.bytes, self.first, self.listed = part, int(first), listed
+        # weak: a step that goes (cut, dropped) isn't kept alive by the last save's step parts
+        self.keys = [(weakref.ref(e), id(e.blob_crc())) for e in entries]
+        self.offs, self.lens, self.crcs = list(offs), list(lens), list(crcs)
+        self.size = sum(self.lens)
+
+
+def _located(cached) -> dict:
+    """{id(entry): (step part, place in it)} of the steps in `cached` that are still the same bytes (the packer
+    swaps a step's bytes whole, so a step it packed since is not found)."""
+    loc = {}
+    for p in cached:
+        for k, (ref, bc) in enumerate(p.keys):
+            e = ref()
+            if e is not None and id(e.blob_crc()) == bc:
+                loc[id(e)] = (p, k)
+    return loc
+
+
+def _history_parts(h, cached, loc, step_bytes) -> list:
+    """The history's step parts: each step part in `cached` whose steps are all still there, in order, under the
+    same numbers, handed over as it is (the open one only while no new step fits in it); the rest built, each up
+    to PART_LIMIT bytes of steps and never across the start of a step part that may be reused.
+    A step part numbers its first step from the first step the history ever recorded (#65): dropping the
+    oldest steps rebuilds only the step part they were in."""
+    from .native import ENGINE
+    ents = h.entries
+    at = loc.get(id(ents[0])) if ents else None
+    base = at[0].first + at[1] if at else (cached[0].first if cached else 0)
+    out, i = [], 0
+    while i < len(ents):
+        p, k = loc.get(id(ents[i]), _NOWHERE)
+        n = len(p.keys) if p is not None else 0
+        if (k == 0 and p.first == base + i and i + n <= len(ents)
+                and all(loc.get(id(ents[i + j])) == (p, j) for j in range(n))
+                and (i + n == len(ents) or p.size + len(step_bytes(ents[i + n])[0]) > PART_LIMIT)):
+            out.append(p)
+            i += n
+            continue
+        j, size, blobs, crcs = i, 0, [], []
+        while j < len(ents):
+            b, c = step_bytes(ents[j])
+            if j > i and (size + len(b) > PART_LIMIT or loc.get(id(ents[j]), _NOWHERE)[1] == 0):
+                break
+            blobs.append(b)
+            crcs.append(c)
+            size += len(b)
+            j += 1
+        ms = json.dumps([_meta_for_json(e.meta) for e in ents[i:j]], separators=(",", ":"),
+                        default=_json_default).encode("utf-8")
+        part, begin, crc = ENGINE.part_build(base + i, blobs, crcs, ms)
+        SAVE_WORK["built"] += 1
+        lens = [len(b) for b in blobs]
+        out.append(_Part(part, base + i, {"n": j - i, "len": len(part), "crc": crc, "begin": begin}, ents[i:j],
+                         accumulate(lens[:-1], initial=begin), lens, crcs))
+        i = j
+    return out
+
+
 def registry_to_format5(reg, codec: str = "auto"):
     """(index part, {history uid: [step parts]}): every step of the registry, in step parts of up to PART_LIMIT
-    bytes of steps (a bigger step gets one of its own). The steps are copied, never decoded."""
-    from .native import ENGINE
+    bytes of steps (a bigger step gets one of its own). The steps are copied, never decoded. #65: only the steps
+    added since the step parts in `reg.parts` (the last save's, or the ones read at open) are encoded, and only
+    the step parts they changed are built; `reg.parts` becomes this save's."""
     hists = list(reg.histories.values())
-    pre = _encode_raw(hists, codec)
-    hjson, out = [], {}
+    old = getattr(reg, "parts", None) or {}
+    locs = {h.uid: _located(old.get(h.uid, ())) for h in hists}
+    raw = [e for h in hists for e in h.entries if e.step is not None and id(e) not in locs[h.uid]]
+    SAVE_WORK.update(encoded=len(raw), built=0)
+    done = _encode_raw(raw, codec)
+
+    def step_bytes(e, loc):
+        b, c = e.blob_crc()             # R046: packed steps carry their CRC-32
+        if b is not None:
+            return b, c
+        hit = loc.get(id(e))
+        if hit is not None:             # saved before: copied out of its step part, not encoded again
+            p, k = hit
+            return memoryview(p.bytes)[p.offs[k]:p.offs[k] + p.lens[k]], p.crcs[k]
+        hit = done.get(id(e))
+        if hit is None:
+            b = e.to_bytes(codec, 0)    # raw steps: the quick form (main thread)
+            hit = done[id(e)] = (b, crc32(b) & 0xFFFFFFFF)
+        return hit
+
+    hjson, out, new = [], {}, {}
     for h in hists:
-        blobs, crcs, metas = _hist_steps(h, pre, codec)
-        listed, parts, i = [], [], 0
-        while i < len(blobs):
-            j, size = i + 1, len(blobs[i])
-            while j < len(blobs) and size + len(blobs[j]) <= PART_LIMIT:
-                size += len(blobs[j])
-                j += 1
-            ms = json.dumps(metas[i:j], separators=(",", ":"), default=_json_default).encode("utf-8")
-            part, begin, crc = ENGINE.part_build(i, blobs[i:j], crcs[i:j], ms)
-            parts.append(part)
-            listed.append({"n": j - i, "len": len(part), "crc": crc, "begin": begin})
-            i = j
-        out[h.uid] = parts
-        hjson.append(dict(_hist_doc(h), parts=listed))
-    return ENGINE.index_build(_registry_doc(reg, FORMAT5, hjson)), out
+        loc = locs[h.uid]
+        ps = new[h.uid] = _history_parts(h, old.get(h.uid, ()), loc, lambda e: step_bytes(e, loc))
+        out[h.uid] = [p.bytes for p in ps]
+        hjson.append(dict(_hist_doc(h), parts=[p.listed for p in ps]))
+    from .native import ENGINE
+    index = ENGINE.index_build(_registry_doc(reg, FORMAT5, hjson))
+    reg.parts = new
+    return index, out
 
 
 def registry_from_format5(index, index_copy, take):
@@ -257,6 +342,7 @@ def registry_from_format5(index, index_copy, take):
     strings, max_seq = {}, [0]
     for hd in doc.get("histories", []):
         slots = []
+        held = reg.parts[hd["uid"]] = []
         for i, pd in enumerate(hd.get("parts", [])):
             n, p, got = int(pd["n"]), take(hd["uid"], i), None
             if p is not None and len(p) == int(pd["len"]) and crc32(p) & 0xFFFFFFFF == int(pd["crc"]):
@@ -266,6 +352,8 @@ def registry_from_format5(index, index_copy, take):
                     if len(offs) == n:
                         got = [_entry(p[o:o + ln], metas[k] if k < len(metas) else None, c, strings, max_seq)
                                for k, (o, ln, c) in enumerate(zip(offs, lens, crcs))]
+                        if None not in got:         # #65: the next save hands these bytes over again
+                            held.append(_Part(p, _first, dict(pd), got, offs, lens, crcs))
                 except Exception:
                     got = None
             del p

@@ -50,7 +50,9 @@ Text ".hindsight_history"   fake user; V1's container, kept as it is
   saved prints of D46), and for each history its uid, members, cursor, morph target, number of steps and its step
   parts in order, each with its number of steps, its length and a CRC-32 of its bytes. Its size grows with the
   number of histories and step parts, not with the number of steps.
-- **A step part** holds a header and then its packed steps back to back. The header gives the number of the first step,
+- **A step part** holds a header and then its packed steps back to back. The header gives the number of the first step
+  (counted from the first step the history ever recorded, so dropping its oldest steps rebuilds only the step part
+  they were in and the step parts after it keep their bytes; settled by #65),
   and for each step its length, its CRC-32 and the step's meta (label, kind, sequence number and so on). In V1 the metas
   of every step sit in the one JSON header and are written again at every save; here each meta is written with its
   step and stays there. What a step's bytes look like, and how their encoding is versioned, is in

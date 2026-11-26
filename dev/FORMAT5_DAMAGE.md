@@ -121,7 +121,8 @@ For the last row the save rebuilds the step parts that hold the first and the la
 parts wholly outside them, as when Delete earlier steps drops a history's oldest steps and a new recording cuts its
 newest. The build settles whether the step parts in between are reused untouched or rebuilt once: that depends on how a
 step part numbers its first step after the oldest steps go, which Delete earlier steps needs settled too (and the step
-cap, if `FORMAT5.md`'s owner point 8 keeps it).
+cap, if `FORMAT5.md`'s owner point 8 keeps it). #65 settled it: a step part numbers its first step from the first
+step the history ever recorded, so the step parts in between are reused untouched.
 
 Unknown steps (#42) are not damage: they are kept and saved as they are.
 
