@@ -383,14 +383,13 @@ def _two_histories():
 
 
 def _save_with_index(path, change):
-    """Saves `path` with `change(index doc)` applied to the index part; (index part, {uid: step parts}) saved."""
+    """Saves `path` with its index part (both copies) made `change(index part)`; (index part, {uid: step parts})
+    as saved."""
     real, saved = persist.registry_to_format5, {}
 
     def build(*a, **k):
         index, parts = real(*a, **k)
-        doc = json.loads(bytes(ENGINE.index_read(index)).decode("utf-8"))
-        change(doc)
-        index = ENGINE.index_build(json.dumps(doc).encode("utf-8"))
+        index = change(index)
         saved.update(index=index, parts={uid: [bytes(p) for p in ps] for uid, ps in parts.items()})
         return index, parts
     persist.registry_to_format5 = build
@@ -417,7 +416,11 @@ def test_load_that_fails_midway_keeps_every_part():
     them all back: the group is kept whole, out of the way, and every save after keeps it byte for byte."""
     _two_histories()
     path = os.path.join(TMP, "load_fails.blend")
-    index, parts = _save_with_index(path, lambda doc: doc["histories"][-1].update(cursor="x"))
+    def bad_cursor(index):
+        doc = json.loads(bytes(ENGINE.index_read(index)).decode("utf-8"))
+        doc["histories"][-1]["cursor"] = "x"
+        return ENGINE.index_build(json.dumps(doc).encode("utf-8"))
+    index, parts = _save_with_index(path, bad_cursor)
     assert len(parts) == 2
     bpy.ops.wm.open_mainfile(filepath=path)
     assert any(t == persistence.UNREADABLE_EMBED_TEXT for _sev, t in runtime.load_notes), runtime.load_notes
@@ -427,9 +430,32 @@ def test_load_that_fails_midway_keeps_every_part():
     _check_kept_whole(index, parts)
 
 
+def test_both_index_parts_damaged_keeps_the_group_whole():
+    """#11 review 10: both copies of the index part damaged: nothing is read or guessed, the group is kept whole
+    out of the way (hindsight_parts_unreadable), with the note, and every save after keeps it byte for byte."""
+    _two_histories()
+    path = os.path.join(TMP, "index_damaged.blend")
+
+    def damaged(index):
+        b = bytearray(index)
+        b[len(b) // 2] ^= 1
+        return bytes(b)
+    index, parts = _save_with_index(path, damaged)
+    assert ENGINE.index_read(index) is None
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert any(t == persistence.UNREADABLE_EMBED_TEXT for _sev, t in runtime.load_notes), runtime.load_notes
+    assert not runtime.reg().histories
+    _check_kept_whole(index, parts)
+    for _save_again in range(2):
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        _check_kept_whole(index, parts)
+
+
 for fn in (test_rows_reopen_from_format5, test_sculpt_steps_and_crash_journal_after_format5,
            test_save_blender_cannot_write_keeps_the_journal, test_recovery_that_fails_opens_the_last_save,
            test_saves_after_new_steps_save_as_and_save_copy, test_crash_after_a_save_of_new_steps_brings_them_back,
-           test_step_in_an_unknown_encoding_is_kept_and_saved_back, test_load_that_fails_midway_keeps_every_part):
+           test_step_in_an_unknown_encoding_is_kept_and_saved_back, test_load_that_fails_midway_keeps_every_part,
+           test_both_index_parts_damaged_keeps_the_group_whole):
     H.run(fn)
 H.finish()

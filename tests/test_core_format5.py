@@ -249,14 +249,17 @@ def test_registry_format5_index_copy():
     bad[20] ^= 1
     take, _ = _taker(_group(parts))
     assert P.registry_from_format5(bytes(bad), index, take).save_id == "a1b2c3d4e5f6"
-    take, asked = _taker(_group(parts))
-    try:
-        P.registry_from_format5(bytes(bad), None, take)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("a damaged index part was read")
-    assert not asked
+    bad_copy = bytearray(index)
+    bad_copy[-1] ^= 1                       # its CRC-32
+    for copy in (None, bytes(bad_copy)):
+        take, asked = _taker(_group(parts))
+        try:
+            P.registry_from_format5(bytes(bad), copy, take)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("a damaged index part was read")
+        assert not asked
 
 
 def test_registry_format5_newer_refused():
