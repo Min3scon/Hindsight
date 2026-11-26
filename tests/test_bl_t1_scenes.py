@@ -1,8 +1,10 @@
 """#110: with Record everything, making and deleting a scene is taken back. Going back over its making
-removes it (and the objects only it held); going back over its deletion makes it again exactly (its
-settings, view layers, world, collections and objects) with its id, so its own history carries on;
-forward the other way round. The window layout (workspaces, screens) is never recorded: Blender's
-Python API can't put a screen's areas back, and Blender's own undo leaves the layout alone too."""
+removes it (what only it held stays in the file, as Blender's own deletion leaves it); going back over its
+deletion makes it again exactly (its settings, view layers, world, collections and objects) with its id, so
+its own history carries on; forward the other way round. Hindsight's own scene settings (Use Global,
+Preserve Modes, Movie Mode) aren't recorded, so a scene made again has them at their defaults. The window
+layout (workspaces, screens) is never recorded: Blender's Python API can't put a screen's areas back, and
+Blender's own undo leaves the layout alone too."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import shutil
 import tempfile
@@ -113,26 +115,39 @@ def test_a_scene_made_again_keeps_its_history():
 
 
 def test_the_first_scene_deleted():
-    """Deleting the file's first scene ("Scene", which held the data no object uses) and going back."""
+    """Deleting the file's first scene ("First": it sorts before "Made", so it holds the data no object uses,
+    adapters.scene_loose) and going back: a text nothing uses keeps its contents at every step."""
+    def edit():
+        bpy.data.texts["Loose"].from_string("after")
+
     def delete_first():
-        bpy.context.window.scene = bpy.data.scenes["Made"] if bpy.context.window else None
-        bpy.data.scenes.remove(bpy.data.scenes["Scene"])
+        if bpy.context.window:
+            bpy.context.window.scene = bpy.data.scenes["Made"]
+        bpy.data.scenes.remove(bpy.data.scenes["First"])
+
     def seen():
-        sc = bpy.data.scenes.get("Scene")
+        sc, t = bpy.data.scenes.get("First"), bpy.data.texts.get("Loose")
         return (None if sc is None else (idmap.uid_of(sc), sc.frame_end,
-                                         tuple(sorted((o.name, _r(o.location)) for o in sc.objects))), read())
+                                         tuple(sorted((o.name, _r(o.location)) for o in sc.objects))), read(),
+                t and t.as_string())
     L.fresh_scene()
+    bpy.data.scenes["Scene"].name = "First"
+    bpy.data.texts.new("Loose").from_string("before")
     L.track_all()
     L.tick_like("baseline")
     make()
     L.tick_like("New Scene")
+    assert adapters.scene_loose(bpy.data.scenes["First"]) and not adapters.scene_loose(bpy.data.scenes["Made"])
     states, seqs = [seen()], [L.max_seq()]
-    delete_first()
-    L.tick_like("Delete Scene")
-    states.append(seen())
-    seqs.append(L.max_seq())
-    assert states[0][0][2] and states[1][0] is None and states[0][1] == states[1][1], states
-    for i in (0, 1, 0, 1):
+    for label, fn in (("edit the text", edit), ("Delete Scene", delete_first)):
+        fn()
+        L.tick_like(label)
+        states.append(seen())
+        seqs.append(L.max_seq())
+    assert sorted(s.name for s in bpy.data.scenes) == ["Made"] and states[0][2] == "before", states
+    assert states[0][0][2] and states[2][0] is None and states[0][1] == states[2][1], states
+    assert states[1][2] == states[2][2] == "after" and len(set(seqs)) == 3, (states, seqs)
+    for i in (0, 2, 1, 0, 2, 1, 2):
         L.goto_after(seqs[i])
         assert seen() == states[i], (i, seen(), states[i])
 

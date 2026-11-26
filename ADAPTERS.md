@@ -96,3 +96,5 @@ Changes Hindsight makes itself (playback) are never recorded.
 5. Curves, text, metaballs, lattices, Grease Pencil, lights, cameras, empties.
 6. Scene, world, render settings, view layers, collection structure; making, deleting and renaming a scene
    (#110). Never the window layout (workspaces, screens): Blender's API can't put a screen's areas back.
+   Hindsight's own scene settings (Use Global, Preserve Modes, Movie Mode) aren't recorded: a scene made again
+   has them at their defaults.
