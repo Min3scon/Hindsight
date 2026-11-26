@@ -717,13 +717,16 @@ def _report_replay(reg) -> None:
         _note("WARNING", LEFT_OUT_TEXT.format(n=n, s="" if n == 1 else "s", obj=obj or "an object"))
 
 
-def _since_save(recs) -> list:
-    """The records after the last SAVE (all of them without one), resync markers left out."""
+def _since_save(recs, save_id=None) -> list:
+    """The records after the last SAVE (all of them without one), or after the last marker that the parts of save
+    `save_id` hold every step before it (#124: put on the Text when Hindsight was turned off); resync and parts
+    markers left out."""
     start = 0
     for i, r in enumerate(recs):
-        if r[0] == "SAVE":
+        if r[0] == "SAVE" or (save_id and r[0] == "META" and r[1].get("parts") == save_id):
             start = i + 1
-    return [r for r in recs[start:] if not (r[0] == "META" and not r[1].get("hist") and r[1].get("resync"))]
+    return [r for r in recs[start:]
+            if not (r[0] == "META" and not r[1].get("hist") and (r[1].get("resync") or r[1].get("parts")))]
 
 
 @bpy.app.handlers.persistent
@@ -772,7 +775,7 @@ def on_load_post(*args) -> None:
                     j.flush(fsync=False)
                     kept = True
                     _report_replay(reg)
-                elif _since_save(recs):
+                elif _since_save(recs, getattr(reg, "save_id", None)):
                     _note("WARNING", OTHER_SAVE_TEXT)
             except Exception as e:
                 guard.fail("loading", e, "crash recovery failed")
@@ -853,9 +856,18 @@ def register() -> None:
         if fn not in hl:
             hl.append(fn)
     runtime.journal_hook = _on_journal
+    if has_data():            # #124: the session still holds the history unregister() put on the Text
+        _take_parts_back()
 
 
 def unregister() -> None:
+    # #124: a save without Hindsight writes the Text as it is: the parts go back on it (a save's build, new save id)
+    with contextlib.suppress(AttributeError):      # bpy.data is restricted while Blender starts
+        if bpy.data.texts.get(TEXT_NAME) is not None:
+            on_save_pre()
+            j, sid = _J["journal"], getattr(runtime.reg(), "save_id", None)
+            if j is not None and not j.closed and sid:
+                runtime._journal("META", {"parts": sid})      # the parts of save `sid` hold every step journaled so far
     _stop_journal_writer()
     for name, fn in _HANDLERS:
         hl = getattr(bpy.app.handlers, name)

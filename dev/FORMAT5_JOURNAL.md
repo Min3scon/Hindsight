@@ -149,6 +149,22 @@ Opening the .blend itself, at any time before saving over it, brings every step 
 the last save included. That is more than the autosave holds, since the autosave can be up to one interval (2 minutes
 by default) older than the crash.
 
+## Hindsight turned off (#124)
+
+Between saves the Text holds only the stub, so a save after Hindsight was turned off (Preferences, a script reload)
+would write a file without its parts. `unregister()` therefore does a save's build first: the parts go back on the
+Text with a new save id, and a META record `{"parts": <that save id>}` tells the journal that those parts hold every
+step journaled so far. `register()` in the same session takes Blender's copy back again (the registry is still the
+session's). Blender also calls `unregister()` at every quit, so a quit costs one build; unchanged step parts are
+reused (#65).
+
+- **Saved while off**: the file has the new save id, the journal's last SAVE names the one before, so nothing is
+  replayed onto steps the parts hold; recovery's "belong to another save" note looks for records after the marker
+  only, so none is shown.
+- **Not saved**: the file and its journal still match, the marker is ignored, recovery is as before.
+- **Not covered**: steps recorded after Hindsight is turned on again, followed by a crash before a save, are not
+  replayed onto a file saved while it was off (that file had no history at all before #124).
+
 ## The journal's record format does not change
 
 The records keep the `HSJ1` magic, the same eight types and the same headers. Three reasons:
