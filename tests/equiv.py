@@ -212,15 +212,3 @@ def plain(o, _depth=0):
         return {k: plain(v, _depth + 1) for k, v in o.items()}
     return o
 
-
-def holds_shapes(o, _depth=0):
-    """Does o hold a Step, ChannelDelta, Snapshot, DataChange or MISSING (to the depth like() converts)?"""
-    if _home(o) is not None:
-        return True
-    if _depth > 100:
-        return False
-    if type(o) in (list, tuple):
-        return any(holds_shapes(x, _depth + 1) for x in o)
-    if type(o) is dict:
-        return any(holds_shapes(k, _depth + 1) or holds_shapes(v, _depth + 1) for k, v in o.items())
-    return False

@@ -18,7 +18,7 @@ import tests.harness as H  # noqa: E402
 import tests.runner as R  # noqa: E402
 from tests import corpus as C, equiv  # noqa: E402
 from tests.reference import step_json as ref, types as RT  # noqa: E402
-from hindsight.core import step  # noqa: E402
+from hindsight.core import step, types as HT  # noqa: E402
 from hindsight.core.types import MISSING, DataChange  # noqa: E402
 
 RNG = random.Random(131)
@@ -36,15 +36,16 @@ EDGE_FLOATS = [0.0, -0.0, 1.0, -1.0, 0.1, 1e16, 1e15, 9999999999999998.0, 1e-4, 
                float("-inf"), 2.0 ** 53, 2.0 ** 63, 0.30000000000000004, 100.0, 1e100, 3.4028234663852886e38]
 
 
-def on_ref(f):
-    """f given the reference's own objects (equiv.like): DataChange and MISSING of tests/reference/types.py."""
-    return lambda *a: f(*equiv.like(a, RT))
+def on_ref(f, types=RT):
+    """f given its side's own objects (equiv.like): DataChange and MISSING of tests/reference/types.py, or with
+    types=HT the engine's."""
+    return lambda *a: f(*equiv.like(a, types))
 
 
 def same(fn, *args):
-    # no wrapper where there is nothing to convert: its frame would move where a RecursionError hits (3.11)
-    f = on_ref(getattr(ref, fn)) if equiv.holds_shapes(args) else getattr(ref, fn)
-    return equiv.check(f, getattr(step, fn), *args, key=equiv.plain)
+    # both sides through the one wrapper, so both run at the same stack depth: a RecursionError hits at the same
+    # place (3.11 says "... in __instancecheck__" when it hits inside isinstance, 3.12 and later never do)
+    return equiv.check(on_ref(getattr(ref, fn)), on_ref(getattr(step, fn), HT), *args, key=equiv.plain)
 
 
 def same_deep(fn, v):
