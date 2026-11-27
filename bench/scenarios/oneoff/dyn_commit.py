@@ -6,10 +6,11 @@ sys.argv = [sys.argv[0]]
 import bpy, bmesh
 import tests.harness as H
 from hindsight.bl import runtime
+from hindsight.bl import prefs
 import test_bl_dyntopo as T
 C = bpy.context
 H.fresh()
-runtime.FORCE_DYNTOPO[0] = True
+prefs.FORCE["record_dyntopo"] = True
 bpy.ops.mesh.primitive_uv_sphere_add(segments=256, ring_count=200)
 ob = C.active_object; ob.name = "Dyn"
 H.enter(ob, "SCULPT"); runtime._tick_once()

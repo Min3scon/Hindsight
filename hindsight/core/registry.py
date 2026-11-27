@@ -22,6 +22,7 @@ class Registry:
         self.load_report = None        # set by persist.registry_from_bytes
         self.saved: dict = {}          # uid -> {"mesh": fingerprint, "values": [[adapter, path, value]]}
                                        # as last saved (D46: changes made without Hindsight)
+        self.parts: dict = {}          # history uid -> its step parts as last saved or read (persist._Part, #65)
 
     def new_seq(self) -> int:
         s = self.next_seq

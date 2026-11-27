@@ -1,7 +1,7 @@
 # Proves the native engine's committed wheels (hindsight/wheels, built from native/) on real
 # machines: each runner installs the wheel for its platform from that folder only, then runs every
-# core test with HINDSIGHT_NATIVE=require (a missing or broken module is an error, never a silent
-# fallback to Python). tests/test_core_native.py compares native and Python results bit for bit.
+# core test (a missing or broken module is an error: there is no Python path).
+# tests/test_core_native.py compares native and Python results bit for bit.
 name: Native engine
 
 on:
@@ -36,12 +36,9 @@ jobs:
           python -m pip install numpy zstandard==0.23.0 lz4==4.4.5 hypothesis==6.170.15   # the reference oracle (tests/reference) needs lz4; property tests need hypothesis
           python -m pip install --no-index --find-links hindsight/wheels hindsight_native
       - name: The native module loads
-        env:
-          HINDSIGHT_NATIVE: require
-        run: python -c "import platform, sys; from hindsight.core import native; print(platform.platform(), sys.version, native.lib.__file__)"
+        run: python -c "import platform, sys; from hindsight.core import native; print(platform.platform(), sys.version, native.ENGINE.__file__)"
       - name: Core tests, native required
         env:
-          HINDSIGHT_NATIVE: require
           HINDSIGHT_VERIFY: "1"
         run: |
           failed=0

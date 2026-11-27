@@ -7,25 +7,24 @@ Inputs: every channel type, NaN payloads, -0.0, denormals, infinities, extreme i
 one element, every element changed, widths 1 to 4 (and item sizes 1, 2, 4, 8 for the transforms),
 a 1M-element position channel once, and damaged records made the way test_core_codec makes them.
 
-When the module can't be loaded, each comparison prints "SKIP ..." (not counted as a pass); the
-switch test (HINDSIGHT_NATIVE=0 and =require, and a module with the wrong API number) always runs.
+The missing-engine test checks that a missing module or one with the wrong API number is refused.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import contextlib
 import struct
 import subprocess
-import traceback
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 from reference import pure, delta as rdelta                   # noqa: E402
 import test_core_codec as tc                      # noqa: E402  (its damaged-input generator and cases)
-from hindsight.core import codec, delta, native, step as stepmod   # noqa: E402
+from hindsight.core import delta, native, step as stepmod
 from hindsight.core.types import ADD, CHANNEL_TYPES, DELTA, XOR, ChannelDelta, Step, make_key   # noqa: E402
 
 RNG = np.random.default_rng(20261118)
-LIB = native.lib
+LIB = native.ENGINE
 WEIRD_F32 = np.array([0x00000000, 0x80000000, 0x7F800000, 0xFF800000, 0x00000001, 0x80000001, 0x007FFFFF,
                       0x7FC00000, 0x7FC00001, 0xFFC12345, 0x7F800001, 0xFFFFFFFF, 0x7FFFFFFF, 0x3F800000],
                      dtype=np.uint32)
@@ -70,13 +69,6 @@ def same(a, b, conv):
     if a[0] == "err":
         return a == b
     return conv(a[1]) == conv(b[1])
-
-
-def skip(name):
-    if LIB is None:
-        print(f"SKIP {name}: hindsight_native not loaded ({native.ERROR})")
-        return True
-    return False
 
 
 # ------------------------------------------------------------------------------ inputs
@@ -138,8 +130,6 @@ def all_keys():
 
 # ------------------------------------------------------------------------------ diff
 def test_diff_matches_python():
-    if skip("test_diff_matches_python"):
-        return
     count = 0
     for key in all_keys():
         dt, w, _ = CHANNEL_TYPES[key.rsplit("|", 1)[1]]
@@ -166,7 +156,7 @@ def test_diff_matches_python():
     i = changed(f, 1, "sparse").view(np.int32)
     a, b = both(lambda: delta.diff(k, f, i))
     assert same(a, b, delta_key)
-    print(f"PASS test_diff_matches_python ({count} cases)")
+    print(f"  test_diff_matches_python ({count} cases)")
 
 
 # ------------------------------------------------------------------------------ apply
@@ -184,8 +174,6 @@ def apply_both(arr0, d, forward):
 
 
 def test_apply_matches_python():
-    if skip("test_apply_matches_python"):
-        return
     count = 0
     for key in all_keys():
         dt, w, _ = CHANNEL_TYPES[key.rsplit("|", 1)[1]]
@@ -240,7 +228,7 @@ def test_apply_matches_python():
     nc = np.repeat(base, 2)[::2]
     a, b = both(lambda: delta.apply(nc, d))
     assert same(a, b, lambda x: x) and a[0] == "err"
-    print(f"PASS test_apply_matches_python ({count} cases)")
+    print(f"  test_apply_matches_python ({count} cases)")
 
 
 # ------------------------------------------------------------------------------ pack
@@ -294,15 +282,13 @@ def _pack_cases():
 
 
 def test_pack_matches_python():
-    if skip("test_pack_matches_python"):
-        return
     count = 0
     for d in _pack_cases():
         for effort in (delta.QUICK, delta.NORMAL):
             a, b = both(lambda: delta.pack_delta(d, effort))
             assert same(a, b, bytes), (d.key, d.idx[:5], d.vals.dtype, effort, a[0], b[0], a[1:] if a[0] == "err" else "")
             count += 1
-    print(f"PASS test_pack_matches_python ({count} records)")
+    print(f"  test_pack_matches_python ({count} records)")
 
 
 # ------------------------------------------------------------------------------ unpack
@@ -337,15 +323,13 @@ def _records():
 
 
 def test_unpack_matches_python():
-    if skip("test_unpack_matches_python"):
-        return
     count = 0
     for rec in _records():
         ok, a, b = _unpack_both(rec)
         assert ok, (rec[:24], a[0], b[0], a[1:] if a[0] == "err" else "", b[1:] if b[0] == "err" else "")
         assert a[0] == "ok", a
         count += 1
-    print(f"PASS test_unpack_matches_python ({count} records, gaps, runs and bitmaps)")
+    print(f"  test_unpack_matches_python ({count} records, gaps, runs and bitmaps)")
 
 
 def _raw_record(code, ib, k, add=True):
@@ -359,8 +343,6 @@ def _raw_record(code, ib, k, add=True):
 def test_index_limits():
     """Indices right at the top of the uint32 range decode, one past it is refused: gaps (every
     gap width), several runs, one run, bitmap."""
-    if skip("test_index_limits"):
-        return
     top = 0xFFFFFFFF
     count = 0
     for over in (0, 1, 2, 300):
@@ -388,15 +370,13 @@ def test_index_limits():
             if a[0] == "ok":
                 assert int(a[1][0].idx[-1]) == top
             count += 1
-    print(f"PASS test_index_limits ({count} records)")
+    print(f"  test_index_limits ({count} records)")
 
 
 def test_damaged_records_fail_the_same_way():
     """test_core_codec's damage on every kind of record, plus edits of each header field, the
     index data and the predictor tags: native and Python must decode to the same delta or refuse
     with the same CorruptDelta message."""
-    if skip("test_damaged_records_fail_the_same_way"):
-        return
     rng = np.random.default_rng(77)
     recs = list(_records())
     stats = {"decoded": 0, "refused": 0}
@@ -435,14 +415,12 @@ def test_damaged_records_fail_the_same_way():
         if a[0] == "err":
             assert a[1] in ("CorruptDelta", "error", "ValueError", "UnicodeDecodeError"), a
         stats["decoded" if a[0] == "ok" else "refused"] += 1
-    print(f"PASS test_damaged_records_fail_the_same_way (6000 records: {stats})")
+    print(f"  test_damaged_records_fail_the_same_way (6000 records: {stats})")
 
 
 def test_damaged_steps_fail_the_same_way():
     """Whole steps (checksum patched so the damage reaches the record decoder) through every
     codec: the same step or the same refusal on both paths."""
-    if skip("test_damaged_steps_fail_the_same_way"):
-        return
     rng = np.random.default_rng(5)
     parts = [next(x for x in tc.deltas_for(key, 300) if x[0].idx.size > 20)[0] for key in all_keys()[:5]]
     st = Step(7, "Stroke", "SCULPT", "obj", 1.0, DELTA, parts[:4])
@@ -456,13 +434,11 @@ def test_damaged_steps_fail_the_same_way():
             conv = lambda s: [delta_key(d) for d in s.deltas] + [s.seq, s.label]   # noqa: E731
             assert same(a, b, conv), (name, i, a[0], b[0], a[1:] if a[0] == "err" else "", b[1:] if b[0] == "err" else "")
             n += 1
-    print(f"PASS test_damaged_steps_fail_the_same_way ({n} blobs, codecs {tc.CODECS})")
+    print(f"  test_damaged_steps_fail_the_same_way ({n} blobs, codecs {tc.CODECS})")
 
 
 # ------------------------------------------------------------------------------ big, and the switch
 def test_one_million_vertices():
-    if skip("test_one_million_vertices"):
-        return
     key = "position|POINT|FLOAT_VECTOR"
     n = 1_000_000
     old = native_values(np.float32, 3 * n)
@@ -479,58 +455,37 @@ def test_one_million_vertices():
     for forward, start, want in ((True, old, new), (False, new, old)):
         x, y = apply_both(start, d, forward)
         assert x == y and x[1] == want.tobytes()
-    print(f"PASS test_one_million_vertices ({d.idx.size} of {n} changed)")
+    print(f"  test_one_million_vertices ({d.idx.size} of {n} changed)")
 
 
-def test_switch():
-    """A missing or mismatched engine is one clear exception, EngineMissing, whatever HINDSIGHT_NATIVE
-    says (it has no effect: there is no Python path to switch to)."""
+def test_missing_engine():
+    """A missing or mismatched engine is one clear exception, EngineMissing: there is no Python path."""
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     fake = ("import sys, types; m = types.ModuleType('hindsight_native'); m.API = 999; "
             "sys.modules['hindsight_native'] = m; ")
     gone = "import sys; sys.modules['hindsight_native'] = None; "
-    probe = "from hindsight.core import native; print(native.AVAILABLE, native.lib is None, repr(native.ERROR))"
+    probe = "from hindsight.core import native; print(native.ENGINE is not None)"
 
-    def run(code, mode):
-        env = dict(os.environ)
-        env.pop("HINDSIGHT_NATIVE", None)
-        if mode is not None:
-            env["HINDSIGHT_NATIVE"] = mode
-        return subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True)
+    def run(code):
+        return subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
 
-    r = run(probe, "0")           # HINDSIGHT_NATIVE is read by nobody any more: the engine is always used
-    assert r.returncode == 0 and r.stdout.startswith("True False None"), r
-    for mode in (None, "require", "0"):
-        r = run(fake + probe, mode)
-        assert r.returncode != 0 and "EngineMissing" in r.stderr and "API 999" in r.stderr, r
-        r = run(gone + probe, mode)
-        assert r.returncode != 0 and "EngineMissing" in r.stderr and "could not load" in r.stderr, r
-    r = run("import sys; sys.modules['hindsight_native'] = None; from hindsight.core import step", None)
+    r = run(probe)
+    assert r.returncode == 0 and r.stdout.startswith("True"), r
+    r = run(fake + probe)
+    assert r.returncode != 0 and "EngineMissing" in r.stderr and "API 999" in r.stderr, r
+    r = run(gone + probe)
+    assert r.returncode != 0 and "EngineMissing" in r.stderr and "could not load" in r.stderr, r
+    r = run("import sys; sys.modules['hindsight_native'] = None; from hindsight.core import step")
     assert r.returncode != 0 and "EngineMissing" in r.stderr, r
-    # with the switch off, the whole engine still round-trips
-    r = run("from hindsight.core import delta, native; import numpy as np; "
-            "a = np.arange(9, dtype=np.float32); b = a.copy(); b[4] = -0.0; "
-            "d = delta.diff('position|POINT|FLOAT_VECTOR', a, b); "
-            "e = delta.unpack_delta(delta.pack_delta(d)); c = a.copy(); delta.apply(c, e); "
-            "assert native.lib is native.ENGINE and c.tobytes() == b.tobytes(); print('ok')", "0")
-    assert r.returncode == 0 and r.stdout.strip() == "ok", r
-    print(f"PASS test_switch (native here: {native.AVAILABLE})")
 
 
 def main():
-    tests = [test_switch, test_diff_matches_python, test_apply_matches_python, test_pack_matches_python,
+    tests = [test_missing_engine, test_diff_matches_python, test_apply_matches_python, test_pack_matches_python,
              test_unpack_matches_python, test_index_limits, test_damaged_records_fail_the_same_way,
              test_damaged_steps_fail_the_same_way, test_one_million_vertices]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

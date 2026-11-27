@@ -1,10 +1,10 @@
-"""Save and open of a large history in Blender, history folder (SIDECAR) and Embed, 100k vertices
+"""Save and open of a large history in Blender (inside the .blend, #48: "embed"), 100k vertices
 with 1,000 and 6,000 steps. A thin wrapper over bench/saveload_bench.py (which does the work, one
 process per history size), so that the numbers match what that script prints.
 
     <bpy python> bench/scenarios/saveload.py CODE_ROOT [--quick] [--only a,b] [--reps N]
 
-Scenarios: {save,open}_{folder,embed}_100k_{1000,6000}: time of bpy.ops.wm.save_as_mainfile and
+Scenarios: {save,open}_embed_100k_{1000,6000}: time of bpy.ops.wm.save_as_mainfile and
 bpy.ops.wm.open_mainfile (min and median over reps), tracemalloc peak and VmHWM over the RSS before.
 --quick: 20k vertices, 100 and 300 steps (names unchanged).
 """
@@ -18,7 +18,7 @@ import _common as K  # noqa: E402
 
 opts = K.Opts()
 BENCH = os.path.join(K.BENCH, "saveload_bench.py")
-MODES = (("SIDECAR", "folder"), ("EMBED", "embed"))
+MODES = (("EMBED", "embed"),)
 results = {}
 sizes = ((100_000, 1000), (100_000, 6000)) if not opts.quick else ((20_000, 100), (20_000, 300))
 for (nv, steps), label in zip(sizes, (1000, 6000)):

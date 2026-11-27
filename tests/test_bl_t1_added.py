@@ -17,9 +17,9 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.core import globaltl
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 from hindsight.bl import warnings as W
 
 C = bpy.context
@@ -44,7 +44,6 @@ def everything():
     return {ob.name: O.object_state(ob, derived=False) for ob in C.scene.objects}
 
 
-@covers("obj.addremove", "EXACT", "STEPS")
 def test_added_object_is_recorded_fully():
     setup()
     T.add_primitive("cube", (0, -5, 0)).run()
@@ -63,8 +62,6 @@ def test_added_object_is_recorded_fully():
     assert everything() == end, O.diff(end, everything())[:4]
 
 
-@covers("obj.addremove", "EXACT")
-@covers("obj.parenting", "EXACT")
 def test_duplicate_of_a_child_keeps_its_changes():
     """The shrunk Hypothesis case: Shift+D of a child, then Set Origin on its parent (Blender moves
     the children to compensate). Every global position is exact."""
@@ -76,7 +73,6 @@ def test_duplicate_of_a_child_keeps_its_changes():
     L.check_object_histories(r, full=True)
 
 
-@covers("obj.parenting", "WARN", "EXACT")
 def test_reference_to_a_deleted_object():
     setup()
     ops = [T.parent("B", "A", False), constraint_with_target("C", "COPY_LOCATION", "A"), T.delete(["A"])]
@@ -101,7 +97,6 @@ def test_reference_to_a_deleted_object():
     L.check_object_histories(r, full=True)
 
 
-@covers("obj.parenting", "EXACT")
 def test_restoring_a_parent_keeps_its_inverse():
     """D38: Blender resets the parent inverse whenever the parent is set. Deleting a parent changes
     only the child's parent (Blender keeps its inverse); going back over the deletion must give the
@@ -118,7 +113,6 @@ def test_restoring_a_parent_keeps_its_inverse():
     L.check_object_histories(r, full=True)
 
 
-@covers("obj.editsteps", "STEPS", "EXACT")
 def test_first_edit_visit_is_a_step():
     """D50: with Edit Mode step by step off, or on a mesh over the step-by-step limit, an Edit Mode
     visit on a recorded object with no history yet is one step (it used to be lost)."""
@@ -129,7 +123,7 @@ def test_first_edit_visit_is_a_step():
         orig_max = runtime.SETTINGS.edit_steps_max
         if how == "edit steps off":
             from hindsight.bl import adapters
-            datarec.FORCE_KINDS[0] = set(adapters.KINDS) - {"edit_steps"}
+            prefs.FORCE["record_kinds"] = set(adapters.KINDS) - {"edit_steps"}
         else:
             runtime.SETTINGS.edit_steps_max = 10        # stands in for a mesh over 300,000 vertices
         try:
@@ -154,10 +148,9 @@ def test_first_edit_visit_is_a_step():
             assert O.read_mesh(a, O.mesh_state) == after, how
         finally:
             runtime.SETTINGS.edit_steps_max = orig_max
-            datarec.FORCE_KINDS[0] = None
+            prefs.FORCE["record_kinds"] = None
 
 
-@covers("obj.editsteps", "EXACT")
 def test_dragging_while_a_linked_duplicate_is_in_edit_mode():
     """D51: the global slider dragged (and released) while a linked duplicate of a recorded mesh is
     in Edit Mode: the shared mesh is written (Edit Mode is left and entered again around it), no
@@ -200,8 +193,6 @@ def _apply_isolated(name):
     return T.Op(f"apply scale {name}, isolate users", run, [name])
 
 
-@covers("obj.addremove", "EXACT", "STEPS")
-@covers("obj.editsteps", "EXACT")
 def test_a_linked_duplicate_gets_its_own_mesh():
     """D44: Alt+D, an edit through the original, then the duplicate gets its own mesh (Make Single
     User, or Apply Scale with isolate users) and changes it. Which mesh an object uses is recorded,
@@ -218,7 +209,6 @@ def test_a_linked_duplicate_gets_its_own_mesh():
         L.check_global(r, full=True)
 
 
-@covers("obj.addremove", "EXACT")
 def test_the_owner_of_a_shared_mesh_deleted():
     """D44: the object that records a shared mesh is deleted; the other one records it from then on,
     starting from the mesh as it is."""
@@ -230,7 +220,6 @@ def test_the_owner_of_a_shared_mesh_deleted():
     L.check_object_histories(r, full=True)
 
 
-@covers("obj.addremove", "RELOAD.EMBED")
 def test_the_owner_of_a_shared_mesh_after_a_reload():
     """D45: after a reload the object whose history holds the shared mesh's steps records it (not the
     first by name): an edit through the other one isn't undone by scrubbing the first one's history."""
@@ -247,7 +236,7 @@ def test_the_owner_of_a_shared_mesh_after_a_reload():
     path = os.path.join(tempfile.mkdtemp(prefix="hs_owner_"), "owner.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     zed, a1 = bpy.data.objects["Zed"], bpy.data.objects["A.001"]
     datarec.refresh_mesh_users()
     assert datarec.mesh_owned_elsewhere(a1) and not datarec.mesh_owned_elsewhere(zed)
@@ -296,8 +285,6 @@ def _target_rig(name):
     return T.Op(f"constraint on {name} targeting the linked rig", run, [name])
 
 
-@covers("obj.parenting", "EXACT", "RELOAD.APPEND")
-@covers("obj.constraints", "EXACT")
 def test_references_to_linked_objects():
     """D48: a parent and a constraint target linked from another file are recorded (as library,
     type and name) and put back; they used to be recorded as empty and cleared by any scrub."""
@@ -311,7 +298,6 @@ def test_references_to_linked_objects():
     assert a.parent is not None and a.parent.library is not None and a.constraints[-1].target is not None
 
 
-@covers("obj.addremove", "EXACT", "ORACLE")
 def test_deleted_objects_come_back_complete():
     """D49: objects brought back by the global timeline come back with their modifiers (and their
     settings), custom properties (groups too), object-linked material slots, display settings and
@@ -344,7 +330,6 @@ def test_deleted_objects_come_back_complete():
     L.check_global(r, full=True)
 
 
-@covers("obj.addremove", "EXACT", "ORACLE")
 def test_deleted_object_comes_back_as_last_seen():
     """D149 (found by test_bl_t1_prop in the Blender 5.3 binary on CI): hidden, shown again, then deleted, an
     object came back hidden: its kept body (what brings it back) was read again only when the depsgraph
@@ -359,7 +344,6 @@ def test_deleted_object_comes_back_as_last_seen():
     L.check_global(r, full=True)
 
 
-@covers("obj.editsteps", "STEPS", "EXACT")
 def test_several_objects_in_edit_mode():
     """D52: with A and B in Edit Mode together, each operation is one step in each of them and one
     position on the global timeline, exact both ways."""
@@ -392,8 +376,6 @@ def test_several_objects_in_edit_mode():
         assert (O.read_mesh(a, O.mesh_state), O.read_mesh(b, O.mesh_state)) == states[g], g
 
 
-@covers("obj.editsteps", "STEPS")
-@covers("obj.addremove", "STEPS")
 def test_separate_is_one_operation():
     """D58: P (Separate) in Edit Mode: the new object (scene) and the source's Edit Mode step are one
     position on the global timeline."""
@@ -421,7 +403,6 @@ def _lengths():
     return {hid: len(h.entries) for hid, h in runtime.reg().histories.items()}
 
 
-@covers("obj.addremove", "EXACT", "WARN")
 def test_a_name_another_object_holds():
     """D47: A renamed X, then B renamed A; X's own history back to before its rename can't call it A
     (B is A now): Blender calls it A.001, the sidebar says why, and the next unrelated operation
@@ -451,7 +432,6 @@ def test_a_name_another_object_holds():
     assert x.name == "X" and not any("called" in t for _s, t in W.everything_notes(C, x))
 
 
-@covers("obj.addremove", "EXACT", "WARN")
 def test_a_deleted_object_back_while_its_name_is_taken():
     """D47: C deleted, then an object that isn't recorded (and was there before) takes the name C;
     going back over the deletion brings C back as C.001, and nothing is recorded for the name."""
@@ -479,8 +459,6 @@ def mesh_steps(ob) -> int:
     return 0 if h is None else sum(1 for e in h.entries if e.meta.get("kind") != "DATA")
 
 
-@covers("obj.addremove", "EXACT", "STEPS", "WARN")
-@covers("obj.editsteps", "EXACT", "STEPS")
 def test_linked_duplicates_record_their_mesh_once():
     """D39: Alt+D, then Edit Mode through the original and through the duplicate. The shared mesh is
     recorded once, in the original's history (its owner); the duplicate records its own object data
@@ -506,8 +484,6 @@ def test_linked_duplicates_record_their_mesh_once():
     L.check_object_histories(r, full=True)
 
 
-@covers("obj.collections", "EXACT", "STEPS", "WARN")
-@covers("obj.addremove", "EXACT")
 def test_a_deleted_collection_comes_back():
     """D55: A in a new collection Outer, Outer deleted the way the outliner does it (A goes to the
     Scene Collection), then C in a new collection that takes the name Outer. The global history back
@@ -565,7 +541,6 @@ def _notes(ob) -> str:
     return " ".join(t for _s, t in W.everything_notes(C, ob))
 
 
-@covers("obj.parenting", "EXACT", "STEPS", "WARN")
 def test_the_next_operation_while_a_reference_waits():
     """D60: while B's parent A is deleted, the next operation on B (a move) records only the move (it
     also recorded the parent as cleared); back over the move, B is where it was and still waits for
@@ -587,7 +562,6 @@ def test_the_next_operation_while_a_reference_waits():
     assert b.parent == bpy.data.objects["C"] and "refers to" not in _notes(b), _notes(b)
 
 
-@covers("obj.parenting", "RELOAD.SIDECAR", "WARN", "EXACT")
 def test_a_reference_that_waits_after_a_reload():
     """D57: B waiting for its deleted parent A, saved and reopened: the sidebar still says B refers to A
     (it said nothing), and the global history brings A back with B parented to it (B stayed without a
@@ -595,10 +569,8 @@ def test_a_reference_that_waits_after_a_reload():
     stays B's parent."""
     import tempfile
     import hindsight
-    from hindsight.core.types import SETTINGS
     for outside in (False, True):
         _b_back_to_its_parenting()
-        SETTINGS.save_mode = "SIDECAR"
         T.select()
         path = os.path.join(tempfile.mkdtemp(prefix="hs_wait_"), "wait.blend")
         bpy.ops.wm.save_as_mainfile(filepath=path)
@@ -610,7 +582,7 @@ def test_a_reference_that_waits_after_a_reload():
             hindsight.register()
             H._registered[0] = True
         bpy.ops.wm.open_mainfile(filepath=path)
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         b = bpy.data.objects["B"]
         if outside:
             assert "refers to" not in _notes(b) and b.parent == bpy.data.objects["C"], _notes(b)

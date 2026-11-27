@@ -2,6 +2,7 @@
 that uses it: input values, node settings, nodes added and removed, links made and broken. A material
 used by several recorded objects is recorded once, by the first of them by name (as for shared meshes),
 so the others get no steps from it."""
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bpy
 import tests.harness as H
@@ -22,10 +23,8 @@ def mat_state(m):
     for n in sorted(nt.nodes, key=lambda n: n.name):
         for s in n.inputs:
             if hasattr(s, "default_value") and not s.is_linked:
-                try:
+                with contextlib.suppress(TypeError):
                     vals.append((n.name, s.identifier, _r(s.default_value)))
-                except TypeError:
-                    pass
         if n.bl_idname == "ShaderNodeMath":
             vals.append((n.name, "operation", n.operation))
     links = sorted((l.from_node.name, l.from_socket.identifier, l.to_node.name, l.to_socket.identifier)

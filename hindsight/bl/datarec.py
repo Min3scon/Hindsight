@@ -9,6 +9,7 @@ operator finished), or (2) changes have settled for SETTLE seconds (property edi
 """
 from __future__ import annotations
 
+import contextlib
 import marshal
 import time
 
@@ -17,6 +18,7 @@ import bpy
 from ..core.history import DATA_MARK, MeshState
 from ..core.native import ENGINE as _ENGINE
 from ..core.types import DATA, MISSING, DataChange, Entry, Step
+from .prefs import value as _pref
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
@@ -62,18 +64,8 @@ _MESH_OF: dict = {}          # owner uid -> pointer of the mesh its state was re
 OBJECT_DEEP_MAX = 1_000_000  # vertices; above this an Object Mode check compares counts and values only
 
 
-FORCE_SCOPE = [None]         # tests: "EVERYTHING" or "SCULPT" when the preferences aren't registered
-
-
 def scope_everything() -> bool:
-    if FORCE_SCOPE[0] is not None:
-        return FORCE_SCOPE[0] == "EVERYTHING"
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        return p is not None and getattr(p, "record_scope", "SCULPT") == "EVERYTHING"
-    except Exception:
-        return False
+    return _pref("record_scope", "SCULPT") == "EVERYTHING"
 
 
 def _rt():
@@ -261,19 +253,8 @@ def _state(uid: str) -> MeshState:
 
 def enabled_kinds():
     """Data kinds switched on in the preferences (None: all)."""
-    if FORCE_KINDS[0] is not None:
-        return set(FORCE_KINDS[0])
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        if p is not None and hasattr(p, "record_kinds"):
-            return {k.lower() for k in p.record_kinds}
-    except Exception:
-        pass
-    return None
-
-
-FORCE_KINDS = [None]          # tests: a set of kind ids
+    kinds = _pref("record_kinds", None)
+    return None if kinds is None else {k.lower() for k in kinds}
 
 
 def capture(idb) -> dict:
@@ -413,12 +394,10 @@ def on_update(depsgraph) -> None:
     if not uids:
         adapters.forget_materials()
         return
-    try:
+    with contextlib.suppress(Exception):
         if bpy.context.screen is not None and bpy.context.screen.is_animation_playing:
             adapters.forget_materials()
             return            # playback changes animated values every frame; nothing to record
-    except Exception:
-        pass
     now = _now()
     scenes = _scene_uids_in(uids)
     mats = (bpy.types.Material, bpy.types.NodeTree, bpy.types.World)
@@ -477,11 +456,9 @@ def _is_scene_uid(uid: str) -> bool:
         return True
     # find() only returns a local datablock that carries this id: if no local scene does, it can't
     # be a scene (a few scenes to look at instead of a search of every object, mesh, ...)
-    try:
+    with contextlib.suppress(Exception):
         if not any(sc.library is None and sc.get(idmap.UID_PROP) == uid for sc in bpy.data.scenes):
             return False
-    except Exception:
-        pass
     idb = idmap.find(uid)
     if isinstance(idb, bpy.types.Scene):
         _SCENE_UIDS.add(uid)
@@ -531,7 +508,7 @@ def _mesh_snapshot(body):
 
 
 def _operation_running() -> bool:
-    try:
+    try:  # runs every timer tick: a try costs nothing, suppress costs a context manager
         for win in bpy.context.window_manager.windows:
             for op in getattr(win, "modal_operators", ()):
                 if not op.bl_idname.startswith(_PASSIVE_PREFIXES):
@@ -594,11 +571,6 @@ def _last_op_kind(prev):
     return None
 
 
-def _select_only(prev) -> bool:
-    """R048: exactly one operator ended since the marker `prev`, and it only changes the selection."""
-    return _last_op_kind(prev) == "select"
-
-
 def _selected_uids() -> set:
     """The recorded objects that are selected or active (all recorded ones if that can't be read)."""
     tracked = tracked_uids()
@@ -632,12 +604,10 @@ def _last_ops_info():
 
 
 def _last_label(default: str = "Change") -> str:
-    try:
+    with contextlib.suppress(Exception):
         ops = bpy.context.window_manager.operators
         if len(ops):
             return ops[-1].bl_label or default
-    except Exception:
-        pass
     return default
 
 
@@ -685,7 +655,7 @@ def finish_operation(label: str, select_only: bool = False, topology: bool = Tru
     operation (the scene, object data, meshes, every object in Edit Mode: one position on the
     global timeline, D52 and D58). Tests call this for what the timer does.
 
-    select_only (R048, _select_only): the operator only changed the selection. The selected, active
+    select_only (R048): the operator only changed the selection. The selected, active
     and updated datablocks are compared (a setting that doesn't tell the depsgraph is read again on
     the selected and active objects, as for any operator, D117); the rest, and Edit Mode's mesh, wait
     for the next operator, which reads everything.
@@ -700,10 +670,8 @@ def finish_operation(label: str, select_only: bool = False, topology: bool = Tru
     adapters.forget_loose_data()          # D151
     # D32: the timer can run before Blender has evaluated what the operator changed; evaluate now,
     # so its mesh update is seen in this step and not left for a later one
-    try:
+    with contextlib.suppress(Exception):
         bpy.context.view_layer.update()
-    except Exception:
-        pass
     rt.OP_GROUP[0] = [None]
     try:
         uids = (_selected_uids() if select_only else tracked_uids()) | set(_DIRTY)
@@ -954,7 +922,7 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
             _BODY_DIRTY.clear()
         records = [DataChange(a, uid, ch) for a, ch in sorted(by_adapter.items())]
         h = rt.reg().history_for(uid)
-        if h is not None and not h.enabled:
+        if h is not None and (not h.enabled or h.held()):
             continue
         if h is None:
             h = rt.reg().create(uid)
@@ -1093,10 +1061,8 @@ def write(idb, st: MeshState, data_keys: dict) -> None:
                         lambda path, aid=aid: _recorded(st, aid, path))
             except Exception as e:
                 _adapter_failed(aid, e, "apply")
-    try:
+    with contextlib.suppress(Exception):
         idb.update_tag()
-    except Exception:
-        pass
     sync_taken_names()
     sync_missing_refs(idb, st, data_keys)
     _DIRTY.pop(idmap.uid_of(idb), None)

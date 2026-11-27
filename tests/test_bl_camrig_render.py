@@ -14,6 +14,7 @@ import numpy as np
 
 import tests.harness as H
 from hindsight.bl import camrig, runtime
+from hindsight.bl import prefs
 import test_bl_camrig_modifiers as T
 
 C = bpy.context
@@ -195,8 +196,8 @@ def test_nothing_changed_or_left_behind():
     bpy.ops.object.mode_set(mode="OBJECT")
     runtime.set_global(C, True)
     sc = C.scene
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
-    datarec.FORCE_KINDS[0] = None
+    prefs.FORCE["record_scope"] = "EVERYTHING"
+    prefs.FORCE["record_kinds"] = None
     datarec.set_tracked(sc, True)
     datarec.set_tracked(ob, True)
     datarec.finish_operation("start")
@@ -232,7 +233,7 @@ def test_nothing_changed_or_left_behind():
         datarec.finish_operation("add")
         assert hist() != before[0] or len(hist()) != n, "the recorder didn't see an added object"
     finally:
-        datarec.FORCE_SCOPE[0] = None
+        prefs.FORCE["record_scope"] = None
 
 
 def test_cache_not_kept_across_files():

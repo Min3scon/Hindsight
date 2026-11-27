@@ -10,6 +10,7 @@ data is the same for every build, so one copy is kept as legacy_expected.npz).
 The fixtures in this folder were made with:
     --core <git archive 22bd252> --out beta1_format1 --codec zstd     (1.0.0-beta.1, format 1)
     --core <git archive d200842> --out beta2wip_format2 --codec zlib  (beta 2 before format 3)
+    --core <git archive fc2b6d3> --out beta2wip_format3 --codec zstd  (the compression build, format 3)
 The data is deterministic and includes awkward floats (NaN payloads, -0, denormals, infinities),
 an attribute that appears, a boolean channel, a face-domain channel and a topology change.
 Run it with Blender's own Python (numpy and zstandard).

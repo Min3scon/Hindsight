@@ -47,8 +47,7 @@ Infrastructure missing for the gate (all tiers):
   every row.
 - **Soak**: none (test_bl_stress makes 10,000 sculpt steps headless; no time-based soak, no checks
   for threads, timers or file handles).
-- **Evidence**: runners print text; there is no machine-readable result, no row tags on tests, no
-  TEST_EVIDENCE.md, no MANUAL_TESTS.md.
+- **Evidence**: runners print text; there is no machine-readable result, no MANUAL_TESTS.md.
 - **Test models**: make_test_models.py has size ladders (10k to 2M), shapes, scene_many (40 objects,
   join pair), data_layers, awkward. Missing: table and robot from primitives, parented hierarchy,
   modifier-heavy object, big Geometry Nodes graph, shader tree, painted weights and textures, rig
@@ -99,8 +98,7 @@ reload variant and older formats), test_bl_t1_warn, test_bl_t1_perf (budgets), t
 (Blender's undo of jumps), test_bl_t1_added (objects that come and go), and the real-interface
 scenario s_t1_gate (every Tier 1 operation by keyboard and mouse, Ctrl+Z / Ctrl+Shift+Z mixed with
 scrubbing and across Edit Mode, Global Undo off, undo steps at their minimum and maximum) plus
-s_soak (per adapter and mixed). The gaps listed in the table above are closed by those tests;
-TEST_EVIDENCE.md is the record of what passed where.
+s_soak (per adapter and mixed). The gaps listed in the table above are closed by those tests.
 
 Defects found by the gate work: D14 to D39 (DEFECTS.md, no D21), among them S1: D17, D27 and S2:
 D14, D18, D20, D24, D26, D28, D32, D35, D36, D38, D39. None open.
@@ -185,8 +183,7 @@ The sculpt rows get the same machinery Tier 1 has, sculpt tests counting only fo
 
 ## Plan
 
-1. Evidence tooling: machine-readable results from every runner, row and gate tags on tests,
-   `tools/make_evidence.py`, TEST_EVIDENCE.md, MANUAL_TESTS.md; COVERAGE.md statuses reset to the
+1. MANUAL_TESTS.md; COVERAGE.md statuses reset to the
    gate (`supported`, `partial`, `not covered`).
 2. Shared gate machinery: independent oracle module (tests/oracle.py), replay oracle, Hypothesis in a
    sandboxed library folder, adapter mutation testing inside Blender, per-adapter fault isolation,
