@@ -5,7 +5,7 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
-from hindsight.bl import adapters, datarec, guard, runtime
+from hindsight.bl import adapters, guard, runtime
 
 
 def test_one_broken_part_leaves_the_rest():
@@ -13,19 +13,19 @@ def test_one_broken_part_leaves_the_rest():
     L.track_all()
     L.tick_like("baseline")
     a = bpy.data.objects["A"]
-    real = adapters.settings_of
+    real = adapters.settings.settings_of
 
     def broken(idb, *args):
         if getattr(idb, "name", "") == "A":
             raise RuntimeError("simulated")
         return real(idb, *args)
-    adapters.settings_of = broken
+    adapters.settings.settings_of = broken
     try:
         a.location.x += 1
         bpy.data.objects["B"].location.y += 1
         L.tick_like("move")
     finally:
-        adapters.settings_of = real
+        adapters.settings.settings_of = real
     assert guard.ok("adapter:object"), "the object recorder stays on"
     h = runtime.history_of(a)
     assert h is not None and h.entries, "the move of A is recorded"

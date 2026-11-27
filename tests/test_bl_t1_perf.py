@@ -22,8 +22,8 @@ import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps")
@@ -46,7 +46,7 @@ def scene(n, tracked):
         C.active_object.name = f"N{i}"
         if i % 3 == 0:
             C.active_object.constraints.new("COPY_ROTATION")
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     for o in list(C.scene.objects)[:tracked]:
         datarec.set_tracked(o, True)
     datarec.set_tracked(C.scene, True)
@@ -73,7 +73,6 @@ SCENES = (("small", 6, 6), ("medium", 60, 20), ("heavy", 500, 50))
 RESULTS = {}
 
 
-@covers(ROWS, "PERF")
 def test_recording_and_restoring_cost():
     bad = []
     for label, n, tracked in SCENES:
@@ -105,7 +104,6 @@ def test_recording_and_restoring_cost():
     assert not bad, bad
 
 
-@covers(ROWS, "PERF")
 def test_memory_per_step():
     scene(6, 6)
     T.translate("A", (1, 0, 0)).run()
@@ -123,13 +121,12 @@ def test_memory_per_step():
         (move, con, add)
 
 
-@covers(["obj.transforms", "obj.editsteps"], "PERF")
 def test_object_mode_mesh_check_cost():
     bad, got = [], {}
     for n, limit in OBJECT_MESH_MS.items():
         H.fresh()
         ob = H.make_mesh(n, name="M")
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         datarec.set_tracked(ob, True)
         T.select("M")
         times = []

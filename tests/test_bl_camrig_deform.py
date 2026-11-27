@@ -13,7 +13,6 @@ import math
 import bpy
 
 import tests.harness as H
-from hindsight.bl import camrig
 import test_bl_camrig_modifiers as T
 
 C = bpy.context

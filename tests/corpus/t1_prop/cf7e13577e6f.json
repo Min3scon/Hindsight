@@ -1,0 +1,1 @@
+[["scale", "A", 1.0], ["con_add", "A", "COPY_LOCATION"], ["dup", "A", true], ["edit", "B", "grab", 0], ["mat", "A", 0], ["mat", "A", 1]]

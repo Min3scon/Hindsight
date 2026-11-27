@@ -8,7 +8,7 @@ import bpy
 import tests.harness as H
 import _common as K
 BL = K.load_bench_module("bench_bl")
-from hindsight.bl import runtime, persistence
+from hindsight.bl import runtime
 from hindsight.core.types import SETTINGS
 def kb(tag):
     for line in open("/proc/self/status"):

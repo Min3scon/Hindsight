@@ -17,7 +17,6 @@ ROOT = os.path.abspath(sys.argv[1])
 sys.path.insert(0, ROOT)
 import json
 import struct
-import threading
 import time
 
 import numpy as np

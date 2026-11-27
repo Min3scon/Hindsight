@@ -1,6 +1,6 @@
 # Writing style
 
-How everything public about Hindsight is written: the site, README, changelog, release notes, issue
+How everything public about Hindsight is written: the README, changelog, release notes, issue
 templates, the add-on's UI strings and error messages, and social previews. tools/check_copy.py
 enforces the mechanical parts. The rest is judgement, so read this before writing.
 
@@ -42,7 +42,7 @@ a person wrote it.
    Sculpt Mode, Vertex Paint, Edit Mode, Undo History (the tab), History Menu, Morph History,
    Movie Mode, Collection Filtering, GitHub.
 7. No padding lists of three. If there are two things, write two. If there are four, write four.
-8. Paragraphs stay short: 55 words at most on the site and in the README, 40 in UI strings.
+8. Paragraphs stay short: 55 words at most in the README, changelog and release notes, 40 in UI strings.
 
 ## Banned words and phrases
 

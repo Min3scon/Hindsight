@@ -1,11 +1,11 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Saved-history format: version 2 checksums, migration from version 1, damage and future formats.
 
 Plain Python plus numpy (no bpy needed); also runs inside Blender with `blender -b --python`.
 """
 import json
 import struct
-import traceback
 import zlib
 
 import numpy as np
@@ -210,12 +210,5 @@ for fn in (test_writes_current_format_with_checksums, test_reads_format_1, test_
            test_damage_after_the_saved_step_keeps_what_comes_before,
            test_cut_off_file_keeps_complete_steps, test_header_checksum_trailer,
            test_two_histories_stay_aligned_after_damage, test_newer_format_is_refused, test_not_a_history):
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        ok = False
-        print("FAIL", fn.__name__)
-        traceback.print_exc()
-sys.stdout.flush()
-os._exit(0 if ok else 1)
+    R.run(fn)
+R.finish()

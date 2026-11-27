@@ -73,7 +73,7 @@ def make(n, fname, old, new):
     shutil.rmtree(d, ignore_errors=True)
     shutil.copytree(os.path.join(ROOT, "hindsight"), os.path.join(d, "hindsight"),
                     ignore=shutil.ignore_patterns("__pycache__"))
-    shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(d, "tests"), ignore=shutil.ignore_patterns("__pycache__", "site"))
+    shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(d, "tests"), ignore=shutil.ignore_patterns("__pycache__"))
     path = os.path.join(d, "hindsight", "core", fname)
     with open(path, encoding="utf-8") as f:
         src = f.read()
