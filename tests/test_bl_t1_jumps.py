@@ -15,16 +15,28 @@ Run: blender -b --factory-startup --python tests/test_bl_t1_jumps.py (or tests/r
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import hashlib
+import numpy as np
 import bpy
 
 import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.core import globaltl
-from hindsight.core import importer as I
 from hindsight.bl import datarec, idmap, meshio, runtime
+
+
+def _digest(snap):
+    """Digest of a mesh: counts and every channel; only compares two snapshots with each other."""
+    h = hashlib.blake2b(digest_size=16)
+    h.update(repr(sorted(snap.counts.items())).encode())
+    for key in sorted(snap.arrays):
+        a = np.ascontiguousarray(snap.arrays[key])
+        h.update(key.encode() + b"\0" + str(a.dtype).encode() + b"\0")
+        h.update(a.view(np.uint8))
+    return h.hexdigest()
+
 
 C = bpy.context
 
@@ -136,9 +148,6 @@ def check_exact(states_at):
         assert now == want, O.diff(want, now)[:3]
 
 
-@covers("obj.editsteps", "UNDO")
-@covers("obj.transforms", "UNDO")
-@covers("obj.addremove", "UNDO")
 def test_undo_and_redo_across_a_global_walk():
     """The global timeline walked to every position and back (each jump one Blender undo entry),
     then Ctrl+Z and Ctrl+Shift+Z: every history follows each time, nothing is recorded."""
@@ -176,7 +185,6 @@ def test_undo_and_redo_across_a_global_walk():
         teardown(orig)
 
 
-@covers("obj.editsteps", "UNDO.MODES")
 def test_a_jump_from_edit_mode_is_undone_in_one_go():
     """A jump made while the grid is in Edit Mode is one Blender undo entry, pushed in Object Mode;
     Edit Mode comes back after it. Ctrl+Z then returns everything to before the jump."""
@@ -197,7 +205,6 @@ def test_a_jump_from_edit_mode_is_undone_in_one_go():
         teardown(orig)
 
 
-@covers("obj.editsteps", "UNDO")
 def test_a_redo_is_matched_on_meshes_too():
     """D35, the second half: a jump that moved the grid's mesh and nothing else. Blender's redo that
     brings back the object values but not that mesh is not that jump."""
@@ -222,7 +229,6 @@ def test_a_redo_is_matched_on_meshes_too():
         teardown(orig)
 
 
-@covers("obj.editsteps", "UNDO.GLOBAL_OFF")
 def test_blender_undo_never_records_a_step():
     """D40: with Global Undo off a jump isn't on Blender's undo, so Blender's own Ctrl+Z in Edit Mode
     can land on an edit state that isn't next to Hindsight's place. It was recorded as a new step,
@@ -255,7 +261,7 @@ def test_blender_undo_never_records_a_step():
     assert len(h.entries) == n and h.cursor == 1, (len(h.entries), h.cursor, n)
     bpy.ops.object.mode_set(mode="OBJECT")
     got = meshio.read_snapshot(e.data)
-    assert I.snapshot_digest(got) == I.snapshot_digest(at_one), "the mesh is back at the history's place"
+    assert _digest(got) == _digest(at_one), "the mesh is back at the history's place"
 
 
 for fn in (test_undo_and_redo_across_a_global_walk, test_a_jump_from_edit_mode_is_undone_in_one_go,

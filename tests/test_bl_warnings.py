@@ -1,24 +1,10 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import traceback
+import tests.runner as R
 from types import SimpleNamespace
 
 import bpy
 
 from hindsight.bl import warnings as W
-
-ok = True
-
-
-def check(name, fn):
-    global ok
-    try:
-        fn()
-        print("PASS", name)
-    except Exception:
-        ok = False
-        print("FAIL", name)
-        traceback.print_exc()
-
 
 def fresh_cube():
     bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -175,14 +161,6 @@ def t_register():
     W._draw_overlay()   # no region in background: must be a silent no-op
 
 
-for name, fn in [
-    ("clean", t_clean), ("multires", t_multires), ("dyntopo", t_dyntopo), ("global_undo", t_global_undo),
-    ("deform_modifiers", t_armature_displace), ("subsurf_info", t_subsurf_info), ("shape_keys", t_shape_keys),
-    ("linked_data", t_linked), ("vertex_group", t_vertex_group), ("transform", t_transform),
-    ("animation", t_animation), ("linked_duplicate_check", t_linked_duplicate_check),
-    ("register", t_register),
-]:
-    check(name, fn)
-
-print("ALL OK" if ok else "FAILURES")
-sys.stdout.flush(); os._exit(0 if ok else 1)
+for fn in (t_clean, t_multires, t_dyntopo, t_global_undo, t_armature_displace, t_subsurf_info, t_shape_keys, t_linked, t_vertex_group, t_transform, t_animation, t_linked_duplicate_check, t_register):
+    R.run(fn)
+R.finish()

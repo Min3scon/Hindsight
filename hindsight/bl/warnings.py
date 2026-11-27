@@ -6,6 +6,7 @@
 No GPU or blf calls happen at import or register time, so this module is safe headless.
 """
 
+import contextlib
 import bpy
 
 from . import guard
@@ -301,14 +302,12 @@ _handle = None
 def _overlay_x(context, region, scale):
     """Left offset clearing the toolbar when it overlaps the WINDOW region."""
     x = 12 * scale
-    try:
+    with contextlib.suppress(Exception):
         if context.preferences.system.use_region_overlap:
             for r in context.area.regions:
                 if r.type == 'TOOLS' and r.width > 1 and r.x <= region.x + 1:
                     x += r.width
                     break
-    except Exception:
-        pass
     return x
 
 
@@ -332,12 +331,10 @@ def _draw_overlay():
         size = OVERLAY_SIZE * scale
         blf.size(font_id, size)
         blf.color(font_id, *OVERLAY_COLOR)
-        try:
+        with contextlib.suppress(Exception):
             blf.enable(font_id, blf.SHADOW)
             blf.shadow(font_id, 3, 0.0, 0.0, 0.0, 0.8)
             blf.shadow_offset(font_id, 1, -1)
-        except Exception:
-            pass
         x = _overlay_x(context, region, scale)
         y = region.height - OVERLAY_TOP * scale
         line = size * 1.5
@@ -345,10 +342,8 @@ def _draw_overlay():
             blf.position(font_id, x, y, 0)
             blf.draw(font_id, "Hindsight: " + text)
             y -= line
-        try:
+        with contextlib.suppress(Exception):
             blf.disable(font_id, blf.SHADOW)
-        except Exception:
-            pass
     except Exception as exc:
         guard.fail("overlay", exc, "draw")
 
@@ -356,10 +351,8 @@ def _draw_overlay():
 def _remove_overlay():
     global _handle
     if _handle is not None:
-        try:
+        with contextlib.suppress(Exception):
             bpy.types.SpaceView3D.draw_handler_remove(_handle, 'WINDOW')
-        except Exception:
-            pass
         _handle = None
 
 
@@ -377,8 +370,6 @@ def register():
 def unregister():
     global _handle
     if _handle is not None:
-        try:
+        with contextlib.suppress(Exception):
             bpy.types.SpaceView3D.draw_handler_remove(_handle, 'WINDOW')
-        except Exception:
-            pass
         _handle = None

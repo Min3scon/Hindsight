@@ -3,7 +3,10 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 instead of all three axes of every vertex at once (34 of the 40 ms of a dab at 1M vertices). It must pick
 exactly the vertices the old test picked, in the same order: the same float64 differences, the same bound,
 hidden vertices left out, NaN never inside; and a whole Morph History stroke gives the same mesh as with the
-old test."""
+old test.
+R083 moved the dab into the engine: `in_box` is now tests/reference/morph_dab.py (the engine's oracle, checked
+bit for bit in test_core_morph_dab), and the whole stroke here goes through the engine against the numpy dab
+with the box test from before R081."""
 import bpy
 import numpy as np
 from mathutils import Vector
@@ -11,21 +14,18 @@ from mathutils import Vector
 import tests.harness as H
 from hindsight.bl import meshio, runtime
 from hindsight.bl import morph as BM
+from hindsight.core import native
 from hindsight.core.types import POSITION_KEY
 
+sys.path.insert(0, os.path.dirname(__file__))
+from reference import morph_dab as R  # noqa: E402
+
 C = bpy.context
-
-
-def old_in_box(co, c, r, hidden=None):
-    """The test as it was before R081."""
-    near = np.all(np.abs(co - c) <= r, axis=1)
-    if hidden is not None:
-        near &= ~hidden
-    return np.flatnonzero(near)
+old_in_box = R.old_in_box
 
 
 def check(co, c, r, hidden=None, what=""):
-    got = BM.in_box(co, c, r, hidden)
+    got = R.in_box(co, c, r, hidden)
     ref = old_in_box(co, c, r, hidden)
     assert got.dtype == ref.dtype and np.array_equal(got, ref), (what, got[:10], ref[:10], got.size, ref.size)
     return ref.size
@@ -73,9 +73,14 @@ def test_same_vertices_at_the_bound():
 
 
 def test_a_stroke_gives_the_same_mesh_as_before():
-    """The same dabs with the old test and the new one: the same positions, bit for bit, and the same counts."""
+    """The same dabs through the engine and through the numpy dab with the box test from before R081: the same
+    positions, bit for bit, and the same counts."""
     results = []
-    for box in (old_in_box, BM.in_box):
+    real = native.ENGINE.morph_dab
+
+    def numpy_dab(cur, start, target, acc, mask, hidden, cx, cy, cz, r, s):
+        return R.morph_dab(cur, start, target, acc, mask, hidden, cx, cy, cz, r, s, box=old_in_box)
+    for dab in (numpy_dab, None):
         H.fresh()
         ob = H.make_mesh(6000)
         H.enter(ob, "SCULPT")
@@ -87,8 +92,8 @@ def test_a_stroke_gives_the_same_mesh_as_before():
             assert H.commit(ob) is not None
         co = meshio.read_channel(ob.data, POSITION_KEY).reshape(-1, 3).astype(np.float64)
         rng = np.random.default_rng(7)
-        real = BM.in_box
-        BM.in_box = box
+        if dab is not None:
+            native.ENGINE.morph_dab = dab
         try:
             assert BM.begin(ob), BM.last_message[0]
             counts = []
@@ -97,7 +102,7 @@ def test_a_stroke_gives_the_same_mesh_as_before():
                 counts.append(BM.apply_morph_at(ob, Vector(p), float(rng.uniform(0.05, 0.6)), float(rng.uniform(0.1, 1))))
             BM.end(ob)
         finally:
-            BM.in_box = real
+            native.ENGINE.morph_dab = real
         results.append((counts, meshio.read_channel(ob.data, POSITION_KEY).copy()))
     (c0, p0), (c1, p1) = results
     assert c0 == c1 and sum(c0) > 0, (c0, c1)

@@ -13,13 +13,16 @@ The layout helpers (``layout``, ``pos_from_x``, ``x_from_pos``, ``hit_test``, ``
 are pure and testable headless. Nothing touches ``gpu`` until the draw callback runs.
 """
 
+import contextlib
 import math
 import time
+from types import SimpleNamespace
 
 import bpy
 
 from . import guard
 from .ctx import active_object as _ctx_active
+from .prefs import SCRUB_DEFAULTS
 
 MENU_NAME = "HINDSIGHT_MT_history"
 THROTTLE = 1.0 / 60.0      # min seconds between live (final=False) gotos during a drag
@@ -31,16 +34,7 @@ LOCKED_COLOR = (0.55, 0.55, 0.55, 0.7)
 _clock = time.perf_counter  # patched by tests
 
 
-class _Defaults:
-    scrub_height = 6
-    scrub_margin = 18
-    scrub_width_pct = 60
-    scrub_color = (1.0, 0.6, 0.24, 1.0)
-    scrub_bg_color = (0.1, 0.1, 0.1, 0.6)
-    scrub_show_counter = True
-
-
-DEFAULTS = _Defaults()
+DEFAULTS = SimpleNamespace(**SCRUB_DEFAULTS)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -386,10 +380,8 @@ class _Drag:
     def _remove_timer(self, context):
         if self.timer is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             context.window_manager.event_timer_remove(self.timer)
-        except Exception:
-            pass
         self.timer = None
 
 
@@ -519,10 +511,8 @@ def _hover_for(region, ptr=None):
 
 def _set_hover(region, part):
     global _hover
-    try:
+    with contextlib.suppress(Exception):
         _hover = (region.as_pointer(), part)
-    except Exception:
-        pass
 
 
 def _lighten(c, k=0.5):
@@ -680,11 +670,9 @@ def draw_callback():
     try:
         _draw(bpy.context)
     except Exception as exc:
-        try:
+        with contextlib.suppress(Exception):
             import gpu
             gpu.state.blend_set('NONE')
-        except Exception:
-            pass
         guard.fail("slider", exc, "draw")
 
 
@@ -692,10 +680,8 @@ def _remove_draw_handler():
     """Called once if drawing fails: only the slider goes away, nothing else."""
     global _draw_handle
     if _draw_handle is not None:
-        try:
+        with contextlib.suppress(Exception):
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
-        except Exception:
-            pass
         _draw_handle = None
 
 
@@ -874,10 +860,8 @@ def ensure_draw_handler():
 def unregister():
     global _draw_handle, _shader
     if _draw_handle is not None:
-        try:
+        with contextlib.suppress(Exception):
             bpy.types.SpaceView3D.draw_handler_remove(_draw_handle, 'WINDOW')
-        except Exception:
-            pass
         _draw_handle = None
     for cls in reversed(classes):
         if "bl_rna" in cls.__dict__:
@@ -885,9 +869,7 @@ def unregister():
                 bpy.utils.unregister_class(cls)
             except Exception:
                 pass
-    try:
+    with contextlib.suppress(ValueError):
         bpy.app.handlers.load_post.remove(_on_load_post)
-    except ValueError:
-        pass
     _forget_cache()
     _shader = None

@@ -1,6 +1,7 @@
 """Read and write Hindsight channels on Blender meshes (numpy + foreach, no bmesh)."""
 from __future__ import annotations
 
+import contextlib
 import hashlib
 
 import bpy
@@ -259,10 +260,8 @@ def paint_images(ob) -> list:
             for img in getattr(mat, "texture_paint_images", ()) or ():
                 take(img)
             nodes(getattr(mat, "node_tree", None), set())
-    try:
+    with contextlib.suppress(Exception):
         take(bpy.context.scene.tool_settings.image_paint.canvas)
-    except Exception:
-        pass
     return out
 
 

@@ -18,6 +18,7 @@ Known limits: those last two are estimates, not proofs (a Geometry Nodes tree ca
 render copy over COPY_BUDGET is not made; the history walk stops at a Join or a step it can't read,
 as History.goto does; Simplify's render settings are not read.
 """
+import contextlib
 import math
 import time
 
@@ -209,14 +210,12 @@ def _delete(ob) -> None:
     bpy.data.objects.remove(ob, do_unlink=True)
     if data is None:
         return
-    try:
+    with contextlib.suppress(ReferenceError):
         if data.users == 0:
             if isinstance(data, bpy.types.Camera):
                 bpy.data.cameras.remove(data)
             elif isinstance(data, bpy.types.Light):
                 bpy.data.lights.remove(data)
-    except ReferenceError:
-        pass
 
 
 # The user's camera is remembered as the object itself (scene.hindsight.movie_user_camera), so a
@@ -501,10 +500,8 @@ def _render_copy_points(ob, scene, dg_getter):
             return None
         finally:
             if tmp is not None:
-                try:
+                with contextlib.suppress(ReferenceError, RuntimeError):
                     bpy.data.objects.remove(tmp, do_unlink=True)
-                except (ReferenceError, RuntimeError):
-                    pass
                 dg_getter(refresh=True)           # evaluated now, while our own changes are ignored
 
 
@@ -906,10 +903,8 @@ def _camera_data(cd, near, far) -> None:
     clip_start = max(near * 0.1, 1e-4)      # well in front of the model, whatever its size
     cd.clip_start = clip_start
     cd.clip_end = max(far * 2.0, clip_start * 10.0)
-    try:
+    with contextlib.suppress(AttributeError):
         cd.dof.use_dof = False
-    except AttributeError:
-        pass
 
 
 # ----------------------------------------------------------------------------- entry points
