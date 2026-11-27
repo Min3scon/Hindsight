@@ -62,6 +62,8 @@ def _run(f, args, kw):
         if isinstance(a, Out):
             dirs.append(tempfile.mkdtemp(prefix="hs_equiv_"))
             return os.path.join(dirs[-1], a.name)
+        if isinstance(a, memoryview):       # deepcopy can't copy one. shortcut: bytes only, read-only; keep format if needed
+            return memoryview(bytes(a))
         return copy.deepcopy(a)
 
     rargs = [real(a) for a in args]
