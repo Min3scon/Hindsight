@@ -4,7 +4,8 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 A file without its parts (Blender's autosave, `quit.blend`) opens with no history and a note, and leaves the journal
 of its path byte for byte as it was, so the .blend opened afterwards brings every step back. A save whose step parts
 did not all come back keeps the journal. A journal of another save is not replayed, and replayed steps are saved as
-the journal held them. Crash recovery: Unsaved steps.
+the journal held them. Saves that meet another add-on's save handlers keep every step (#127's review).
+Crash recovery: Unsaved steps.
 
 Run: blender -b --factory-startup --python tests/test_bl_format5_journal.py (or tests/run_tests.py).
 """
@@ -179,10 +180,68 @@ def test_replayed_steps_are_saved_as_the_journal_held_them():
     assert len(steps) == 3 and steps[2][0] == held[0], "the replayed stroke isn't saved as the journal held it"
 
 
+def _count():
+    h = runtime.history_of(bpy.data.objects["J"])
+    return None if h is None else len(h.entries)
+
+
+def _first_in_save_post(fn, path):
+    """Saves `path` with `fn` as a save_post handler run before Hindsight's (another add-on's)."""
+    bpy.app.handlers.save_post.insert(0, fn)
+    try:
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+    finally:
+        if fn in bpy.app.handlers.save_post:
+            bpy.app.handlers.save_post.remove(fn)
+
+
+def test_save_from_another_handler_during_a_save_cuts_no_step():
+    """#127 review 2: another add-on's save_post handler, run before Hindsight's, saves a copy while Blender's copy
+    of the step parts is the only one: the session cuts no step, and both files hold every step."""
+    path, _after = _saved_a("nested")
+    _open(path)                          # the saved steps are read out of their step part
+    _strokes([50])                       # at the saved step: it takes the place of the replayed one
+    assert _count() == 3, f"{_count()} steps before saving"
+    copy = os.path.join(TMP, "nested_copy.blend")
+
+    ran = []
+
+    def nested(*_a):
+        if not ran:
+            ran.append(1)
+            bpy.ops.wm.save_as_mainfile(filepath=copy, copy=True)
+    _first_in_save_post(nested, path)
+    assert ran and os.path.isfile(copy), "the nested save didn't run"
+    assert _count() == 3, f"{_count()} steps in the session"
+    for p in (copy, path):
+        _open(p)
+        assert _count() == 3, f"{_count()} steps in {os.path.basename(p)}"
+
+
+def test_step_parts_lost_after_the_file_was_written_are_read_back_from_it():
+    """#127 review 3: a save_post handler run before Hindsight's deletes the step parts Blender has just written:
+    they are read back from that file, so no step is cut, and the journal starts again with its save id."""
+    path, _after = _saved_a("lost_after")
+    _open(path)
+
+    def drop(*_a):
+        del bpy.data.texts[persistence.TEXT_NAME][persistence.PARTS_PROP]
+    _first_in_save_post(drop, path)
+    assert _count() == 3, f"{_count()} steps in the session"
+    recs = persistence.current_journal().read()
+    sid = H.stored_registry(path).save_id
+    assert sid and [(t, h.get("save_id")) for t, h, _p in recs] == [("SAVE", sid)], recs
+    assert persistence.PARTS_PROP not in bpy.data.texts[persistence.TEXT_NAME], "the history is held twice"
+    _open(path)
+    assert _count() == 3, f"{_count()} steps after reopening"
+
+
 for fn in (test_file_without_its_parts_leaves_the_journal_and_the_blend_brings_every_step_back,
            test_file_without_its_parts_saved_over_the_blend_starts_its_journal_again,
            test_save_whose_step_parts_did_not_all_come_back_keeps_the_journal,
            test_journal_of_save_a_beside_the_file_of_save_b_replays_nothing,
-           test_replayed_steps_are_saved_as_the_journal_held_them):
+           test_replayed_steps_are_saved_as_the_journal_held_them,
+           test_save_from_another_handler_during_a_save_cuts_no_step,
+           test_step_parts_lost_after_the_file_was_written_are_read_back_from_it):
     H.run(fn)
 H.finish()

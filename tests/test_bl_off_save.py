@@ -74,6 +74,26 @@ def test_journal_of_the_last_save_is_not_replayed_onto_them():
         SETTINGS.crash_recovery = "LAST_SAVED"
 
 
+def test_parts_gone_from_the_text_while_off_lose_no_step():
+    """#127 review 1: while Hindsight is off the Text's parts can go (a script deletes them, or Blender's undo brings
+    back the Text as it was before): turning it on again keeps every step, since the session kept its own copy."""
+    H.fresh()
+    ob = H.make_mesh(1200, name="OFF")
+    _steps(ob, range(3))
+    path = os.path.join(TMP, "gone.blend")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)        # every step is now read out of its step part
+    _off()
+    try:
+        del bpy.data.texts[persistence.TEXT_NAME][persistence.PARTS_PROP]
+    finally:
+        _on()
+    assert _count("OFF") == 3, f"{_count('OFF')} steps"
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert _count("OFF") == 3, f"{_count('OFF')} steps after saving"
+
+
 def test_turned_on_again_holds_the_history_once_and_saves_it():
     H.fresh()
     ob = H.make_mesh(1200, name="OFF")
@@ -214,6 +234,7 @@ H.run(test_save_after_turning_off_keeps_history)
 H.run(test_turned_off_without_saving_still_recovers_from_the_journal)
 H.run(test_journal_of_the_last_save_is_not_replayed_onto_them)
 H.run(test_turned_on_again_holds_the_history_once_and_saves_it)
+H.run(test_parts_gone_from_the_text_while_off_lose_no_step)
 H.run(test_turned_on_after_opening_another_file_reads_its_parts)
 H.run(test_turned_on_after_opening_a_file_without_parts_reads_that_file)
 H.run(test_steps_after_turning_on_again_come_back_after_a_crash)

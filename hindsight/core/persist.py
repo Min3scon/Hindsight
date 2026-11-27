@@ -428,6 +428,9 @@ def registry_from_format5(index, index_copy, take):
         held = reg.parts[hd["uid"]] = []
         for i, pd in enumerate(hd.get("parts", [])):
             n, p, got, rows, part = int(pd["n"]), take(hd["uid"], i), None, None, None
+            if not 0 <= n <= int(pd["len"]) // 8:
+                # each step takes 8 bytes or more; the engine and the slots below trust n (#127 review 5)
+                raise ValueError(f"the index part lists {n} steps for a step part of {pd['len']} bytes")
             if p is not None:
                 try:
                     whole = len(p) == int(pd["len"]) and crc32(p) & 0xFFFFFFFF == int(pd["crc"])

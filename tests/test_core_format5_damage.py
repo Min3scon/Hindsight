@@ -277,9 +277,28 @@ def test_damage_in_two_histories_each_loses_its_own():
     _saved_again(reg)
 
 
+def test_step_count_too_big_for_its_step_part_is_damage():
+    """#127 review 5: an index part with a valid CRC-32 whose step count can't fit in its step part's length (each step
+    takes at least 8 bytes) can't be read, as damage to both index copies (Blender keeps every part, unread); that
+    many steps aren't salvaged or laid out, which aborted or ran out of memory."""
+    index, parts, want = _saved()
+    doc = json.loads(bytes(N.index_read(index)).decode("utf-8"))
+    hd = next(h for h in doc["histories"] if h["uid"] == A)
+    hd["parts"][1]["n"] = 1 << 61
+    index = N.index_build(json.dumps(doc).encode("utf-8"))
+    parts[A][1] = _flip(parts[A][1], _table_end(3) + 2)
+    try:
+        _open(index, parts)
+    except ValueError as e:
+        assert "steps for a step part of" in str(e), e
+    else:
+        raise AssertionError("an index part listing more steps than a step part can hold was read")
+
+
 for fn in (test_damaged_metas_lose_nothing, test_damaged_step_table_loses_nothing,
            test_one_index_copy_damaged_loses_nothing, test_damaged_step_after_the_cursor,
            test_damaged_step_and_step_table_before_the_cursor, test_step_part_cut_short_keeps_the_steps_before_the_cut,
-           test_step_part_missing_loses_its_steps, test_damage_in_two_histories_each_loses_its_own):
+           test_step_part_missing_loses_its_steps, test_damage_in_two_histories_each_loses_its_own,
+           test_step_count_too_big_for_its_step_part_is_damage):
     R.run(fn)
 R.finish()

@@ -87,6 +87,8 @@ _J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12], "unsaved": Fa
 _FALLBACK = {"kept": False}
 # this save moves a V1 folder's history into the .blend (dev/FORMAT5_V1.md): on_save_post says so, once
 _MOVED_IN = {"folder": False}
+# #127 review 2: saves started from a save handler while Blender's copy of the step parts was the only one
+_NESTED = [0]
 
 
 # ----------------------------------------------------------------------------- journal
@@ -365,6 +367,11 @@ def _bridge_paused(reg) -> int:
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
 def on_save_pre(*args, turning_off=False) -> None:
+    if any(p.bytes is None for ps in runtime.reg().parts.values() for p in ps):
+        # #127 review 2: a save started from a save handler while Blender's copy of the step parts is the only one.
+        # The Text holds this save's build, so the file gets every step as it is; the outer save takes them back
+        _NESTED[0] += 1
+        return
     runtime.multires.flush()          # a Multires visit that has just ended is a step before the save
     runtime.end_paused(now=True)      # D153: and a Dyntopo visit that paused recording
     runtime.drop_unused_uids()
@@ -413,7 +420,14 @@ def on_save_pre(*args, turning_off=False) -> None:
 
             def put(uid, i, b):
                 group[uid][str(i)] = b
-            persist.hand_over(reg, parts, put)  # Blender's copy is the only one until on_save_post takes it back
+            if turning_off:
+                # #127 review 1: nothing takes the parts back while Hindsight is off, and the Text can lose them
+                # (a script, Blender's undo): the session keeps its own copy, so the history is held twice until on
+                for uid, ps in parts.items():
+                    for i, b in enumerate(ps):
+                        put(uid, i, b)
+            else:
+                persist.hand_over(reg, parts, put)  # Blender's copy is the only one until on_save_post takes it back
             del parts
         # #48: the history always goes in the .blend. A folder from a newer Hindsight, or one that
         # is missing, stays pointed at, so its history is still found there.
@@ -527,6 +541,9 @@ def _parts_all_there() -> bool:
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
 def on_save_post(*args) -> None:
+    if _NESTED[0]:
+        _NESTED[0] -= 1
+        return
     path = _handler_path(args)
     if not path or not _writes_anything(path):
         _take_parts_back()
@@ -548,6 +565,15 @@ def on_save_post(*args) -> None:
             guard.fail("saving", e, "journal error on save")
         _take_parts_back()
         return
+    if not _parts_all_there():
+        # #127 review 3: the file just written may hold the step parts the Text lost since: read back from it
+        text = bpy.data.texts.get(TEXT_NAME) or bpy.data.texts.new(TEXT_NAME)
+        text.use_fake_user = True
+        held = text.pop(PARTS_PROP) if PARTS_PROP in text else None
+        with contextlib.suppress(Exception):
+            _keep_last_saved(text)
+        if held is not None and PARTS_PROP not in text:
+            text[PARTS_PROP] = held
     if not _parts_all_there():
         # #128: take_back cuts the history below, so the journal of the last good save stays as it is (its steps
         # come back onto that save) and this session journals as an unsaved file until the next save
@@ -575,6 +601,9 @@ def on_save_post(*args) -> None:
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
 def on_save_post_fail(*args) -> None:
+    if _NESTED[0]:
+        _NESTED[0] -= 1
+        return
     # Blender couldn't write the file: the .blend on disk is as it was and its crash journal stays with it
     _FALLBACK["kept"] = False
     _take_parts_back()
