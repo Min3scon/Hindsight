@@ -199,6 +199,11 @@ its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy)
 | | `commit_100k` | 0.6364 ms | 0.6335 ms | 1.00, 0.95 (1.00, 1.02) | 13% / 3% (4% / 17%) |
 | | `jump_3000_back_100k` | 56.88 ms | 56.9 ms | 1.00, 0.99 (1.01, 0.99) | 3% / 4% (1% / 16%) |
 | | all 24 of `commit` and `jumps` | | | medians 0.95 to 1.02 (0.97 to 1.02), inside the A/A band 0.84 to 1.06 | |
+| 24.3b (#147): the step's shapes, `step_from_bytes` and `same_step` in the engine (0.15.0 at 50d5098 against 0.16.0 at 1ad083d; `bench/results/ab_50d5098_vs_147b-run1.md` and `-run2.md`) | `commit_100k` | 0.6329 ms | 0.6479 ms | 1.02, 1.02 (1.02, 1.00) | 7% / 7% (3% / 7%) |
+| | `jump_3000_back_100k` | 56.75 ms | 57.62 ms | 1.02, 1.02 (1.01, 1.02) | 7% / 7% (17% / 2%) |
+| | `edit_step_100k` | 39.22 ms | 39.46 ms | 1.01, 1.00 (1.00, 0.95) | 44% / 1% (11% / 18%) |
+| | all 26 of `commit`, `jumps` and `editmode` | | | medians 0.97 to 1.05 (0.93 to 1.04), best times 1.00 to 1.02 (0.96 to 1.04), inside the A/A band | |
+| | held memory (`held_once_mem_f5.py`, 100k vertices, 6,000 steps, 3 rounds, each root alone with its own engine) | after open 604.5 and 604.8 MB, save peak 692.2 and 693.3 MB (the two sides of its A/A; 519.5 MB before open) | after open 605.5 and 605.0 MB, save peak 693.4 and 692.1 MB (519.9 MB before open) | 1.00 | rounds within 1 MB, save peak within 15 MB |
 
 ## Count
 
