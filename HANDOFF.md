@@ -86,7 +86,6 @@ steps, ticks, counters, thumbnails, labels or progress.
   settings, the sidecar folder only if ticked, never geometry), tested. Docs and FAQ: "What does
   Hindsight add to my file?" and "What happens if I only have one file?" (the one-file case first on
   the "Using it on an existing file" page, with a real screenshot of the empty-state dialog).
-- Order: importer after the Tier 1 gate; never delays tier gates.
 
 Read this first. Then DECISIONS.md (top section), TEST_ROUNDS.md, STYLE.md.
 
@@ -271,9 +270,6 @@ Hostile review 1 (2026-10-15, repros in `.tmp/review/p01..p38`): D42-D59 found, 
 fixing D57; all fixed with regression tests that fail without the fix and mutants in
 `tools/mutation_bl.py` (each fix's sanity run: `.tmp/sanity_d5x.py`). Next: full headless suite on
 all three Blenders, then hostile review 2 (S1/S2 were found), then the remaining gate runs above.
-Importer (after the Tier 1 gate): design in IMPORTER.md; core in hindsight/core/importer.py with
-tests/test_core_importer.py (passing); Blender side staged in `.tmp/staging/` (version_reader.py,
-importer.py, ui_empty_state.py).
 
 ## Order of work from here
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
