@@ -39,7 +39,9 @@ def save_and_reopen(path, mode):
     bpy.ops.wm.open_mainfile(filepath=path)
     prefs.FORCE["record_scope"] = "EVERYTHING"
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    assert text is not None and ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
+    # #9: a history read from the .blend (Embed) is held by Hindsight and Blender's copy goes; one read from
+    # the folder (Both) leaves it
+    assert text is not None and ("hindsight_data_bin" in text) == (mode == "BOTH")
     assert "hindsight_data" not in text           # R061: the base64 copy is never written
 
 

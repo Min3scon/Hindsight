@@ -31,7 +31,7 @@ def test_embed_bytes_are_the_history_file():
     path = os.path.join(TMP, "both.blend")
     for round_ in range(2):                       # the second save replaces the stored bytes
         bpy.ops.wm.save_as_mainfile(filepath=path)
-        text = bpy.data.texts[persistence.TEXT_NAME]
+        text = H.stored_text(path)
         stored = text[persistence.DATA_BIN_PROP]
         assert isinstance(stored, bytes)
         assert persistence.DATA_PROP not in text, "the base64 text of earlier builds is written again"

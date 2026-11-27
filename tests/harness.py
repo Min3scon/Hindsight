@@ -44,9 +44,10 @@ def fresh(register=True):
     _registered[0] = True
     runtime.set_registry(runtime.Registry())
     runtime.reg().disabled.clear()
-    from hindsight.bl import datarec, guard, idmap
+    from hindsight.bl import datarec, guard, idmap, persistence
     datarec.forget()          # module state from an earlier test must not leak into this one
     idmap.forget()
+    persistence._PROTECT.update(sidecar=False, embed=False)    # load_pre resets it, but runs unregistered here
     guard.reset()
     prefs.FORCE["record_scope"] = None
     prefs.FORCE["record_kinds"] = None
@@ -124,6 +125,23 @@ def fake_stroke(obj, seed, n=50, channel="position"):
 
 def commit(obj, **kw):
     return runtime.commit(obj, **kw)
+
+
+def stored_text(path):
+    """The custom properties of the Text ``.hindsight_history`` saved in ``path`` (None without one), read
+    from the file without opening it: after a save Blender holds no copy of the history (#55)."""
+    from hindsight.bl import persistence
+    copy = os.path.join(tempfile.mkdtemp(), "stored.blend")     # Blender won't load from the open file itself
+    shutil.copyfile(path, copy)
+    with bpy.data.libraries.load(copy) as (src, dst):
+        dst.texts = [persistence.TEXT_NAME] if persistence.TEXT_NAME in src.texts else []
+    if not dst.texts:
+        return None
+    t = dst.texts[0]
+    try:
+        return {k: t[k] for k in t.keys()}
+    finally:
+        bpy.data.texts.remove(t)
 
 
 def snapshot(obj):
