@@ -1,4 +1,4 @@
-"""tools/check_copy.py coverage rule: the site may only name data types COVERAGE.md lists as
+"""tools/check_copy.py coverage rule: public text may only name data types COVERAGE.md lists as
 supported or partial, except in sentences that say they aren't recorded or are planned."""
 import os, sys
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")

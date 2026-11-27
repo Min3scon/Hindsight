@@ -25,7 +25,7 @@ are in `dev/reports/`; the measured optimisation rounds are in `OPTIMISATION_LOG
 3. Edit only the files your brief says you own. If the right fix needs another file, do NOT edit it:
    put the exact patch (unified diff) in your report under "Patches for files I don't own".
 4. Do not edit shared docs (DEFECTS.md, DECISIONS.md, PERF_LOG.md, OPTIMISATION_LOG.md, DEVELOPMENT.md,
-   CHANGELOG.md, HANDOFF.md, README.md, COVERAGE.md, METADATA.md, anything in site/ or docs/). Put
+   CHANGELOG.md, HANDOFF.md, README.md, COVERAGE.md, METADATA.md, GLOSSARY.md, anything in docs/adr/). Put
    proposed text in your report.
 5. Never `pip install` into shared virtual environments. Private tools go in a venv or `--target`
    folder of your own.

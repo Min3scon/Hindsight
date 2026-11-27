@@ -19,5 +19,4 @@ node_modules/
 /test_screens_raw/
 /logs/
 /.cache/
-/tests/site/out/
 /native/target/

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build the Hindsight extension zip and refresh the download on the website.
+"""Build the Hindsight extension zip (published as a GitHub Release asset).
 
 Usage:
-    python3 scripts/build_zip.py [--blender-ext PATH] [--out dist/hindsight.zip] [--site docs]
+    python3 scripts/build_zip.py [--blender-ext PATH] [--out dist/hindsight.zip]
 
 Steps:
   1. Build <out> from hindsight/ and validate it.
@@ -11,10 +11,7 @@ Steps:
        * With --blender-ext "" (or a path that does not exist) a stdlib-only
          fallback zips the CONTENTS of hindsight/ at the zip root and runs a
          minimal manifest validation.
-  2. Copy the zip to <site>/download/hindsight.zip.
-  3. Rewrite the text between <!--HS_VERSION-->...<!--/HS_VERSION--> and
-     <!--HS_SIZE-->...<!--/HS_SIZE--> in <site>/index.html (if it exists).
-  4. Verify the zip and print "OK <path> <size> v<version>".
+  2. Verify the zip and print "OK <path> <size> v<version>".
 
 Requires Python 3.11+ (tomllib). Standard library only.
 """
@@ -25,7 +22,6 @@ import argparse
 import fnmatch
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tomllib
@@ -287,7 +283,7 @@ def build_with_fallback(source: Path, out: Path, manifest: dict) -> None:
 
 
 # --------------------------------------------------------------------------
-# Website + verification
+# Verification
 # --------------------------------------------------------------------------
 
 def human_size(num_bytes: int) -> str:
@@ -295,27 +291,6 @@ def human_size(num_bytes: int) -> str:
     if kb < 1024:
         return f"{kb} KB"
     return f"{num_bytes / (1024 * 1024):.1f} MB"
-
-
-def update_index(index: Path, version: str, size: str) -> None:
-    if not index.is_file():
-        print(f"note: {index} does not exist yet; skipping version/size text update")
-        return
-    with open(index, encoding="utf-8", newline="") as fh:
-        text = fh.read()
-    original = text
-    counts = {}
-    for marker, value in (("HS_VERSION", version), ("HS_SIZE", size)):
-        pattern = re.compile(rf"(<!--{marker}-->).*?(<!--/{marker}-->)", re.DOTALL)
-        text, counts[marker] = pattern.subn(lambda m, v=value: m.group(1) + v + m.group(2), text)
-    if text != original:
-        with open(index, "w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
-    print(f"{index}: updated {counts['HS_VERSION']}x HS_VERSION -> {version}, "
-          f"{counts['HS_SIZE']}x HS_SIZE -> {size}")
-    for marker, n in counts.items():
-        if n == 0:
-            print(f"note: no <!--{marker}--> marker found in {index}")
 
 
 def verify_zip(path: Path, version: str) -> None:
@@ -357,14 +332,12 @@ def resolve_blender_ext(arg: str | None) -> Path | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Build hindsight.zip and refresh the website download.")
+    ap = argparse.ArgumentParser(description="Build hindsight.zip.")
     ap.add_argument("--blender-ext", default=None, metavar="PATH",
                     help="path to blender_ext.py (default: $BLENDER_EXT); "
                          "pass an empty string to force the pure-python fallback builder")
     ap.add_argument("--out", default=str(ROOT / "dist" / "hindsight.zip"), metavar="ZIP",
                     help="output zip (default: dist/hindsight.zip)")
-    ap.add_argument("--site", default=str(ROOT / "docs"), metavar="DIR",
-                    help="website directory (default: docs)")
     ap.add_argument("--source", default=str(DEFAULT_SOURCE), help=argparse.SUPPRESS)  # for tests
     args = ap.parse_args(argv)
 
@@ -374,7 +347,6 @@ def main(argv: list[str] | None = None) -> int:
 
     source = Path(args.source).resolve()
     out = Path(args.out).resolve()
-    site = Path(args.site).resolve()
 
     try:
         if not source.is_dir():
@@ -396,14 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         version = str(manifest["version"])
         size = human_size(out.stat().st_size)
 
-        download = site / "download" / "hindsight.zip"
-        download.parent.mkdir(parents=True, exist_ok=True)
-        if not (download.exists() and download.samefile(out)):
-            shutil.copyfile(out, download)
-        update_index(site / "index.html", version, size)
-
         verify_zip(out, version)
-        verify_zip(download, version)
     except BuildError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

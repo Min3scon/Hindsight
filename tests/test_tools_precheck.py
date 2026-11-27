@@ -39,12 +39,12 @@ def test_drive_letters():
     assert not problems(ws, path="HANDOFF.md"), "internal docs may name the workspace"
     assert not problems(j("D:", SEP, "Hindsight-backup"), path="ROLLBACK.md")
     assert problems(j("E:", SEP, "stuff"), path="HANDOFF.md"), "other drive paths are never allowed"
-    assert problems(ws, path="docs/HANDOFF.md"), "only the root internal docs are exempt"
+    assert problems(ws, path="dev/HANDOFF.md"), "only the root internal docs are exempt"
     print("PASS test_drive_letters")
 
 
 def test_urls_not_flagged():
-    for s in ["https://min3scon.github.io/Hindsight/", "http://127.0.0.1:8765/x", "file:///x",
+    for s in ["https://github.com/Min3scon/Hindsight/releases", "http://127.0.0.1:8765/x", "file:///x",
               "a ratio of 3:4 and time 12:30", "re.compile(r'\\d+')"]:
         assert not problems(s), s
     print("PASS test_urls_not_flagged")
@@ -70,9 +70,9 @@ def test_private_patterns_and_allow_marker():
 def test_forbidden_dirs():
     for p in [".venv/lib/x.py", "node_modules/a/b.js", "test_models/a.blend", "my_models_copies/a.blend",
               "test_screens_raw/a.png", ".blender_profiles/x", "build/x", "dist/hindsight.zip",
-              "tests/site/node_modules/x.js", ".tools/blender/blender.exe", "logs/run.log"]:
+              "tests/node_modules/x.js", ".tools/blender/blender.exe", "logs/run.log"]:
         assert pc.in_forbidden_dir(p), p
-    for p in ["scripts/build_zip.py", "docs/download/hindsight.zip", "tests/test_bl_install.py",
+    for p in ["scripts/build_zip.py", "hindsight/blender_manifest.toml", "tests/test_bl_install.py",
               "tools/precommit_check.py"]:
         assert not pc.in_forbidden_dir(p), p
     print("PASS test_forbidden_dirs")

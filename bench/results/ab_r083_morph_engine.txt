@@ -1,0 +1,29 @@
+R083: Morph History dab in the engine (morph_dab, engine 0.10.0). bench/scenarios/oneoff/morph_dab.py (HS_ENGINE puts an engine first),
+alternating processes. A = 7bd78d6 (R081, numpy dab, engine 0.9.0), B = R083 (engine 0.10.0 built from it). Fresh VM after a worker restart:
+A is slower here than in ab_r081 (17 against 14 ms), so compare within this file only.
+
+=== 1M, bpy 5.3
+1 A AB {"n": 1000000, "dab_med_ms": 19.87, "dab_min_ms": 15.65, "begin_med_ms": 31.42, "moved": 1079068}
+1 B AB {"n": 1000000, "dab_med_ms": 4.58, "dab_min_ms": 4.02, "begin_med_ms": 27.46, "moved": 1079068}
+2 A AB {"n": 1000000, "dab_med_ms": 16.31, "dab_min_ms": 14.59, "begin_med_ms": 25.32, "moved": 1079068}
+2 B AB {"n": 1000000, "dab_med_ms": 4.71, "dab_min_ms": 4.05, "begin_med_ms": 25.93, "moved": 1079068}
+3 A AB {"n": 1000000, "dab_med_ms": 17.71, "dab_min_ms": 14.57, "begin_med_ms": 26.15, "moved": 1079068}
+3 B AB {"n": 1000000, "dab_med_ms": 4.44, "dab_min_ms": 4.06, "begin_med_ms": 25.37, "moved": 1079068}
+4 A AB {"n": 1000000, "dab_med_ms": 17.17, "dab_min_ms": 14.61, "begin_med_ms": 26.64, "moved": 1079068}
+4 B AB {"n": 1000000, "dab_med_ms": 4.72, "dab_min_ms": 4.04, "begin_med_ms": 30.77, "moved": 1079068}
+5 A AB {"n": 1000000, "dab_med_ms": 18.16, "dab_min_ms": 14.89, "begin_med_ms": 29.68, "moved": 1079068}
+5 B AB {"n": 1000000, "dab_med_ms": 4.55, "dab_min_ms": 4.09, "begin_med_ms": 25.55, "moved": 1079068}
+=== 100k, bpy 5.3
+1 A AB {"n": 99856, "dab_med_ms": 1.84, "dab_min_ms": 1.31, "begin_med_ms": 3.97, "moved": 109754}
+1 B AB {"n": 99856, "dab_med_ms": 0.56, "dab_min_ms": 0.42, "begin_med_ms": 3.46, "moved": 109754}
+2 A AB {"n": 99856, "dab_med_ms": 1.41, "dab_min_ms": 1.22, "begin_med_ms": 2.81, "moved": 109754}
+2 B AB {"n": 99856, "dab_med_ms": 0.53, "dab_min_ms": 0.43, "begin_med_ms": 3.26, "moved": 109754}
+3 A AB {"n": 99856, "dab_med_ms": 1.39, "dab_min_ms": 1.18, "begin_med_ms": 2.71, "moved": 109754}
+3 B AB {"n": 99856, "dab_med_ms": 0.56, "dab_min_ms": 0.4, "begin_med_ms": 2.95, "moved": 109754}
+=== 1M, bpy 4.2
+1 A AB {"n": 1000000, "dab_med_ms": 17.67, "dab_min_ms": 14.23, "begin_med_ms": 27.13, "moved": 1079068}
+1 B AB {"n": 1000000, "dab_med_ms": 5.57, "dab_min_ms": 4.09, "begin_med_ms": 37.66, "moved": 1079068}
+2 A AB {"n": 1000000, "dab_med_ms": 17.24, "dab_min_ms": 14.17, "begin_med_ms": 28.5, "moved": 1079068}
+2 B AB {"n": 1000000, "dab_med_ms": 4.77, "dab_min_ms": 4.14, "begin_med_ms": 26.65, "moved": 1079068}
+3 A AB {"n": 1000000, "dab_med_ms": 17.61, "dab_min_ms": 14.64, "begin_med_ms": 27.78, "moved": 1079068}
+3 B AB {"n": 1000000, "dab_med_ms": 4.67, "dab_min_ms": 4.03, "begin_med_ms": 25.49, "moved": 1079068}
