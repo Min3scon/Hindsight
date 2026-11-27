@@ -1,4 +1,4 @@
-"""Step encoding: adversarial round trips and damaged input.
+"""Step encoding, tested with adversarial round trips and damaged input.
 
 Round trips: random and awkward data (NaN payloads, -0, denormals, infinities, extreme integers,
 an empty step, one element, every element, huge index gaps, smooth and noisy runs) through every
@@ -50,8 +50,8 @@ def change(old, kind):
     if old.size == 0:
         return new
     if old.dtype == np.uint8:
-        top = 2 if old.max() <= 1 else 256
-        new ^= RNG.integers(0, top, new.shape).astype(np.uint8)
+        new ^= RNG.integers(0, 2, new.shape).astype(np.uint8) if old.max() <= 1 else \
+            RNG.integers(0, 256, new.shape).astype(np.uint8)
         return new
     if kind == "smooth":
         f = old.view(np.float32).copy()
