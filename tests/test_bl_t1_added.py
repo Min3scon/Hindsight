@@ -220,6 +220,19 @@ def test_the_owner_of_a_shared_mesh_deleted():
     L.check_object_histories(r, full=True)
 
 
+def test_undo_over_the_deleted_owner_of_a_shared_mesh():
+    """Blender's undo of the edit through the duplicate, then of the delete, then of the edit through
+    the original: the original records the shared mesh again once it is back, so every cursor follows
+    (and redo the other way)."""
+    for after in ([], [T.edit("A.001", "scale", lambda: bpy.ops.transform.resize(value=(1.5, 1.5, 1.5))),
+                       T.leave_edit("A.001")]):
+        r = L.Run([T.duplicate("A", linked=True),
+                   T.edit("A", "grab", lambda: bpy.ops.transform.translate(value=(0, 0, 0.5))),
+                   T.leave_edit("A"), T.delete(["A"])] + after)
+        T.select()
+        L.check_undo_matching(r)
+
+
 def test_the_owner_of_a_shared_mesh_after_a_reload():
     """D45: after a reload the object whose history holds the shared mesh's steps records it (not the
     first by name): an edit through the other one isn't undone by scrubbing the first one's history."""
@@ -600,7 +613,8 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
            test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
            test_dragging_while_a_linked_duplicate_is_in_edit_mode, test_a_linked_duplicate_gets_its_own_mesh,
-           test_the_owner_of_a_shared_mesh_deleted, test_the_owner_of_a_shared_mesh_after_a_reload,
+           test_the_owner_of_a_shared_mesh_deleted, test_undo_over_the_deleted_owner_of_a_shared_mesh,
+           test_the_owner_of_a_shared_mesh_after_a_reload,
            test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
            test_references_to_linked_objects, test_deleted_objects_come_back_complete,
            test_deleted_object_comes_back_as_last_seen,
