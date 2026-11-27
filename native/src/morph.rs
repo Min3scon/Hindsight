@@ -128,7 +128,7 @@ pub fn morph_dab(
             if !(d < r) {
                 continue;
             }
-            // core.morph.falloff, times the strength
+            // falloff (tests/reference/morph_dab.py), times the strength
             let q = d / r;
             let f = np_clip01(1.0 - q * q);
             let mut w = f * f * strength;
@@ -137,7 +137,7 @@ pub fn morph_dab(
             }
             let w = np_maximum(a[i], np_clip01(w));
             a[i] = w;
-            // core.morph.morph_blend from the stroke's start, strength 1
+            // morph_blend (tests/reference/morph_dab.py) from the stroke's start, strength 1
             let f = np_clip01(w * 1.0);
             let nf = 1.0 - f;
             let mut changed = false;

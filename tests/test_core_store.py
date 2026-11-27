@@ -12,6 +12,9 @@ from hindsight.core.types import (ADD, XOR, CHANNEL_TYPES, DELTA, TOPO, JOIN, Ch
                                   CORNER_EDGE_KEY, FACE_OFFSETS_KEY, MASK_KEY, HIDE_VERT_KEY,
                                   bits_dtype, make_key)
 
+sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference copies (Blender's --python adds no path)
+from reference import delta as rdelta                 # noqa: E402
+
 RNG = np.random.default_rng(1234)
 
 
@@ -139,7 +142,7 @@ def test_pack_unpack_all_types():
             new = mutate(old, w, frac)
             d = delta.diff(key, old, new, exists=(True, False))
             b = delta.pack_delta(d)
-            assert delta.packed_size(b) == len(b)
+            assert rdelta.packed_size(b) == len(b)
             d2 = delta.unpack_delta(b)
             assert deltas_equal(d, d2), (key, count)
             buf = old.copy(); delta.apply(buf, d2); assert bits_equal(buf, new)
