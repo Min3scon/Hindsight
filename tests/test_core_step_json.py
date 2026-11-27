@@ -18,7 +18,7 @@ import tests.harness as H  # noqa: E402
 import tests.runner as R  # noqa: E402
 from tests import corpus as C, equiv  # noqa: E402
 from tests.reference import step_json as ref  # noqa: E402
-from hindsight.core import persist, step  # noqa: E402
+from hindsight.core import step  # noqa: E402
 from hindsight.core.types import MISSING, DataChange  # noqa: E402
 
 RNG = random.Random(131)
@@ -218,52 +218,16 @@ def test_hostile_bytes():
     print(f"  test_hostile_bytes ({n} byte strings)")
 
 
-def corpus_steps():
-    for path, kind, _f in C.FILES:
-        if kind != "registry":
-            continue
-        reg = persist.registry_from_bytes(C.payload(path, kind))
-        for h in reg.histories.values():
-            for e in h.entries:
-                yield e.to_bytes()
-    for _t, _header, payload in _today_journal(C.make("every_record.hsj")):
-        if _t == "STEP":
-            yield payload
-    big = C.make("big_format5")
-    reg = persist.registry_from_format5(big["index"], big["index_copy"], lambda uid, i: big.get(uid, {}).get(str(i)))
-    for h in reg.histories.values():
-        for i, e in enumerate(h.entries):
-            if i % 25 == 0 or e.meta["kind"] != "DELTA":
-                yield e.to_bytes()
-
-
-def _today_journal(data):
-    import shutil
-    import tempfile
-    from hindsight.core import journal
-    d = tempfile.mkdtemp()
-    try:
-        with open(os.path.join(d, "j.hsj"), "wb") as fh:
-            fh.write(data)
-        j = journal.Journal(os.path.join(d, "j.hsj"), keep=True)
-        try:
-            return j.read()
-        finally:
-            j.close()
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
-
-
 def test_corpus_steps():
     n = 0
-    for b in corpus_steps():
+    for b in C.steps():
         same("read_header", b)
         r = ref.read_header(b)
         if r.get("v") == 3 and r["records"]:
             same("records_from_bytes", step.records_to_bytes(step.step_from_bytes(b).records))
         n += 1
     assert n > 50, n
-    for i, b in enumerate(corpus_steps()):
+    for i, b in enumerate(C.steps()):
         if i % 10 == 0:
             for d in (b[:20], b[:4] + b"\0" * 8, b"HSS1\5\0\0\0[1,]", b"HSS1\2\0\0\0{}", b"HSS3"):
                 same("read_header", d)

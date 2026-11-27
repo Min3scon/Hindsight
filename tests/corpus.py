@@ -269,3 +269,42 @@ def wrong_types(kind):
             return [("headers", fh.read())]
     finally:
         shutil.rmtree(d, ignore_errors=True)
+
+
+def steps():
+    """The bytes of every step of the corpus's registries, of every_record.hsj and every 25th of big_format5 (and
+    each of its steps that isn't DELTA)."""
+    from hindsight.core import persist
+    for path, kind, _f in FILES:
+        if kind != "registry":
+            continue
+        reg = persist.registry_from_bytes(payload(path, kind))
+        for h in reg.histories.values():
+            for e in h.entries:
+                yield e.to_bytes()
+    for _t, _header, p in _today_journal(make("every_record.hsj")):
+        if _t == "STEP":
+            yield p
+    big = make("big_format5")
+    reg = persist.registry_from_format5(big["index"], big["index_copy"], lambda uid, i: big.get(uid, {}).get(str(i)))
+    for h in reg.histories.values():
+        for i, e in enumerate(h.entries):
+            if i % 25 == 0 or e.meta["kind"] != "DELTA":
+                yield e.to_bytes()
+
+
+def _today_journal(data):
+    import shutil
+    import tempfile
+    from hindsight.core import journal
+    d = tempfile.mkdtemp()
+    try:
+        with open(os.path.join(d, "j.hsj"), "wb") as fh:
+            fh.write(data)
+        j = journal.Journal(os.path.join(d, "j.hsj"), keep=True)
+        try:
+            return j.read()
+        finally:
+            j.close()
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
