@@ -4,6 +4,17 @@ A Blender add-on that keeps a history for each sculpted or recorded object, so t
 earlier state, look, and drag forward again. This page defines the words used about it, in code, documents
 and reports. Use these words and no others.
 
+## Versions
+
+**V1**:
+The version of Hindsight that is out now, used by the owner, classmates and the teacher's website; its files call it
+1.0.0-beta.2.
+_Avoid_: beta 2, beta
+
+**V2**:
+The next release, version 2.0.0.
+_Avoid_: beta 3, 1.0.0
+
 ## The history
 
 **Step**:
