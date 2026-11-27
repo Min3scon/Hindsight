@@ -40,17 +40,13 @@ POSITION_KEY = "position|POINT|FLOAT_VECTOR"
 MASK_KEY = ".sculpt_mask|POINT|FLOAT"
 FACE_SET_KEY = ".sculpt_face_set|FACE|INT"
 HIDE_VERT_KEY = ".hide_vert|POINT|BOOLEAN"
-HIDE_EDGE_KEY = ".hide_edge|EDGE|BOOLEAN"
 HIDE_POLY_KEY = ".hide_poly|FACE|BOOLEAN"
-SHARP_FACE_KEY = "sharp_face|FACE|BOOLEAN"
 
 # Topology arrays inside a Snapshot (not normal attributes)
 EDGE_VERTS_KEY = ".edge_verts|EDGE|INT32_2D"
 CORNER_VERT_KEY = ".corner_vert|CORNER|INT"
 CORNER_EDGE_KEY = ".corner_edge|CORNER|INT"
 FACE_OFFSETS_KEY = "face_offsets|FACE|INT"  # length = face_count + 1
-
-DOMAINS = ("POINT", "EDGE", "FACE", "CORNER")
 
 
 def make_key(name: str, domain: str, data_type: str) -> str:
@@ -183,9 +179,6 @@ class Step:
     after: Optional[Snapshot] = None              # TOPO / JOIN
     extra: dict = field(default_factory=dict)     # JSON-serialisable metadata
     records: list = field(default_factory=list)  # list[DataChange] (any kind; DATA steps have only these)
-
-    def is_topo(self) -> bool:
-        return self.kind in (TOPO, JOIN)
 
     def nbytes(self) -> int:
         n = 256 + sum(d.nbytes() for d in self.deltas) + sum(r.nbytes() for r in self.records)

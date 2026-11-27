@@ -594,11 +594,6 @@ def _last_op_kind(prev):
     return None
 
 
-def _select_only(prev) -> bool:
-    """R048: exactly one operator ended since the marker `prev`, and it only changes the selection."""
-    return _last_op_kind(prev) == "select"
-
-
 def _selected_uids() -> set:
     """The recorded objects that are selected or active (all recorded ones if that can't be read)."""
     tracked = tracked_uids()
@@ -685,7 +680,7 @@ def finish_operation(label: str, select_only: bool = False, topology: bool = Tru
     operation (the scene, object data, meshes, every object in Edit Mode: one position on the
     global timeline, D52 and D58). Tests call this for what the timer does.
 
-    select_only (R048, _select_only): the operator only changed the selection. The selected, active
+    select_only (R048): the operator only changed the selection. The selected, active
     and updated datablocks are compared (a setting that doesn't tell the depsgraph is read again on
     the selected and active objects, as for any operator, D117); the rest, and Edit Mode's mesh, wait
     for the next operator, which reads everything.

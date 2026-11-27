@@ -230,7 +230,7 @@ def make(n, fname, old, new):
     shutil.copytree(os.path.join(ROOT, "hindsight"), os.path.join(d, "hindsight"),
                     ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copytree(os.path.join(ROOT, "tests"), os.path.join(d, "tests"),
-                    ignore=shutil.ignore_patterns("__pycache__", "site"))
+                    ignore=shutil.ignore_patterns("__pycache__"))
     if fname is None:
         return d
     path = os.path.join(d, "hindsight", fname)
