@@ -220,6 +220,24 @@ def test_the_owner_of_a_shared_mesh_deleted():
     L.check_object_histories(r, full=True)
 
 
+def test_the_owner_of_a_shared_mesh_deleted_by_the_operation_that_ends_a_visit():
+    """D189 (#151): Alt+D, an Edit Mode step through the original, then one operation that ends a visit through
+    the duplicate and deletes the original (a script; Tab then Delete before the timer runs). The owner
+    records such a visit when it ends (D39), but it is gone by then: the duplicate, now the owner, records
+    the visit as its step in that operation (it used to start from the mesh as it is, and the visit was
+    in no history). Then an edit through the duplicate. Every history and the global timeline are exact
+    at every position (the middle of the visit isn't one: the visit is one step, taken on leaving)."""
+    scale = T.edit("A.001", "scale", lambda: bpy.ops.transform.resize(value=(1.5, 1.5, 1.5)))
+    delete = T.delete(["A"])
+    r = L.Run([T.duplicate("A", linked=True),
+               T.edit("A", "grab", lambda: bpy.ops.transform.translate(value=(0, 0, 0.5))), T.leave_edit("A"),
+               T.Op("edit A.001: scale, then delete A", lambda: (scale.run(), delete.fn())[1], ["scene", "A.001"]),
+               T.edit("A.001", "grab", lambda: bpy.ops.transform.translate(value=(0.5, 0, 0))), T.leave_edit("A.001")])
+    L.check_steps(r)
+    L.check_global(r, full=True)
+    L.check_object_histories(r, full=True)
+
+
 def test_undo_over_the_deleted_owner_of_a_shared_mesh():
     """Blender's undo of the edit through the duplicate, then of the delete, then of the edit through
     the original: the original records the shared mesh again once it is back, so every cursor follows
@@ -613,7 +631,9 @@ for fn in (test_added_object_is_recorded_fully, test_duplicate_of_a_child_keeps_
            test_reference_to_a_deleted_object, test_restoring_a_parent_keeps_its_inverse,
            test_linked_duplicates_record_their_mesh_once, test_first_edit_visit_is_a_step,
            test_dragging_while_a_linked_duplicate_is_in_edit_mode, test_a_linked_duplicate_gets_its_own_mesh,
-           test_the_owner_of_a_shared_mesh_deleted, test_undo_over_the_deleted_owner_of_a_shared_mesh,
+           test_the_owner_of_a_shared_mesh_deleted,
+           test_the_owner_of_a_shared_mesh_deleted_by_the_operation_that_ends_a_visit,
+           test_undo_over_the_deleted_owner_of_a_shared_mesh,
            test_the_owner_of_a_shared_mesh_after_a_reload,
            test_a_name_another_object_holds, test_a_deleted_object_back_while_its_name_is_taken,
            test_references_to_linked_objects, test_deleted_objects_come_back_complete,
