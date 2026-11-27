@@ -1,0 +1,1 @@
+[["dup", "A", true], ["mat", "A", 0], ["coll_remove", "A", "Props"], ["coll_move", "E", "Props"], ["coll_link", "E", "Props"], ["edit", "E", "extrude", 8868], ["mat", "A", 2], ["delete", "C"], ["rotmode", "C", "AXIS_ANGLE"]]

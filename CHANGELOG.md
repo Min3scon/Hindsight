@@ -2,9 +2,11 @@
 
 All notable changes to Hindsight. Dates are when the release went out.
 
-## 1.0.0-beta.3
+## 2.0.0 (V2, not released yet)
 
 Record everything now covers almost everything in a file, add-ons' data included; Weight Paint, texture painting, Multires and Dyntopo can be recorded; Movie Mode sets up its own camera and lighting, a timelapse needs fewer frames and less time per frame, long sessions use less memory, and Hindsight now works on Blender 5.2 and 5.3.
+
+Still to come in this section as their tickets land: the history always inside the .blend (no history folder option; files saved with V1 move in at the next save), Record everything as the default, and every step kept exactly.
 
 This build was tested headless on Blender 4.2 and 5.0 to 5.3, and in real Blender windows on 5.3 and 4.2: painting in every mode, Multires, Dyntopo, Movie Mode with its renders, the slider and the earlier test rounds. The release rounds on 5.0 to 5.2 in a window are still to come.
 
@@ -56,13 +58,15 @@ Faster and lighter:
 - Once the memory limit is reached, a stroke no longer rescans every step.
 - Saving with the history inside the .blend needs about half the extra memory it did: 74 to 86 MB instead of 143 MB at 6,000 steps.
 - History inside the .blend (Save mode Embed or Both) is stored as it is instead of as text. With 6,000 steps of a 100k-vertex mesh, saving takes about 0.2 s instead of 0.4 s, opening 0.15 s instead of 0.35 s, and saving needs 54 MB of extra memory instead of 72 MB.
-- A file saved without Compress File (the Blender 4.2 default) is about a quarter smaller with the history inside: 60 MB instead of 78 MB. Beta 2 opens such a file without its history.
+- A file saved without Compress File (the Blender 4.2 default) is about a quarter smaller with the history inside: 60 MB instead of 78 MB. Version 1.0.0-beta.2 opens such a file without its history.
 - Opening a file after a crash keeps the recovered steps packed, as saved steps are, and reads the crash record once instead of twice. With 3,000 unsaved strokes of a 100k-vertex mesh, opening takes 0.14 s instead of 0.23 s, and the recovered history takes 32 MB of memory instead of 92 MB.
 - Saving a 1M-vertex mesh right after sculpting is quicker: the newest strokes, kept unpacked for quick undo, are packed for the file on several cores. With 64 such strokes that part of the save takes 22 ms instead of 54 ms.
 - Each recorded mesh needs less memory: while you pause, the mesh's connectivity that Hindsight keeps for comparison is packed. A 1.5M-vertex remeshed sculpt holds 87 MB instead of 140 MB, a 1M-vertex grid 12 MB instead of 61 MB.
 - Shape keys are read and written about 200 times faster. With Record everything on a 40k-vertex mesh with 100 shape keys, moving a shape key slider costs Hindsight 18 ms instead of 230 ms.
 - A topology change on a big mesh (Voxel Remesh, Dyntopo) hands control back sooner: its crash-recovery record is packed and written in the background. At 1M vertices Hindsight's share went from 0.76 s to 0.34 s.
-- The Morph History brush finds the vertices under it about 3 times faster. On a 1M-vertex mesh a dab costs 14 ms instead of 38 ms.
+- The Morph History brush is many times faster. On a 1M-vertex mesh a dab went from 38 ms to 14 ms by finding the vertices under the brush faster, then to about a quarter of that, worked out in one pass by the Rust engine.
+- Starting a Morph History stroke is about 4 times faster after the first one: the target shape is kept between strokes (7 ms instead of 30 ms at 1M vertices).
+- Movie Mode frames a long history about twice as fast when it starts: 0.25 s instead of 0.5 s for 300 steps of a 1M-vertex mesh.
 - Background recompression of steps waits while you sculpt or scrub. It also starts after a file is opened now, not only after the first new stroke was packed.
 - Redraws cost less. The on-screen slider keeps its drawing between redraws and rebuilds only the handle while you drag. The viewport warning and Collection Filtering do less work on each redraw: with 50 objects, global history and a filter list, a redraw went from 3.9 ms to 1.2 ms.
 - Scrubbing and Movie Mode are 2 to 3 times faster through packed history: a run of steps is checked, unpacked and applied in one call of the Rust engine. A jump over 3,000 steps of a 1M-vertex mesh went from 1.4 s to 0.5 s.

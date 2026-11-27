@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """R056: a jump's moves (globaltl.transition) collapse runs of stroke steps to one move per history, and
 everything else happens in the same order as before. R055: global_position read from position_index (one look-up per history) is the walk over every
 operation it replaces, for random timelines: several histories, operations spanning histories (extra
@@ -6,7 +7,6 @@ op), operations whose steps land out of order in a history, and every kind of cu
 none, the global state, histories moved one by one to any index). Plain script, no bpy."""
 import random
 import time
-import traceback
 
 from hindsight.core import globaltl
 from hindsight.core.history import History
@@ -74,7 +74,7 @@ def test_index_equals_the_walk():
             assert got == want, (got, want, [(h.uid, h.cursor, len(h.entries)) for h in hs])
             assert globaltl.global_position(reg, visible, groups) == want
             checked += 1
-    print(f"PASS test_index_equals_the_walk ({checked} cursor sets)")
+    print(f"  test_index_equals_the_walk ({checked} cursor sets)")
 
 
 def test_cost_does_not_grow_with_the_steps():
@@ -99,7 +99,7 @@ def test_cost_does_not_grow_with_the_steps():
     slow = time.perf_counter() - t
     assert a == b == 50_000
     assert fast < slow / 20, (fast, slow)            # 50 look-ups against 50,000 groups walked
-    print(f"PASS test_cost_does_not_grow_with_the_steps ({fast * 1e3:.3f} ms against {slow * 1e3:.2f} ms)")
+    print(f"  test_cost_does_not_grow_with_the_steps ({fast * 1e3:.3f} ms against {slow * 1e3:.2f} ms)")
 
 
 def transition_strict(reg, g, visible=None, groups=None):
@@ -205,7 +205,7 @@ def test_collapsed_moves_keep_every_ordering_that_matters():
                 reg.histories[hid].cursor = c
             jumps += 1
             fewer += len(new) < len(strict)
-    print(f"PASS test_collapsed_moves_keep_every_ordering_that_matters ({jumps} jumps, {fewer} with fewer moves)")
+    print(f"  test_collapsed_moves_keep_every_ordering_that_matters ({jumps} jumps, {fewer} with fewer moves)")
 
 
 def test_interleaved_strokes_are_one_move_per_history():
@@ -223,7 +223,7 @@ def test_interleaved_strokes_are_one_move_per_history():
     moves = globaltl.transition(reg, 0, None, groups)
     assert sorted(moves) == [("h0", 0), ("h1", 0), ("h2", 0)], moves
     assert len(transition_strict(reg, 0, None, groups)) == 600
-    print("PASS test_interleaved_strokes_are_one_move_per_history (3 moves instead of 600)")
+    print("  test_interleaved_strokes_are_one_move_per_history (3 moves instead of 600)")
 
 
 def test_plan_index_equals_the_walk():
@@ -243,21 +243,15 @@ def test_plan_index_equals_the_walk():
             h.cursor = rng.randint(0, len(h.entries))
         g = rng.randint(0, len(groups))
         assert globaltl.transition(reg, g, visible, groups, idx) == globaltl.transition(reg, g, visible, groups)
-    print(f"PASS test_plan_index_equals_the_walk ({n} positions)")
+    print(f"  test_plan_index_equals_the_walk ({n} positions)")
 
 
 def main():
-    failed = 0
     for t in (test_index_equals_the_walk, test_cost_does_not_grow_with_the_steps,
               test_collapsed_moves_keep_every_ordering_that_matters, test_interleaved_strokes_are_one_move_per_history,
               test_plan_index_equals_the_walk, test_groups_equal_the_earlier_build):
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print("FAIL %s" % t.__name__)
-            traceback.print_exc()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 def groups_before_r073(reg, visible=None):
@@ -293,7 +287,7 @@ def test_groups_equal_the_earlier_build():
             assert got == want, (got[:5], want[:5])
             n += sum(len(g) for g in got)
     assert n > 10_000, n
-    print("PASS test_groups_equal_the_earlier_build (%d steps grouped)" % n)
+    print("  test_groups_equal_the_earlier_build (%d steps grouped)" % n)
 
 
 if __name__ == "__main__":

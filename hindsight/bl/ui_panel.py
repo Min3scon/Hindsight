@@ -7,13 +7,16 @@ a failing runtime draws a short note instead of breaking the panel.
 The drawing helpers (draw_main, draw_history_options, draw_help) are shared with the header
 popover in header.py.
 """
+import contextlib
 import sys
 import textwrap
 
 import bpy
 
+from . import reg
+
 from . import guard
-from .beta import ISSUES_URL
+from .notice import ISSUES_URL
 from .prefs import draw_scrubber_props, get_prefs
 from .ctx import active_object as _ctx_active
 
@@ -380,19 +383,17 @@ def draw_help(layout, context):
     sub.scale_y = 0.85
     if s:
         sub.label(text="Last self-check: " + s)
-    sub.label(text=f"Hindsight {addon_version()}. Beta: back up your files.")
+    sub.label(text=f"Hindsight {addon_version()}. Back up your files.")
 
 
 def _draw_memory_readout(layout, stats):
     if not isinstance(stats, dict):
         return
-    try:
+    with contextlib.suppress(Exception):
         layout.label(text=f"This object: {_mb(stats.get('active_bytes', 0))}, "
                           f"{int(stats.get('active_steps', 0))} steps")
         layout.label(text=f"All objects: {_mb(stats.get('total_bytes', 0))}, "
                           f"{int(stats.get('steps', 0))} steps")
-    except Exception:
-        pass
 
 
 # ----------------------------------------------------------------------------- panels
@@ -402,10 +403,6 @@ class VIEW3D_PT_hindsight(bpy.types.Panel):
     bl_category = CATEGORY
     bl_label = "Undo History"
     bl_order = 0
-
-    def draw_header_preset(self, context):
-        from .beta import draw_header_tag
-        draw_header_tag(self.layout)
 
     def draw(self, context):
         layout = self.layout
@@ -509,7 +506,7 @@ class VIEW3D_PT_hindsight_history(_SubPanel, bpy.types.Panel):
 
 
 def _movie_length(context):
-    """"1,200 steps, 600 frames, 25.0 s": what Quick auto key would make with these settings."""
+    """"1,200 steps, 600 frames, 25.0 s": what Create time lapse would make with these settings."""
     try:
         from . import movie
         n = movie.movie_length(context.scene)
@@ -539,6 +536,16 @@ def draw_movie_camera(layout, context, sh):
             own = False
         if own:
             wrap(layout, context, "This scene has a light of its own, so Hindsight adds none.", 'INFO')
+    if sh.movie_mode and sh.movie_camera:
+        try:
+            from . import camrig
+            names = camrig.bounded(context.scene)
+        except Exception:
+            names = ()
+        if names:       # #114: not an exact measure, so the frame may be looser than tight
+            more = f" and {len(names) - 3:,} more" if len(names) > 3 else ""
+            wrap(layout, context, f"Framed by a safe bound, not measured exactly: {', '.join(names[:3])}{more}.",
+                 'INFO')
 
 
 class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
@@ -552,7 +559,8 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
 
     def draw_header(self, context):
         sh = _scene_props(context)
-        if sh is not None:
+        if sh is not None:      # #113: only Create time lapse switches it on; here it can only go off
+            self.layout.enabled = bool(sh.movie_mode)
             self.layout.prop(sh, "movie_mode", text="")
 
     def draw(self, context):
@@ -565,7 +573,7 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
         col = layout.column(align=True)
         col.active = bool(sh.movie_mode)
         # labels inside the fields: split rows cut "Frames per step" at the sidebar's usual width.
-        # Step keeps its keyframe dot (Quick auto key keys it)
+        # Step keeps its keyframe dot (Create time lapse keys it)
         row = col.row(align=True)
         row.prop(sh, "movie_step", text="Step")
         row.prop_decorator(sh, "movie_step")
@@ -574,7 +582,7 @@ class VIEW3D_PT_hindsight_movie(_SubPanel, bpy.types.Panel):
         length = _movie_length(context)
         if length:
             wrap(layout, context, length, 'TIME')
-        _operator(layout, "hindsight.quick_auto_key", "Quick auto key", 'KEY_HLT')
+        _operator(layout, "hindsight.create_time_lapse", "Create time lapse", 'RENDER_ANIMATION')
         if sh.movie_mode and getattr(context, "mode", "") in ("SCULPT", "PAINT_VERTEX"):
             # measured at 100k vertices: Blender spends 15 ms per frame in Sculpt Mode, 0.3 ms in Object Mode
             wrap(layout, context, "Playback and rendering are quicker in Object Mode.", 'INFO')
@@ -703,13 +711,8 @@ classes = (
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    reg.register_classes(classes)
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

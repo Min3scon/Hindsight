@@ -1,7 +1,7 @@
 """Tier 1 gate, save and reload (gate items RELOAD.*), headless, through real operators.
 
-Each row's recorded run is saved with its history in a sidecar folder, embedded in the .blend, or
-both; reopened; and checked again exactly like right after recording (every object's history at
+Each row's recorded run is saved (the history goes in the .blend, #48);
+reopened; and checked again exactly like right after recording (every object's history at
 every position, the global timeline, Blender's undo). Then: an object renamed keeps its history
 (also after a reload); a copy pasted into the same file or another file starts its own history and
 leaves the original's alone; appending and linking from a recorded file; Shift+D and Alt+D.
@@ -9,7 +9,6 @@ leaves the original's alone; appending and linking from a recorded file; Shift+D
 Run: blender -b --factory-startup --python tests/test_bl_t1_reload.py (or tests/run_tests.py).
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import shutil
 import tempfile
 
 import bpy
@@ -18,56 +17,32 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import datarec, idmap, persistence, runtime
+from hindsight.bl import prefs
 from hindsight.core import persist
-from hindsight.core.types import SETTINGS
 
 C = bpy.context
 ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps")
 TMP = tempfile.mkdtemp(prefix="hs_t1_reload_")
 
 
-def save_and_reopen(path, mode):
-    SETTINGS.save_mode = mode
+def save_and_reopen(path):
     T.select()
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    side = persist.sidecar_dir(path)
-    assert os.path.isdir(side) == (mode in ("SIDECAR", "BOTH")), (mode, os.path.isdir(side))
-    if mode == "EMBED":
-        assert not os.path.isdir(side)
+    assert not os.path.isdir(persist.sidecar_dir(path)), "#48: a save writes no history folder"
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    assert text is not None and ("hindsight_data_bin" in text) == (mode in ("EMBED", "BOTH"))
-    assert "hindsight_data" not in text           # R061: the base64 copy is never written
+    assert text is not None and persistence.PARTS_PROP not in text     # Blender let go of the parts as they were read
+    stored = H.stored_text(path)                  # the history is in the .blend, in format 5 (#64)
+    assert persistence.PARTS_PROP in stored and stored[persistence.DATA_PROP] == persist.STUB, list(stored)
 
 
-def reload_all_rows(mode):
+def test_reload():
     for row in ROWS:
         r = L.Run(T.sequences()[row])
-        path = os.path.join(TMP, f"{row.replace('.', '_')}_{mode.lower()}.blend")
-        save_and_reopen(path, mode)
-        if mode == "BOTH":
-            # either copy alone is enough: the sidecar is preferred, the embedded copy is the backup
-            shutil.rmtree(persist.sidecar_dir(path))
-            bpy.ops.wm.open_mainfile(filepath=path)
+        save_and_reopen(os.path.join(TMP, f"{row.replace('.', '_')}.blend"))
         L.recheck(r)
-
-
-@covers(ROWS, "RELOAD.SIDECAR")
-def test_reload_sidecar():
-    reload_all_rows("SIDECAR")
-
-
-@covers(ROWS, "RELOAD.EMBED")
-def test_reload_embed():
-    reload_all_rows("EMBED")
-
-
-@covers(ROWS, "RELOAD.BOTH")
-def test_reload_both():
-    reload_all_rows("BOTH")
 
 
 def rename(r, name, new):
@@ -80,7 +55,6 @@ def rename(r, name, new):
     return T.Op(f"rename {name} to {new}", run, [new])
 
 
-@covers(ROWS, "RELOAD.RENAME")
 def test_renamed_object_keeps_its_history():
     """Renaming (what F2 or a double click in the outliner does) is a step of the object's own
     history; the history is found by id, before and after a reload."""
@@ -92,7 +66,7 @@ def test_renamed_object_keeps_its_history():
                 r.add(rename(r, name, name + " renamed"))
         L.check_steps(r)
         L.recheck(r)
-        save_and_reopen(os.path.join(TMP, f"rename_{row.replace('.', '_')}.blend"), "SIDECAR")
+        save_and_reopen(os.path.join(TMP, f"rename_{row.replace('.', '_')}.blend"))
         L.recheck(r)
 
 
@@ -111,7 +85,6 @@ def survivors(r):
     return [n for _no_history, n in sorted(out)]
 
 
-@covers(ROWS, "RELOAD.PASTE")
 def test_copy_paste_same_and_other_file():
     """Ctrl+C, Ctrl+V, for every row: a pasted copy carries the original's id property; Hindsight
     gives it its own id. In the same file the original's history is untouched and still exact; in
@@ -147,11 +120,11 @@ def test_copy_paste_same_and_other_file():
         T.select()
         L.check_object_histories(r)
         path = os.path.join(TMP, f"paste_{row.replace('.', '_')}.blend")
-        save_and_reopen(path, "SIDECAR")
+        save_and_reopen(path)
         T.select(name)
         assert bpy.ops.view3d.copybuffer() == {"FINISHED"}
         H.fresh()
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         assert bpy.ops.view3d.pastebuffer() == {"FINISHED"}
         ob = bpy.data.objects[name]
         assert all(runtime.history_of(o) is None for o in bpy.data.objects), "a history came along"
@@ -167,7 +140,6 @@ def test_copy_paste_same_and_other_file():
         assert _object_history_snapshot(r, su) == before
 
 
-@covers(ROWS, "RELOAD.APPEND")
 def test_append_and_link_from_a_recorded_file():
     """For every row: appending an object from a recorded file gives an object without history
     (histories belong to their file), which records once switched on. A linked object can't be
@@ -176,9 +148,9 @@ def test_append_and_link_from_a_recorded_file():
         r = L.Run(T.sequences()[row])
         names = survivors(r)
         path = os.path.join(TMP, f"append_{row.replace('.', '_')}.blend")
-        save_and_reopen(path, "SIDECAR")
+        save_and_reopen(path)
         H.fresh()
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         directory = os.path.join(path, "Object")
         assert bpy.ops.wm.append(filepath=os.path.join(directory, names[0]), directory=directory,
                                  filename=names[0]) == {"FINISHED"}
@@ -208,7 +180,6 @@ def test_append_and_link_from_a_recorded_file():
         assert runtime.history_of(a) is not None and len(runtime.history_of(a).entries) == 1
 
 
-@covers(ROWS, "RELOAD.DUPLICATE")
 def test_duplicates_shift_d_and_alt_d():
     """For every row: Shift+D and Alt+D give a copy with its own id and no history, recorded from
     the start (D36: the scene is recorded); the original's history is untouched and still exact; the
@@ -234,7 +205,7 @@ def test_duplicates_shift_d_and_alt_d():
         L.check_object_histories(r)
 
 
-for fn in (test_reload_sidecar, test_reload_embed, test_reload_both, test_renamed_object_keeps_its_history,
+for fn in (test_reload, test_renamed_object_keeps_its_history,
            test_copy_paste_same_and_other_file, test_append_and_link_from_a_recorded_file,
            test_duplicates_shift_d_and_alt_d):
     H.run(fn)

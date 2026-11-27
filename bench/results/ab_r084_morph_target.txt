@@ -1,0 +1,21 @@
+R084: Morph History stroke start (bl/morph.begin) over 10 strokes at 1M vertices, bench/scenarios/oneoff/morph_begin.py.
+A = d452df3 (R083, walks to the target every stroke), B = R084 (keeps the target). Alternating processes.
+
+=== R084 begin, 1M, bpy 5.3
+1 A AB {"n": 1000000, "begin_first_ms": 26.14, "begin_later_med_ms": 27.92, "begin_later_min_ms": 26.63}
+1 B AB {"n": 1000000, "begin_first_ms": 32.05, "begin_later_med_ms": 7.26, "begin_later_min_ms": 6.4}
+2 A AB {"n": 1000000, "begin_first_ms": 27.45, "begin_later_med_ms": 30.4, "begin_later_min_ms": 26.72}
+2 B AB {"n": 1000000, "begin_first_ms": 32.26, "begin_later_med_ms": 7.22, "begin_later_min_ms": 6.55}
+3 A AB {"n": 1000000, "begin_first_ms": 33.77, "begin_later_med_ms": 31.53, "begin_later_min_ms": 28.12}
+3 B AB {"n": 1000000, "begin_first_ms": 29.88, "begin_later_med_ms": 7.34, "begin_later_min_ms": 6.45}
+4 A AB {"n": 1000000, "begin_first_ms": 29.48, "begin_later_med_ms": 35.55, "begin_later_min_ms": 27.55}
+4 B AB {"n": 1000000, "begin_first_ms": 28.18, "begin_later_med_ms": 6.47, "begin_later_min_ms": 6.25}
+5 A AB {"n": 1000000, "begin_first_ms": 30.18, "begin_later_med_ms": 30.39, "begin_later_min_ms": 26.91}
+5 B AB {"n": 1000000, "begin_first_ms": 33.6, "begin_later_med_ms": 6.84, "begin_later_min_ms": 6.65}
+=== R084 begin, 1M, bpy 4.2
+1 A AB {"n": 1000000, "begin_first_ms": 29.23, "begin_later_med_ms": 27.13, "begin_later_min_ms": 25.44}
+1 B AB {"n": 1000000, "begin_first_ms": 28.8, "begin_later_med_ms": 6.68, "begin_later_min_ms": 5.98}
+2 A AB {"n": 1000000, "begin_first_ms": 36.78, "begin_later_med_ms": 28.75, "begin_later_min_ms": 27.28}
+2 B AB {"n": 1000000, "begin_first_ms": 29.62, "begin_later_med_ms": 6.6, "begin_later_min_ms": 6.13}
+3 A AB {"n": 1000000, "begin_first_ms": 29.31, "begin_later_med_ms": 34.25, "begin_later_min_ms": 25.64}
+3 B AB {"n": 1000000, "begin_first_ms": 35.78, "begin_later_med_ms": 6.91, "begin_later_min_ms": 6.39}

@@ -5,7 +5,10 @@ scene has no light of its own, three sun lamps. They are ordinary objects marked
 with bpy.data only (works from a timer, a property update and in any mode). Objects without the mark
 are never moved, hidden or deleted. Nothing here records or moves history.
 
-What the camera holds (the model as a render shows it, at every step of the history):
+What the camera holds (the model as a render shows it, at every step of the history): every
+object with a history that renders (renders()), of any type; other types than meshes as they render
+now (_shape: exact; a bound for volumes, 4.2's Grease Pencil, hair curves (drawn with flat ends) and
+points of different radii). bounded() names what the last placement held by a bound. For meshes:
 - the shape now: exact, from the evaluated object; when the viewport doesn't evaluate it the way a
   render does (render-only modifiers, other render levels, disabled in viewports) from a temporary
   copy set up for rendering, unless that copy would pass COPY_BUDGET vertices;
@@ -18,10 +21,13 @@ Known limits: those last two are estimates, not proofs (a Geometry Nodes tree ca
 render copy over COPY_BUDGET is not made; the history walk stops at a Join or a step it can't read,
 as History.goto does; Simplify's render settings are not read.
 """
+import contextlib
 import math
 import time
 
 import bpy
+
+from . import reg
 import numpy as np
 from bpy.app.handlers import persistent
 from mathutils import Matrix, Vector
@@ -71,6 +77,11 @@ def _render_layers(scene) -> list:
     """The view layers a render of the scene renders (all of them when none is switched on)."""
     vls = list(scene.view_layers)
     return [vl for vl in vls if vl.use] or vls
+
+
+def _rendered_objects(scene) -> set:
+    """as_pointer() of every object in a collection that renders in a view layer the render uses."""
+    return {o.as_pointer() for vl in _render_layers(scene) for c in _rendering_collections(vl) for o in c.objects}
 
 
 def _rendering_collections(view_layer) -> list:
@@ -173,16 +184,28 @@ def needs_attention(scene) -> bool:
     return "camera" in want and scene.camera is None
 
 
+_RENDERS = {"MESH", "CURVE", "SURFACE", "FONT", "META", "GPENCIL", "GREASEPENCIL", "CURVES", "POINTCLOUD", "VOLUME"}
+
+
+def renders(ob) -> bool:
+    """The object shows in a render: a type with geometry, or an empty instancing a collection."""
+    if ob.hide_render or rigmark.is_rig(ob):
+        return False
+    if ob.type == "EMPTY":
+        return ob.instance_type == "COLLECTION" and ob.instance_collection is not None
+    return ob.type in _RENDERS
+
+
 def model_objects(scene) -> list:
-    """Mesh objects with a Hindsight history; else meshes that render; else anything else that renders
-    (never cameras, lights or Hindsight's own objects)."""
+    """Objects with a Hindsight history that render, of any type; else meshes that render; else
+    anything else that renders (never cameras, lights or Hindsight's own objects)."""
     members = set()
     for h in runtime.reg().all():
         members.update(h.members)
     obs = [ob for ob in scene.objects if not rigmark.is_rig(ob)]
     out = []
     if members:
-        out = [ob for ob in obs if ob.type == "MESH" and runtime.obj_uid(ob) in members]
+        out = [ob for ob in obs if renders(ob) and runtime.any_uid(ob) in members]
     if not out:
         out = [ob for ob in obs if ob.type == "MESH" and not ob.hide_render]
     if not out:
@@ -209,14 +232,12 @@ def _delete(ob) -> None:
     bpy.data.objects.remove(ob, do_unlink=True)
     if data is None:
         return
-    try:
+    with contextlib.suppress(ReferenceError):
         if data.users == 0:
             if isinstance(data, bpy.types.Camera):
                 bpy.data.cameras.remove(data)
             elif isinstance(data, bpy.types.Light):
                 bpy.data.lights.remove(data)
-    except ReferenceError:
-        pass
 
 
 # The user's camera is remembered as the object itself (scene.hindsight.movie_user_camera), so a
@@ -334,7 +355,16 @@ def ensure(scene, reframe: bool = True, take: bool = False) -> dict:
         if "camera" in have:
             _take_camera(scene, have["camera"], take and "camera" in res["created"])
     if have and (reframe or res["created"]):
-        res["framed"] = frame(scene)
+        if runtime.IN_HANDLER[0] and not reframe and "camera" not in res["created"]:
+            # #117 review 1: the movie's frame handler made the lamps. It can't walk the history, so the
+            # camera keeps its shot and the lamps go where the last framing put them (a sun lights the
+            # same from anywhere: only their place in the viewport would differ).
+            sh = scene.hindsight
+            basis = np.asarray(framing.view_basis(sh.movie_view_angle, sh.movie_view_height), np.float64)
+            with runtime.suspended():
+                _place_lights(have, basis, *_LIT.get(scene.name_full, ((0.0, 0.0, 0.0), 1.0)))
+        else:
+            res["framed"] = frame(scene)
     return res
 
 
@@ -358,6 +388,16 @@ def _np_matrix(m) -> np.ndarray:
 
 
 _PAST = {}             # (history uid, object uid) -> (signature, extents of the mesh's other history positions)
+_BOUND_HIT = [False]   # set by a measure that held the object being measured by a safe bound, not exactly
+_BOUNDED = {}          # scene name -> names of the objects the last placement held by a safe bound
+_COUNTED = {}          # scene name -> names of the objects without a history the last walk counted (D181)
+_LIT = {}              # scene name -> (center, radius) the last placement put the lamps around
+
+
+def bounded(scene) -> tuple:
+    """#114: names of the objects the camera's last placement held by a safe bound (never cut off, not
+    an exact measure, so the frame can be looser than tight); the panel says so."""
+    return _BOUNDED.get(scene.name_full, ())
 
 
 def _history_extents(ob, uid, bases, tans):
@@ -501,10 +541,8 @@ def _render_copy_points(ob, scene, dg_getter):
             return None
         finally:
             if tmp is not None:
-                try:
+                with contextlib.suppress(ReferenceError, RuntimeError):
                     bpy.data.objects.remove(tmp, do_unlink=True)
-                except (ReferenceError, RuntimeError):
-                    pass
                 dg_getter(refresh=True)           # evaluated now, while our own changes are ignored
 
 
@@ -721,8 +759,9 @@ def _bone_hull(ob, uid, local_basis, tx, ty):
     return out
 
 
-def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
-    """Extents (mesh space, camera axes) of a mesh with modifiers or shape keys, and its points now.
+def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter, now_only=False):
+    """Extents (mesh space, camera axes) of a mesh with modifiers or shape keys, and its points now
+    (`now_only`: of what renders now alone).
 
     Now: exact, from the evaluated object. Every other position of its history (only the base mesh
     is recorded): the envelope of the stack (framing.envelope: Mirror and Array exactly) around the
@@ -732,10 +771,13 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
     if not len(ev):
         ev = base.reshape(-1, 3)
     ext = framing.extents(ev, local_basis, tx, ty)
+    if now_only:
+        return ext, ev
     bs = base.reshape(-1, 3)
     if len(ev) == len(bs) and ob.mode != "EDIT" and deforms_only(ob):
         moved = _measure_deformed(ob, ev, bs, local_basis, tx, ty)
         if moved is not None:
+            _BOUND_HIT[0] = True                # balls around where each vertex renders now
             return framing.merge(ext, moved), ev
     box_now = framing.bounds(bs)
     if box_now is None:
@@ -766,6 +808,8 @@ def _measure_stack(ob, base, local_basis, tx, ty, scene, dg_getter):
     size_now = float(np.linalg.norm(box_now[1] - box_now[0]))
     size_all = float(np.linalg.norm(hi - lo))
     grow = 1.0 if size_all <= size_now else (size_all / size_now if size_now > 1e-12 else 1e6)
+    if r > 0:                                   # the reach past the exact envelope: a bound
+        _BOUND_HIT[0] = True
     ball = framing.ball_extents(r * grow, local_basis, tx, ty)
     for k, (_L, Z) in enumerate(wide):
         e = framing.plus(framing.plus(past[k + 1], framing.extents(Z, local_basis, tx, ty)), ball)
@@ -782,11 +826,130 @@ def _entry_positions(ob) -> np.ndarray:
     return np.asarray(pos, np.float32).reshape(-1) if pos is not None else np.empty(0, np.float32)
 
 
-def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
+DEFAULT_RADIUS = 0.01      # Blender's radius for curves, point clouds and Grease Pencil points that store none
+
+
+def _shape(ev):
+    """(points (n, 3) float32 in the object's own space, radius) of what renders of an evaluated
+    object: the evaluated mesh of meshes, curves, text, surfaces and metaballs; the points of point
+    clouds, hair curves and Grease Pencil (each visible layer's current drawing) with their largest
+    radius; else (volumes, 4.2's Grease Pencil) the corners of the evaluated box, a safe bound. Each
+    bound sets _BOUND_HIT."""
+    t = ev.type
+    if t == "CURVES":                  # #114: Cycles draws a hair's ends flat: the balls there are a bound
+        _BOUND_HIT[0] = True
+        return _hair_hull(ev.data), _radius(ev.data)
+    if t == "POINTCLOUD":
+        return _positions(ev.data).reshape(-1, 3), _radius(ev.data)
+    if t == "GREASEPENCIL":
+        pts, r = [np.empty((0, 3), np.float32)], 0.0
+        for layer in ev.data.layers:
+            fr = None if layer.hide else layer.current_frame()
+            dr = getattr(fr, "drawing", None)
+            if dr is None:
+                continue
+            p = _positions(dr).reshape(-1, 3)
+            m = getattr(layer, "matrix_local", None)
+            if m is not None and len(p):
+                m = _np_matrix(m)
+                p = (p @ m[:3, :3].T + m[:3, 3]).astype(np.float32)
+                r = max(r, _radius(dr) * float(max(np.linalg.norm(m[:3, :3], axis=0))))
+            elif len(p):
+                r = max(r, _radius(dr))
+            pts.append(p)
+        return np.vstack(pts), r
+    if t in ("MESH", "CURVE", "SURFACE", "FONT", "META"):
+        try:
+            me = ev.to_mesh()
+            return _positions(me).reshape(-1, 3), 0.0
+        except RuntimeError:
+            return np.empty((0, 3), np.float32), 0.0
+        finally:
+            ev.to_mesh_clear()
+    _BOUND_HIT[0] = True
+    return np.array([c[:] for c in ev.bound_box], np.float32), 0.0
+
+
+def _hair_hull(cv) -> np.ndarray:
+    """D182: points whose hull holds the curve Cycles draws through each hair's points (Catmull-Rom,
+    ends doubled): each point and its Bezier handles P +- (next - previous) / 6, plus the handles of
+    Bezier curves."""
+    p = _positions(cv).reshape(-1, 3)
+    n = len(p)
+    off = np.empty(len(cv.curves) + 1, np.int32)
+    cv.curve_offset_data.foreach_get("value", off)
+    if n == 0 or len(off) < 2:
+        return p
+    first = np.repeat(off[:-1], np.diff(off))
+    last = np.repeat(off[1:] - 1, np.diff(off))
+    i = np.arange(n)
+    tan = (p[np.minimum(i + 1, last)] - p[np.maximum(i - 1, first)]) / 6.0
+    out = [p, (p + tan)[i < last], (p - tan)[i > first]]
+    for name in ("handle_left", "handle_right"):
+        a = cv.attributes.get(name)
+        if a is not None and len(a.data) == n:
+            h = np.empty(n * 3, np.float32)
+            a.data.foreach_get("vector", h)
+            out.append(h.reshape(-1, 3))
+    return np.vstack(out).astype(np.float32)
+
+
+def _radius(data) -> float:
+    rad = data.attributes.get("radius")
+    if rad is None or not len(rad.data):
+        return DEFAULT_RADIUS
+    rr = np.empty(len(rad.data), np.float32)
+    rad.data.foreach_get("value", rr)
+    if rr.min() != rr.max():                   # the largest stands for all: a bound
+        _BOUND_HIT[0] = True
+    return float(rr.max())
+
+
+def _measure_other(ob, basis, tx, ty, dg):
+    """(extents in camera axes, world bounds) of an object that isn't a mesh, as a render shows it now
+    (see _shape); an instancing empty: its instances. Points with a radius are grown by it exactly
+    (the largest radius stands for all: a bound when they differ)."""
+    if dg is None:
+        _BOUND_HIT[0] = True
+        parts = [((np.array([c[:] for c in ob.bound_box], np.float32), 0.0), _np_matrix(ob.matrix_world))]
+    elif ob.type == "EMPTY":
+        found = [(i.object.original, _np_matrix(i.matrix_world)) for i in dg.object_instances
+                 if i.is_instance and i.parent is not None and i.parent.original == ob
+                 and i.object.type in _RENDERS and not i.object.original.hide_render]
+        shapes = {}
+        for src, _m in found:
+            if src.name_full not in shapes:
+                shapes[src.name_full] = _shape(src.evaluated_get(dg))
+        parts = [(shapes[src.name_full], m) for src, m in found]
+    else:
+        parts = [(_shape(ob.evaluated_get(dg)), _np_matrix(ob.matrix_world))]
+    ext = bnd = None
+    for (pts, r), m in parts:
+        if not len(pts):
+            continue
+        e = framing.shifted(framing.extents(pts, m[:3, :3].T @ basis, tx, ty), m[:3, 3] @ basis, tx, ty)
+        w = np.asarray(pts, np.float64) @ m[:3, :3].T + m[:3, 3]
+        if r > 0 and e is not None:
+            r *= float(max(np.linalg.norm(m[:3, :3], axis=0)))       # in world units (the largest scale)
+            gx, gy = r * math.sqrt(1 + tx * tx), r * math.sqrt(1 + ty * ty)
+            e = e + np.array([gx, gx, gy, gy, -r, r])
+            w = np.vstack([w.min(0) - r, w.max(0) + r])
+        ext = framing.merge(ext, e)
+        bnd = framing.merge_bounds(bnd, framing.bounds(w))
+    return ext, bnd
+
+
+def _measure(ob, basis, tx, ty, depsgraph=None, scene=None, now_only=False):
     """(extents in camera axes, world bounds) of one model object: what renders of it now and, for
-    a mesh with a history, every earlier and later shape. The mesh is measured in its own space, so
+    a mesh with a history (unless `now_only`), every earlier and later shape at its transform now;
+    other types: _measure_other. The mesh is measured in its own space, so
     no world-space copy of it is made. `depsgraph`: a callable (refresh=False) that gives the
     evaluated depsgraph (only asked for when the mesh has modifiers or shape keys)."""
+    if ob.type != "MESH":
+        if depsgraph is None:
+            sc = scene if scene is not None else (ob.users_scene[0] if ob.users_scene else None)
+            return _measure_other(ob, basis, tx, ty, _depsgraph(sc) if sc is not None else None)
+        return _measure_other(ob, basis, tx, ty, depsgraph())
     mw = _np_matrix(ob.matrix_world)
     local_basis = mw[:3, :3].T @ basis                 # local points @ local_basis == world @ basis
     pts = None
@@ -799,16 +962,19 @@ def _measure(ob, basis, tx, ty, depsgraph=None, scene=None):
             if depsgraph is None:
                 def depsgraph(refresh=False):
                     return _depsgraph(scene, refresh)
-            ext, pts = _measure_stack(ob, pts, local_basis, tx, ty, scene, depsgraph)
+            ext, pts = _measure_stack(ob, pts, local_basis, tx, ty, scene, depsgraph, now_only)
         else:
             ext = framing.extents(pts, local_basis, tx, ty)
-            past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
-            ext = framing.merge(ext, None if past is None else past[0])
+            if not now_only:
+                past = _history_extents(ob, runtime.obj_uid(ob), local_basis[None], np.array([(tx, ty)]))
+                ext = framing.merge(ext, None if past is None else past[0])
         if ob.mode == "EDIT":                          # and the mesh being edited: its evaluated box
+            _BOUND_HIT[0] = True
             box = np.array([c[:] for c in ob.bound_box], np.float32)
             ext = framing.merge(ext, framing.extents(box, local_basis, tx, ty))
             pts = np.vstack([np.asarray(pts, np.float32).reshape(-1, 3), box])
     else:                                              # other types: the evaluated box
+        _BOUND_HIT[0] = True
         pts = np.array([c[:] for c in ob.bound_box], np.float32)
         ext = framing.extents(pts, local_basis, tx, ty)
     bnd = None
@@ -860,6 +1026,97 @@ def _basis_matrix(basis, location) -> Matrix:
     return m
 
 
+def _at_every_step(measure) -> bool:
+    """#112: measure() at every position of the global timeline (what the time lapse plays), then back
+    to where it was: every object as its recorded transform, parent and data place it at each step,
+    objects added late or deleted midway where they exist. False (nothing walked) without a timeline,
+    in Edit Mode (a jump there would leave it: what is edited is measured as it is), and in the movie's
+    frame change, a render or playback (where it would jump away from the step being shown).
+    Once Create time lapse has keyed it (#117 review 3), every frame of the scene's range instead, each
+    showing the step the movie shows there: what changes with the frame (an object's own keys, Grease
+    Pencil keys, a Build modifier) is measured as it renders on that frame. A frame that shows the same
+    step as the one before is measured again only when its frame change re-evaluated an object (#117
+    review 4: otherwise every frame cost a step's measure, 17 s instead of 1.5 s at 200 steps of 12 frames).
+    shortcut: an object another add-on's frame handler moves isn't seen; measure every frame if one matters."""
+    ctx = bpy.context
+    if getattr(ctx, "mode", "OBJECT").startswith("EDIT") or runtime.IN_HANDLER[0] or _render_running() or _playing():
+        return False
+    vis = runtime._visible_uids()
+    groups = runtime._groups(vis)
+    if not groups:
+        return False
+    was = {h.uid: h.cursor for h in runtime.reg().histories.values()}
+    here = runtime._position(vis, groups)
+    vl = ctx.view_layer
+    act = vl.objects.active
+    act, mode = (act.name, act.mode) if act is not None else (None, "OBJECT")
+    sel = {o.name for o in vl.objects if o.select_get()}
+    from . import movie as mv
+    sc = ctx.scene
+    keyed = mv._step_fcurve(sc) is not None
+    n = len(groups)
+
+    moved = [True]
+
+    def seen(_scene, depsgraph=None):
+        if depsgraph is None or any(isinstance(u.id, bpy.types.Object) for u in depsgraph.updates):
+            moved[0] = True
+
+    def plays():
+        if not keyed:
+            yield from range(n + 1)
+            return
+        last = None
+        for f in range(sc.frame_start, sc.frame_end + 1):
+            if f != sc.frame_current:
+                sc.frame_set(f)                                  # seen() is told what it re-evaluated
+            g = max(0, min(n, sc.hindsight.movie_step))         # the step the movie shows on this frame
+            if g != last or moved[0]:
+                last, moved[0] = g, False
+                yield g
+
+    frame_was = (sc.frame_current, sc.frame_subframe)
+    busy = mv._BUSY[0]
+    mv._BUSY[0] = True                  # a frame change here doesn't play the movie's own jump
+    movie = getattr(runtime.goto, "_movie", False)
+    runtime.goto._movie = True          # #113: as the time lapse plays: the scene's camera and frame range stay
+    bpy.app.handlers.frame_change_post.append(seen)
+    with runtime.suspended():
+        try:
+            for g in plays():
+                runtime.global_goto(ctx, g, False)        # not final: no undo entry, no mode switch
+                measure()
+        finally:
+            try:
+                if (sc.frame_current, sc.frame_subframe) != frame_was:
+                    sc.frame_set(frame_was[0], subframe=frame_was[1])
+                runtime.global_goto(ctx, here, False)
+                for h in runtime.reg().histories.values():     # a cursor the timeline can't name: as it was
+                    if h.cursor != was.get(h.uid, h.cursor):
+                        runtime._goto_history(h, was[h.uid], False)
+            finally:
+                bpy.app.handlers.frame_change_post.remove(seen)
+                runtime.goto._movie = movie
+                mv._BUSY[0] = busy
+            vl.update()                                    # its objects again, after those made and removed
+            for o in vl.objects:                           # one made again on the way: selected,
+                if o.name in sel and not o.select_get():   # active and in its mode as before
+                    o.select_set(True)
+            ob = vl.objects.get(act) if act is not None else None
+            if ob is not None and vl.objects.active != ob:
+                vl.objects.active = ob
+            if ob is not None and ob.mode != mode:
+                try:
+                    bpy.ops.object.mode_set(mode=mode)
+                except RuntimeError as e:
+                    log.error_once(("camrig_mode", str(e)), f"framing could not go back to {mode}: {e}", e)
+    return True
+
+
+def _same_extents(a, b) -> bool:
+    return (a is None and b is None) or (a is not None and b is not None and np.array_equal(a, b))
+
+
 def frame(scene) -> bool:
     """Place the camera and lighting around the model. False when there is nothing to frame."""
     sh = _props(scene)
@@ -872,16 +1129,64 @@ def frame(scene) -> bool:
     ext = None
     bnd = None
     dg = []
+    hit = set()
 
     def depsgraph(refresh=False):
         if refresh or not dg:
             dg[:] = [_depsgraph(scene, refresh)]
         return dg[0]
 
-    for ob in model_objects(scene):
-        e, b = _measure(ob, basis, tx, ty, depsgraph, scene)
-        ext = framing.merge(ext, e)
-        bnd = framing.merge_bounds(bnd, b)
+    walked = []                                        # per step of the walk: {name: (ext, bnd, bound)}
+                                                       # of the objects that render without a history
+    def measure(now_only=False):
+        nonlocal ext, bnd
+        if now_only:                                   # a jump changed the scene: evaluate it again
+            depsgraph(True)                            # (matrix_world too, which a mesh is placed by)
+        obs = model_objects(scene)
+        for ob in obs:
+            _BOUND_HIT[0] = False
+            e, b = _measure(ob, basis, tx, ty, depsgraph, scene, now_only)
+            if _BOUND_HIT[0]:
+                hit.add(ob.name)
+            ext = framing.merge(ext, e)
+            bnd = framing.merge_bounds(bnd, b)
+        names = {o.name for o in obs}
+        shown = _rendered_objects(scene)               # #117 review 3: not in a collection disabled in renders
+        here = {}
+        walked.append(here)
+        for ob in scene.objects:
+            if ob.name not in names and renders(ob) and ob.as_pointer() in shown:
+                _BOUND_HIT[0] = False
+                e, b = _measure(ob, basis, tx, ty, depsgraph, scene, True)
+                here[ob.name] = (e, b, _BOUND_HIT[0])
+
+    walk = _at_every_step(lambda: measure(True))
+    if not walk:
+        measure()
+    # D181: an object without a history of its own counts when the history plays it back: a step makes
+    # or deletes it (it isn't there at every step), or moves or reshapes it (a parent or modifier
+    # object that is recorded). One that is the same at every step (a backdrop) is left out.
+    # Without a walk (Edit Mode, the movie's frame change: #117 review 2), the ones the last walk counted
+    # count as they are now, and before any walk every one (one step can't tell a backdrop apart).
+    # shortcut: measures every such object at every step; skip the unchanged ones if framing gets slow.
+    known = _COUNTED.get(scene.name_full)
+    counted = set()
+    for name in {n for here in walked for n in here}:
+        rows = [here.get(name) for here in walked]
+        first = rows[0]
+        if walk and first is not None and all(r is not None and _same_extents(r[0], first[0]) for r in rows):
+            continue
+        if not walk and known is not None and name not in known:
+            continue
+        counted.add(name)
+        for e, b, bound in filter(None, rows):
+            ext = framing.merge(ext, e)
+            bnd = framing.merge_bounds(bnd, b)
+            if bound:
+                hit.add(name)
+    if walk:
+        _COUNTED[scene.name_full] = counted
+    _BOUNDED[scene.name_full] = tuple(sorted(hit))
     fitted = framing.fit(ext, basis, tx, ty) if ext is not None else None
     with runtime.suspended():
         if fitted is None or bnd is None:
@@ -889,6 +1194,7 @@ def frame(scene) -> bool:
             if cam is not None:
                 cam.matrix_world = _basis_matrix(basis, back * 10.0)
                 _camera_data(cam.data, 1.0, 11.0)
+            _LIT[scene.name_full] = ((0.0, 0.0, 0.0), 1.0)
             _place_lights(have, basis, (0.0, 0.0, 0.0), 1.0)
             return False
         if cam is not None:
@@ -897,6 +1203,7 @@ def frame(scene) -> bool:
         lo, hi = np.asarray(bnd[0], np.float64), np.asarray(bnd[1], np.float64)
         center = (lo + hi) * 0.5
         radius = max(float(np.linalg.norm(hi - lo)) * 0.5, 1e-3)
+        _LIT[scene.name_full] = (center, radius)
         _place_lights(have, basis, center, radius)
     return True
 
@@ -906,10 +1213,8 @@ def _camera_data(cd, near, far) -> None:
     clip_start = max(near * 0.1, 1e-4)      # well in front of the model, whatever its size
     cd.clip_start = clip_start
     cd.clip_end = max(far * 2.0, clip_start * 10.0)
-    try:
+    with contextlib.suppress(AttributeError):
         cd.dof.use_dof = False
-    except AttributeError:
-        pass
 
 
 # ----------------------------------------------------------------------------- entry points
@@ -960,6 +1265,21 @@ def tick() -> None:
         if res["created"] or res["removed"]:
             log.info(f"Movie Mode camera and lighting: added {res['created']}, removed {res['removed']}")
             runtime.tag_redraw_all()
+
+
+def _timer():
+    try:
+        tick()
+    except Exception as e:                     # Blender drops a timer that raises
+        log.error_once(("camrig_tick", str(e)), f"Movie Mode camera error: {e}", e)
+    return INTERVAL
+
+
+def start() -> None:
+    """#113: the check that puts missing pieces back runs from Movie Mode going on (movie.start), never
+    before. Not persistent: loading a file stops it."""
+    if not bpy.app.timers.is_registered(_timer):
+        bpy.app.timers.register(_timer, first_interval=INTERVAL)
 
 
 def view_from_region(scene, view_rotation) -> None:
@@ -1046,14 +1366,16 @@ def _on_load_post(*_args) -> None:
     the caches were made for, with other shapes."""
     _PAST.clear()
     _REACH.clear()
+    _BOUNDED.clear()                   # its scenes may have the same names
+    _COUNTED.clear()
+    _LIT.clear()
 
 
 def register():
     _LAST[0] = 0.0
     _PAST.clear()
     _REACH.clear()
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     if _on_save_pre not in bpy.app.handlers.save_pre:
         bpy.app.handlers.save_pre.append(_on_save_pre)
     if _on_load_post not in bpy.app.handlers.load_post:
@@ -1061,14 +1383,12 @@ def register():
 
 
 def unregister():
+    if bpy.app.timers.is_registered(_timer):
+        bpy.app.timers.unregister(_timer)
     while _on_save_pre in bpy.app.handlers.save_pre:
         bpy.app.handlers.save_pre.remove(_on_save_pre)
     while _on_load_post in bpy.app.handlers.load_post:
         bpy.app.handlers.load_post.remove(_on_load_post)
     _PAST.clear()
     _REACH.clear()
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

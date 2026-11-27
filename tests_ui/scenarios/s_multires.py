@@ -59,7 +59,7 @@ def run(d):
     C.set_mode(d, "OBJECT")
     yield 0.8
     d.check("slider back: the displacement before the strokes", _hash(d) == h0 and C.info(d)["len"] == 1,
-            (_hash(d), h0, C.info(d)))
+            (_hash(d), h0, C.info(d), C.steps_detail(d, ob)))
 
     C.set_mode(d, "SCULPT")
     yield 0.9
@@ -68,7 +68,7 @@ def run(d):
     C.set_mode(d, "OBJECT")
     yield 0.8
     d.check("slider forward: the strokes come back, a visit with jumps only is no step",
-            _hash(d) == h1 and C.info(d)["len"] == 1, (_hash(d), h1, C.info(d)))
+            _hash(d) == h1 and C.info(d)["len"] == 1, (_hash(d), h1, C.info(d), C.steps_detail(d, ob)))
 
     C.set_mode(d, "SCULPT")
     yield 0.9
@@ -77,6 +77,6 @@ def run(d):
     yield 0.8
     h2 = _hash(d)
     d.check("a second visit with a stroke is a second step", C.info(d)["len"] == 2 and h2 != h1,
-            (C.info(d), h1, h2))
+            (C.info(d), h1, h2, C.steps_detail(d, ob)))
     d.check("Multires modifier and its levels kept", [m.type for m in ob.modifiers] == ["MULTIRES"]
             and ob.modifiers[0].total_levels == 2, [(m.type, getattr(m, "total_levels", None)) for m in ob.modifiers])

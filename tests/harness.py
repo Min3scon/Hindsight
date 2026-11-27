@@ -3,7 +3,6 @@ import os
 import shutil
 import sys
 import tempfile
-import traceback
 
 # Every temporary file of this test process (the crash journals of its sessions, saved test files,
 # history folders) goes into one folder that finish() removes. Headless Blender never unregisters the
@@ -24,14 +23,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from tests import runner  # noqa: E402
 import hindsight  # noqa: E402
 from hindsight.bl import runtime, meshio  # noqa: E402
-from hindsight.core.types import (  # noqa: E402
-    POSITION_KEY, MASK_KEY, FACE_SET_KEY, HIDE_VERT_KEY, HIDE_POLY_KEY,
-)
+from hindsight.bl import prefs
 
 _registered = [False]
-_failures = []
 
 
 def fresh(register=True):
@@ -47,12 +44,13 @@ def fresh(register=True):
     _registered[0] = True
     runtime.set_registry(runtime.Registry())
     runtime.reg().disabled.clear()
-    from hindsight.bl import datarec, guard, idmap
+    from hindsight.bl import datarec, guard, idmap, persistence
     datarec.forget()          # module state from an earlier test must not leak into this one
     idmap.forget()
+    persistence._PROTECT.update(sidecar=False, embed=False)     # what loading a file resets (no handler ran)
     guard.reset()
-    datarec.FORCE_SCOPE[0] = None
-    datarec.FORCE_KINDS[0] = None
+    prefs.FORCE["record_scope"] = None
+    prefs.FORCE["record_kinds"] = None
 
 
 def make_mesh(n_verts_approx=2000, name="Obj", location=(0, 0, 0)):
@@ -144,23 +142,71 @@ def assert_same(a, b, msg=""):
         assert x.view(np.uint8).tobytes() == y.view(np.uint8).tobytes(), f"{msg} {k} differs"
 
 
-def run(fn):
+def stored_text(path):
+    """{key: value} of the history Text in the .blend at `path`, as it is on disk (groups as dicts): since format 5,
+    Blender lets go of the parts once the file is written. A copy is read: Blender won't load the open file."""
+    from hindsight.bl import persistence
+    tmp = os.path.join(tempfile.mkdtemp(), "stored.blend")
+    shutil.copyfile(path, tmp)
+    known = set(bpy.data.libraries)
+    out = {}
     try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        traceback.print_exc()
-        print("FAIL", fn.__name__)
-        _failures.append(fn.__name__)
+        with bpy.data.libraries.load(tmp) as (src, dst):
+            dst.texts = [persistence.TEXT_NAME] if persistence.TEXT_NAME in src.texts else []
+        for t in dst.texts:
+            out = {k: (t[k].to_dict() if hasattr(t[k], "to_dict") else t[k]) for k in t.keys()}
+            bpy.data.texts.remove(t)
+    finally:
+        for lib in [lib for lib in bpy.data.libraries if lib not in known]:
+            bpy.data.libraries.remove(lib)
+        shutil.rmtree(os.path.dirname(tmp), ignore_errors=True)
+    return out
 
 
-def finish(code=None):
-    if code is None:
-        code = 1 if _failures else 0
-    if _failures:
-        print("FAILED:", ", ".join(_failures))
-    sys.stdout.flush()
-    sys.stderr.flush()
+def stored_registry(path):
+    """The registry the .blend at `path` holds on disk, read from its format 5 parts."""
+    from hindsight.bl import persistence
+    from hindsight.core import persist
+    g = stored_text(path)[persistence.PARTS_PROP]
+    return persist.registry_from_format5(g["index"], g.get("index_copy"), lambda uid, i: g.get(uid, {}).get(str(i)))
+
+
+def saved_steps(reg):
+    """A registry as a save keeps it: its settings, and each history's members, cursor, morph target and steps,
+    each step as (bytes, CRC-32, meta). A step recorded since the last save has no bytes yet: (None, None, meta)."""
+    from hindsight.core import persist
+    out = {"settings": (reg.next_seq, reg.use_global, reg.preserve_modes, dict(reg.by_object), set(reg.disabled),
+                        set(reg.everything))}
+    for uid, h in reg.histories.items():
+        out[uid] = (list(h.members), h.cursor, h.morph_target,
+                    [(*e.blob_crc(), persist._meta_for_json(e.meta)) for e in h.entries])
+    return out
+
+
+def save_format4(path, **kw):
+    """Saves `path` with its history in format 4, as builds before format 5 wrote it (the bytes and the save id on
+    the Text, Blender keeping its copy): for the tests of reading formats 1 to 4, which is unchanged."""
+    from hindsight.bl import persistence
+    from hindsight.core import persist
+
+    @bpy.app.handlers.persistent
+    def as_format4(*_a):
+        text = bpy.data.texts.get(persistence.TEXT_NAME)
+        if text is None or persistence.PARTS_PROP not in text:
+            return
+        reg = runtime.reg()
+        persistence._take_parts_back()      # #125: format 5's save handed the step parts over; an older build kept its copy
+        del text[persistence.DATA_PROP]
+        text[persistence.DATA_BIN_PROP] = persist.parts_to_bytes(persist.registry_parts(reg))
+        text[persistence.SAVE_ID_PROP] = reg.save_id
+    bpy.app.handlers.save_pre.append(as_format4)
+    try:
+        return bpy.ops.wm.save_as_mainfile(filepath=path, **kw)
+    finally:
+        bpy.app.handlers.save_pre.remove(as_format4)
+
+
+def _cleanup():
     if _OWN_TMP and not os.environ.get("HS_KEEP_TMP"):
         shutil.rmtree(_OWN_TMP, ignore_errors=True)
         # Blender's own temporary folder (made at start-up, before this module): exiting with os._exit
@@ -168,4 +214,7 @@ def finish(code=None):
         bt = getattr(bpy.app, "tempdir", "") or ""
         if os.path.basename(os.path.normpath(bt)).startswith("blender_"):
             shutil.rmtree(bt, ignore_errors=True)
-    os._exit(code)
+
+
+runner.on_finish.append(_cleanup)
+run, finish = runner.run, runner.finish

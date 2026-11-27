@@ -136,7 +136,7 @@ def test_branch_silent_and_confirm():
     SETTINGS.truncation_threshold = 3
     ob = H.make_mesh(1500)
     H.enter(ob, "SCULPT")
-    st = record(ob, ["position"] * 6, range(10, 16))
+    record(ob, ["position"] * 6, range(10, 16))
     h = runtime.history_of(ob)
     runtime.goto(C, 4)            # 2 future steps < threshold -> silent truncation
     H.fake_stroke(ob, 99)
@@ -325,7 +325,7 @@ def test_turn_off_on_and_reset():
     runtime.goto(C, 4)
     n = runtime.delete_past(C, ob)
     assert n == 4 and h.cursor == 0 and len(h.entries) == 0
-    st2 = record(ob, ["position"] * 2, [7, 8])
+    record(ob, ["position"] * 2, [7, 8])
     runtime.reset_history(C, ob)
     assert len(h.entries) == 0 and runtime.scrub_info(C)["len"] == 0
     runtime.reset_and_turn_off(C, ob)
@@ -335,6 +335,31 @@ def test_turn_off_on_and_reset():
     runtime.turn_on(C, ob)
     H.fake_stroke(ob, 10)
     assert H.commit(ob) is not None
+
+
+def test_turn_on_in_sculpt_mode_with_record_everything():
+    """#104: with Record everything on the object, turning its history back on in Sculpt Mode also makes
+    the strokes made while off one step there and then. Before, the sculpt mesh was left to the next
+    step, which then held them too (test_bl_recovery_faults' random sessions, Record on Everything)."""
+    from hindsight.bl import datarec
+    H.fresh()
+    ob = H.make_mesh(1500)
+    datarec.record_file_default()
+    assert datarec.is_tracked(ob)
+    H.enter(ob, "SCULPT")
+    st = record(ob, ["position"] * 2, [1, 2])
+    h = runtime.history_of(ob)
+    runtime.turn_off(C, ob)
+    H.fake_stroke(ob, 50)
+    off = H.snapshot(ob)
+    runtime.turn_on(C, ob)
+    assert len(h.entries) == 3 and h.cursor == 3, ("changes while off: one step", len(h.entries), h.cursor)
+    H.fake_stroke(ob, 51)
+    assert H.commit(ob) is not None and len(h.entries) == 4
+    runtime.goto(C, 3)
+    H.assert_same(H.snapshot(ob), off, "the step holds the strokes made while off, and only those")
+    runtime.goto(C, 2)
+    H.assert_same(H.snapshot(ob), st[2])
 
 
 def test_delete_past_keeps_later():
@@ -471,7 +496,7 @@ for f in [test_stroke_end_debounce, test_materials_warning, test_first_stroke_st
           test_vertex_paint_layer_added_late, test_restored_colour_layer_is_active,
           test_step_back_forward_ops, test_branch_silent_and_confirm, test_native_undo_sync_and_f9_replace,
           test_edit_mode_grouping, test_topology_snapshot, test_topology_step_owns_its_before,
-          test_fingerprint_streamed_same_digest, test_turn_off_on_and_reset,
+          test_fingerprint_streamed_same_digest, test_turn_off_on_and_reset, test_turn_on_in_sculpt_mode_with_record_everything,
           test_delete_past_keeps_later, test_per_object_and_global, test_excluded_objects,
           test_cap_and_memory_eviction, test_read_buffers_follow_the_last_mesh]:
     H.run(f)

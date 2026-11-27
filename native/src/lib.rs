@@ -28,13 +28,14 @@ use pyo3::prelude::*;
 use lz4_sys as _; // links the C library the codec module calls
 
 pyo3::create_exception!(hindsight_native, CorruptStep, PyValueError, "A step blob is damaged or not a step at all.");
+pyo3::create_exception!(hindsight_native, UnknownEncoding, PyValueError, "A step in an encoding this build has no decoder for (a newer Hindsight's).");
 pyo3::create_exception!(hindsight_native, CorruptBlob, PyValueError, "Compressed data is damaged.");
 pyo3::create_exception!(hindsight_native, CorruptDelta, PyValueError, "A packed delta is damaged or not a delta at all.");
 pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A file format newer than this build reads.");
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 8;
+const API: u32 = 13;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -185,6 +186,9 @@ mod step;
 mod crc;
 mod hash;
 mod same;
+mod morph;
+mod framing;
+mod format5;
 
 // ------------------------------------------------------------------------------------ diff
 fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut [u8]) {
@@ -1443,5 +1447,8 @@ fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     crc::register(m)?;
     hash::register(m)?;
     same::register(m)?;
+    morph::register(m)?;
+    framing::register(m)?;
+    format5::register(m)?;
     Ok(())
 }

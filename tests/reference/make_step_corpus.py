@@ -12,7 +12,6 @@ import json
 import struct
 import sys
 import zipfile
-import zlib
 
 import numpy as np
 
@@ -23,8 +22,7 @@ if REF:
     sys.path.insert(0, ROOT + "/tests")
 
 from hindsight.core import delta, step as stepmod                          # noqa: E402
-from hindsight.core.types import (ADD, DATA, DELTA, JOIN, MISSING, TOPO, XOR, ChannelDelta, DataChange,  # noqa: E402
-                                  Snapshot, Step)
+from hindsight.core.types import DATA, DELTA, JOIN, MISSING, TOPO, DataChange, Snapshot, Step
 
 if REF:
     from reference import step as refstep, pure                            # noqa: E402

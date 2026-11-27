@@ -1,11 +1,11 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """The crash journal's step blobs are lz4 now (types.JOURNAL_CODEC; they were zstd). Recovery reads
 journals of both kinds, and a journal that has both: zstd records written before an upgrade, lz4 ones
 after it (the same file is appended to). Pure Python, no bpy."""
 import shutil
 import struct
 import tempfile
-import traceback
 
 import numpy as np
 
@@ -29,7 +29,6 @@ def test_the_journal_codec_is_lz4():
     e = Entry(st)
     assert blob_codec(e.to_bytes(types.JOURNAL_CODEC, 0)) == "lz4"
     assert blob_codec(e.to_bytes("zstd", 0)) == "zstd"
-    print("PASS test_the_journal_codec_is_lz4")
 
 
 def _journal_with(codecs, d):
@@ -69,7 +68,6 @@ def test_old_new_and_mixed_journals_replay():
             assert seen == codecs, (name, seen)
     finally:
         shutil.rmtree(d, ignore_errors=True)
-    print("PASS test_old_new_and_mixed_journals_replay")
 
 
 def test_a_journal_appended_to_after_an_upgrade():
@@ -91,7 +89,6 @@ def test_a_journal_appended_to_after_an_upgrade():
         assert all(tj._steps_equal(e.load(), s) for e, s in zip(h.entries, steps + more))
     finally:
         shutil.rmtree(d, ignore_errors=True)
-    print("PASS test_a_journal_appended_to_after_an_upgrade")
 
 
 def test_journal_size_growth():
@@ -103,22 +100,15 @@ def test_journal_size_growth():
         z += len(Entry(st).to_bytes("zstd", 0))
         l += len(Entry(st).to_bytes("lz4", 0))
     assert l < z * 1.6, (z, l)
-    print(f"PASS test_journal_size_growth (40 test strokes: zstd {z} bytes, lz4 {l} bytes, x{l / z:.2f})")
+    print(f"  test_journal_size_growth (40 test strokes: zstd {z} bytes, lz4 {l} bytes, x{l / z:.2f})")
 
 
 def main():
     tests = [test_the_journal_codec_is_lz4, test_old_new_and_mixed_journals_replay,
              test_a_journal_appended_to_after_an_upgrade, test_journal_size_growth]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

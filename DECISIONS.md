@@ -1,5 +1,22 @@
 # Decisions log
 
+## Slop check clean-up (owner, 2026-11-22; verdict on #6, report `dev/reports/SLOP_CHECK.md`)
+
+The code is kept and fixed in place, with no rebuild. Every ticket keeps every function and adds none; the owner's
+decisions below remove only things that never shipped or that nothing uses. Git keeps the history.
+
+- O1, the importer goes (#72): `hindsight/core/importer.py`, its tests and `IMPORTER.md`. It was built ahead of an
+  interface that is not in the repo, so it is not a shipped function.
+- O2, the gate evidence frozen at beta 2 is retired (#73): `evidence/`, `test_rounds/`, `TEST_EVIDENCE.md`,
+  `tools/make_evidence.py`, `gate_spec.py`, `visual_review.py`, the `@covers` marks and the pre-commit check on
+  them. The 12-point gate itself stays.
+- O4, the benchmarks (#74): `bench/results/` and everything `OPTIMISATION_LOG.md` links to stay; the 34
+  one-off scripts that `bench/suite.py` replaces go.
+- O3, the copy checker (#74): its website-only coverage rule and its test
+  (`tests/test_tools_coverage.py`) are deleted rather than aimed at README and CHANGELOG.
+- O6, the unused tools go (#74): `tools/net_check.py` and `tools/list_ui_strings.py`.
+- Not decided here: the frozen oracle copies in `tests/reference` (O5) wait for format 5 (#11).
+
 ## History inside the .blend (owner, 2026-11-22)
 
 The history lives inside the .blend itself, so the file alone carries all of it to any computer; nobody should
@@ -31,6 +48,48 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - The new layout of the history in the .blend (format 5) is accepted: a file saved by the new build opens in beta 2
   or beta 3 without its history, which those builds keep untouched until the PC is updated (owner, 2026-11-22: "do
   what's best"). The order of the work is the one in DEVELOPMENT.md section i (owner left it to the recommendation).
+- Build first, then optimise (owner, 2026-11-22): everything is built before the optimisation work starts, instead of
+  optimising midway, which wastes time when later building changes the code again. The optimisation phase is at
+  least 100 measured rounds and does not stop at 100: it keeps going until optimising no longer finds real gains
+  ("not 100 rounds for the sake of it").
+- The next release is V2, not "beta 3" (owner, 2026-11-22): the version out now is V1, no longer a beta (the
+  owner's teacher has it on his website), though its files say 1.0.0-beta.2. V2's version number is 2.0.0.
+- The work's end point (owner, 2026-11-22): V2 ready to release, everything built first, then optimised, tested on
+  Blender 4.2 to 5.3. The release itself stays the owner's call.
+- When optimising stops (owner, 2026-11-22, replacing a proposed "no Hindsight cost above 10%" rule): there is no
+  fixed target, for time or for memory ("I can't just say make it use 1 gigabyte of RAM"). If it can be optimised,
+  optimise it; if it can be optimised again, keep going; stop only when nothing more can be gained without taking
+  away some of what the add-on does. The aim is that it runs very well on any PC and uses little RAM. In practice:
+  the phase ends when a full profiling pass over every scenario finds nothing left to try, every remaining cost
+  having been attempted and the attempts reverted, or being Blender's own. At least 100 rounds in all.
+- The website is no longer needed (owner, 2026-11-22): V1 is not hosted there any more. Deleting it, hiding it or
+  keeping it is left to the recommendation. This replaces the rule that `docs/` and `site/` are only changed for a
+  release.
+- The code itself is optimised too (owner, 2026-11-22): as small as possible while keeping every function. A check
+  for slop (project-triage) comes early in the build phase, right after the website goes, and its fixes come before
+  the rest of the build; shrinking the code is also part of the optimisation phase, alongside speed and memory.
+- Add-on testing (owner, 2026-11-22): V2 must work with basically every add-on people use. Tested with the 1,000
+  most-downloaded add-ons on Blender's extensions platform (5,000 would mostly add add-ons with very few users), plus
+  the most popular paid ones where a copy is provided; after everything else is built, before any optimisation.
+- Pull requests (owner, 2026-11-22): the work of every ticket goes up as a pull request in the shape of Matt Pocock's
+  `pr` skill (Summary, Evidence, Merge Danger), so the owner can review it quickly; never as a plain commit. Matt
+  Pocock's skills are used for the work (`implement` with `tdd` and `code-review`, `research`, `diagnosing-bugs`). The
+  steps are in CLAUDE.md, "Working a ticket". The glossary is `GLOSSARY.md`, the name his current skills use.
+- Time lapse framing (owner, 2026-11-22: "the perfect position for the camera and light to get everything in
+  frame"): no Hindsight camera or lights exist or run until the user creates the time lapse; then they are placed
+  once for the whole history (nothing has to follow the work as it is made, and nothing costs memory before it is
+  needed). The camera stays still for the whole movie, with everything the history plays back (every object type
+  that renders, and objects moved, added or deleted during it) inside a small margin at every step, as close as
+  that allows, and lit. Proved by render-based tests in the real 4.2 and 5.3 binaries at every step: tiny to huge
+  and 1M-vertex models, models changed halfway, every object type, image shapes and lenses, random histories.
+  Ticket #23, after #10 and #13 and before add-on testing (#15).
+- Rust rewrite (owner, 2026-11-22): everything that does not need Blender's Python API is rewritten in Rust after
+  the build tickets, before add-on testing and all optimisation (#24). Order: build, then rewrite in Rust, then
+  optimise; new code that does not need Blender's API is written in Rust from the start, so nothing is written
+  twice.
+- Test gates (owner, 2026-11-22): everything is tested before optimising (#25, after #15, before #16) and again
+  after it (#26, after #21). An optimisation round is kept only if the whole suite still passes after it (5.3 and
+  4.2); each pull request of rounds runs all five versions.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
@@ -77,7 +136,7 @@ use the Ponytail and CodeOptiX repositories to optimise; rewrite in Rust.
 - No Blender binary and no GPU here (download.blender.org was refused by the network policy then (corrected 2026-11-19: since 2026-11-18 the "Hindsight" cloud environment allows download.blender.org; binaries 4.2.23 and 5.3.0 are downloaded and used for real-window runs, see DEVELOPMENT.md)). Everything ran on Blender as a
   Python module from PyPI: 4.2.23, 5.0.1, 5.1.2, 5.2.2 and 5.3.0. Nothing ran in a Blender window: no
   drawing, no real brush strokes, no real mouse. The release gate (HANDOFF, "Test guarantee") was NOT run:
-  COVERAGE statuses and TEST_EVIDENCE are unchanged, and this build goes out on headless tests plus Cycles
+  COVERAGE statuses are unchanged, and this build goes out on headless tests plus Cycles
   CPU renders that were looked at.
 - Three test cases can't pass here on any version: test_bl_metadata::test_opens_without_hindsight (needs
   a Blender binary), test_bl_t1_migrate (needs .tmp/old/b1.zip), and anything that draws.
@@ -148,9 +207,8 @@ names) moves the centre. Not seen in a real window: verify.
   number work in hindsight/core/delta.py: finding the changed elements (diff), applying a delta, and the
   transforms inside packing and unpacking a step (index coding, prediction, zigzag, byte planes). Crate
   in native/, PyO3 with abi3 (one binary per platform serves Python 3.11 and 3.13), loaded through
-  hindsight/core/native.py; `HINDSIGHT_NATIVE=0` forces the Python path, `=require` makes a missing
-  module an error (tests). The Python code stays as the fallback and the reference: tests compare the
-  two bit for bit.
+  hindsight/core/native.py. (Later: no Python path ships; the Python code is the reference in `tests/reference/`, and
+  tests compare the two bit for bit.)
 - Measured (PERF_LOG "Rust engine"): diff 0.39 to 0.08 ms at 100k and 5.0 to 1.2 ms at 1M; apply one
   step 0.47 to 0.17 ms at 1M; a 300-step jump about half the time; diff's temporary memory 17 MB to
   0.3 MB at 1M. Memory held by the history itself does not change: 95% of it is step data and arrays.
@@ -170,11 +228,10 @@ They need re-targeting before the next mutation run.
 
 ## Status "partial" (owner, 2026-10-15)
 Owner's instruction for the beta 2 site: mark rows "partial" only where part of the release gate really
-passed, with exact limits in COVERAGE.md, never faked. make_evidence used to require every gate item for
-partial, the same as supported, so no row could be partial. It now checks the owner's definition: the core
+passed, with exact limits in COVERAGE.md, never faked. The old evidence check required every gate item for
+partial, the same as supported, so no row could be partial. The owner's definition was: the core
 items (EXACT, ORACLE, REPLAY, STEPS) count on Blender 5.0.1, 5.1.1 and 5.1.2, and the row's Limits ends with
-"Open gate items: ..." naming exactly the items that don't count yet (computed by make_evidence, checked on
-every commit). "supported" still needs every item. The owner can revert this rule; the site would then claim
+"Open gate items: ..." naming exactly the items that don't count yet. "supported" still needs every item. The owner can revert this rule; the site would then claim
 nothing until the full gate passes.
 
 ## Beta 2 job (2026-10-14, on the owner's Windows PC)
@@ -189,7 +246,7 @@ nothing until the full gate passes.
   ignored, simulated mouse and keys drive it), and runs a scenario from `tests_ui/scenarios/` on a timer.
 - The headless suite now also runs inside real Blender: `python tests/run_tests.py --blender all`.
 
-### Root cause of "installs but shows no UI" (evidence: `.tmp/ui/*` runs, images in test_rounds/evidence)
+### Root cause of "installs but shows no UI" (evidence: `.tmp/ui/*` runs, images no longer kept)
 Reproduced with the live 1.0.0-beta.1 zip from the website, installed through Blender's own
 Install from Disk operator in a fresh profile, on 5.0.1, 5.1.1 and 5.1.2. Registration itself is fine:
 all 14 modules register, preferences resolve, keymaps and the draw handler are installed, no traceback.

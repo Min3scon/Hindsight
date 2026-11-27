@@ -68,7 +68,8 @@ def run(d):
         bpy.ops.hindsight.record_file(on=True)
     yield 1.0
     dr, rt = C.mod("datarec"), C.mod("runtime")
-    tracked = len(dr.tracked_uids())
+    # #62: datablocks that still exist (the default Cube, switched on when the file opened, was removed)
+    tracked = sum(C.mod("idmap").find(u) is not None for u in dr.tracked_uids())
     d.check("31 objects and the scene recorded", tracked >= 31, tracked)
     win, area, reg, ui, space = d.view3d()
     cube = next(o for o in bpy.data.objects if o.name.startswith("Cube"))

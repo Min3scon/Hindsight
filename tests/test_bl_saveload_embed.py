@@ -1,7 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 """Embedded history (Save Mode Embed and Both): the stored bytes are exactly the history file (R061:
 earlier builds wrote its base64 as text), saving again replaces them, the packer is told when the user
-works, and an embedded history and a history folder written by the same save hold the same bytes."""
+works. #48: Save history Both writes no history folder."""
 import shutil
 import tempfile
 
@@ -23,7 +23,6 @@ def _record(ob, seeds):
 
 def test_embed_bytes_are_the_history_file():
     H.fresh()
-    SETTINGS.save_mode = "BOTH"
     ob = H.make_mesh(1500, name=NAME)
     H.enter(ob, "SCULPT")
     _record(ob, range(20, 26))
@@ -31,20 +30,20 @@ def test_embed_bytes_are_the_history_file():
     path = os.path.join(TMP, "both.blend")
     for round_ in range(2):                       # the second save replaces the stored bytes
         bpy.ops.wm.save_as_mainfile(filepath=path)
-        text = bpy.data.texts[persistence.TEXT_NAME]
-        stored = text[persistence.DATA_BIN_PROP]
-        assert isinstance(stored, bytes)
-        assert persistence.DATA_PROP not in text, "the base64 text of earlier builds is written again"
-        want = persist.registry_to_bytes(runtime.reg(), SETTINGS.compression)
-        assert stored == want, round_
-        with open(persist.sidecar_file(path), "rb") as fh:
-            assert fh.read() == stored, "history folder and embedded copy differ"
+        # format 5 (#64): the stub, and the parts as the history builds them (no format 4 copy, no base64)
+        stored = H.stored_text(path)
+        assert persistence.DATA_BIN_PROP not in stored and stored[persistence.DATA_PROP] == persist.STUB, list(stored)
+        index, parts = persist.registry_to_format5(runtime.reg(), SETTINGS.compression)
+        g = stored[persistence.PARTS_PROP]
+        assert set(g) == {"index", "index_copy"} | set(parts), (round_, list(g))
+        assert g["index"] == index and g["index_copy"] == index, round_
+        assert {u: [g[u][str(i)] for i in range(len(ps))] for u, ps in parts.items()} == parts, round_
+        assert all(len(g[u]) == len(ps) for u, ps in parts.items()), round_
+        assert not os.path.isdir(persist.sidecar_dir(path)), "a history folder was written"
         H.enter(ob, "SCULPT")
         _record(ob, [40 + round_])
         H.enter(ob, "OBJECT")
-    SETTINGS.save_mode = "EMBED"
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    shutil.rmtree(persist.sidecar_dir(path), ignore_errors=True)
     bpy.ops.wm.open_mainfile(filepath=path)
     h = runtime.history_of(bpy.data.objects[NAME])
     assert h is not None and len(h.entries) == 8, None if h is None else len(h.entries)

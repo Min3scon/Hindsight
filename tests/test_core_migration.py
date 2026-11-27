@@ -7,8 +7,8 @@ saving again with this build, after re-packing every step in the background form
 steps (format 3) recorded on top of the old ones.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import random
-import traceback
 
 import numpy as np
 
@@ -18,7 +18,8 @@ from hindsight.core.types import ADD, DELTA, Entry, Step
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, "fixtures")
-FILES = {"beta1_format1.hsr": 1, "beta2wip_format2.hsr": 2}
+# {file: (its format, the encoding its steps were saved in)}: the format 3 build saved its steps packed (#67)
+FILES = {"beta1_format1.hsr": (1, 1), "beta2wip_format2.hsr": (2, 1), "beta2wip_format3.hsr": (3, 3)}
 EXP = np.load(os.path.join(FIX, "legacy_expected.npz"))
 stepmod.VERIFY = True
 
@@ -62,15 +63,14 @@ def load(name):
 
 
 def test_loads_and_plays_back():
-    for name, fmt in FILES.items():
+    for name, (fmt, enc) in FILES.items():
         reg = load(name)
         assert reg.load_report["format"] == fmt and reg.load_report["migrated"], reg.load_report
         assert not reg.load_report["damaged"]
         for h in reg.histories.values():
             for e in h.entries:
-                assert stepmod.version_of(e.blob) == 1          # read as they are
+                assert stepmod.version_of(e.blob) == enc        # read as they are
         check_all_positions(reg, name)
-    print("PASS test_loads_and_plays_back")
 
 
 def test_saved_again_by_this_build():
@@ -80,7 +80,6 @@ def test_saved_again_by_this_build():
         reg2 = persist.registry_from_bytes(blob)
         assert reg2.load_report["format"] == persist.FORMAT_VERSION and not reg2.load_report["migrated"]
         check_all_positions(reg2, name + " resaved")
-    print("PASS test_saved_again_by_this_build")
 
 
 def test_repacked_in_the_background_form():
@@ -99,11 +98,10 @@ def test_repacked_in_the_background_form():
         check_all_positions(reg, name + " repacked")
         # and once more through a save
         check_all_positions(persist.registry_from_bytes(persist.registry_to_bytes(reg)), name + " repacked+saved")
-    print("PASS test_repacked_in_the_background_form")
 
 
 def test_new_steps_on_top_of_old_ones():
-    for name in FILES:
+    for name, (_fmt, enc) in FILES.items():
         reg = load(name)
         tops = {}
         for uid, h in reg.histories.items():
@@ -120,23 +118,16 @@ def test_new_steps_on_top_of_old_ones():
         check_all_positions(reg, name + " plus new", tops)
         reg2 = persist.registry_from_bytes(persist.registry_to_bytes(reg))
         kinds = {stepmod.version_of(e.blob) for h in reg2.histories.values() for e in h.entries}
-        assert kinds == {1, 3}, kinds
+        assert kinds == {enc, 3}, kinds
         check_all_positions(reg2, name + " plus new, saved", tops)
-    print("PASS test_new_steps_on_top_of_old_ones")
 
 
 def main():
-    ok = True
     for t in (test_loads_and_plays_back, test_saved_again_by_this_build, test_repacked_in_the_background_form,
               test_new_steps_on_top_of_old_ones):
-        try:
-            t()
-        except Exception:
-            ok = False
-            print("FAIL", t.__name__)
-            traceback.print_exc()
-    return ok
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":
-    sys.exit(0 if main() else 1)
+    main()

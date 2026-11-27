@@ -5,7 +5,6 @@ should get exactly one step from it: object names, and "scene" for the scene his
 or deleted). Selection is set first, as a user would by clicking; selecting is not a step.
 Operators that need a real viewport (H, loop cut, knife) are in the real-UI scenarios instead.
 """
-import math
 
 import bpy
 
