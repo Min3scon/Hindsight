@@ -47,8 +47,8 @@ _SNAP_READ = [False]
 _LEFT: dict = {}           # uid -> snapshot record of an action a jump took away (D162, D155)
 
 
-def _unused(idb) -> bool:
-    """No user but its fake user (a library kept for later, data an add-on keeps)."""
+def _no_user(idb) -> bool:
+    """No user but its fake user, if it has one: nothing uses it."""
     return idb.library is None and idb.users - int(bool(idb.use_fake_user)) <= 0
 
 
@@ -78,6 +78,12 @@ def _ids(name: str):
     unused = users <= fake
     # D174: object data with no user at all is what deleting its object leaves (Blender drops it at save)
     return [coll[int(i)] for i in np.flatnonzero(unused & fake if name in _DATA_COLLS else unused)]
+
+
+def _unused(idb) -> bool:
+    """No user but its fake user (a library kept for later, data an add-on keeps). One without even
+    that isn't kept: a save leaves it out (#104: a reopen then counted it as deleted)."""
+    return idb.use_fake_user and _no_user(idb)
 
 
 def _loose_mats():
@@ -540,7 +546,7 @@ def flush_loose_removals() -> None:
         if idb is None:
             continue
         try:
-            if not _unused(idb):
+            if not _no_user(idb):           # #104 review: not _unused, one with no fake user goes too
                 if not _kept_by_record(idb, kind):
                     log.warn(f"{idb.name} was made after this point but can't be taken away: something uses it now")
                 continue

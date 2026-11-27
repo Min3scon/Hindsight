@@ -65,7 +65,7 @@ OBJECT_DEEP_MAX = 1_000_000  # vertices; above this an Object Mode check compare
 
 
 def scope_everything() -> bool:
-    return _pref("record_scope", "SCULPT") == "EVERYTHING"
+    return _pref("record_scope", "EVERYTHING") == "EVERYTHING"
 
 
 def _rt():
@@ -130,7 +130,29 @@ def set_file_tracked(on: bool) -> int:
                 set_tracked(x, on, _refresh=False)
             n += isinstance(x, bpy.types.Object)
         refresh_mesh_users()            # once for all (per object it was one walk each)
+    _rt()._journal("META_EVERYTHING", {"unnamed": bool(on)})    # #104: also objects a crash loses the id of
     return n
+
+
+def record_file_default() -> None:
+    """#10: "Everything in this file" is on in a file where nobody switched anything on or off (its
+    history has nothing switched on and keeps no choice, #61): called when a file is loaded. It is no
+    choice of the user's, so it isn't journaled and alone it saves nothing (D29); loading the file
+    applies it again. After a crash that ended the default (#104), it comes back on the objects the
+    journal didn't switch off."""
+    r = _rt().reg()
+    unnamed = getattr(r, "unnamed_on", None)
+    if not scope_everything() or unnamed is False or (unnamed is None and (r.everything or r.everything_chosen)):
+        return
+    r.file_default = unnamed is None
+    off = r.named_off if unnamed else ()
+    with idmap.frame():
+        for x in file_candidates():
+            uid = idmap.claim(x)
+            if uid is not None and uid not in r.disabled and uid not in off and uid not in r.everything:
+                r.everything.add(uid)
+                baseline(x, uid, refresh=True)
+        refresh_mesh_users()
 
 
 def set_tracked(idb, on: bool, _refresh: bool = True) -> None:
@@ -145,6 +167,10 @@ def set_tracked(idb, on: bool, _refresh: bool = True) -> None:
     uid = idmap.claim(idb)
     if uid is None:
         return
+    if rt.reg().file_default:             # #104: a crash brings the default back, then this switch
+        rt._journal("META_EVERYTHING", {"unnamed": True})
+    rt.reg().file_default = False         # someone chose: no longer the default (#10)
+    rt.reg().everything_chosen = True     # and the file keeps that choice (#61)
     if on:
         was_on = uid in rt.reg().everything
         rt.reg().everything.add(uid)

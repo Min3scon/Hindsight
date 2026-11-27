@@ -5,7 +5,7 @@ it writes with). Do not edit by hand. `tests/test_bl_metadata.py` fails if Hinds
 into a .blend or next to it that isn't listed here.
 
 - Opening a file with Hindsight doesn't change it. Nothing is written until recording starts on an
-  object (entering Sculpt or Vertex Paint Mode on it, or switching on Record everything) or you change
+  object (entering Sculpt or Vertex Paint Mode on it, or switching Record everything on or off) or you change
   a Hindsight setting, and nothing reaches the disk until you save.
 - While Movie Mode is on, Hindsight keeps a camera and, when the scene has no light of its own, three
   sun lamps in the scene. They are ordinary objects, never recorded, and go again when Movie Mode is
@@ -25,7 +25,7 @@ into a .blend or next to it that isn't listed here.
 | `.hindsight_history[save_id]` | custom property (text: a random id of the save) | in the .blend, on the Text above | when a file that has history is saved: names the save of the history this file goes with, so crash recovery never uses steps from another save of the file | Remove Hindsight data from this file |
 | `.hindsight_history[sidecar]` | custom property (on/off) | in the .blend, on the Text above | when a file that has history is saved: on when the history is in the folder next to the file | Remove Hindsight data from this file |
 | `_hindsight_rig` | custom property (text: camera, key, fill or rim) | in the .blend, on the camera and the three sun lamps Hindsight adds for Movie Mode | while Movie Mode is on with Camera or Lighting switched on | switching Movie Mode off; Remove Hindsight data from this file; deleting the object |
-| `_hindsight_uid` | custom property (text, 16 characters) | in the .blend, on objects, meshes, the scene, collections and materials Hindsight records or refers to | when an object's first change is recorded (entering Sculpt or Vertex Paint Mode counts), when Record everything is switched on, and on data a recorded value refers to (a parent, a collection) | Remove Hindsight data from this file (Advanced panel); deleting the object |
+| `_hindsight_uid` | custom property (text, 16 characters) | in the .blend, on objects, meshes, the scene, collections and materials Hindsight records or refers to | when an object's first change is recorded (entering Sculpt or Vertex Paint Mode counts), when Record everything is switched on (also by default when a file opens, but left out of a save while nothing is recorded), and on data a recorded value refers to (a parent, a collection) | Remove Hindsight data from this file (Advanced panel); deleting the object |
 | `Hindsight Camera` | object with its data (a camera) | in the .blend, in the scene's root collection | while Movie Mode is on with Camera switched on | switching Movie Mode or that switch off; Remove Hindsight data from this file |
 | `Hindsight Fill` | object with its data (a sun lamp) | in the .blend, in the scene's root collection | while Movie Mode is on with Lighting switched on and the scene has no light of its own | switching Movie Mode or that switch off; Remove Hindsight data from this file |
 | `Hindsight Key` | object with its data (a sun lamp) | in the .blend, in the scene's root collection | while Movie Mode is on with Lighting switched on and the scene has no light of its own | switching Movie Mode or that switch off; Remove Hindsight data from this file |

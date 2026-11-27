@@ -2269,12 +2269,15 @@ def turn_on(context, obj) -> None:
         h.enabled = True
         _journal("META", {"hist": h.uid, "members": list(h.members), "enabled": True,
                           "morph_target": h.morph_target})
-        if datarec.is_tracked(obj) and obj.mode != "EDIT":
+        if datarec.is_tracked(obj) and obj.mode == "OBJECT":
             # D46: values and mesh changed while off become one step together
             datarec.catch_up(obj, "Changes While Off")
         elif uid in _STATES and obj.mode != "EDIT":
             # Changes made while off become the new starting point: one step bridging them.
+            # (#104: in Sculpt Mode the mesh is the sculpt history's even with Record everything)
             commit(obj, label="Changes While Off", full=True)
+            if datarec.is_tracked(obj):
+                datarec.catch_up(obj, "Changes While Off")
         else:
             ensure_state(obj, refresh=obj.mode != "EDIT")
     else:

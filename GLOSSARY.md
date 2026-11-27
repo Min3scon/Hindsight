@@ -71,7 +71,7 @@ _Avoid_: object step, property step
 ## What is recorded
 
 **Record scope**:
-What Hindsight records: Sculpting only (the default), or Everything in this file.
+What Hindsight records: Everything in this file (the default), or Sculpting only.
 _Avoid_: recording mode, tracking
 
 **Adapter**:

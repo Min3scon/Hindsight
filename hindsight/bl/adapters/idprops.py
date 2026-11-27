@@ -53,7 +53,7 @@ def owned_path(adapter_id: str, path: str) -> bool:
     """A value an object records only while it owns the data (D112, D114)."""
     if adapter_id == "scene":
         # (the scene's loose node groups are not: they coming and going is a step, D152, like D151's data)
-        # (the inventories coming and going, as Movie Mode stops the capture of them, is no step either)
+        # (the inventories coming and going is no step either: before #104 Movie Mode stopped reading them)
         return path in ("settings", COMP_TREE, INV_LOOSE, INV_GROUPS) or path.startswith((WORLD_PREFIX, WORLDP_PREFIX))
     return adapter_id == "object" and path.startswith((DATA_PREFIX, MAT_PREFIX, MATP_PREFIX, ACT_PREFIX,
                                                        SK_PREFIX, MATA_PREFIX, NG_PREFIX, NGA_PREFIX, PART_PREFIX))
@@ -74,6 +74,14 @@ def _own_prop(k: str) -> bool:
     """Hindsight's own properties (ids, the camera rig mark, its scene settings) are never part of
     what is recorded."""
     return k == "hindsight" or k.startswith("_hindsight") or k.startswith("hindsight_")
+
+
+def _skipped(idb, k: str) -> bool:
+    """Not recorded: Hindsight's own properties, and the "cycles" group Blender writes on a camera at each
+    save (Blender 5: in its add-on data), a copy of its panorama settings for older versions (#104: a
+    reopen read it as a change). The whole group is skipped, so anything an add-on keeps under that key
+    on a camera isn't recorded either."""
+    return _own_prop(k) or (k == "cycles" and isinstance(idb, bpy.types.Camera) and not hasattr(idb, "cycles"))
 
 
 def _sys_group(idb, create: bool = False):
@@ -124,7 +132,8 @@ def _idp_py(v, cur=MISSING):
     return v
 
 
-def _group_json(g) -> dict:
+def _group_json(g, owner=None) -> dict:
+    """owner: the datablock g belongs to, when g is its add-on group (Blender 5)."""
     out = {}
     if g is None:
         return out
@@ -132,8 +141,9 @@ def _group_json(g) -> dict:
         keys = list(g.keys())
     except Exception:
         return out
+    owner = g if owner is None else owner
     for k in keys:
-        if _own_prop(k):
+        if _skipped(owner, k):
             continue
         try:
             v = g[k]
@@ -184,7 +194,7 @@ def id_props(idb, anim=None) -> dict:
     isn't recorded, not as properties taken off."""
     own = _group_json(idb) or _NONE
     five = hasattr(idb, "bl_system_properties_get")
-    sysd = (_group_json(_sys_group(idb)) or _NONE) if five else None
+    sysd = (_group_json(_sys_group(idb), idb) or _NONE) if five else None
     if own is _NONE and not sysd:
         return _ID_EMPTY5 if five else _ID_EMPTY4
     out = {IDPROPS_KEY: own}
@@ -198,17 +208,18 @@ def id_props(idb, anim=None) -> dict:
     return out
 
 
-def _write_group(g, want: dict) -> None:
+def _write_group(g, want: dict, owner=None) -> None:
     if g is None:
         return
     want = want or {}
-    for k in [k for k in g.keys() if not _own_prop(k) and k not in want]:
+    owner = g if owner is None else owner
+    for k in [k for k in g.keys() if not _skipped(owner, k) and k not in want]:
         try:
             del g[k]                     # not set then: back to the add-on's default
         except Exception:
             pass
     for k, v in want.items():
-        if _own_prop(k):
+        if _skipped(owner, k):
             continue
         try:
             cur = g[k] if k in g else MISSING
@@ -235,7 +246,7 @@ def write_id_props(idb, values: dict) -> None:
     if SYSPROPS_KEY in values:
         want = values[SYSPROPS_KEY]
         g = _sys_group(idb, create=want is not MISSING and bool(want))
-        _write_group(g, {} if want is MISSING else want)
+        _write_group(g, {} if want is MISSING else want, idb)
 
 
 def _gn_inputs(m):

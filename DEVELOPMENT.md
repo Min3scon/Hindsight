@@ -377,8 +377,8 @@ now lost; the owner can overrule; they were to be recorded in `DECISIONS.md`, wh
 - New record kinds make the file format 5 only when used; V1 (1.0.0-beta.2) and the earlier builds of V2 refuse format 5.
 - Moving a node alone is not a step; a node's position is stored with it.
 - Texture paint is its own kind, off by default. Other new kinds are on by default, under Record >
-  Everything. The default of the whole-file switch stays "Sculpting only" until a kind has passed the
-  real-Blender gate; turning Everything on by default is one owner decision at release time.
+  Everything. Since V2 (#10) Record defaults to Everything, and "Everything in this file" is on in a file where
+  nobody switched anything on or off (DECISIONS.md, 2026-11-22).
 - Multires (one step per Sculpt Mode visit) and Dyntopo (per stroke up to 200k triangles) sit behind one
   preference, default off, labelled experimental, transactional (never delete the `.btx` before the pack
   is verified).

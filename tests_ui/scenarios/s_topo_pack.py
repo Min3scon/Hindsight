@@ -39,6 +39,8 @@ def run(d):
     rt = C.mod("runtime")
     rt.TOPO_PACK_MIN[0] = 0
     C.fresh_sphere(d, segments=64, rings=32)
+    with d.override():      # with the new sphere: with Record on Everything a later change is a step (#104)
+        bpy.context.active_object.data.remesh_voxel_size = 0.06
     C.frame_view(d)
     C.set_mode(d, "SCULPT")
     yield 0.6
@@ -52,8 +54,6 @@ def run(d):
             break
     d.check("a pause packs the baseline's topology", _packed(d))
     with d.override():
-        ob = bpy.context.active_object
-        ob.data.remesh_voxel_size = 0.06
         bpy.ops.object.voxel_remesh()
     yield 1.0
     states.append(_state(d))
