@@ -184,6 +184,22 @@ inside noise on its own, but it is the only save or open scenario that did not i
 peak (VmHWM) halved (142 to 71 MB). Not investigated yet. Next step: repeat with 10 rounds on a quiet
 machine and profile the embed path at 6,000 steps.
 
+
+## Rust moves (#24): measured, not rounds
+
+A move of `dev/RUST_PLAN.md` is not aimed at speed, so it is not a round and is not counted; its numbers are kept
+here, in its PR and in the plan's table. Conditions: `bench/ab.py`, 5 alternating rounds, run twice, each root with
+its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy). Ratios are B/A.
+
+| Move | Scenario | Before (min) | After (min) | Ratio min, median (second run) | Spread A / B (second run) |
+|---|---|---|---|---|---|
+| 24.3a (#146): the step JSON in the engine (0.14.0 at 62332d0 against 0.15.0 at 4ae6ef2; `bench/results/ab_62332d0_vs_4ae6ef2.md` and `-again.md`) | `stepjson_write_corpus`: `_dumps` and `records_to_bytes` over the corpus's 6,075 steps | 26.15 ms | 13.69 ms | 0.52, 0.52 (0.53, 0.52) | 4% / 3% (6% / 2%) |
+| | `stepjson_read_corpus`: `_extra` and `records_from_bytes` | 19.83 ms | 8.485 ms | 0.43, 0.43 (0.43, 0.43) | 15% / 2% (2% / 2%) |
+| | `stepjson_header_corpus`: `read_header` | 29.98 ms | 20.54 ms | 0.69, 0.67 (0.68, 0.68) | 9% / 2% (3% / 3%) |
+| | `commit_100k` | 0.6364 ms | 0.6335 ms | 1.00, 0.95 (1.00, 1.02) | 13% / 3% (4% / 17%) |
+| | `jump_3000_back_100k` | 56.88 ms | 56.9 ms | 1.00, 0.99 (1.01, 0.99) | 3% / 4% (1% / 16%) |
+| | all 24 of `commit` and `jumps` | | | medians 0.95 to 1.02 (0.97 to 1.02), inside the A/A band 0.84 to 1.06 | |
+
 ## Count
 
 88 rounds are logged (R001 to R088).
