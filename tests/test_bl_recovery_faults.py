@@ -110,9 +110,10 @@ def notes():
 
 
 def blender_copy():
-    """The history keys Blender holds in memory on the Text (none once a save is over, #55/#56)."""
+    """Blender holds a copy of the history on the Text (none once a save is over, #55/#56); format 5's stub
+    is not a copy of it."""
     text = bpy.data.texts.get(persistence.TEXT_NAME)
-    return [k for k in (persistence.DATA_PROP, persistence.DATA_BIN_PROP) if text is not None and k in text]
+    return text is not None and persistence._holds_history(text)
 
 
 def check(book, file_state, where=""):
