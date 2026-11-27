@@ -1,10 +1,10 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Tests for tools/precommit_check.py (the pre-commit large-file / secret / personal-path gate). No bpy.
 
 Sample bad strings are assembled at runtime so this file itself passes the check it tests.
 """
 import re
-import traceback
 
 from tools import precommit_check as pc
 
@@ -22,7 +22,6 @@ def problems(text, path="README.md", private=()):
 def test_windows_user_folder_flagged():
     assert problems(j("see C:", SEP, "Users", SEP, "someone", SEP, "file.txt"))
     assert problems(j("cd /c/", "Users/someone/x"))
-    print("PASS test_windows_user_folder_flagged")
 
 
 def test_home_and_appdata_flagged():
@@ -30,7 +29,6 @@ def test_home_and_appdata_flagged():
     assert problems(j("`/", "Users/someone/project`"))
     assert problems(j("AppData", SEP, "Local", SEP, "x"))
     assert problems(j("/tmp/", "claude/abc"))
-    print("PASS test_home_and_appdata_flagged")
 
 
 def test_drive_letters():
@@ -40,14 +38,12 @@ def test_drive_letters():
     assert not problems(j("D:", SEP, "Hindsight-backup"), path="ROLLBACK.md")
     assert problems(j("E:", SEP, "stuff"), path="HANDOFF.md"), "other drive paths are never allowed"
     assert problems(ws, path="dev/HANDOFF.md"), "only the root internal docs are exempt"
-    print("PASS test_drive_letters")
 
 
 def test_urls_not_flagged():
     for s in ["https://github.com/Min3scon/Hindsight/releases", "http://127.0.0.1:8765/x", "file:///x",
               "a ratio of 3:4 and time 12:30", "re.compile(r'\\d+')"]:
         assert not problems(s), s
-    print("PASS test_urls_not_flagged")
 
 
 def test_secrets_flagged():
@@ -57,14 +53,12 @@ def test_secrets_flagged():
     assert problems(j("-----BEGIN ", "RSA PRIVATE KEY-----"))
     assert problems(j('password = "', "hunter2hunter2", '"'))
     assert not problems("id-token: write")
-    print("PASS test_secrets_flagged")
 
 
 def test_private_patterns_and_allow_marker():
     priv = [("private pattern", re.compile("zz" + "secretname", re.IGNORECASE))]
     assert problems(j("by ZZ", "SecretName"), private=priv)
     assert not problems(j("by zz", "secretname  # precheck: ", "allow"), private=priv)
-    print("PASS test_private_patterns_and_allow_marker")
 
 
 def test_forbidden_dirs():
@@ -75,7 +69,6 @@ def test_forbidden_dirs():
     for p in ["scripts/build_zip.py", "hindsight/blender_manifest.toml", "tests/test_bl_install.py",
               "tools/precommit_check.py"]:
         assert not pc.in_forbidden_dir(p), p
-    print("PASS test_forbidden_dirs")
 
 
 def test_pyflakes_reports_filtered():
@@ -84,29 +77,19 @@ def test_pyflakes_reports_filtered():
            "tests\a.py:4:1: syntax error in forward annotation 'Vector'",
            "tests\a.py:5:1: undefined name 'bpy_prop'"]
     assert pc.keep_pyflakes_reports(out) == [out[0], out[1]]
-    print("PASS test_pyflakes_reports_filtered")
 
 
 def test_pyflakes_scope():
     assert pc.lintable("tests/test_x.py") and pc.lintable("bench/scenarios/a.py") and pc.lintable("tools/t.py")
     assert pc.lintable("tests_ui/s.py")
     assert not pc.lintable("hindsight/bl/runtime.py") and not pc.lintable("tests/data.json")
-    print("PASS test_pyflakes_scope")
 
 
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

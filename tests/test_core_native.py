@@ -10,10 +10,10 @@ a 1M-element position channel once, and damaged records made the way test_core_c
 The missing-engine test checks that a missing module or one with the wrong API number is refused.
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import contextlib
 import struct
 import subprocess
-import traceback
 
 import numpy as np
 
@@ -156,7 +156,7 @@ def test_diff_matches_python():
     i = changed(f, 1, "sparse").view(np.int32)
     a, b = both(lambda: delta.diff(k, f, i))
     assert same(a, b, delta_key)
-    print(f"PASS test_diff_matches_python ({count} cases)")
+    print(f"  test_diff_matches_python ({count} cases)")
 
 
 # ------------------------------------------------------------------------------ apply
@@ -228,7 +228,7 @@ def test_apply_matches_python():
     nc = np.repeat(base, 2)[::2]
     a, b = both(lambda: delta.apply(nc, d))
     assert same(a, b, lambda x: x) and a[0] == "err"
-    print(f"PASS test_apply_matches_python ({count} cases)")
+    print(f"  test_apply_matches_python ({count} cases)")
 
 
 # ------------------------------------------------------------------------------ pack
@@ -288,7 +288,7 @@ def test_pack_matches_python():
             a, b = both(lambda: delta.pack_delta(d, effort))
             assert same(a, b, bytes), (d.key, d.idx[:5], d.vals.dtype, effort, a[0], b[0], a[1:] if a[0] == "err" else "")
             count += 1
-    print(f"PASS test_pack_matches_python ({count} records)")
+    print(f"  test_pack_matches_python ({count} records)")
 
 
 # ------------------------------------------------------------------------------ unpack
@@ -329,7 +329,7 @@ def test_unpack_matches_python():
         assert ok, (rec[:24], a[0], b[0], a[1:] if a[0] == "err" else "", b[1:] if b[0] == "err" else "")
         assert a[0] == "ok", a
         count += 1
-    print(f"PASS test_unpack_matches_python ({count} records, gaps, runs and bitmaps)")
+    print(f"  test_unpack_matches_python ({count} records, gaps, runs and bitmaps)")
 
 
 def _raw_record(code, ib, k, add=True):
@@ -370,7 +370,7 @@ def test_index_limits():
             if a[0] == "ok":
                 assert int(a[1][0].idx[-1]) == top
             count += 1
-    print(f"PASS test_index_limits ({count} records)")
+    print(f"  test_index_limits ({count} records)")
 
 
 def test_damaged_records_fail_the_same_way():
@@ -415,7 +415,7 @@ def test_damaged_records_fail_the_same_way():
         if a[0] == "err":
             assert a[1] in ("CorruptDelta", "error", "ValueError", "UnicodeDecodeError"), a
         stats["decoded" if a[0] == "ok" else "refused"] += 1
-    print(f"PASS test_damaged_records_fail_the_same_way (6000 records: {stats})")
+    print(f"  test_damaged_records_fail_the_same_way (6000 records: {stats})")
 
 
 def test_damaged_steps_fail_the_same_way():
@@ -434,7 +434,7 @@ def test_damaged_steps_fail_the_same_way():
             conv = lambda s: [delta_key(d) for d in s.deltas] + [s.seq, s.label]   # noqa: E731
             assert same(a, b, conv), (name, i, a[0], b[0], a[1:] if a[0] == "err" else "", b[1:] if b[0] == "err" else "")
             n += 1
-    print(f"PASS test_damaged_steps_fail_the_same_way ({n} blobs, codecs {tc.CODECS})")
+    print(f"  test_damaged_steps_fail_the_same_way ({n} blobs, codecs {tc.CODECS})")
 
 
 # ------------------------------------------------------------------------------ big, and the switch
@@ -455,7 +455,7 @@ def test_one_million_vertices():
     for forward, start, want in ((True, old, new), (False, new, old)):
         x, y = apply_both(start, d, forward)
         assert x == y and x[1] == want.tobytes()
-    print(f"PASS test_one_million_vertices ({d.idx.size} of {n} changed)")
+    print(f"  test_one_million_vertices ({d.idx.size} of {n} changed)")
 
 
 def test_missing_engine():
@@ -477,23 +477,15 @@ def test_missing_engine():
     assert r.returncode != 0 and "EngineMissing" in r.stderr and "could not load" in r.stderr, r
     r = run("import sys; sys.modules['hindsight_native'] = None; from hindsight.core import step")
     assert r.returncode != 0 and "EngineMissing" in r.stderr, r
-    print("PASS test_missing_engine")
 
 
 def main():
     tests = [test_missing_engine, test_diff_matches_python, test_apply_matches_python, test_pack_matches_python,
              test_unpack_matches_python, test_index_limits, test_damaged_records_fail_the_same_way,
              test_damaged_steps_fail_the_same_way, test_one_million_vertices]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

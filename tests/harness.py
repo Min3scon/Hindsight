@@ -3,7 +3,6 @@ import os
 import shutil
 import sys
 import tempfile
-import traceback
 
 # Every temporary file of this test process (the crash journals of its sessions, saved test files,
 # history folders) goes into one folder that finish() removes. Headless Blender never unregisters the
@@ -24,11 +23,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from tests import runner  # noqa: E402
 import hindsight  # noqa: E402
 from hindsight.bl import runtime, meshio  # noqa: E402
 
 _registered = [False]
-_failures = []
 
 
 def fresh(register=True):
@@ -141,23 +140,7 @@ def assert_same(a, b, msg=""):
         assert x.view(np.uint8).tobytes() == y.view(np.uint8).tobytes(), f"{msg} {k} differs"
 
 
-def run(fn):
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        traceback.print_exc()
-        print("FAIL", fn.__name__)
-        _failures.append(fn.__name__)
-
-
-def finish(code=None):
-    if code is None:
-        code = 1 if _failures else 0
-    if _failures:
-        print("FAILED:", ", ".join(_failures))
-    sys.stdout.flush()
-    sys.stderr.flush()
+def _cleanup():
     if _OWN_TMP and not os.environ.get("HS_KEEP_TMP"):
         shutil.rmtree(_OWN_TMP, ignore_errors=True)
         # Blender's own temporary folder (made at start-up, before this module): exiting with os._exit
@@ -165,4 +148,7 @@ def finish(code=None):
         bt = getattr(bpy.app, "tempdir", "") or ""
         if os.path.basename(os.path.normpath(bt)).startswith("blender_"):
             shutil.rmtree(bt, ignore_errors=True)
-    os._exit(code)
+
+
+runner.on_finish.append(_cleanup)
+run, finish = runner.run, runner.finish
