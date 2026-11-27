@@ -81,7 +81,7 @@ def run(d):
     with d.override():
         rt.goto(bpy.context, 1)
     yield 0.2
-    mark = d.console_mark()
+    d.console_mark()
     yield from C.real_stroke(d, 1)
     yield 0.4
     d.shot("branch_dialog")

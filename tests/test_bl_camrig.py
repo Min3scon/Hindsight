@@ -192,7 +192,7 @@ def test_earlier_bigger_state_stays_in_frame():
 
 
 def test_own_camera_and_light_untouched():
-    ob = build()
+    build()
     sc = C.scene
     ucd = bpy.data.cameras.new("MyCam")
     ucam = bpy.data.objects.new("MyCam", ucd)

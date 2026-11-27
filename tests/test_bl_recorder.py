@@ -136,7 +136,7 @@ def test_branch_silent_and_confirm():
     SETTINGS.truncation_threshold = 3
     ob = H.make_mesh(1500)
     H.enter(ob, "SCULPT")
-    st = record(ob, ["position"] * 6, range(10, 16))
+    record(ob, ["position"] * 6, range(10, 16))
     h = runtime.history_of(ob)
     runtime.goto(C, 4)            # 2 future steps < threshold -> silent truncation
     H.fake_stroke(ob, 99)
@@ -325,7 +325,7 @@ def test_turn_off_on_and_reset():
     runtime.goto(C, 4)
     n = runtime.delete_past(C, ob)
     assert n == 4 and h.cursor == 0 and len(h.entries) == 0
-    st2 = record(ob, ["position"] * 2, [7, 8])
+    record(ob, ["position"] * 2, [7, 8])
     runtime.reset_history(C, ob)
     assert len(h.entries) == 0 and runtime.scrub_info(C)["len"] == 0
     runtime.reset_and_turn_off(C, ob)

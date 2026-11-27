@@ -67,7 +67,6 @@ class Packer:
         self.last_error = None
         self.packed = 0
         self.recompressed = 0
-        self.saved_bytes = 0
         self._strong = collections.deque()   # weak refs to packed entries not yet recompressed
         self._recompress = recompress_idle
         self._wake = threading.Event()        # set on stop, ends a pause early
@@ -192,7 +191,6 @@ class Packer:
             if new is not None and entry.blob is blob:
                 entry.blob = new
                 self.recompressed += 1
-                self.saved_bytes += len(blob) - len(new)
             dt = time.perf_counter() - t
             if dt > 0:
                 self._wake.wait(min(1.0, dt * (1.0 - DUTY) / DUTY))

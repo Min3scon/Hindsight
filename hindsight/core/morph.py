@@ -1,4 +1,5 @@
-"""Morph History brush math: target positions from the history and the blend.
+"""Morph History brush math: target positions from the history (the blend is the engine's
+`morph_dab`, R083; its numpy oracle is tests/reference/morph_dab.py).
 
 Pure Python + numpy. No bpy imports.
 """
@@ -61,35 +62,3 @@ def target_positions(h, state: MeshState, target_uid: str):
     if out is None or out.size != nverts * 3:
         return None
     return out
-
-
-def falloff(dist, radius) -> np.ndarray:
-    """Smooth brush falloff: (1 - (d/r)^2)^2, 1 at the centre, 0 at and beyond r."""
-    d = np.asarray(dist, dtype=np.float64)
-    if radius is None or radius <= 0:
-        return np.zeros(d.shape, np.float64)
-    w = 1.0 - (d / float(radius)) ** 2
-    np.clip(w, 0.0, 1.0, out=w)
-    return w * w
-
-
-def morph_blend(cur: np.ndarray, target: np.ndarray, idx, weights, strength: float, mask=None) -> None:
-    """In place: move vertices `idx` of `cur` toward `target`.
-
-    cur/target: flat float32 arrays (N*3). idx: vertex indices. weights: one per idx.
-    Factor f = weights * strength * (1 - mask[idx]) clipped to [0, 1]; the lerp is
-    written as cur*(1-f) + target*f so f == 1 lands exactly on the target and
-    f == 0 leaves the vertex bit-identical.
-    """
-    idx = np.asarray(idx, dtype=np.int64)
-    if idx.size == 0:
-        return
-    f = np.asarray(weights, dtype=np.float64) * float(strength)
-    if mask is not None:
-        f = f * (1.0 - np.asarray(mask, dtype=np.float64)[idx])
-    f = np.clip(f, 0.0, 1.0)[:, None]
-    c = cur.reshape(-1, 3)
-    t = target.reshape(-1, 3)
-    a = c[idx].astype(np.float64)
-    b = t[idx].astype(np.float64)
-    c[idx] = (a * (1.0 - f) + b * f).astype(cur.dtype)

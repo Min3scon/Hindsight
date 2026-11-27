@@ -4,12 +4,14 @@ recorder with a fake clock (datarec._now): a drag with gaps of 0.44, 0.24, 0.23,
 window on llvmpipe) must give ONE "Change" step, a single change still commits after 0.3 s, the wait
 after an update follows the gap between the last two updates, and a step is only continued while it
 is the newest step of its history."""
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests.addons import hs_fake_addon as FAKE
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 clock = [0.0]
@@ -50,10 +52,8 @@ def steps_of(ob):
 
 def teardown():
     datarec._now = lambda: __import__("time").time()
-    try:
+    with contextlib.suppress(Exception):
         FAKE.unregister()
-    except Exception:
-        pass
 
 
 def test_a_slow_drag_is_one_step():
@@ -172,7 +172,7 @@ def _interrupted_after(drag_values, tag):
     live = [(e.seq, e.meta.get("label")) for e in steps_of(ob)]
     datarec._now = lambda: __import__("time").time()
     bpy.ops.wm.open_mainfile(filepath=path)          # interrupted: the journal is replayed
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = bpy.data.objects["A"]
     h = runtime.reg().history_for(idmap.uid_of(ob))
     return ob, h, live, saved

@@ -8,6 +8,7 @@ sizes, so the stored deltas are what a sculptor's session produces. Writes
 .tmp/corpus/<tag>.npz: the starting mesh channels and every recorded delta (indices and XOR bits),
 plus <tag>.json with labels, the touched fraction and the delta form (op: 0 XOR, 1 ADD) per step. Generated test models only.
 """
+import contextlib
 import json
 import math
 import os
@@ -40,15 +41,11 @@ def set_radius(px):
     sc = ts.sculpt
     for owner in (getattr(sc, "unified_paint_settings", None), getattr(ts, "unified_paint_settings", None)):
         if owner is not None:
-            try:
+            with contextlib.suppress(Exception):
                 owner.size = int(px)
-            except Exception:
-                pass
-    try:
+    with contextlib.suppress(Exception):
         if sc.brush is not None:
             sc.brush.size = int(px)
-    except Exception:
-        pass
 
 
 def stroke_points(reg, rng, kind):
@@ -117,10 +114,8 @@ def run(d):
         bpy.ops.wm.open_mainfile(filepath=os.path.join(d.spec["repo"], "test_models", model), load_ui=False)
     yield 1.0
     rt = C.mod("runtime")
-    try:
+    with contextlib.suppress(Exception):
         rt.SETTINGS.raw_steps = 100000
-    except Exception:
-        pass
     with d.override():
         ob = bpy.data.objects[objname]
         for o in bpy.context.view_layer.objects:

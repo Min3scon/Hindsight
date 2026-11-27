@@ -11,8 +11,8 @@ Hindsight id (or None).
 """
 from __future__ import annotations
 
+import contextlib
 import struct
-import time
 
 import bpy
 
@@ -67,14 +67,12 @@ DEPENDENTS: dict = {
 def _fcurves(action, slot) -> list:
     if action is None:
         return []
-    try:
+    with contextlib.suppress(Exception):
         from bpy_extras import anim_utils
         cb = anim_utils.action_get_channelbag_for_slot(action, slot)
         if cb is not None:
             return list(cb.fcurves)
         return []
-    except Exception:
-        pass
     try:                                                    # Blender 4.x: legacy actions
         return list(action.fcurves)
     except Exception:
@@ -1945,7 +1943,7 @@ def forget_selected_values() -> None:
 def forget_loose_groups() -> None:
     """D133: node groups nothing evaluates aren't in the depsgraph, so it never says they changed:
     their kept records are read again when an operator ends."""
-    try:
+    with contextlib.suppress(Exception):
         nt = getattr(bpy.context.scene, "node_tree", None)
         if nt is not None:
             _MAT_CACHE.pop(nt.session_uid, None)
@@ -1956,12 +1954,10 @@ def forget_loose_groups() -> None:
             for g in bpy.data.node_groups:
                 if g.as_pointer() not in used:
                     _MAT_CACHE.pop(g.session_uid, None)
-    except Exception:
-        pass
 
 
 def value_changed(idb) -> None:
-    try:
+    with contextlib.suppress(Exception):
         _VAL_CACHE.pop(idb.session_uid, None)
         _ACT_CACHE.pop(idb.session_uid, None)
         _GEOM_CACHE.pop(idb.session_uid, None)
@@ -1972,8 +1968,6 @@ def value_changed(idb) -> None:
             _EXT_CACHE.pop(o, None)
         if isinstance(idb, (bpy.types.Material, bpy.types.NodeTree)) and _OBMAT_CACHE:
             _OBMAT_CACHE.clear()        # its users' records are read again (cheap: records are kept)
-    except Exception:
-        pass
 
 
 def _skip_with_runtime(idb, skip):
@@ -2425,10 +2419,8 @@ def _write_drawing(d, rec) -> None:
         key, width = _ATTR_KEY[dtype]
         if len(a.data) * width == len(vals):
             a.data.foreach_set(key, vals)
-    try:
+    with contextlib.suppress(Exception):
         d.tag_positions_changed()
-    except Exception:
-        pass
 
 
 def _gp_record(gp) -> dict:
@@ -3019,10 +3011,8 @@ def _set_hidden(ob, hidden) -> None:
     """Put back what _hidden read. A single True/False (recorded before D56) is for the view layer the
     window shows."""
     if isinstance(hidden, bool):
-        try:
+        with contextlib.suppress(Exception):
             ob.hide_set(hidden)
-        except Exception:
-            pass
         return
     for key, h in (hidden or {}).items():
         sc_name, _sep, vl_name = key.partition("/")
@@ -3656,7 +3646,7 @@ def _queue_loose_removals(sc, values: dict) -> None:
 def _kept_by_record(idb, kind) -> bool:
     """Used by something Hindsight records (an object, a scene): not a datablock to say anything about,
     its own history has it."""
-    try:
+    with contextlib.suppress(Exception):
         if kind == "lm":
             return idb.as_pointer() in material_owner_map()
         if kind == "ng":
@@ -3665,8 +3655,6 @@ def _kept_by_record(idb, kind) -> bool:
                 for sc in bpy.data.scenes)
         if kind == "lw":
             return any(sc.world == idb for sc in bpy.data.scenes)
-    except Exception:
-        pass
     return False
 
 
@@ -3696,7 +3684,7 @@ def forget_loose_data() -> None:
     """D151: an operation ended: unused materials and worlds are read again, at most LOOSE_READ_MAX of
     them each time, in turn (a file with hundreds of them, an asset library, would otherwise read every
     node tree at every operation); a change is found within a few operations."""
-    try:
+    with contextlib.suppress(Exception):
         if not len(bpy.data.materials) and not len(bpy.data.worlds):
             return
         loose = _loose_mats()
@@ -3709,8 +3697,6 @@ def forget_loose_data() -> None:
             _LOOSE_TURN[0] = k + LOOSE_READ_MAX
         for m in pick:
             _MAT_CACHE.pop(m.session_uid, None)
-    except Exception:
-        pass
 
 
 # ----------------------------------------------------------------------------- collection settings (D127)
@@ -3837,11 +3823,9 @@ def _write_collection_tree(scene, want: list) -> None:
 
 
 def _remove_object(ob) -> None:
-    try:
+    with contextlib.suppress(Exception):
         if bpy.context.view_layer.objects.active == ob and ob.mode != "OBJECT":
             bpy.ops.object.mode_set(mode="OBJECT")
-    except Exception:
-        pass
     bpy.data.objects.remove(ob, do_unlink=True)      # its data stays (it may come back)
 
 
@@ -3945,9 +3929,3 @@ _F64 = struct.Struct("<d")
 
 def for_datablock(idb) -> list:
     return [a for a in ADAPTERS.values() if a.handles(idb)]
-
-
-def timed_capture(adapter, idb) -> tuple:
-    t = time.perf_counter()
-    v = adapter.capture(idb)
-    return v, (time.perf_counter() - t) * 1000.0

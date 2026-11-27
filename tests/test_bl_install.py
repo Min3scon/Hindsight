@@ -1,4 +1,6 @@
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Build the extension zip with Blender's own tool, validate it, and install + enable it in bpy.
 
 Does NOT use the repo's `hindsight` package: the installed copy is what gets registered. Blender's user
@@ -7,7 +9,6 @@ folders are redirected to a temp dir so nothing is written to the real user conf
 import shutil
 import subprocess
 import tempfile
-import traceback
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,18 +28,6 @@ PY = "/usr/bin/python3.11" if os.path.exists("/usr/bin/python3.11") else sys.exe
 ZIP = os.path.join(TMP, "hindsight.zip")
 OPS = ("step_back", "step_forward", "scrub", "goto", "toggle_global", "reset_history", "turn_off", "turn_on",
        "delete_past", "reset_all")
-_failures = []
-
-
-def run(fn):
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        traceback.print_exc()
-        print("FAIL", fn.__name__)
-        _failures.append(fn.__name__)
-
 
 def _cli(*args):
     p = subprocess.run([PY, BLENDER_EXT, *args], capture_output=True, text=True, cwd=ROOT)
@@ -81,10 +70,8 @@ def _op_exists(name):
 def _install_operator():
     """Real path: Blender's extension installer. Returns the module name or raises."""
     import addon_utils
-    try:
+    with contextlib.suppress(Exception):
         bpy.ops.preferences.addon_enable(module="bl_pkg")
-    except Exception:
-        pass
     repos = [r.module for r in bpy.context.preferences.extensions.repos]
     assert "user_default" in repos, f"no user_default repo: {repos}"
     if not hasattr(bpy.ops.extensions, "package_install_files"):
@@ -136,12 +123,8 @@ def test_install_and_enable():
 
 
 if __name__ == "__main__":
-    run(test_build_and_validate)
-    if not _failures:
-        run(test_install_and_enable)
-    if _failures:
-        print("FAILED:", ", ".join(_failures))
+    R.run(test_build_and_validate)
+    if not R.failures:
+        R.run(test_install_and_enable)
     shutil.rmtree(TMP, ignore_errors=True)
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(1 if _failures else 0)
+    R.finish()

@@ -1,6 +1,6 @@
 """Independent oracle: snapshots of Blender state read WITHOUT any Hindsight code.
 
-The gate (tools/gate_spec.py, item ORACLE) needs the tests to compare restored state through code
+The gate (item ORACLE) needs the tests to compare restored state through code
 that shares nothing with the adapters' own capture, so a bug in an adapter can't hide itself. This
 module imports only bpy, bmesh and numpy, and reads through different paths than hindsight/bl:
   - meshes: the legacy collections (vertices.co, edges.vertices, loops, polygons) plus every
