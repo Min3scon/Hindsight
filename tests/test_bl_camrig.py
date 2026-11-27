@@ -142,7 +142,7 @@ def test_model_change_and_operator_reframes():
     assert not bpy.ops.hindsight.movie_frame.poll()
 
 
-def test_quick_auto_key_frames_the_movie():
+def test_create_time_lapse_frames_the_movie():
     ob = build()
     sc = C.scene
     sc.hindsight.movie_mode = True
@@ -150,8 +150,8 @@ def test_quick_auto_key_frames_the_movie():
     cam.location = (500.0, 500.0, 500.0)             # moved away by hand
     C.view_layer.update()
     steps = [len(h.entries) for h in runtime.reg().all()]
-    assert bpy.ops.hindsight.quick_auto_key() == {'FINISHED'}     # also shows the step keyed for this frame
-    check_in_frame([ob], tight=False, msg="after Quick auto key")
+    assert bpy.ops.hindsight.create_time_lapse() == {'FINISHED'}     # also shows the step keyed for this frame
+    check_in_frame([ob], tight=False, msg="after Create time lapse")
     assert [len(h.entries) for h in runtime.reg().all()] == steps, "no step recorded"
 
 
@@ -424,7 +424,7 @@ def test_unregister_twice():
 
 
 for f in [test_empty_scene_creates_rig_and_fits, test_far_transformed_model_fits,
-          test_model_change_and_operator_reframes, test_quick_auto_key_frames_the_movie,
+          test_model_change_and_operator_reframes, test_create_time_lapse_frames_the_movie,
           test_earlier_bigger_state_stays_in_frame,
           test_own_camera_and_light_untouched, test_tick_puts_missing_pieces_back,
           test_movie_off_removes_everything, test_duplicate_loses_mark, test_view_from_region,

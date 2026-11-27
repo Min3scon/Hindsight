@@ -85,7 +85,7 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 |---|---|---|---|---|
 | 51 | Only works with Global history | bl/movie.py | test_bl_movie | [x] |
 | 52 | Sidebar Undo History > Movie Mode, header checkbox turns it on | ui_panel Movie Mode sub-panel | test_bl_panels | [~] |
-| 53 | Quick Auto Key keys first and last steps on the Timeline | movie.quick_auto_key | test_bl_movie | [x] |
+| 53 | Create time lapse keys first and last steps on the Timeline | movie.create_time_lapse | test_bl_movie | [x] |
 | 54 | Step can be keyframed manually | scene.hindsight.movie_step (animatable) | test_bl_movie | [x] |
 | 55 | Frames per Step controls playback speed | props frames_per_step | test_bl_movie | [x] |
 | 56 | Scrubber locked while on; Timeline drives playback | runtime._movie_locked, movie frame handler | test_bl_movie | [x] |

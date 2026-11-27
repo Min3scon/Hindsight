@@ -1404,11 +1404,10 @@ def tick() -> float:
     except Exception as e:
         log.error_once(("datarec_tick", str(e)), f"data recorder error: {e}", e)
     try:
-        from . import camrig, movie
-        movie.follow_new_steps()
-        camrig.tick()
+        from . import movie
+        movie.follow_new_steps()        # #107; the camera check has its own timer now (#113, camrig.start)
     except Exception as e:
-        log.error_once(("camrig_tick", str(e)), f"Movie Mode camera error: {e}", e)
+        log.error_once(("movie_follow", str(e)), f"Movie Mode error: {e}", e)
     return 0.02 if (_DIRTY or busy) else 0.1
 
 

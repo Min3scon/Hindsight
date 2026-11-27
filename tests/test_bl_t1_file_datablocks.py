@@ -686,6 +686,24 @@ def _goto(h, pos):
     datarec_resolve()
 
 
+def test_made_data_something_unrecorded_uses_stays_and_is_no_step():
+    """#116: going back over the making of a datablock that something Hindsight doesn't record uses (here
+    the paint tool's palette; on 4.2 the brush entering Sculpt Mode makes) leaves it, and the next
+    operation counted it as made at that position: a step there that threw every later step away."""
+    def make():
+        pal = D.palettes.new("Made")
+        bpy.context.scene.tool_settings.image_paint.palette = pal
+    from tests import t1_gate_lib as L
+    _states, h = _scene_ops([("make", make), ("image", lambda: D.images.new("Img", 4, 4))],
+                            lambda: ("Made" in D.palettes, "Img" in D.images))
+    _goto(h, 0)
+    assert "Made" in D.palettes and "Img" not in D.images, (list(D.palettes), list(D.images))
+    L.tick_like("next operation")
+    assert (h.cursor, len(h.entries)) == (0, 2), (h.cursor, len(h.entries))
+    _goto(h, 2)
+    assert D.images.get("Img") is not None and "Made" in D.palettes
+
+
 def test_going_back_over_an_image_setting_keeps_its_paint():
     """#102 review 4: going back over a change of an image's settings replaces it with its snapshot, which
     holds no pixels of an image painted and not saved: the paint is kept."""
@@ -821,6 +839,7 @@ if __name__ == "__main__":
                       test_object_data_its_object_left_with_a_fake_user,
                       test_object_data_its_object_left_with_no_user_is_not_snapshotted,
                       test_object_data_with_no_user_stays_over_a_jump,
+                      test_made_data_something_unrecorded_uses_stays_and_is_no_step,
                       test_a_collection_only_an_instance_uses_is_made_again,
                       test_a_collection_instance_points_at_its_collection_made_again,
                       test_a_collection_holding_a_scene_object_leaves_it_to_the_object,

@@ -100,8 +100,8 @@ def run(d):
     sh.use_global = True
     sh.movie_mode = True
     with d.override():
-        r = bpy.ops.hindsight.quick_auto_key()
-    d.check("Quick auto key keyframes the history", r == {'FINISHED'}, r)
+        r = bpy.ops.hindsight.create_time_lapse()
+    d.check("Create time lapse keyframes the history", r == {'FINISHED'}, r)
     scene = bpy.context.scene
     seen = []
     for f in range(scene.frame_start, scene.frame_end + 1):

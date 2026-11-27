@@ -1249,7 +1249,14 @@ def resolve_missing_refs() -> None:
     the recorded references in now, so Blender matches the history again. D55: then collections
     Hindsight made again that the jump took out and left empty are removed."""
     resolve_taken_names()
-    adapters.flush_loose_removals()           # D152: datablocks the jump went back over the making of
+    if adapters.flush_loose_removals():       # D152: datablocks the jump went back over the making of
+        # #116: one that stays (something unrecorded uses it) is the position's own, or the next operation
+        # counts it as made there: a step at the jump's position that throws every later step away
+        for sc in bpy.data.scenes:
+            st = _rt()._STATES.get(idmap.uid_of(sc) or "")
+            if st is not None and st.values:
+                with contextlib.suppress(Exception):      # (as capture's _upd: a failed read changes nothing)
+                    st.values.update({("scene", p): v for p, v in adapters.scene_loose(sc).items()})
     if not adapters.MISSING_REFS:
         adapters.drop_recreated_orphans()
         return
