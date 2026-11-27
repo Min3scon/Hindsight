@@ -8,7 +8,7 @@ A = datarec._same_values as before R070 (the marshal compare alone, copied here)
 Each round times 5 calls of each case on each side, in the order A B or B A (alternating). Prints one
 line "AB {...}": per case the median of the round medians and the best, in ms, for A and B, and the
 _same_values share alone (the function timed around its 501 calls in one operation)."""
-import json, marshal, os, statistics, sys, time
+import json, marshal, statistics, sys, time
 ROOT = sys.argv[1]
 ROUNDS = int(sys.argv[2]) if len(sys.argv) > 2 else 15
 sys.path.insert(0, ROOT)

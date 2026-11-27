@@ -10,9 +10,9 @@ import bpy
 import numpy as np
 import tests.harness as H
 from tests import t1_gate_lib as L
-from hindsight.bl import meshio, runtime
+from hindsight.bl import runtime
 from hindsight.core import delta, step as stepmod
-from hindsight.core.types import ADD, CHANNEL_TYPES, DELTA, Step, key_dtype, key_width, make_key
+from hindsight.core.types import CHANNEL_TYPES, DELTA, Step, key_dtype, key_width, make_key
 
 KEY = make_key("custom_normal", "CORNER", "INT16_2D")
 

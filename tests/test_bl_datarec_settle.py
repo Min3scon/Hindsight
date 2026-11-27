@@ -4,6 +4,7 @@ recorder with a fake clock (datarec._now): a drag with gaps of 0.44, 0.24, 0.23,
 window on llvmpipe) must give ONE "Change" step, a single change still commits after 0.3 s, the wait
 after an update follows the gap between the last two updates, and a step is only continued while it
 is the newest step of its history."""
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bpy
 import tests.harness as H
@@ -50,10 +51,8 @@ def steps_of(ob):
 
 def teardown():
     datarec._now = lambda: __import__("time").time()
-    try:
+    with contextlib.suppress(Exception):
         FAKE.unregister()
-    except Exception:
-        pass
 
 
 def test_a_slow_drag_is_one_step():

@@ -5,27 +5,12 @@ every collection in the file for that) before the one lookup that decides."""
 
 import itertools
 import time
-import traceback
 
 import bpy
 
 sys.path.insert(0, os.path.dirname(__file__))
 import harness as H  # noqa: E402
 from hindsight.bl import filtering as F  # noqa: E402
-
-ok = True
-
-
-def run(fn):
-    global ok
-    try:
-        fn()
-        print("PASS", fn.__name__)
-    except Exception:
-        ok = False
-        print("FAIL", fn.__name__)
-        traceback.print_exc()
-
 
 def _old_object_in_collection(obj, coll):
     """filtering.object_in_collection at 66fcdf8."""
@@ -134,7 +119,5 @@ def test_faster_with_a_list():
 
 
 for f in (test_same_answers_as_before, test_faster_with_a_list):
-    run(f)
-
-sys.stdout.flush()
-os._exit(0 if ok else 1)
+    H.run(f)
+H.finish()

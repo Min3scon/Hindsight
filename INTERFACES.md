@@ -242,7 +242,7 @@ class Registry:
     def remove_object(self, obj_uid: str) -> None
     def all(self) -> list[History]
 # global timeline (core/globaltl.py, P3)
-def global_order(reg, visible: set[str] | None = None) -> list[tuple[int, str, int]]   # (seq, hist_uid, entry_index) sorted
+def global_groups(reg, visible: set[str] | None = None) -> list[list[tuple[int, str, int]]]   # one list of (seq, hist_uid, entry_index) per operation, in order of first step
 def global_position(reg, visible=None) -> int                  # number of applied entries in global order prefix
 def plan_global_goto(reg, g: int, visible=None) -> dict[str, int]   # hist_uid -> cursor for global position g
 ```
@@ -373,7 +373,7 @@ def merge(a, b)                                        # union of two extents (N
 def fit(ext, basis, tan_x, tan_y, min_distance=1e-3) -> dict | None   # location, near, far, center, depth
 def bounds(points); def merge_bounds(a, b)             # min xyz, max xyz
 def light_rig(basis, center, radius) -> list[dict]     # key, fill, rim: direction, location, strength, angle, color
-def history_extents(h, state, target_uid, basis, tan_x, tan_y)   # extents over every other history position
+def history_extents_multi(h, state, target_uid, bases, tans)   # (k, 6) extents over every other history position, one row per basis
 
 # hindsight/bl/camrig.py
 NAMES; MARGIN

@@ -25,16 +25,6 @@ def _group_key(e) -> int:
     return int(op) if op is not None else e.seq
 
 
-def global_order(reg, visible=None) -> list:
-    """Every step as (seq, history uid, index), in step-number order."""
-    out = []
-    for h in _visible_histories(reg, visible):
-        for i, e in enumerate(h.entries):
-            out.append((e.seq, h.uid, i))
-    out.sort()
-    return out
-
-
 _FIRST = operator.itemgetter(0)
 
 

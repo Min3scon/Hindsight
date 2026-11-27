@@ -1,4 +1,4 @@
-import os, sys, time, cProfile, pstats, io
+import os, sys, time
 ROOT = sys.argv[1]; sys.path.insert(0, ROOT); sys.path.insert(1, os.path.join(ROOT, "bench", "scenarios"))
 import bpy, bmesh
 import tests.harness as H
