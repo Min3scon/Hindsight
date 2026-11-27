@@ -329,7 +329,8 @@ def refresh_mesh_users() -> None:
     by linked duplicates (Alt+D) is recorded once, by its owner: the object that recorded it first
     (kept while it uses the mesh, but given back to one whose steps are before its cursor, D187),
     otherwise the first by name. Any other user of the mesh records
-    only its own object data, and an object that becomes the owner starts from its mesh as it is."""
+    only its own object data, and an object that becomes the owner starts from its mesh as it is (as
+    the owner recorded it when the owner is gone, D189)."""
     with idmap.frame():
         _refresh_mesh_users()
 
@@ -342,6 +343,7 @@ def _refresh_mesh_users(read=None) -> None:
         if isinstance(ob, bpy.types.Object) and ob.type == "MESH" and ob.data is not None:
             users.setdefault(ob.data.as_pointer(), []).append((ob.name, uid, ob))
     owners = {}
+    in_use = {u for us in users.values() for _n, u, _o in us}
     rt = _rt()
 
     def records_mesh(u, applied):
@@ -357,12 +359,21 @@ def _refresh_mesh_users(read=None) -> None:
             min((not records_mesh(u, True), u != keep, not records_mesh(u, False), n, u) for n, u, _o in us)[4]
         ob = next(o for _n, u, o in us if u == uid)
         if _MESH_OF.get(uid) != ptr and ob.mode != "EDIT":
-            # D44: it records a mesh it didn't before (Make Single User, the owner deleted, a duplicate
-            # that was never an owner): its state starts from that mesh as it is
-            rt.ensure_state(ob, refresh=True)
+            old = rt._STATES.get(keep) if keep not in in_use and _MESH_OF.get(keep) == ptr else None
+            if old is not None and old.counts:
+                # D189: the owner is gone (deleted): its successor starts from the mesh as the owner
+                # recorded it and compares the mesh at the next commit, so a change no step holds yet
+                # (a visit through the successor that the same operation ended) becomes its step
+                s, mine = old.to_snapshot(), rt._STATES.get(uid)
+                rt._STATES[uid] = MeshState(s.counts, s.arrays, mine.values if mine is not None else None)
+                _MESH_DIRTY.add(uid)
+            else:
+                # D44: it records a mesh it didn't before (Make Single User, a duplicate that was never
+                # an owner): its state starts from that mesh as it is
+                rt.ensure_state(ob, refresh=True)
+                if read is not None:
+                    read.add(uid)
             _MESH_OF[uid] = ptr
-            if read is not None:
-                read.add(uid)
         owners[ptr] = uid
     _MESH_OWNER.clear()
     _MESH_OWNER.update(owners)
