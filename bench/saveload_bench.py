@@ -46,20 +46,14 @@ CACHE = os.environ.get("HS_BENCH_CACHE") or os.path.join(tempfile.gettempdir(), 
 _LEN = struct.Struct("<Q")
 
 
-def proc(field):
-    with open("/proc/self/status") as fh:
-        for line in fh:
-            if line.startswith(field + ":"):
-                return int(line.split()[1]) * 1024
-    return 0
+proc = K.proc  # 0 where there is no /proc (Windows)
 
 
 class Peak:
     def __enter__(self):
         gc.collect()
         self.rss0 = proc("VmRSS")
-        with open("/proc/self/clear_refs", "w") as fh:
-            fh.write("5")
+        K.reset_hwm()
         tracemalloc.start()
         tracemalloc.reset_peak()
         self.t0 = time.perf_counter()

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """The Hindsight benchmark suite: a fixed list of scenarios, one JSON file of results.
 
-    python3 bench/suite.py [--root PATH] [--only a,b] [--quick] [--py /home/user/venvs/bpy53/bin/python]
+    python3 bench/suite.py [--root PATH] [--only a,b] [--quick] [--py ~/venvs/bpy53/bin/python]
                            [--label NAME] [--out FILE]
 
   --root PATH   the code under test (default: this checkout)
   --only a,b    run only the groups and scenarios whose name contains one of these
   --quick       small sizes, a smoke run (numbers are not comparable with a full run)
-  --py PYTHON   the interpreter with bpy (default /home/user/venvs/bpy53/bin/python)
+  --py PYTHON   the interpreter with bpy (default ~/venvs/bpy53/bin/python)
   --label NAME  result name (default: the git short hash of the root, "-dirty" if it has changes)
   --out FILE    default bench/results/<label>.json
 
@@ -28,7 +28,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCEN = os.path.join(HERE, "scenarios")
-DEFAULT_PY = "/home/user/venvs/bpy53/bin/python"
+DEFAULT_PY = os.path.expanduser("~/venvs/bpy53/bin/python")
 
 T = ("100k", "1m")
 GROUPS = {
@@ -57,7 +57,7 @@ def log(*a):
 def loadavg():
     try:
         return [round(x, 2) for x in os.getloadavg()]
-    except OSError:
+    except (OSError, AttributeError):  # Windows has no getloadavg
         return None
 
 
