@@ -8,6 +8,7 @@ Joining never destroys history.
 """
 from __future__ import annotations
 
+import contextlib
 import time
 
 import bpy
@@ -281,11 +282,9 @@ def _remove(uid, target_uid) -> None:
     if was_active:
         a = runtime.find_object(target_uid)
         if a is not None:
-            try:
+            with contextlib.suppress(Exception):
                 vl.objects.active = a
                 a.select_set(True)
-            except Exception:
-                pass
 
 
 def join_hook(step, forward, states) -> dict:

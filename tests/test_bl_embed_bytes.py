@@ -60,7 +60,7 @@ def test_saved_as_bytes_and_read_back():
 
 
 def test_older_builds_text_still_opens():
-    ob = recorded()
+    recorded()
     p = path()
     bpy.ops.wm.save_as_mainfile(filepath=p)
     raw = bytes(bpy.data.texts[persistence.TEXT_NAME][persistence.DATA_BIN_PROP])

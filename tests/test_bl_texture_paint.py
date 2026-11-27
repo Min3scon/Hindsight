@@ -10,7 +10,6 @@ import bpy
 import numpy as np
 import tests.harness as H
 from hindsight.bl import meshio, runtime
-from hindsight.core import step as stepmod
 
 C = bpy.context
 NAME = "Canvas"
@@ -84,7 +83,6 @@ def test_off_by_default_records_nothing():
     assert H.commit(ob) is None
     h = runtime.history_of(ob)
     assert h is None or not h.entries
-    p = bpy.types.AddonPreferences
     from hindsight.bl import prefs
     assert prefs.HINDSIGHT_AP_prefs.__annotations__["record_texture_painting"].keywords["default"] is False
     print("PASS test_off_by_default_records_nothing")

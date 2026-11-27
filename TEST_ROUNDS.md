@@ -17,7 +17,7 @@ is installed, so those versions are not covered here.
 
 Run a full pass: `python tests_ui/rounds.py --pass N` (add `--big` for the 10,000-step session).
 Since 2026-11-19 the rounds also run in the cloud container (Xvfb, Mesa llvmpipe, Blender 5.3.0 and 4.2.23; DEVELOPMENT.md section a says how), and Round H runs on GitHub in the Blender tests window job on 4.2, 5.0.1, 5.1.2, 5.2 and 5.3.
-Screenshots of generated models from each pass are in `test_rounds/passN/`. Nothing from Round E
+A pass keeps a few screenshots of generated models in `.tmp/rounds/passN/shots` (not committed). Nothing from Round E
 (the owner's files) is ever copied there.
 
 ## Found while building the rounds (before pass 1)

@@ -7,6 +7,7 @@ a failing runtime draws a short note instead of breaking the panel.
 The drawing helpers (draw_main, draw_history_options, draw_help) are shared with the header
 popover in header.py.
 """
+import contextlib
 import sys
 import textwrap
 
@@ -386,13 +387,11 @@ def draw_help(layout, context):
 def _draw_memory_readout(layout, stats):
     if not isinstance(stats, dict):
         return
-    try:
+    with contextlib.suppress(Exception):
         layout.label(text=f"This object: {_mb(stats.get('active_bytes', 0))}, "
                           f"{int(stats.get('active_steps', 0))} steps")
         layout.label(text=f"All objects: {_mb(stats.get('total_bytes', 0))}, "
                           f"{int(stats.get('steps', 0))} steps")
-    except Exception:
-        pass
 
 
 # ----------------------------------------------------------------------------- panels

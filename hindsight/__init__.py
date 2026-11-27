@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Hindsight: scrubbable per-object sculpt history for Blender."""
+import contextlib
 import importlib
 import traceback
 
@@ -36,15 +37,13 @@ def _report_failures():
         col.operator("hindsight.copy_diagnostics", text="Copy diagnostics", icon='COPYDOWN')
         col.operator("wm.url_open", text="Report a bug", icon='URL').url = \
             "https://github.com/Min3scon/Hindsight/issues/new/choose"
-    try:
+    with contextlib.suppress(Exception):
         wm = bpy.context.window_manager
         win = wm.windows[0] if wm and wm.windows else None
         if win is None:
             return 1.0  # no window yet (start-up): try again shortly
         with bpy.context.temp_override(window=win, screen=win.screen):
             wm.popup_menu(draw, title="Hindsight could not fully start", icon='ERROR')
-    except Exception:
-        pass
     return None
 
 
@@ -77,11 +76,9 @@ def register():
         if not bpy.app.background:
             bpy.app.timers.register(_report_failures, first_interval=0.5)
     else:
-        try:
+        with contextlib.suppress(Exception):
             from .bl import selfcheck
             selfcheck.schedule_welcome()
-        except Exception:
-            pass
 
 
 def unregister():
@@ -92,9 +89,7 @@ def unregister():
         except Exception as exc:
             log.error_once(("unregister", mod.__name__), f"unregister error in {mod.__name__}: {exc}", exc)
     _loaded.clear()
-    try:
+    with contextlib.suppress(Exception):
         import bpy
         if bpy.app.timers.is_registered(_report_failures):
             bpy.app.timers.unregister(_report_failures)
-    except Exception:
-        pass

@@ -19,7 +19,6 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 
 
 def gate(row):
@@ -31,32 +30,26 @@ def gate(row):
     L.recheck(r)
 
 
-@covers("obj.transforms", "OPS", "EXACT", "ORACLE", "REPLAY")
 def test_gate_transforms():
     gate("obj.transforms")
 
 
-@covers("obj.parenting", "OPS", "EXACT", "ORACLE", "REPLAY")
 def test_gate_parenting():
     gate("obj.parenting")
 
 
-@covers("obj.constraints", "OPS", "EXACT", "ORACLE", "REPLAY")
 def test_gate_constraints():
     gate("obj.constraints")
 
 
-@covers("obj.collections", "OPS", "EXACT", "ORACLE", "REPLAY")
 def test_gate_collections():
     gate("obj.collections")
 
 
-@covers("obj.addremove", "OPS", "EXACT", "ORACLE", "REPLAY")
 def test_gate_addremove():
     gate("obj.addremove")
 
 
-@covers("obj.editsteps", "OPS", "EXACT", "ORACLE", "REPLAY")
 def test_gate_editsteps():
     gate("obj.editsteps")
 

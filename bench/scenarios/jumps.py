@@ -14,7 +14,6 @@ fails here ("not available"). Every case checks the end state against the fixtur
 """
 import hashlib
 import os
-import statistics
 import sys
 import tempfile
 import time

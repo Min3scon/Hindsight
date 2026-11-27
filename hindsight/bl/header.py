@@ -4,6 +4,7 @@ The popover holds the same controls as the sidebar tab, so the tab doesn't have 
 The menu is added to the Object, Sculpt, Paint (Vertex Paint) and Mesh (Edit Mode) menus;
 Blender's F3 search finds anything that is in a menu.
 """
+import contextlib
 import bpy
 
 from . import guard
@@ -94,10 +95,8 @@ def unregister():
                 menu.remove(menu_entry)
             except Exception:
                 pass
-    try:
+    with contextlib.suppress(Exception):
         bpy.types.VIEW3D_MT_editor_menus.remove(draw_header_button)
-    except Exception:
-        pass
     for c in reversed(classes):
         try:
             bpy.utils.unregister_class(c)

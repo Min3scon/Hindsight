@@ -4,6 +4,7 @@ Run Self-check works inside the live session: it looks at what is registered, wh
 has drawn recently, the shortcuts, the handlers, and does a record and scrub round trip on a
 throwaway mesh that is never linked to the scene and never touches the user's history.
 """
+import contextlib
 import dataclasses
 import os
 import platform
@@ -71,14 +72,12 @@ def _history_lines():
 
 
 def _engine_line() -> str:
-    """Which engine finds changes and applies steps: the Rust one, or the Python one it falls back to."""
+    """Whether the Rust engine loaded (importing it raises EngineMissing when it did not)."""
     try:
-        from ..core import native
-        if native.AVAILABLE:
-            return "Engine: Rust"
-        return "Engine: Python (" + (native.ERROR or "the Rust engine isn't installed for this system") + ")"
+        from ..core import native  # noqa: F401
+        return "Engine: Rust"
     except Exception as e:
-        return f"Engine: Python ({e})"
+        return f"Engine: missing ({e})"
 
 
 def diagnostics_text() -> str:
@@ -87,24 +86,20 @@ def diagnostics_text() -> str:
              f"OS: {platform.platform()}"]
     lines += _gpu_lines()
     lines.append(_engine_line())
-    try:
+    with contextlib.suppress(Exception):
         ui = bpy.context.preferences.system
         lines.append(f"UI scale: {ui.ui_scale:.2f}, region overlap: {bpy.context.preferences.system.use_region_overlap}")
-    except Exception:
-        pass
     lines.append("Settings:")
     lines += _settings_lines()
     lines.append("History:")
     lines += _history_lines()
     fails = guard.failed()
     lines.append("Switched-off features: " + (", ".join(f"{lbl} ({err})" for _, lbl, err, _ in fails) or "none"))
-    try:
+    with contextlib.suppress(Exception):
         import importlib
         top = importlib.import_module(_package())
         errs = getattr(top, "_errors", [])
         lines.append("Start-up errors: " + ("; ".join(f"{n}: {e}" for n, e, _ in errs) or "none"))
-    except Exception:
-        pass
     lines.append("Last self-check: " + (_summary() or "not run"))
     for state, name, detail in LAST["results"]:
         mark = {True: "ok  ", False: "FAIL", None: "info"}[state]
@@ -241,11 +236,9 @@ def _check_round_trip():
         runtime._UID_CACHE.clear()
         runtime._UID_CACHE.update(cache)
         runtime._TRACK.update(track)
-        try:
+        with contextlib.suppress(Exception):
             bpy.data.objects.remove(ob)
             bpy.data.meshes.remove(me)
-        except Exception:
-            pass
 
 
 CHECKS = (_check_startup, _check_panels, _check_slider, _check_keymaps, _check_handlers,
@@ -255,17 +248,13 @@ CHECKS = (_check_startup, _check_panels, _check_slider, _check_keymaps, _check_h
 def run_checks(retry_failed=True):
     if retry_failed and guard.failed():
         names = guard.reset()
-        try:
+        with contextlib.suppress(Exception):
             from . import scrubber
             scrubber.ensure_draw_handler()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             # data recorded again from now on: what changed while it was off isn't one big step
             from . import datarec
             datarec.rebaseline()
-        except Exception:
-            pass
         log.info("Self-check switched these back on: " + ", ".join(names))
     results = []
     for fn in CHECKS:
@@ -415,10 +404,8 @@ def _welcome():
         if win is None:
             return 1.0
         p.welcomed = True
-        try:
+        with contextlib.suppress(Exception):
             bpy.context.preferences.is_dirty = True
-        except Exception:
-            pass
         with bpy.context.temp_override(window=win, screen=win.screen):
             ws = win.workspace
             ws.status_text_set(WELCOME)

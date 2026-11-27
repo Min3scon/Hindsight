@@ -53,7 +53,7 @@ def test_weights_and_shapes_come_back_over_a_topology_change():
     H.enter(ob, "SCULPT")
     H.fake_stroke(ob, 1)
     assert runtime.commit(ob) is not None
-    w1, k1, n1 = weights(ob, "Arm"), key_co(ob, 1), len(ob.data.vertices)
+    _, k1, n1 = weights(ob, "Arm"), key_co(ob, 1), len(ob.data.vertices)
     # weights changed in Weight Paint (not a step), then the topology change
     H.enter(ob, "OBJECT")
     g.add([1, 2], 0.9, "REPLACE")
