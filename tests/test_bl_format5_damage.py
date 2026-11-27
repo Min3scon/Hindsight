@@ -110,7 +110,8 @@ def test_damaged_step_loses_only_it_and_says_so():
     _scrubs_to("F5B", shapes["F5B"], (0, 3))
     bpy.ops.wm.read_homefile(app_template="")
     assert _sha(path) == before, "opening the damaged file changed it"
-    _open(path)
+    # #127 review 6: Blender never writes a file at open, so what shows the file kept is opening it again
+    assert _open(path) == [want] and _steps("F5A") == saved["F5A"][:2], "the damaged file, opened again"
     T.select()
     bpy.ops.wm.save_as_mainfile(filepath=path)
     assert _open(path) == [], runtime.load_notes

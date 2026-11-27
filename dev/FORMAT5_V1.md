@@ -241,7 +241,8 @@ New ones the build ticket adds, each also on the files above:
 - **Not built here**: the missing-folder note keeps #8's wording and rule (a save made while the folder is missing
   still points at it, and the folder is read again once it is back, #120 review), not the one above. The round trip
   (a format 5 file V1 saved again) is #68's. The mixed-encodings fixture and the old builds' own .blend files for
-  `test_bl_t1_migrate.py` need a real Blender running the old builds, and are not made.
+  `test_bl_t1_migrate.py` need the old builds run to make them, and are not made (the bpy module is enough for that,
+  as "What #68 built" found).
 
 ### What #68 built
 
