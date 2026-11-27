@@ -20,6 +20,7 @@ from hindsight.core.types import (
     POSITION_KEY, MASK_KEY, HIDE_VERT_KEY, FACE_SET_KEY,
     EDGE_VERTS_KEY, CORNER_VERT_KEY, CORNER_EDGE_KEY, FACE_OFFSETS_KEY,
 )
+from tests.reference.persist import save_sidecar    # V1's folder writer: no V2 code writes one (#53)
 
 FORCE_STANDINS = os.environ.get("HS_STANDINS") == "1" or "--standins" in sys.argv
 STANDINS = []
@@ -516,7 +517,7 @@ def test_registry_roundtrip():
 
 
 def test_sidecar():
-    from hindsight.core.persist import save_sidecar, load_sidecar, sidecar_dir, sidecar_missing
+    from hindsight.core.persist import load_sidecar, sidecar_dir, sidecar_missing
     d = _tmp()
     try:
         blend = os.path.join(d, "my scene.blend")
@@ -546,6 +547,68 @@ def test_sidecar():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def test_no_add_on_code_writes_a_history_folder():
+    """#8, #53: the history only ever goes inside the .blend. No function in the add-on names the history
+    folder (its helpers, its file names or its "_hindsight" suffix) and makes a folder or writes, copies or
+    moves a file. Reading a V1 folder, setting its damaged file aside (persist.set_aside, which names no
+    folder) and deleting it (Remove Hindsight data) stay."""
+    import ast
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hindsight")
+    folder_names = {"sidecar_dir", "sidecar_file", "HSR_NAME", "INDEX_NAME", "folder", "folder_files", "_FOLDER_FILES"}
+    folder_words = ("_hindsight", "history.hsr", "index.json")
+    write_calls = {"makedirs", "mkdir", "atomic_write", "atomic_write_json", "write_bytes", "write_text",
+                   "copy", "copy2", "copyfile", "copytree", "move", "rename", "renames", "replace", "touch",
+                   "link", "symlink", "hardlink_to", "symlink_to"}
+
+    def node_name(n):
+        return n.id if isinstance(n, ast.Name) else n.attr if isinstance(n, ast.Attribute) else None
+
+    def names_the_folder(n):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str):
+            return any(w in n.value for w in folder_words)
+        return node_name(n) in folder_names
+
+    def writes_a_file(call):
+        if node_name(call.func) in write_calls:
+            return True
+        if node_name(call.func) != "open":
+            return False
+        f = call.func     # open(path, mode) and os.open(path, flags); a Path's .open(mode)
+        at = 0 if isinstance(f, ast.Attribute) and not (isinstance(f.value, ast.Name) and f.value.id in ("os", "io")) else 1
+        mode = call.args[at] if len(call.args) > at else next((k.value for k in call.keywords
+                                                                if k.arg in ("mode", "flags")), None)
+        return mode is not None and not (isinstance(mode, ast.Constant) and not any(c in str(mode.value) for c in "wax+"))
+
+    def scan(source, path):
+        bad = []
+        for fn in ast.walk(ast.parse(source, path)):
+            if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                nodes = list(ast.walk(fn))
+                if any(names_the_folder(n) for n in nodes) and any(isinstance(n, ast.Call) and writes_a_file(n)
+                                                                   for n in nodes):
+                    bad.append(fn.name)
+        return bad
+
+    # #120 review: the scan catches every way of writing, copying or moving a file into the folder, and no read
+    writers = ["os.replace(tmp, sidecar_file(p))", "Path(sidecar_file(p)).open('w')", "open(sidecar_file(p), 'wb')",
+               "open(sidecar_file(p), mode='a')", "os.rename(tmp, sidecar_file(p))", "shutil.move(tmp, sidecar_dir(p))",
+               "shutil.copy2(src, sidecar_dir(p))", "os.makedirs(sidecar_dir(p))",
+               "Path(sidecar_file(p)).write_bytes(b'')", "os.open(sidecar_file(p), os.O_WRONLY)"]
+    readers = ["open(sidecar_file(p), 'rb')", "Path(sidecar_file(p)).open()", "Path(sidecar_file(p)).open('rb')",
+               "os.remove(sidecar_file(p))"]
+    sample = "".join(f"def w{i}(p):\n    {c}\n" for i, c in enumerate(writers))
+    sample += "".join(f"def r{i}(p):\n    {c}\n" for i, c in enumerate(readers))
+    assert scan(sample, "sample") == [f"w{i}" for i in range(len(writers))], scan(sample, "sample")
+
+    bad = []
+    for base, _dirs, files in os.walk(root):
+        for f in files:
+            if f.endswith(".py"):
+                path = os.path.join(base, f)
+                bad += [f"{os.path.relpath(path, root)}:{n}" for n in scan(open(path, encoding="utf-8").read(), path)]
+    assert not bad, f"add-on code that writes a history folder: {bad}"
+
+
 def test_sidecar_streamed_both_ways():
     """Memory work: the history file is written blob by blob and read blob by blob. It must be the
     same bytes as registry_to_bytes, read back the same as from bytes (damaged files included),
@@ -553,7 +616,7 @@ def test_sidecar_streamed_both_ways():
     import tracemalloc
     from hindsight.core.history import History
     from hindsight.core.persist import (HSR_NAME, load_sidecar, registry_from_bytes, registry_to_bytes,
-                                        save_sidecar, sidecar_dir)
+                                        sidecar_dir)
     d = _tmp()
     try:
         blend = os.path.join(d, "s.blend")
@@ -619,7 +682,7 @@ def test_sidecar_streamed_both_ways():
 
 
 def test_rename_blend_without_folder():
-    from hindsight.core.persist import save_sidecar, load_sidecar, sidecar_missing
+    from hindsight.core.persist import load_sidecar, sidecar_missing
     d = _tmp()
     try:
         a = os.path.join(d, "a.blend")
@@ -638,7 +701,7 @@ def test_rename_blend_without_folder():
 
 def test_replay_after_save():
     from hindsight.core.journal import Journal
-    from hindsight.core.persist import save_sidecar, load_sidecar, replay
+    from hindsight.core.persist import load_sidecar, replay
     from hindsight.core.history import History
     from hindsight.core.registry import Registry
     from hindsight.core.step import step_to_bytes
@@ -935,6 +998,7 @@ TESTS = [
     test_atomic_write,
     test_registry_roundtrip,
     test_sidecar,
+    test_no_add_on_code_writes_a_history_folder,
     test_rename_blend_without_folder,
     test_replay_after_save,
     test_replay_semantics,

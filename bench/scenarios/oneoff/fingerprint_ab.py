@@ -22,7 +22,6 @@ import _common as C
 import hindsight_native
 BL = C.load_bench_module("bench_bl")
 from hindsight.bl import runtime
-from hindsight.core.types import SETTINGS
 assert runtime.__file__.startswith(ROOT), runtime.__file__
 
 
@@ -45,7 +44,6 @@ with contextlib.suppress(Exception):
     from importlib.metadata import version
     res["engine"] = version("hindsight_native")
 H.fresh()
-SETTINGS.save_mode = "SIDECAR"
 ob = BL.make_mesh(100_000, name="S")
 res["fp_100k"] = med(timed(lambda: runtime.mesh_fingerprint(ob), 9))
 bpy.data.objects.remove(ob)

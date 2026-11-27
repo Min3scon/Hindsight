@@ -569,10 +569,8 @@ def test_a_reference_that_waits_after_a_reload():
     stays B's parent."""
     import tempfile
     import hindsight
-    from hindsight.core.types import SETTINGS
     for outside in (False, True):
         _b_back_to_its_parenting()
-        SETTINGS.save_mode = "SIDECAR"
         T.select()
         path = os.path.join(tempfile.mkdtemp(prefix="hs_wait_"), "wait.blend")
         bpy.ops.wm.save_as_mainfile(filepath=path)

@@ -11,7 +11,9 @@
 - A file saved with Hindsight data opens in a Blender without Hindsight: everything loads, the
   meshes and objects are as saved.
 - Remove Hindsight data from this file takes all of it out (the folder only when asked) and changes
-  nothing else.
+  nothing else. It offers a history folder only when V1 left one next to the file.
+- METADATA.md and the manifest's file permission say what V2 writes: no save writes a history folder
+  (#48) and there is no Save mode (#51); a V1 folder is only read (#52).
 
 Run: blender -b --factory-startup --python tests/test_bl_metadata.py (or tests/run_tests.py).
 """
@@ -28,8 +30,9 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
+from tests.reference import persist as v1_persist   # V1's folder writer, for V1 files
 from hindsight.bl import camrig, cleanup, datarec, persistence, prefs, rigmark, runtime
-from hindsight.core.types import SETTINGS
+from hindsight.core import persist
 
 C = bpy.context
 ROWS = ("sculpt.positions", "obj.transforms", "obj.addremove")
@@ -111,7 +114,7 @@ def matches(name, patterns) -> bool:
     return False
 
 
-def full_session(path, mode="BOTH"):
+def full_session(path):
     H.fresh()
     T.build_scene()
     a = bpy.data.objects["A"]
@@ -130,7 +133,6 @@ def full_session(path, mode="BOTH"):
     sc.frame_set(1)
     assert bpy.ops.hindsight.quick_auto_key() == {"FINISHED"}
     sc.hindsight.movie_mode = False
-    SETTINGS.save_mode = mode
     bpy.ops.wm.save_as_mainfile(filepath=path)
 
 
@@ -144,9 +146,10 @@ def test_session_writes_only_what_is_listed():
     files = files_next_to(path)
     unlisted = sorted(n for n in blend | files if not matches(n, want))
     assert not unlisted, f"written but not in METADATA.md: {unlisted}"
+    # #48: no save writes the history folder any more, Save history Both included
+    assert not any(n.startswith("<file>_hindsight/") for n in files), files
     for must in ("_hindsight_uid", "Scene.hindsight", ".hindsight_history", ".hindsight_history[sidecar]",
-                 ".hindsight_history[hindsight_data_bin]", "keyframes on hindsight.movie_step",
-                 "<file>_hindsight/", "<file>_hindsight/history.hsr", "<file>_hindsight/index.json"):
+                 ".hindsight_history[hindsight_data_bin]", "keyframes on hindsight.movie_step"):
         assert matches(must, blend | files) or must in blend | files, f"the session didn't write {must}"
     j = persistence.journal_path(path)
     assert matches("journal/" + os.path.basename(j), want)
@@ -220,7 +223,7 @@ def test_opening_a_file_changes_nothing():
 def test_opens_without_hindsight():
     path = os.path.join(TMP, "nohs", "scene.blend")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    full_session(path, mode="BOTH")
+    full_session(path)
     want = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
     want = {n: {k: v for k, v in s.items() if k != "custom"} for n, s in want.items()}
     script = os.path.join(TMP, "nohs", "check.py")
@@ -248,7 +251,9 @@ def test_remove_hindsight_data():
     for delete_folder in (False, True):
         path = os.path.join(TMP, f"remove_{int(delete_folder)}", "scene.blend")
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        full_session(path, mode="BOTH")
+        full_session(path)
+        assert cleanup.report()["folder"] is None, "#52: a folder is offered only when V1 left one"
+        v1_persist.save_sidecar(runtime.reg(), path)    # #48: no save writes a folder; V1's Both did
         geometry = {o.name: O.object_state(o, derived=False) for o in C.scene.objects}
         r = cleanup.report()
         assert r["ids"] and r["text"] and r["keyframes"] and r["folder"], r
@@ -267,6 +272,27 @@ def test_remove_hindsight_data():
         assert files == (set() if delete_folder else {"<file>_hindsight/", "<file>_hindsight/history.hsr",
                                                        "<file>_hindsight/index.json"}), files
         assert done["ids"] == r["ids"]
+
+
+def test_the_list_says_no_save_writes_a_folder():
+    """#52: METADATA.md has no Save mode (gone, #51) and says this version never writes the history
+    folder or its files (#48); the set-aside copy of an unreadable V1 history file is the one exception."""
+    text = open(os.path.join(H.ROOT, "METADATA.md"), encoding="utf-8").read()
+    assert "Save mode" not in text, "METADATA.md still names Save mode"
+    rows = dict(re.findall(r"^\| `([^`]+)` \|[^|]*\|[^|]*\| ([^|]*) \|", text, re.M))
+    folder = os.path.basename(persist.sidecar_dir("<file>.blend")) + "/"
+    for name in (folder, folder + persist.HSR_NAME, folder + persist.INDEX_NAME):
+        assert rows[name].startswith("never by this version"), (name, rows[name])
+
+
+def test_the_file_permission_says_what_is_written():
+    """#52: the manifest's file permission (shown when the extension is installed) no longer says the
+    history is saved next to the .blend: only the crash journal is written, a V1 folder is read."""
+    import tomllib
+    m = tomllib.load(open(os.path.join(H.ROOT, "hindsight", "blender_manifest.toml"), "rb"))
+    reason = m["permissions"]["files"]
+    assert "next to" not in reason and "journal" in reason, reason
+    assert len(reason) <= 64 and not reason.endswith("."), reason     # Blender's limit for a reason
 
 
 def test_movie_mode_objects_are_listed_and_removed():
@@ -302,6 +328,7 @@ def test_movie_mode_objects_are_listed_and_removed():
 for fn in (test_session_writes_only_what_is_listed, test_saving_an_unrecorded_file_adds_nothing,
            test_saving_an_untouched_file_with_the_default_adds_nothing,
            test_opening_a_file_changes_nothing, test_opens_without_hindsight, test_remove_hindsight_data,
+           test_the_list_says_no_save_writes_a_folder, test_the_file_permission_says_what_is_written,
            test_movie_mode_objects_are_listed_and_removed):
     H.run(fn)
 H.finish()

@@ -26,7 +26,6 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from hindsight.core.types import SETTINGS
 from hindsight.bl import datarec, idmap, runtime
 from hindsight.bl import prefs
 
@@ -188,7 +187,6 @@ def save_and_change_outside(path, change, keep_backup=True, prints=None):
     """Save with Hindsight, then without it change the file and save again, then open it with
     Hindsight. keep_backup=False: Blender's backup copy (.blend1, D107) is removed first. prints: the
     first save writes prints(ob) as each mesh's fingerprint (see saved_prints_as)."""
-    SETTINGS.save_mode = "SIDECAR"
     T.select()
     with saved_prints_as(prints) if prints else contextlib.nullcontext():
         bpy.ops.wm.save_as_mainfile(filepath=path)
@@ -275,7 +273,7 @@ def test_mesh_changed_without_hindsight_bridged_by_the_backup():
 def test_saving_normally_never_raises_the_alarm():
     """Saved and reopened with Hindsight in Object, Sculpt and Edit Mode (with a sculpt history, Edit
     Mode steps and recorded values): nothing is left out, no step is added."""
-    for mode, save_mode in (("OBJECT", "SIDECAR"), ("SCULPT", "EMBED"), ("EDIT", "BOTH")):
+    for mode in ("OBJECT", "SCULPT", "EDIT"):
         setup()
         op(T.translate("A", (1, 0, 0)))
         sculpt = H.make_mesh(800, name="Clay")
@@ -291,7 +289,6 @@ def test_saving_normally_never_raises_the_alarm():
             T.select(target)
             bpy.ops.object.mode_set(mode=mode)
         before = {h.uid: len(h.entries) for h in runtime.reg().histories.values()}
-        SETTINGS.save_mode = save_mode
         path = os.path.join(tempfile.mkdtemp(prefix="hs_normal_"), f"normal_{mode.lower()}.blend")
         bpy.ops.wm.save_as_mainfile(filepath=path)
         bpy.ops.wm.open_mainfile(filepath=path)
@@ -299,14 +296,13 @@ def test_saving_normally_never_raises_the_alarm():
         after = {h.uid: len(h.entries) for h in runtime.reg().histories.values()}
         assert after == before, (mode, before, after)
         assert not any("wasn't running" in t for _s, t in runtime.load_notes), (mode, runtime.load_notes)
-    SETTINGS.save_mode = "SIDECAR"
 
 
 def test_blake2b_prints_saved_normally_never_raise_the_alarm():
     """R060: a file saved by a build before R060 (fingerprints blake2b, no tag) in Object, Sculpt and Edit
     Mode, opened with this build: nothing is left out, no step is added. Saved again by this build, the
     values are "x3:", and opening that is quiet too."""
-    for mode, save_mode in (("OBJECT", "SIDECAR"), ("SCULPT", "EMBED"), ("EDIT", "BOTH")):
+    for mode in ("OBJECT", "SCULPT", "EDIT"):
         setup()
         op(T.translate("A", (1, 0, 0)))
         sculpt = H.make_mesh(800, name="Clay")
@@ -322,7 +318,6 @@ def test_blake2b_prints_saved_normally_never_raise_the_alarm():
             T.select(target)
             bpy.ops.object.mode_set(mode=mode)
         before = {h.uid: len(h.entries) for h in runtime.reg().histories.values()}
-        SETTINGS.save_mode = save_mode
         path = os.path.join(tempfile.mkdtemp(prefix="hs_oldprints_"), f"old_prints_{mode.lower()}.blend")
         with saved_prints_as(blake2b_print):
             bpy.ops.wm.save_as_mainfile(filepath=path)
@@ -334,7 +329,6 @@ def test_blake2b_prints_saved_normally_never_raise_the_alarm():
             assert after == before, (mode, form, before, after)
             assert not any("wasn't running" in t for _s, t in runtime.load_notes), (mode, form, runtime.load_notes)
             bpy.ops.wm.save_as_mainfile(filepath=path)        # this build's values from here on
-    SETTINGS.save_mode = "SIDECAR"
 
 
 def test_mesh_changed_without_hindsight_against_blake2b_prints():

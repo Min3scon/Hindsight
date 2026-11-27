@@ -201,24 +201,20 @@ def child():
     import bpy
     import tests.harness as H
     from hindsight.bl import persistence, runtime
-    from hindsight.core.types import SETTINGS
     try:
         if mode == "build":
             S.setup()
-            SETTINGS.save_mode = "EMBED"
             runtime.packer.drain(60)
             bpy.ops.wm.save_as_mainfile(filepath=blend)
             return 0
         import gc
         H.fresh()
-        SETTINGS.save_mode = "EMBED"
         gc.collect()
         mark("before_open")
         time.sleep(1.2)
         mark("open_start")
         bpy.ops.wm.open_mainfile(filepath=blend)
         gc.collect()
-        SETTINGS.save_mode = "EMBED"
         mark("after_open")
         text = bpy.data.texts.get(persistence.TEXT_NAME)
         keep = sum(len(text[k]) for k in (persistence.DATA_PROP, persistence.DATA_BIN_PROP)

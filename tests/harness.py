@@ -47,7 +47,7 @@ def fresh(register=True):
     from hindsight.bl import datarec, guard, idmap, persistence
     datarec.forget()          # module state from an earlier test must not leak into this one
     idmap.forget()
-    persistence._PROTECT.update(sidecar=False, embed=False)    # load_pre resets it, but runs unregistered here
+    persistence._PROTECT.update(sidecar=False, embed=False)     # what loading a file resets (no handler ran)
     guard.reset()
     prefs.FORCE["record_scope"] = None
     prefs.FORCE["record_kinds"] = None

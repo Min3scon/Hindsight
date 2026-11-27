@@ -16,7 +16,6 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.core import globaltl, persist
-from hindsight.core.types import SETTINGS
 from hindsight.bl import datarec, idmap, log, rigmark, runtime, ui_panel
 from hindsight.bl import prefs
 
@@ -253,10 +252,9 @@ def test_rig_ignored_after_reload():
     want = {n: state(n) for n in ("Hindsight Camera", "Hindsight Key")}
     n_before = glen()
     path = os.path.join(TMP, "rig.blend")
-    SETTINGS.save_mode = "SIDECAR"
     T.select()
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    assert os.path.isdir(persist.sidecar_dir(path))
+    assert not os.path.isdir(persist.sidecar_dir(path))      # #48: the history is in the .blend
     bpy.ops.wm.open_mainfile(filepath=path)
     prefs.FORCE["record_scope"] = "EVERYTHING"
     assert glen() == n_before, "the history came back with the file"

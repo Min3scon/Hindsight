@@ -138,7 +138,8 @@ def run(d):
     files = {}
     C.set_mode(d, "OBJECT")
     for mode, cursor in (("SIDECAR", n), ("EMBED", n), ("BOTH", 3)):
-        prefs.save_mode = mode
+        if hasattr(prefs, "save_mode"):          # V2 has no Save history (#51)
+            prefs.save_mode = mode
         with d.override():
             rt.goto(bpy.context, cursor)
         path = os.path.join(out, f"{label}_{mode.lower()}{'_mid' if cursor != n else ''}.blend")
@@ -146,7 +147,8 @@ def run(d):
             bpy.ops.wm.save_as_mainfile(filepath=path)
         yield 0.3
         files[os.path.basename(path)] = {"mode": mode, "steps": n, "cursor": cursor}
-    prefs.save_mode = "SIDECAR"
+    if hasattr(prefs, "save_mode"):
+        prefs.save_mode = "SIDECAR"
     snap = C.mod("meshio").read_snapshot(ob.data, sculpt_only=False)
     channels_end = {k: hashlib.blake2b(snap.arrays[k].tobytes(), digest_size=6).hexdigest() for k in sorted(snap.arrays)}
     json.dump({"label": label, "hashes": hashes, "positions": positions, "scripted": scripted, "files": files,

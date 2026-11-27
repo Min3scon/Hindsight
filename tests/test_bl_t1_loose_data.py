@@ -173,7 +173,6 @@ def test_loose_making_survives_save_reload_and_recovery():
     from hindsight.core.types import SETTINGS
     tmp = tempfile.mkdtemp(prefix="hs_loose152_")
     try:
-        SETTINGS.save_mode = "SIDECAR"
         SETTINGS.crash_recovery = "INTERRUPTED"
         L.fresh_scene()
         L.track_all()

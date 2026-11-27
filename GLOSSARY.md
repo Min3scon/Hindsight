@@ -103,10 +103,12 @@ All histories of the open file together; it is what gets saved.
 _Avoid_: database, store
 
 **Save mode**:
-Where the history is saved: in a history folder next to the .blend, embedded in the .blend, or both.
+V1's setting for where the history is saved: in a history folder next to the .blend, embedded in the .blend, or
+both. V2 has none: the history is always in the .blend (#8).
 
 **History folder**:
-The folder next to a .blend that holds its saved history.
+The folder next to a .blend where V1 saved its history (V1's default). V2 never writes one; it reads it until the
+file's next save puts the history in the .blend.
 _Avoid_: sidecar (in anything a user reads)
 
 **Embedded history**:

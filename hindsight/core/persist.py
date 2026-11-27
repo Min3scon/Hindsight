@@ -29,7 +29,6 @@ in ``reg.load_report``.
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import struct
@@ -38,7 +37,6 @@ from .crc import crc32
 
 import numpy as np
 
-from .journal import atomic_write, atomic_write_json
 from .types import Entry
 
 REG_MAGIC = b"HSR1"
@@ -349,25 +347,6 @@ def sidecar_dir(blend_path: str) -> str:
     d = os.path.dirname(os.path.abspath(blend_path))
     stem = os.path.splitext(os.path.basename(blend_path))[0]
     return os.path.join(d, stem + "_hindsight")
-
-
-def save_sidecar(reg, blend_path: str) -> None:
-    from .types import SETTINGS
-    folder = sidecar_dir(blend_path)
-    os.makedirs(folder, exist_ok=True)
-    parts = registry_parts(reg, getattr(SETTINGS, "compression", "auto") or "auto")
-    atomic_write(os.path.join(folder, HSR_NAME), parts)
-    with contextlib.suppress(OSError):
-        # A note for people looking into the folder; loading never reads it. The history is saved
-        # once history.hsr is in place, so failing to update the note doesn't fail the save.
-        atomic_write_json(os.path.join(folder, INDEX_NAME), {
-            "version": FORMAT_VERSION,
-            "format": FORMAT_VERSION,
-            "writer": WRITER,
-            "blend": os.path.basename(blend_path),
-            "saved_at": time.time(),
-            "save_id": getattr(reg, "save_id", None),
-        })
 
 
 def load_sidecar(blend_path: str):

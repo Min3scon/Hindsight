@@ -44,19 +44,18 @@ def main():
     out["jump300"], _ = scrub(h, [(300, 0), (0, 300)], 3)
     tmp = tempfile.mkdtemp(prefix="hs_speed_")
     try:
-        for mode in ("SIDECAR", "EMBED"):
-            SETTINGS.save_mode = mode
-            blend = os.path.join(tmp, f"s_{mode}.blend")
-            ts, tl = [], []
-            for _ in range(3):
-                t0 = time.perf_counter()
-                bpy.ops.wm.save_as_mainfile(filepath=blend)
-                ts.append((time.perf_counter() - t0) * 1000)
-                t0 = time.perf_counter()
-                bpy.ops.wm.open_mainfile(filepath=blend)
-                tl.append((time.perf_counter() - t0) * 1000)
-            out[f"save_{mode}"] = statistics.median(ts)
-            out[f"load_{mode}"] = statistics.median(tl)
+        mode = "EMBED"  # #48: every save puts the history in the .blend (V1's name for that in the keys)
+        blend = os.path.join(tmp, f"s_{mode}.blend")
+        ts, tl = [], []
+        for _ in range(3):
+            t0 = time.perf_counter()
+            bpy.ops.wm.save_as_mainfile(filepath=blend)
+            ts.append((time.perf_counter() - t0) * 1000)
+            t0 = time.perf_counter()
+            bpy.ops.wm.open_mainfile(filepath=blend)
+            tl.append((time.perf_counter() - t0) * 1000)
+        out[f"save_{mode}"] = statistics.median(ts)
+        out[f"load_{mode}"] = statistics.median(tl)
         # a topology step (the mesh rebuilt with more vertices), Object Mode
         ob = bpy.data.objects["Obj"]
         H.enter(ob, "OBJECT")

@@ -121,7 +121,8 @@ def test_sync_settings():
     try:
         prefs.sync_settings(p)
         s = T.SETTINGS
-        assert s.save_mode == "EMBED" and s.crash_recovery == "INTERRUPTED"
+        # #51: Save history is gone; a V1 value left on the preferences is not copied in
+        assert not hasattr(s, "save_mode") and s.crash_recovery == "INTERRUPTED"
         assert s.truncation_threshold == 3 and s.max_steps == 500
         assert s.memory_limit_mb == 1024 and s.raw_steps == 8
         assert s.compression == "zstd"
@@ -137,14 +138,14 @@ def test_sync_settings():
 def test_prefs_class_definition():
     cls = prefs.HINDSIGHT_AP_prefs
     ann = cls.__annotations__
-    for name in ("save_mode", "crash_recovery", "truncation_threshold", "max_steps",
+    for name in ("crash_recovery", "truncation_threshold", "max_steps",
                  "memory_limit_mb", "raw_steps", "compression", "scrub_height", "scrub_margin",
                  "scrub_color", "scrub_bg_color", "scrub_show_counter", "scrub_width_pct"):
         assert name in ann, name
         assert ann[name].keywords.get("update") is not None, name
-    kw = ann["save_mode"].keywords
-    assert kw["name"] == "Save history" and kw["default"] == 'SIDECAR'
-    assert [i[0] for i in kw["items"]] == ["SIDECAR", "EMBED", "BOTH"]
+    # #51: Save history is gone (the history is always inside the .blend), nothing else came or went
+    assert list(ann) == PREFS_NAMES, list(ann)
+    assert "save_mode" not in {f.name for f in T.Settings.__dataclass_fields__.values()}
     kw = ann["crash_recovery"].keywords
     assert kw["default"] == 'LAST_SAVED'
     assert [i[0] for i in kw["items"]] == ["LAST_SAVED", "INTERRUPTED"]
@@ -163,6 +164,99 @@ def test_prefs_class_definition():
         T.SETTINGS.raw_steps = saved
     # not registered as an add-on here -> None, never raises
     assert prefs.get_prefs() is None
+
+
+# The preferences as V1 had them, less Save history (#51), in their order
+PREFS_NAMES = ["crash_recovery", "truncation_threshold", "max_steps", "memory_limit_mb", "raw_steps",
+               "compression", "scrub_height", "scrub_margin", "scrub_width_pct", "scrub_color", "scrub_bg_color",
+               "scrub_show_counter", "record_scope", "record_kinds", "record_texture_painting", "record_multires",
+               "record_dyntopo", "edit_steps_max", "welcomed"]
+PREFS_DRAWN = ["Saving", "crash_recovery",
+               "History", "record_scope", "record_texture_painting", "record_multires", "record_dyntopo",
+               "edit_steps_max", "max_steps", "truncation_threshold",
+               "Memory", "memory_limit_mb", "raw_steps", "compression",
+               "On-screen slider", "scrub_height", "scrub_margin", "scrub_width_pct", "scrub_color", "scrub_bg_color",
+               "scrub_show_counter", "hindsight.self_check", "hindsight.copy_diagnostics"]
+
+
+def drawn_prefs(p):
+    """Section titles, preferences and buttons of the preferences page, in order (after the beta note)."""
+    lay = FakeLayout()
+    prefs.HINDSIGHT_AP_prefs.draw(SimpleNamespace(layout=lay) if p is None else _Drawable(p, lay), bpy.context)
+    out = []
+    for n, a, kw in lay.log:
+        if n == "label" and kw.get("icon") != 'INFO':
+            out.append(kw.get("text"))
+        elif n == "prop":
+            out.append(a[1])
+        elif n == "operator" and a[0] != "wm.url_open":
+            out.append(a[0])
+    return out
+
+
+class _Drawable:
+    """A registered preferences instance with a fake layout (its own `layout` is read-only)."""
+
+    def __init__(self, p, layout):
+        self.p, self.layout = p, layout
+
+    def __getattr__(self, name):
+        return getattr(self.p, name)
+
+
+@test
+def test_prefs_page_without_save_history():
+    # #51: the Saving section keeps only On open; nothing else moves
+    assert drawn_prefs(None) == PREFS_DRAWN, drawn_prefs(None)
+
+
+V1_SAVE_MODES = (('SIDECAR', "Next to the .blend", ""), ('EMBED', "Inside the .blend", ""), ('BOTH', "Both", ""))
+
+
+@test
+def test_v1_save_history_prefs_load_quietly():
+    """#51: preferences V1 stored with each Save history value load in V2 without an error or a message, and
+    keep the other values they stored."""
+    import contextlib
+    import io
+    from bpy.props import EnumProperty
+    mod = "hindsight_v1_prefs_test"
+    v2_ann = dict(prefs.HINDSIGHT_AP_prefs.__annotations__)
+    v2_ann.pop("save_mode", None)
+    v1 = type("HINDSIGHT_AP_prefs", (bpy.types.AddonPreferences,), {"bl_idname": mod, "__annotations__": {
+        **v2_ann, "save_mode": EnumProperty(name="Save history", items=V1_SAVE_MODES, default='SIDECAR')}})
+    saved, base = T.Settings(**vars(T.SETTINGS)), prefs._base_package
+    for mode in ("SIDECAR", "EMBED", "BOTH"):
+        addon = bpy.context.preferences.addons.new()
+        addon.module = mod
+        try:
+            bpy.utils.register_class(v1)                     # V1 stores its preferences
+            p = bpy.context.preferences.addons[mod].preferences
+            p.save_mode, p.crash_recovery, p.max_steps = mode, 'INTERRUPTED', 321
+            bpy.utils.unregister_class(v1)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                prefs.register(mod)                          # V2 is enabled over them
+                p = prefs.get_prefs()
+                assert p is not None, mode
+                drawn = drawn_prefs(p)
+                prefs.unregister()
+            assert out.getvalue() == "", (mode, out.getvalue())
+            assert drawn == PREFS_DRAWN, (mode, drawn)
+            assert not hasattr(T.SETTINGS, "save_mode"), mode
+            assert T.SETTINGS.crash_recovery == "INTERRUPTED" and T.SETTINGS.max_steps == 321, mode
+            bpy.utils.register_class(v1)                     # the V1 value was there all along, untouched
+            assert bpy.context.preferences.addons[mod].preferences.save_mode == mode, mode
+            bpy.utils.unregister_class(v1)
+        finally:
+            with contextlib.suppress(Exception):
+                bpy.utils.unregister_class(v1)
+            with contextlib.suppress(Exception):
+                prefs.unregister()
+            bpy.context.preferences.addons.remove(addon)
+            prefs._base_package = base
+            for k, v in vars(saved).items():
+                setattr(T.SETTINGS, k, v)
 
 
 @test

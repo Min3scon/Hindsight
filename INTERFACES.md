@@ -44,7 +44,7 @@ Read the file. Key points:
   (`seq,label,mode,target,time,kind,extra`). `.load() -> Step`, `.pack(codec)`, `.to_bytes(codec)`,
   `.nbytes()`, `.is_packed()`.
 - `Settings` dataclass + module global `SETTINGS` (max_steps=10000, memory_limit_mb=4096, raw_steps=64,
-  compression="auto", truncation_threshold=10, save_mode="SIDECAR", crash_recovery="LAST_SAVED").
+  compression="auto", truncation_threshold=10, crash_recovery="LAST_SAVED").
 
 ## 2. Storage engine — `core/codec.py`, `core/delta.py`, `core/step.py`, `core/store.py`
 
@@ -213,8 +213,7 @@ def atomic_write_json(path: str, obj) -> None
 def registry_to_bytes(reg, codec: str = "auto") -> bytes      # complete compacted serialisation
 def registry_from_bytes(b: bytes) -> "Registry"
 def sidecar_dir(blend_path: str) -> str          # "<dir>/<blend stem>_hindsight"
-def save_sidecar(reg, blend_path: str) -> None   # writes sidecar_dir/history.hsr atomically (+ index.json
-                                                 # {"version":1,"blend":basename,"saved_at":time})
+# (no save_sidecar: V2 never writes a history folder, #53; tests write V1's with tests/reference/persist.py)
 def load_sidecar(blend_path: str) -> "Registry | None"    # None if folder/file missing
 def sidecar_missing(blend_path: str, expected: bool) -> bool   # True if expected but folder absent
 def replay(reg, records: list[tuple[str, dict, bytes]]) -> int
@@ -285,7 +284,7 @@ Scene properties (`bl/props.py`, main session): `scene.hindsight` (HINDSIGHT_PG_
 Add-on preferences (`bl/prefs.py`): class `HINDSIGHT_AP_prefs(bpy.types.AddonPreferences)`, `bl_idname = __package__`
 of the extension root (`base_package` passed from `__init__`), properties (each `update=` copies into
 `core.types.SETTINGS` via `bl.prefs.sync_settings(prefs)`):
-`save_mode` Enum SIDECAR/EMBED/BOTH ("Save Mode"), `crash_recovery` Enum LAST_SAVED/INTERRUPTED ("Crash Recovery",
+`crash_recovery` Enum LAST_SAVED/INTERRUPTED ("Crash Recovery",
 items "Last Saved", "Interrupted Session"), `truncation_threshold` Int 10 ("Truncation Warning Threshold"),
 `max_steps` Int 10000 ("Max Undo Steps", 1..10000), `memory_limit_mb` Int 4096 ("Memory Limit (MB)"),
 `raw_steps` Int 64 ("Uncompressed Recent Steps"), `compression` Enum AUTO/ZSTD/LZ4/ZLIB/NONE ("Compression"),

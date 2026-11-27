@@ -14,7 +14,7 @@ import bpy
 import numpy as np
 
 import tests.harness as H
-from hindsight.bl import adapters, datarec, idmap, runtime
+from hindsight.bl import adapters, datarec, idmap, persistence, runtime
 from hindsight.bl import prefs
 from hindsight.core import persist
 from hindsight.core.types import DATA, DELTA
@@ -110,9 +110,8 @@ def test_packed_and_saved():
     d = tempfile.mkdtemp(prefix="hs_adapt_")
     path = os.path.join(d, "a.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
-    side = persist.sidecar_file(path)
-    with open(side, "rb") as f:
-        assert persist.registry_from_bytes(f.read()).load_report["format"] == 4
+    stored = H.stored_text(path)[persistence.DATA_BIN_PROP]     # #48: in the .blend (#9: read from disk)
+    assert persist.registry_from_bytes(stored).load_report["format"] == 4
     bpy.ops.wm.open_mainfile(filepath=path)
     prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = bpy.data.objects["A"]

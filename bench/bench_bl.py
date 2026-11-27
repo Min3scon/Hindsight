@@ -121,14 +121,13 @@ def save_load(tmp, ob, h):
     out = {}
     if importlib.util.find_spec("hindsight.bl.persistence") is not None:
         try:
-            SETTINGS.save_mode = "SIDECAR"
             want_len, want_cur = len(h.entries), h.cursor
             want_pos = read_pos(ob.data).tobytes()
             t0 = time.perf_counter()
             bpy.ops.wm.save_as_mainfile(filepath=blend)
             out["save_ms"] = (time.perf_counter() - t0) * 1000.0
-            sc = os.path.join(persist.sidecar_dir(blend), persist.HSR_NAME)
-            out["sidecar_bytes"] = os.path.getsize(sc) if os.path.isfile(sc) else None
+            text = bpy.data.texts.get(".hindsight_history")      # #48: the history is in the .blend
+            out["history_bytes"] = len(text["hindsight_data_bin"]) if text and "hindsight_data_bin" in text else None
             out["blend_bytes"] = os.path.getsize(blend)
             t0 = time.perf_counter()
             bpy.ops.wm.open_mainfile(filepath=blend)
@@ -137,15 +136,15 @@ def save_load(tmp, ob, h):
             h2 = runtime.history_of(ob2) if ob2 is not None else None
             ok = h2 is not None and len(h2.entries) == want_len and h2.cursor == want_cur
             out["roundtrip_ok"] = bool(ok and read_pos(ob2.data).tobytes() == want_pos)
-            out["method"] = ("bpy.ops.wm.save_as_mainfile + bpy.ops.wm.open_mainfile, save_mode=SIDECAR "
-                             "(includes writing/reading the .blend itself)")
+            out["method"] = ("bpy.ops.wm.save_as_mainfile + bpy.ops.wm.open_mainfile, the history inside "
+                             "the .blend (includes writing/reading the .blend itself)")
             return out
         except Exception as e:  # fall through to the direct measurement
             out = {"persistence_error": repr(e)}
     t0 = time.perf_counter()
     persist.save_sidecar(runtime.reg(), blend)
     out["save_ms"] = (time.perf_counter() - t0) * 1000.0
-    out["sidecar_bytes"] = os.path.getsize(os.path.join(persist.sidecar_dir(blend), persist.HSR_NAME))
+    out["history_bytes"] = os.path.getsize(os.path.join(persist.sidecar_dir(blend), persist.HSR_NAME))
     t0 = time.perf_counter()
     reg2 = persist.load_sidecar(blend)
     out["load_ms"] = (time.perf_counter() - t0) * 1000.0
@@ -212,7 +211,7 @@ def bench(n, tmp):
     # ---- save / load with 300 steps
     sl = save_load(tmp, ob, h)
     r["save_load_300"] = sl
-    print(f"save {sl['save_ms']:.1f} ms, load {sl['load_ms']:.1f} ms ({sl.get('sidecar_bytes')} B) - {sl['method']}")
+    print(f"save {sl['save_ms']:.1f} ms, load {sl['load_ms']:.1f} ms ({sl.get('history_bytes')} B) - {sl['method']}")
     ob = bpy.data.objects.get("Obj") or ob
     h = runtime.history_of(ob)
 
@@ -238,7 +237,7 @@ def bench(n, tmp):
             print(f"goto 5000: {r['goto5000_ms']:.0f} ms (recorded in {rec_s:.0f}s)")
             sl = save_load(tmp, ob, h)
             r["save_load_5000"] = sl
-            print(f"save(5000) {sl['save_ms']:.1f} ms, load {sl['load_ms']:.1f} ms ({sl.get('sidecar_bytes')} B)")
+            print(f"save(5000) {sl['save_ms']:.1f} ms, load {sl['load_ms']:.1f} ms ({sl.get('history_bytes')} B)")
         else:
             r["goto5000_note"] = f"only {len(h.entries)} strokes recorded in {LONG_BUDGET_S:.0f}s"
     return r
@@ -311,14 +310,14 @@ def write_md(env, results):
     row("Scrub 5,000 steps (ms)", lambda r: fmt(r["goto5000_ms"]))
     row("Save, 300 steps (ms)", lambda r: fmt(r["save_load_300"]["save_ms"]))
     row("Load, 300 steps (ms)", lambda r: fmt(r["save_load_300"]["load_ms"]))
-    row("History file, 300 steps (bytes)", lambda r: f"{r['save_load_300'].get('sidecar_bytes') or 0:,}")
+    row("History file, 300 steps (bytes)", lambda r: f"{r['save_load_300'].get('history_bytes') or 0:,}")
     lines.append("")
     for r in results:
         if "save_load_5000" in r:
             s = r["save_load_5000"]
             lines.append(f"- {r['verts']:,} verts, 5,000 steps: history {r['mem_5000_total_bytes'] / 2**20:.1f} MiB "
                          f"({r['mem_5000_bytes_per_step']:,.0f} B/step, newest 64 raw), save {s['save_ms']:.0f} ms, "
-                         f"load {s['load_ms']:.0f} ms, file {s.get('sidecar_bytes', 0):,} B; recording 4,700 more "
+                         f"load {s['load_ms']:.0f} ms, file {s.get('history_bytes', 0):,} B; recording 4,700 more "
                          f"strokes took {r['record_to_5000_s']:.0f} s including the simulated stroke writes.")
         elif r["goto5000_ms"] == "not measured":
             lines.append(f"- {r['verts']:,} verts: 5,000-step jump not measured (only attempted at 100k)"

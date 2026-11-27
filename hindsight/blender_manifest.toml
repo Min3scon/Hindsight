@@ -23,7 +23,7 @@ wheels = [
 ]
 
 [permissions]
-files = "Save sculpt history next to the blend file and in user data"
+files = "Keep a crash journal in user data, read older history folders"
 
 [build]
 paths_exclude_pattern = ["__pycache__/", ".*", "*.pyc", "/tests/"]
