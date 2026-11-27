@@ -60,6 +60,14 @@ def open_file(blend):
     bpy.ops.wm.open_mainfile(filepath=blend)
 
 
+def with_default(want, v1, what):
+    """`want` with #10's default on: nobody chose in a V1 file, so opening it switches "Everything in this file" on
+    (#105) for every object, and a save with a history keeps the ids it gave out. Each open gives out its own."""
+    reg = runtime.reg()
+    assert reg.file_default and set(v1.by_object) <= reg.everything, f"{what}: the default is not on (#10)"
+    return dict(want, settings=want["settings"][:5] + (set(reg.everything),))
+
+
 def move_in(name, mode):
     what = f"{name}, {mode}"
     blend, v1 = v1_blend(name, mode)
@@ -72,7 +80,7 @@ def move_in(name, mode):
     unchanged = bpy.data.is_dirty          # what opening alone says: the bpy module of 4.2 says changed after any open
 
     open_file(blend)
-    assert H.saved_steps(runtime.reg()) == want, f"{what}: opened"
+    assert H.saved_steps(runtime.reg()) == with_default(want, v1, what), f"{what}: opened"
     assert not runtime.load_notes and runtime.missing_message[0] is None, (what, runtime.load_notes)
     text = bpy.data.texts[persistence.TEXT_NAME]
     assert not persistence._holds_history(text), f"{what}: Blender still holds its copy of the history"
@@ -82,6 +90,7 @@ def move_in(name, mode):
     assert sha(blend) == on_disk, f"{what}: closed without saving, the .blend changed"
 
     open_file(blend)
+    want = with_default(want, v1, what)
     bpy.ops.wm.save_mainfile(filepath=blend)
     stored = H.stored_text(blend)
     assert stored.get(persistence.DATA_PROP) == persist.STUB and not stored[persistence.SIDECAR_PROP], what
