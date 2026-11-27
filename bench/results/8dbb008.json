@@ -1,0 +1,598 @@
+{
+ "label": "8dbb008",
+ "root": "D:\\hs-wt\\129",
+ "quick": false,
+ "only": [],
+ "started": "2026-11-27 07:28:40",
+ "scenarios": {
+  "commit_100k": {
+   "min_ms": 0.6423,
+   "median_ms": 0.7022,
+   "n": 25,
+   "vertices": 99904,
+   "tracemalloc_mb": 0.046,
+   "hwm_mb": 0.0
+  },
+  "commit_1m": {
+   "min_ms": 4.2859,
+   "median_ms": 5.0368,
+   "n": 12,
+   "vertices": 999698,
+   "tracemalloc_mb": 0.408,
+   "hwm_mb": 0.0
+  },
+  "goto_bl_1_100k": {
+   "min_ms": 0.2053,
+   "median_ms": 0.2325,
+   "n": 12,
+   "vertices": 100000,
+   "steps": 400,
+   "jump": 1
+  },
+  "goto_bl_300_100k": {
+   "min_ms": 5.3326,
+   "median_ms": 5.5068,
+   "n": 12,
+   "vertices": 100000,
+   "steps": 400,
+   "jump": 200
+  },
+  "jump_1_fwd_100k": {
+   "min_ms": 0.0259,
+   "median_ms": 0.0262,
+   "n": 60,
+   "steps": 1,
+   "vertices": 100000,
+   "end_sha": "bd6132024f3c"
+  },
+  "jump_1_back_100k": {
+   "min_ms": 0.0259,
+   "median_ms": 0.0261,
+   "n": 60,
+   "steps": 1,
+   "vertices": 100000,
+   "end_sha": "f3e9340f11ab"
+  },
+  "jump_30_fwd_100k": {
+   "min_ms": 0.5757,
+   "median_ms": 0.5795,
+   "n": 8,
+   "steps": 30,
+   "vertices": 100000,
+   "end_sha": "b9351b9e6bd3"
+  },
+  "jump_30_back_100k": {
+   "min_ms": 0.5763,
+   "median_ms": 0.5917,
+   "n": 8,
+   "steps": 30,
+   "vertices": 100000,
+   "end_sha": "ae746b6b908d"
+  },
+  "jump_300_fwd_100k": {
+   "min_ms": 5.8434,
+   "median_ms": 5.9668,
+   "n": 8,
+   "steps": 300,
+   "vertices": 100000,
+   "end_sha": "d99cfb2ec0f4",
+   "tracemalloc_mb": 0.006,
+   "hwm_mb": 0.0
+  },
+  "jump_300_back_100k": {
+   "min_ms": 5.8775,
+   "median_ms": 6.0665,
+   "n": 8,
+   "steps": 300,
+   "vertices": 100000,
+   "end_sha": "b16166567e3c"
+  },
+  "jump_3000_fwd_100k": {
+   "min_ms": 57.1666,
+   "median_ms": 57.3762,
+   "n": 8,
+   "steps": 3000,
+   "vertices": 100000,
+   "end_sha": "3bd718cd00bc"
+  },
+  "jump_3000_back_100k": {
+   "min_ms": 56.9795,
+   "median_ms": 57.4809,
+   "n": 8,
+   "steps": 3000,
+   "vertices": 100000,
+   "end_sha": "6c13683366d0",
+   "tracemalloc_mb": 0.05,
+   "hwm_mb": 0.0
+  },
+  "drag_5000_fwd_100k": {
+   "min_ms": 96.1002,
+   "median_ms": 97.3171,
+   "n": 4,
+   "events": 100,
+   "vertices": 100000
+  },
+  "drag_5000_back_100k": {
+   "min_ms": 96.6486,
+   "median_ms": 97.1338,
+   "n": 4,
+   "events": 100,
+   "vertices": 100000
+  },
+  "jump_1_fwd_1m": {
+   "min_ms": 0.1312,
+   "median_ms": 0.1317,
+   "n": 60,
+   "steps": 1,
+   "vertices": 1000000,
+   "end_sha": "9918ac0ad29b"
+  },
+  "jump_1_back_1m": {
+   "min_ms": 0.1308,
+   "median_ms": 0.1316,
+   "n": 60,
+   "steps": 1,
+   "vertices": 1000000,
+   "end_sha": "c0216309709e"
+  },
+  "jump_30_fwd_1m": {
+   "min_ms": 4.5742,
+   "median_ms": 4.8346,
+   "n": 8,
+   "steps": 30,
+   "vertices": 1000000,
+   "end_sha": "c42831ff2ef8"
+  },
+  "jump_30_back_1m": {
+   "min_ms": 4.4673,
+   "median_ms": 4.5731,
+   "n": 8,
+   "steps": 30,
+   "vertices": 1000000,
+   "end_sha": "8fc35c975867"
+  },
+  "jump_300_fwd_1m": {
+   "min_ms": 30.5101,
+   "median_ms": 30.9273,
+   "n": 8,
+   "steps": 300,
+   "vertices": 1000000,
+   "end_sha": "4a03d72c4140",
+   "tracemalloc_mb": 0.006,
+   "hwm_mb": 0.0
+  },
+  "jump_300_back_1m": {
+   "min_ms": 30.479,
+   "median_ms": 30.8843,
+   "n": 8,
+   "steps": 300,
+   "vertices": 1000000,
+   "end_sha": "e5c017e4df3a"
+  },
+  "jump_3000_fwd_1m": {
+   "min_ms": 300.2446,
+   "median_ms": 303.1825,
+   "n": 5,
+   "steps": 3000,
+   "vertices": 1000000,
+   "end_sha": "2a9a009eb9fc"
+  },
+  "jump_3000_back_1m": {
+   "min_ms": 302.0124,
+   "median_ms": 303.7465,
+   "n": 5,
+   "steps": 3000,
+   "vertices": 1000000,
+   "end_sha": "c29912511079",
+   "tracemalloc_mb": 0.05,
+   "hwm_mb": 0.0
+  },
+  "drag_5000_fwd_1m": {
+   "min_ms": 780.175,
+   "median_ms": 780.6579,
+   "n": 3,
+   "events": 100,
+   "vertices": 1000000
+  },
+  "drag_5000_back_1m": {
+   "min_ms": 778.0294,
+   "median_ms": 781.5592,
+   "n": 3,
+   "events": 100,
+   "vertices": 1000000
+  },
+  "save_embed_100k_1000": {
+   "min_ms": 908.2,
+   "median_ms": 930.7,
+   "n": 3,
+   "tracemalloc_mb": 9.87,
+   "hwm_mb": 0.0,
+   "steps": 1001,
+   "history_mb": 10.27,
+   "vertices": 100000
+  },
+  "open_embed_100k_1000": {
+   "min_ms": 2969.4,
+   "median_ms": 2979.0,
+   "n": 3,
+   "tracemalloc_mb": 23.85,
+   "hwm_mb": 0.0,
+   "steps": 1001,
+   "history_mb": 10.27,
+   "vertices": 100000
+  },
+  "save_embed_100k_6000": {
+   "min_ms": 952.1,
+   "median_ms": 956.8,
+   "n": 3,
+   "tracemalloc_mb": 55.36,
+   "hwm_mb": 0.0,
+   "steps": 6001,
+   "history_mb": 54.43,
+   "vertices": 100000
+  },
+  "open_embed_100k_6000": {
+   "min_ms": 3079.2,
+   "median_ms": 3128.6,
+   "n": 3,
+   "tracemalloc_mb": 72.32,
+   "hwm_mb": 0.0,
+   "steps": 6001,
+   "history_mb": 54.43,
+   "vertices": 100000
+  },
+  "save_folder_100k_1000": {
+   "error": "no result reported"
+  },
+  "open_folder_100k_1000": {
+   "error": "no result reported"
+  },
+  "save_folder_100k_6000": {
+   "error": "no result reported"
+  },
+  "open_folder_100k_6000": {
+   "error": "no result reported"
+  },
+  "edit_step_100k": {
+   "min_ms": 40.9791,
+   "median_ms": 42.0731,
+   "n": 7,
+   "vertices": 99542,
+   "commit_ms": 0.418,
+   "edit_step_ms": 42.5,
+   "steps": 10,
+   "tracemalloc_mb": 3.053,
+   "hwm_mb": 0.0
+  },
+  "edit_step_300k": {
+   "min_ms": 112.7007,
+   "median_ms": 114.629,
+   "n": 7,
+   "vertices": 299210,
+   "commit_ms": 0.368,
+   "edit_step_ms": 115.407,
+   "steps": 10,
+   "tracemalloc_mb": 9.15,
+   "hwm_mb": 0.0
+  },
+  "dr_tick_idle_500": {
+   "min_ms": 0.0053,
+   "median_ms": 0.0054,
+   "n": 9,
+   "objects": 500
+  },
+  "dr_finish_nochange_500": {
+   "min_ms": 57.3257,
+   "median_ms": 58.2556,
+   "n": 9,
+   "objects": 500
+  },
+  "dr_on_update_500": {
+   "min_ms": 0.1796,
+   "median_ms": 0.22,
+   "n": 11,
+   "objects": 500,
+   "calls": 11
+  },
+  "dr_finish_move_500": {
+   "min_ms": 61.2864,
+   "median_ms": 62.1695,
+   "n": 9,
+   "objects": 500,
+   "tracemalloc_mb": 0.47,
+   "hwm_mb": 0.0
+  },
+  "dr_prime_500": {
+   "min_ms": 187.8393,
+   "median_ms": 190.7729,
+   "n": 5,
+   "objects": 500,
+   "held_bytes_per_tracked": 11111,
+   "tracemalloc_mb": 5.541
+  },
+  "redraw_viewport_1obj_object": {
+   "min_ms": 0.0492,
+   "median_ms": 0.0498,
+   "n": 9,
+   "python_calls": 303.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_1obj_object": {
+   "min_ms": 0.1026,
+   "median_ms": 0.1037,
+   "n": 9,
+   "python_calls": 529.1
+  },
+  "redraw_viewport_1obj_global": {
+   "min_ms": 0.0617,
+   "median_ms": 0.0623,
+   "n": 9,
+   "python_calls": 309.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 2.0,
+    "blf.disable": 1.0,
+    "blf.draw": 2.0,
+    "blf.enable": 1.0,
+    "blf.position": 2.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_1obj_global": {
+   "min_ms": 0.1169,
+   "median_ms": 0.1183,
+   "n": 9,
+   "python_calls": 526.1
+  },
+  "redraw_viewport_50obj_object": {
+   "min_ms": 0.0492,
+   "median_ms": 0.0496,
+   "n": 9,
+   "python_calls": 303.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_object": {
+   "min_ms": 0.1038,
+   "median_ms": 0.1052,
+   "n": 9,
+   "python_calls": 529.1
+  },
+  "redraw_viewport_50obj_global": {
+   "min_ms": 0.0906,
+   "median_ms": 0.0925,
+   "n": 9,
+   "python_calls": 603.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 2.0,
+    "blf.disable": 1.0,
+    "blf.draw": 2.0,
+    "blf.enable": 1.0,
+    "blf.position": 2.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_global": {
+   "min_ms": 0.1466,
+   "median_ms": 0.1491,
+   "n": 9,
+   "python_calls": 820.1
+  },
+  "redraw_viewport_50obj_object_filtered": {
+   "min_ms": 0.0695,
+   "median_ms": 0.0703,
+   "n": 9,
+   "python_calls": 363.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_object_filtered": {
+   "min_ms": 0.1319,
+   "median_ms": 0.1334,
+   "n": 9,
+   "python_calls": 609.1
+  },
+  "redraw_viewport_50obj_global_filtered": {
+   "min_ms": 0.0978,
+   "median_ms": 0.0994,
+   "n": 9,
+   "python_calls": 621.1,
+   "gpu": {
+    "batch.draw": 11.0,
+    "blf.color": 2.0,
+    "blf.disable": 1.0,
+    "blf.draw": 2.0,
+    "blf.enable": 1.0,
+    "blf.position": 2.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "redraw_panel_50obj_global_filtered": {
+   "min_ms": 0.165,
+   "median_ms": 0.1658,
+   "n": 9,
+   "python_calls": 858.1
+  },
+  "drag_5000": {
+   "min_ms": 0.1316,
+   "median_ms": 0.1348,
+   "n": 9,
+   "python_calls": 414.4,
+   "gpu": {
+    "batch.draw": 11.0,
+    "batch_for_shader": 5.0,
+    "blf.color": 1.0,
+    "blf.disable": 1.0,
+    "blf.draw": 1.0,
+    "blf.enable": 1.0,
+    "blf.position": 1.0,
+    "blf.shadow": 1.0,
+    "blf.shadow_offset": 1.0,
+    "blf.size": 1.0,
+    "shader.bind": 1.0,
+    "shader.uniform_float": 11.0,
+    "state.blend_set": 2.0
+   }
+  },
+  "movie_addon_ms_per_frame_100k": {
+   "min_ms": 0.4932,
+   "median_ms": 0.4958,
+   "n": 5,
+   "frames": 301,
+   "goto_calls": 151,
+   "vertices": 100000,
+   "steps": 150,
+   "tracemalloc_mb": 0.087,
+   "hwm_mb": 0.0
+  },
+  "movie_frame_set_ms_per_frame_100k": {
+   "min_ms": 4.331,
+   "median_ms": 4.341,
+   "n": 5,
+   "frames": 301,
+   "goto_calls": 151,
+   "vertices": 100000,
+   "steps": 150
+  },
+  "addon_import": {
+   "min_ms": 200.8255,
+   "median_ms": 201.6693,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_register_cold": {
+   "min_ms": 67.4273,
+   "median_ms": 69.3662,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_unregister_cold": {
+   "min_ms": 0.5295,
+   "median_ms": 0.5383,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_register_warm": {
+   "min_ms": 2.0921,
+   "median_ms": 2.2066,
+   "n": 7,
+   "module_errors": []
+  },
+  "addon_unregister_warm": {
+   "min_ms": 0.3922,
+   "median_ms": 0.4148,
+   "n": 7,
+   "module_errors": []
+  },
+  "idle_60s_1obj": {
+   "min_ms": 12.7827,
+   "median_ms": 12.8382,
+   "n": 7,
+   "timer_calls": 894,
+   "recorded_objects": 1,
+   "simulated_s": 60
+  },
+  "depsgraph_handler_1obj": {
+   "min_ms": 7.4124,
+   "median_ms": 7.5479,
+   "n": 7,
+   "calls_per_sample": 1000,
+   "recorded_objects": 1
+  },
+  "idle_60s_50obj": {
+   "min_ms": 13.0108,
+   "median_ms": 13.1153,
+   "n": 7,
+   "timer_calls": 894,
+   "recorded_objects": 50,
+   "simulated_s": 60
+  },
+  "depsgraph_handler_50obj": {
+   "min_ms": 7.4439,
+   "median_ms": 7.5349,
+   "n": 7,
+   "calls_per_sample": 1000,
+   "recorded_objects": 50
+  }
+ },
+ "group_seconds": {
+  "commit": 4.5,
+  "jumps": 17.5,
+  "saveload": 35.3,
+  "editmode": 51.0,
+  "datarec": 12.2,
+  "draw": 11.2,
+  "movie": 17.9,
+  "addon": 7.8,
+  "idle": 1.9
+ },
+ "machine": {
+  "cores": 12,
+  "load_average_start": null,
+  "load_average_end": null,
+  "host_python": "3.13.4",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "python": "3.13.4",
+  "executable": "D:\\hs-venvs\\bpy53\\Scripts\\python.exe",
+  "blender": "5.3.0",
+  "engine_version": "1.0.0-beta.2",
+  "rust_engine_loaded": true,
+  "native_api_expected": 13,
+  "native_module": "%TEMP%\\hs_bench_native\\hindsight_native-0.14.0-cp311-abi3-win_amd64\\hindsight_native\\__init__.py",
+  "native_api": 13,
+  "native_version": null
+ }
+}

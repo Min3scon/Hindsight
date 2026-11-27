@@ -1,0 +1,487 @@
+{
+ "vertices": 100000,
+ "steps": 6000,
+ "blend_mb": 54.8,
+ "rounds": 5,
+ "roots": {
+  "A": "D:\\hs-wt\\129",
+  "B": "D:\\hs-wt\\129"
+ },
+ "unit": "MB",
+ "samples": {
+  "A": [
+   {
+    "before_open_mb": [
+     185.9,
+     519.6
+    ],
+    "after_open_mb": [
+     270.4,
+     604.3
+    ],
+    "after_save_mb": [
+     265.8,
+     598.8
+    ],
+    "cpu_busy_pct": 45.1,
+    "save_peak_mb": [
+     347.2,
+     692.7
+    ],
+    "open_s": 0.4,
+    "save_s": 0.23,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     186.3,
+     520.1
+    ],
+    "after_open_mb": [
+     271.2,
+     605.2
+    ],
+    "after_save_mb": [
+     266.7,
+     600.6
+    ],
+    "cpu_busy_pct": 40.6,
+    "save_peak_mb": [
+     348.3,
+     692.5
+    ],
+    "open_s": 0.44,
+    "save_s": 0.22,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     186.2,
+     519.8
+    ],
+    "after_open_mb": [
+     271.0,
+     605.0
+    ],
+    "after_save_mb": [
+     268.6,
+     601.3
+    ],
+    "cpu_busy_pct": 41.2,
+    "save_peak_mb": [
+     348.0,
+     692.8
+    ],
+    "open_s": 0.41,
+    "save_s": 0.23,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     185.1,
+     518.8
+    ],
+    "after_open_mb": [
+     270.8,
+     604.7
+    ],
+    "after_save_mb": [
+     266.4,
+     599.5
+    ],
+    "cpu_busy_pct": 40.4,
+    "save_peak_mb": [
+     349.4,
+     692.0
+    ],
+    "open_s": 0.42,
+    "save_s": 0.21,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     185.3,
+     519.0
+    ],
+    "after_open_mb": [
+     270.8,
+     604.7
+    ],
+    "after_save_mb": [
+     266.4,
+     599.0
+    ],
+    "cpu_busy_pct": 40.0,
+    "save_peak_mb": [
+     349.6,
+     694.7
+    ],
+    "open_s": 0.4,
+    "save_s": 0.21,
+    "n_entries": 6001,
+    "text_after_open": 80
+   }
+  ],
+  "B": [
+   {
+    "before_open_mb": [
+     185.7,
+     519.4
+    ],
+    "after_open_mb": [
+     270.7,
+     604.6
+    ],
+    "after_save_mb": [
+     268.8,
+     602.0
+    ],
+    "cpu_busy_pct": 39.0,
+    "save_peak_mb": [
+     347.6,
+     694.2
+    ],
+    "open_s": 0.39,
+    "save_s": 0.21,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     185.0,
+     518.6
+    ],
+    "after_open_mb": [
+     270.8,
+     604.7
+    ],
+    "after_save_mb": [
+     267.9,
+     600.8
+    ],
+    "cpu_busy_pct": 38.4,
+    "save_peak_mb": [
+     347.5,
+     691.5
+    ],
+    "open_s": 0.41,
+    "save_s": 0.21,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     185.5,
+     519.3
+    ],
+    "after_open_mb": [
+     271.6,
+     605.5
+    ],
+    "after_save_mb": [
+     269.6,
+     602.4
+    ],
+    "cpu_busy_pct": 40.4,
+    "save_peak_mb": [
+     349.9,
+     695.0
+    ],
+    "open_s": 0.44,
+    "save_s": 0.22,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     185.0,
+     518.6
+    ],
+    "after_open_mb": [
+     271.1,
+     605.0
+    ],
+    "after_save_mb": [
+     267.2,
+     600.3
+    ],
+    "cpu_busy_pct": 41.6,
+    "save_peak_mb": [
+     348.4,
+     693.7
+    ],
+    "open_s": 0.41,
+    "save_s": 0.24,
+    "n_entries": 6001,
+    "text_after_open": 80
+   },
+   {
+    "before_open_mb": [
+     186.3,
+     519.9
+    ],
+    "after_open_mb": [
+     270.8,
+     604.6
+    ],
+    "after_save_mb": [
+     269.5,
+     602.0
+    ],
+    "cpu_busy_pct": 39.6,
+    "save_peak_mb": [
+     347.3,
+     693.9
+    ],
+    "open_s": 0.4,
+    "save_s": 0.22,
+    "n_entries": 6001,
+    "text_after_open": 80
+   }
+  ]
+ },
+ "A": {
+  "before_open_mb": {
+   "working_set": {
+    "median": 185.9,
+    "min": 185.1,
+    "max": 186.3,
+    "all": [
+     185.9,
+     186.3,
+     186.2,
+     185.1,
+     185.3
+    ]
+   },
+   "private": {
+    "median": 519.6,
+    "min": 518.8,
+    "max": 520.1,
+    "all": [
+     519.6,
+     520.1,
+     519.8,
+     518.8,
+     519.0
+    ]
+   }
+  },
+  "after_open_mb": {
+   "working_set": {
+    "median": 270.8,
+    "min": 270.4,
+    "max": 271.2,
+    "all": [
+     270.4,
+     271.2,
+     271.0,
+     270.8,
+     270.8
+    ]
+   },
+   "private": {
+    "median": 604.7,
+    "min": 604.3,
+    "max": 605.2,
+    "all": [
+     604.3,
+     605.2,
+     605.0,
+     604.7,
+     604.7
+    ]
+   }
+  },
+  "save_peak_mb": {
+   "working_set": {
+    "median": 348.3,
+    "min": 347.2,
+    "max": 349.6,
+    "all": [
+     347.2,
+     348.3,
+     348.0,
+     349.4,
+     349.6
+    ]
+   },
+   "private": {
+    "median": 692.7,
+    "min": 692.0,
+    "max": 694.7,
+    "all": [
+     692.7,
+     692.5,
+     692.8,
+     692.0,
+     694.7
+    ]
+   }
+  },
+  "after_save_mb": {
+   "working_set": {
+    "median": 266.4,
+    "min": 265.8,
+    "max": 268.6,
+    "all": [
+     265.8,
+     266.7,
+     268.6,
+     266.4,
+     266.4
+    ]
+   },
+   "private": {
+    "median": 599.5,
+    "min": 598.8,
+    "max": 601.3,
+    "all": [
+     598.8,
+     600.6,
+     601.3,
+     599.5,
+     599.0
+    ]
+   }
+  },
+  "cpu_busy_pct": [
+   45.1,
+   40.6,
+   41.2,
+   40.4,
+   40.0
+  ],
+  "text_bytes_after_open": [
+   80,
+   80,
+   80,
+   80,
+   80
+  ]
+ },
+ "B": {
+  "before_open_mb": {
+   "working_set": {
+    "median": 185.5,
+    "min": 185.0,
+    "max": 186.3,
+    "all": [
+     185.7,
+     185.0,
+     185.5,
+     185.0,
+     186.3
+    ]
+   },
+   "private": {
+    "median": 519.3,
+    "min": 518.6,
+    "max": 519.9,
+    "all": [
+     519.4,
+     518.6,
+     519.3,
+     518.6,
+     519.9
+    ]
+   }
+  },
+  "after_open_mb": {
+   "working_set": {
+    "median": 270.8,
+    "min": 270.7,
+    "max": 271.6,
+    "all": [
+     270.7,
+     270.8,
+     271.6,
+     271.1,
+     270.8
+    ]
+   },
+   "private": {
+    "median": 604.7,
+    "min": 604.6,
+    "max": 605.5,
+    "all": [
+     604.6,
+     604.7,
+     605.5,
+     605.0,
+     604.6
+    ]
+   }
+  },
+  "save_peak_mb": {
+   "working_set": {
+    "median": 347.6,
+    "min": 347.3,
+    "max": 349.9,
+    "all": [
+     347.6,
+     347.5,
+     349.9,
+     348.4,
+     347.3
+    ]
+   },
+   "private": {
+    "median": 693.9,
+    "min": 691.5,
+    "max": 695.0,
+    "all": [
+     694.2,
+     691.5,
+     695.0,
+     693.7,
+     693.9
+    ]
+   }
+  },
+  "after_save_mb": {
+   "working_set": {
+    "median": 268.8,
+    "min": 267.2,
+    "max": 269.6,
+    "all": [
+     268.8,
+     267.9,
+     269.6,
+     267.2,
+     269.5
+    ]
+   },
+   "private": {
+    "median": 602.0,
+    "min": 600.3,
+    "max": 602.4,
+    "all": [
+     602.0,
+     600.8,
+     602.4,
+     600.3,
+     602.0
+    ]
+   }
+  },
+  "cpu_busy_pct": [
+   39.0,
+   38.4,
+   40.4,
+   41.6,
+   39.6
+  ],
+  "text_bytes_after_open": [
+   80,
+   80,
+   80,
+   80,
+   80
+  ]
+ }
+}

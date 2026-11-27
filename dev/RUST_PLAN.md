@@ -76,21 +76,21 @@ merging the stack, in the order of the pull requests (on #24).
 
 ## The moves
 
-| Move | Sub-issue | What moves | Blocked by | Measured by |
-|---|---|---|---|---|
-| 24.1 | #129 | nothing: baseline numbers and the commit they were measured at, the corpus, the equivalence helper, four references renamed | the stack merged | full `bench/suite.py`, `held_once_mem_f5.py` |
-| 24.2 | #130 | `core/journal.py` with a test-only fault hook, the journal writer thread | #129, #131 | `commit`, `oneoff/open_journal_ab.py` |
-| 24.3 | #131 | `core/types.py` (not `Settings`), `core/topopack.py`, the step data's JSON and `same_step` in `core/step.py` | #129 | `commit`, `jumps`, `editmode`, held memory |
-| 24.4 | #132 | `core/history.py` | #131 | `jumps`, `commit` |
-| 24.5 | #133 | `core/store.py` | #132 | `commit`, `idle`, `packer_bench.py` |
-| 24.6 | #134 | `core/registry.py`, formats 1 to 4 and the history folder in `persist.py`; the format 4 writer to `tests/reference/` | #132 | `saveload` (open), `oneoff/regload_ab.py` |
-| 24.7 | #135 | format 5 in `persist.py` | #134 | `saveload`, `oneoff/embed_ab.py`, `held_once_mem_f5.py` |
-| 24.8 | #136 | journal replay in `persist.py` | #130, #135 | `oneoff/replay_ab.py`, `open_journal_ab.py` |
-| 24.9 | #137 | `core/globaltl.py`, the kept groups in `bl/runtime.py` | #132 | `draw`, `jumps`, `oneoff/groups_ab.py` |
-| 24.10 | #138 | `core/framing.py`, `core/morph.py`, math in `bl/morph.py`, the matrix math of `_bone_scale` in `bl/camrig.py` | #132 | `movie`, `oneoff/frame_walk.py`, `morph_*.py` |
-| 24.11 | #139 | comparisons in `bl/datarec.py` (not `_jump_matches`) | #131 | `datarec`, `oneoff/same_values_ab.py` |
-| 24.12 | #140 | undo matching (`bl/runtime.py`, `same_change` and `as_xor` in `core/delta.py`), slider shapes (`bl/scrubber.py`), `bl/multires.py` blocks | #132 | `commit`, `editmode`, `draw` |
-| 24.13 | #141 | nothing: the list below made final, the engine required everywhere | #130 to #140 | every scenario, one `bench/ab.py` of 24.1's commit against 24.13's |
+| Move | Sub-issue | What moves | Blocked by | Measured by | Before (24.1: min, A/A spread) |
+|---|---|---|---|---|---|
+| 24.1 | #129 | nothing: baseline numbers and the commit they were measured at, the corpus, the equivalence helper, four references renamed | the stack merged | full `bench/suite.py`, `held_once_mem_f5.py` | this: `bench/results/baseline_8dbb008.md` |
+| 24.2 | #130 | `core/journal.py` with a test-only fault hook, the journal writer thread | #129, #131 | `commit`, `oneoff/open_journal_ab.py` | `commit_100k` 0.6423 ms (38%) |
+| 24.3 | #131 | `core/types.py` (not `Settings`), `core/topopack.py`, the step data's JSON and `same_step` in `core/step.py` | #129 | `commit`, `jumps`, `editmode`, held memory | `commit_100k` 0.6423 ms (38%); `jump_3000_back_100k` 56.98 ms (18%); `edit_step_100k` 40.98 ms (11%); held after open 270.8 MB, save peak 348.3 MB (working set) |
+| 24.4 | #132 | `core/history.py` | #131 | `jumps`, `commit` | `jump_3000_back_100k` 56.98 ms (18%); `commit_100k` 0.6423 ms (38%) |
+| 24.5 | #133 | `core/store.py` | #132 | `commit`, `idle`, `packer_bench.py` | `commit_100k` 0.6423 ms (38%); `idle_60s_50obj` 13.01 ms (26%) |
+| 24.6 | #134 | `core/registry.py`, formats 1 to 4 and the history folder in `persist.py`; the format 4 writer to `tests/reference/` | #132 | `saveload` (open), `oneoff/regload_ab.py` | `open_embed_100k_6000` 3079 ms (34%) |
+| 24.7 | #135 | format 5 in `persist.py` | #134 | `saveload`, `oneoff/embed_ab.py`, `held_once_mem_f5.py` | `save_embed_100k_6000` 952.1 ms (18%); `open_embed_100k_6000` 3079 ms (34%); held after open 270.8 MB, save peak 348.3 MB (working set) |
+| 24.8 | #136 | journal replay in `persist.py` | #130, #135 | `oneoff/replay_ab.py`, `open_journal_ab.py` | its one-offs only, run by the move |
+| 24.9 | #137 | `core/globaltl.py`, the kept groups in `bl/runtime.py` | #132 | `draw`, `jumps`, `oneoff/groups_ab.py` | `redraw_viewport_50obj_global` 0.0906 ms (15%); `jump_3000_back_100k` 56.98 ms (18%) |
+| 24.10 | #138 | `core/framing.py`, `core/morph.py`, math in `bl/morph.py`, the matrix math of `_bone_scale` in `bl/camrig.py` | #132 | `movie`, `oneoff/frame_walk.py`, `morph_*.py` | `movie_addon_ms_per_frame_100k` 0.4932 ms (11%) |
+| 24.11 | #139 | comparisons in `bl/datarec.py` (not `_jump_matches`) | #131 | `datarec`, `oneoff/same_values_ab.py` | `dr_finish_move_500` 61.29 ms (14%); `dr_on_update_500` 0.1796 ms (15%) |
+| 24.12 | #140 | undo matching (`bl/runtime.py`, `same_change` and `as_xor` in `core/delta.py`), slider shapes (`bl/scrubber.py`), `bl/multires.py` blocks | #132 | `commit`, `editmode`, `draw` | `commit_100k` 0.6423 ms (38%); `edit_step_100k` 40.98 ms (11%); `redraw_viewport_50obj_object` 0.0492 ms (7%) |
+| 24.13 | #141 | nothing: the list below made final, the engine required everywhere | #130 to #140 | every scenario, one `bench/ab.py` of 24.1's commit against 24.13's | all of `bench/results/baseline_8dbb008.md` |
 
 One helper works at a time, in this order: 24.1, 24.3, 24.2, then 24.4 to 24.13 by number (24.2 encodes steps the
 engine holds, so it waits for 24.3: owner point 1). Before and after numbers per scenario are added here by each
