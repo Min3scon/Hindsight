@@ -253,6 +253,35 @@ def run_checks(retry_failed=True):
         with contextlib.suppress(Exception):
             from . import scrubber
             scrubber.ensure_draw_handler()
+        if "recorder" in names:
+            with contextlib.suppress(Exception):
+                # D46, D95: what changed on a recorded object while the recorder was off is one step of its
+                # own, not part of the next stroke's (before the data is read again below)
+                from . import datarec, runtime
+                from ..core.types import SETTINGS
+                thr = SETTINGS.truncation_threshold
+                SETTINGS.truncation_threshold = 0     # never ask (and never put the mesh back), as _bridge_paused
+                try:
+                    for uid in list(runtime._STATES):
+                        ob = None
+                        try:
+                            ob = runtime.find_object(uid)
+                            if ob is None or ob.mode == "EDIT":
+                                continue
+                            if datarec.is_tracked(ob) and ob.mode == "OBJECT":
+                                datarec.catch_up(ob, "Changes While Off")     # values and mesh: one step
+                            else:
+                                # #104: in Sculpt Mode the mesh is the sculpt history's even with Record everything
+                                runtime.commit(ob, label="Changes While Off", full=True)
+                                if datarec.is_tracked(ob):
+                                    datarec.catch_up(ob, "Changes While Off")
+                        except Exception as e:      # one object failing never costs the others their step
+                            name = getattr(ob, "name", uid)
+                            log.error_once(("selfcheck", "changes_while_off", uid, str(e)),
+                                           f"Self-check could not record what changed on {name} while "
+                                           f"recording was off: {e}", e)
+                finally:
+                    SETTINGS.truncation_threshold = thr
         with contextlib.suppress(Exception):
             # data recorded again from now on: what changed while it was off isn't one big step
             from . import datarec
