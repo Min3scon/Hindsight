@@ -242,7 +242,7 @@ class Registry:
     def remove_object(self, obj_uid: str) -> None
     def all(self) -> list[History]
 # global timeline (core/globaltl.py, P3)
-def global_order(reg, visible: set[str] | None = None) -> list[tuple[int, str, int]]   # (seq, hist_uid, entry_index) sorted
+def global_groups(reg, visible: set[str] | None = None) -> list[list[tuple[int, str, int]]]   # one list of (seq, hist_uid, entry_index) per operation, in order of first step
 def global_position(reg, visible=None) -> int                  # number of applied entries in global order prefix
 def plan_global_goto(reg, g: int, visible=None) -> dict[str, int]   # hist_uid -> cursor for global position g
 ```
@@ -291,7 +291,7 @@ items "Last Saved", "Interrupted Session"), `truncation_threshold` Int 10 ("Trun
 `raw_steps` Int 64 ("Uncompressed Recent Steps"), `compression` Enum AUTO/ZSTD/LZ4/ZLIB/NONE ("Compression"),
 scrubber appearance: `scrub_height` Int 6 px, `scrub_margin` Int 18 px, `scrub_color` FloatVector(4, COLOR_GAMMA)
 (1.0, 0.6, 0.24, 1.0), `scrub_bg_color` (0.1, 0.1, 0.1, 0.6), `scrub_show_counter` Bool True, `scrub_width_pct` Int 60.
-Helper: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`.
+Helpers: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`; `value(name, default)` (the one preference reader: `prefs.FORCE[name]` if a test set it, else the preference, else `default`); `SCRUB_DEFAULTS` (the six slider defaults above, shared with the scrubber).
 
 Operator idnames (all `bl_idname = "hindsight.<name>"`, labels exactly as listed):
 - `hindsight.step_back` "Step Back" / `hindsight.step_forward` "Step Forward" (Ctrl+Z / Ctrl+Shift+Z, `oskey` variants)
@@ -373,7 +373,7 @@ def merge(a, b)                                        # union of two extents (N
 def fit(ext, basis, tan_x, tan_y, min_distance=1e-3) -> dict | None   # location, near, far, center, depth
 def bounds(points); def merge_bounds(a, b)             # min xyz, max xyz
 def light_rig(basis, center, radius) -> list[dict]     # key, fill, rim: direction, location, strength, angle, color
-def history_extents(h, state, target_uid, basis, tan_x, tan_y)   # extents over every other history position
+def history_extents_multi(h, state, target_uid, bases, tans)   # (k, 6) extents over every other history position, one row per basis
 
 # hindsight/bl/camrig.py
 NAMES; MARGIN

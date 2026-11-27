@@ -31,6 +31,7 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.bl import adapters, datarec, dupsep, idmap, runtime
+from hindsight.bl import prefs
 from hindsight.core import registry
 from hindsight.core.step import step_to_bytes
 from hindsight.core.types import DATA
@@ -232,7 +233,7 @@ def test_same_values_never_hides_a_difference():
     # what a recorder actually holds: an object's capture against a copy of itself
     ob = bpy.data.objects.new("o", None)
     C.scene.collection.objects.link(ob)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     cap = datarec.capture(ob)
     assert datarec._same_values(cap, datarec.capture(ob))
     ob.location.x = -0.0
@@ -283,7 +284,7 @@ def test_same_values_answers_as_before_r070():
             n_diff += not got
         assert n_same > 500 and n_diff > 1000, (n_same, n_diff)
         # what the recorder holds: 60 objects, a third with a constraint, captured, changed, captured again
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         obs = []
         for i in range(60):
             bpy.ops.mesh.primitive_cube_add(size=0.3, location=(i * 0.5, 0, 0))
@@ -375,7 +376,7 @@ def test_find_in_a_frame_matches_find():
     a duplicate (the first by name wins a search, the cached one a cached lookup), renamed objects,
     an id given out inside the frame, scenes, collections, meshes, ids no one has."""
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     obs = []
     for i in range(12):
         bpy.ops.mesh.primitive_cube_add(location=(i, 0, 0))
@@ -415,7 +416,7 @@ def test_find_in_a_frame_matches_find():
 
 def test_scene_uids_match_the_plain_check():
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     s2 = bpy.data.scenes.new("S2")
     ob = bpy.data.objects.new("o", None)
     C.scene.collection.objects.link(ob)
@@ -552,7 +553,7 @@ def _idle_tick_run(full: bool):
     L.track_all()
     L.tick_like("baseline")
     datarec._DIRTY[idmap.uid_of(bpy.data.objects["A"])] = 0.0
-    datarec.FORCE_SCOPE[0] = "SCULPT"
+    prefs.FORCE["record_scope"] = "SCULPT"
     if full:                                     # what the timer did before the shortcut
         datarec._OPS["marker"] = datarec._ops_marker()
         datarec.finish_operation("Op")
@@ -580,14 +581,14 @@ def test_changes_while_off_then_on():
     L.track_all()
     L.tick_like("baseline")
     n = _n("A")
-    datarec.FORCE_SCOPE[0] = "SCULPT"
+    prefs.FORCE["record_scope"] = "SCULPT"
     a = bpy.data.objects["A"]
     a.location.y += 1.0
     C.view_layer.update()
     _finished_tick()
     datarec._OPS["marker"] = datarec._ops_marker()
     assert _n("A") == n
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     _finished_tick()
     assert _n("A") == n + 1
     ch = {p for r in _hist("A").entries[-1].load().records for p in r.changes}

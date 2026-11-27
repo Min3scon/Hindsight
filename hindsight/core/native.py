@@ -7,15 +7,13 @@ no Python fallback for those. If the module cannot be loaded, importing this fil
 EngineMissing with the reason, and so does importing anything that needs the engine.
 
 ENGINE   the module (always set when this file imported)
-lib      the same module (kept for callers that ask whether it is there)
 
 Nothing in the shipped add-on has a Python path any more: delta.py, step.py, codec.py and
-history.py call the engine. The Python versions are in tests/reference/. HINDSIGHT_NATIVE is read
-by nobody (CI sets it to "require", which is what happens anyway).
+history.py call the engine. The Python versions are in tests/reference/.
 """
 from __future__ import annotations
 
-API = 8                     # the module's API number (native/src/lib.rs) this code is written for
+API = 10                    # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
 # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
 # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
@@ -23,10 +21,12 @@ API = 8                     # the module's API number (native/src/lib.rs) this c
 # API 6: + crc32 (zlib.crc32 at 20 GB/s; registry, journal and Entry checksums).
 # API 7: + Hasher128 (xxh3-128, incremental): mesh fingerprints.
 # API 8: + same_values (strict equality of the data recorder's values, R070).
+# API 9: + morph_dab (one dab of the Morph History brush in one pass, R083).
+# API 10: + extents_into (the Movie Mode camera's extents of points, in place, R085).
 
 
 class EngineMissing(ImportError):
-    """The Rust engine (hindsight_native, API 8) is missing, broken or the wrong version."""
+    """The Rust engine (hindsight_native, API 10) is missing, broken or the wrong version."""
 
 
 def _load():
@@ -46,6 +46,3 @@ def _load():
 
 ENGINE = _load()
 crc32 = ENGINE.crc32        # zlib.crc32 (same values, any buffer, an optional start value), about 10x faster
-ERROR = None
-lib = ENGINE
-AVAILABLE = True

@@ -12,6 +12,7 @@ last valid record.
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import os
@@ -103,10 +104,8 @@ class Journal:
             self._fh.close()             # writes out what is still buffered, or fails again
         except OSError:
             size = self._good
-        try:
+        with contextlib.suppress(OSError):
             os.truncate(self.path, size)
-        except OSError:
-            pass
         self._size = size
         self._good = min(self._good, size)
         self._fh = open(self.path, "ab")
@@ -161,7 +160,7 @@ class Journal:
             self._fh.flush()
         limit = self._size if upto is None else max(0, min(int(upto), self._size))
         out = []
-        try:
+        with contextlib.suppress(OSError):
             with open(self.path, "rb") as fh:
                 for _s, _e, code, hbytes, payload in _scan(fh, limit, True):
                     try:
@@ -169,8 +168,6 @@ class Journal:
                     except (ValueError, UnicodeDecodeError):
                         break
                     out.append((RTYPE_NAMES[code], header, payload))
-        except OSError:
-            pass
         return out
 
     # -- maintenance -----------------------------------------------------
@@ -203,11 +200,9 @@ class Journal:
         self.close()
 
     def __del__(self):
-        try:
+        with contextlib.suppress(Exception):
             if self._fh is not None:
                 self._fh.close()
-        except Exception:
-            pass
 
 
 def atomic_write(path: str, data) -> None:
@@ -228,20 +223,16 @@ def atomic_write(path: str, data) -> None:
             os.fsync(fh.fileno())
         os.replace(tmp, path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
     if hasattr(os, "O_DIRECTORY"):
-        try:
+        with contextlib.suppress(OSError):
             dfd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 os.fsync(dfd)
             finally:
                 os.close(dfd)
-        except OSError:
-            pass
 
 
 def atomic_write_json(path: str, obj) -> None:

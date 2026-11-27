@@ -1,7 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """Preferences sync, collection filtering logic/operators, sidebar panel registration and drawing."""
 
-import traceback
 from types import SimpleNamespace
 
 import bpy
@@ -9,7 +9,6 @@ import bpy
 from hindsight.core import types as T
 from hindsight.bl import filtering, prefs, ui_panel
 
-ok = True
 _tests = []
 
 
@@ -389,7 +388,6 @@ def test_record_everything_switches_and_other_objects():
     """V1-V3 (Tier 1 visual review): with Record set to Everything the two switches are in the part
     the sidebar and the popover share (not inside the collapsed History options), an empty that is
     recorded shows its slider instead of "Select a mesh", and the popover button label fits."""
-    from hindsight.bl import datarec
     scene = bpy.context.scene
     ctx = SimpleNamespace(scene=scene, active_object=None, view_layer=bpy.context.view_layer,
                           preferences=bpy.context.preferences, window_manager=bpy.context.window_manager,
@@ -397,14 +395,14 @@ def test_record_everything_switches_and_other_objects():
     empty = bpy.data.objects.new("Pivot test", None)
     mesh = bpy.data.objects.new("Mesh test", bpy.data.meshes.new("Mesh test"))
     hist = SimpleNamespace(entries=[1] * 3, cursor=2)
-    orig_rt, orig_tracked, orig_scope = ui_panel._rt, ui_panel._tracked, datarec.FORCE_SCOPE[0]
+    orig_rt, orig_tracked, orig_scope = ui_panel._rt, ui_panel._tracked, prefs.FORCE.get("record_scope")
 
     def ops(lay):
         return [a[0] for n, a, kw in lay.log if n == "operator"]
     try:
         tracked = set()
         ui_panel._tracked = lambda ob: ob in tracked
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         # a recorded mesh: the switches are drawn by draw_main (sidebar and popover alike)
         ctx.active_object = mesh
         ui_panel._rt = lambda: FakeRuntime(hist)
@@ -437,13 +435,13 @@ def test_record_everything_switches_and_other_objects():
         assert "Step 2 of 3, this object" in lay.texts(), lay.texts()
         assert "hindsight.step_back" in ops(lay), ops(lay)
         # Record set to sculpting only: an empty isn't recorded, the old line stays
-        datarec.FORCE_SCOPE[0] = "SCULPT"
+        prefs.FORCE["record_scope"] = "SCULPT"
         lay = FakeLayout()
         ui_panel.draw_main(lay, ctx)
         assert "Hindsight records mesh objects. Select a mesh." in _joined(lay)
         assert "hindsight.record_everything" not in ops(lay)
     finally:
-        ui_panel._rt, ui_panel._tracked, datarec.FORCE_SCOPE[0] = orig_rt, orig_tracked, orig_scope
+        ui_panel._rt, ui_panel._tracked, prefs.FORCE["record_scope"] = orig_rt, orig_tracked, orig_scope
         bpy.data.objects.remove(empty)
         me = mesh.data
         bpy.data.objects.remove(mesh)
@@ -451,7 +449,6 @@ def test_record_everything_switches_and_other_objects():
 
 
 def main():
-    global ok
     ensure_scene_props()
     from hindsight.bl import ops_core, selfcheck, ui_menu
     extra = (ops_core, ui_menu, selfcheck)
@@ -461,13 +458,7 @@ def main():
     ui_panel.register()
     try:
         for fn in _tests:
-            try:
-                fn()
-                print("PASS", fn.__name__)
-            except Exception:
-                ok = False
-                print("FAIL", fn.__name__)
-                traceback.print_exc()
+            R.run(fn)
     finally:
         ui_panel.unregister()
         filtering.unregister()
@@ -476,4 +467,4 @@ def main():
 
 
 main()
-sys.stdout.flush(); os._exit(0 if ok else 1)
+R.finish()
