@@ -110,7 +110,7 @@ DECISIONS.md "Manual UI checks"). Status: [x] implemented + tested, [~] implemen
 | 67 | Embed: inside the .blend (one file to share) | persistence Text ID property | test_bl_persistence | [x] |
 | 68 | Both | persistence | test_bl_persistence | [x] |
 | 69 | Renamed/moved .blend without folder -> "Undo History Not Found" | persistence missing_message | test_bl_persistence | [x] |
-| 70 | Crash Recovery: Last Saved (default) / Interrupted Session | core/journal + persist.replay | test_core_journal, test_bl_persistence | [x] |
+| 70 | Crash Recovery: Last Saved / Interrupted Session (V2 default, #128) | core/journal + persist.replay | test_core_journal, test_bl_persistence | [x] |
 | 71 | History persists between sessions | persistence load_post | test_bl_persistence | [x] |
 | 72 | Delete Past Undo Steps reduces the saved size | registry serialisation of remaining entries | test_delete_past_keeps_later (+ size) | [x] |
 

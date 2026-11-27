@@ -91,7 +91,7 @@ back in any row, and the journal starts again at open.
 | Blender crashes | The .blend on disk | The crash journal | Opening the .blend brings back |
 |---|---|---|---|
 | Between saves (before save B) | save A | SAVE(A) and every change since, except the newest big records if they are still waiting for the helper thread (R079) | every step and change in the journal since save A (all of them, but for those big records); the objects as saved; scrub forward to see the steps |
-| In `save_pre`, while the parts are built and put back | save A | SAVE(A) and every change since, except the newest big records if they are still waiting for the helper thread, because `save_pre` does not wait for it today (R079) | as in the first row. Blender's copy is the only copy of the full step parts by then (#41), but the process dies whole and nothing on disk changed |
+| In `save_pre`, while the parts are built and put back | save A | SAVE(A) and every change since: `save_pre` waits for the helper thread first (R079) | as in the first row. Blender's copy is the only copy of the full step parts by then (#41), but the process dies whole and nothing on disk changed |
 | While Blender writes the file | save A (Blender writes the new file beside it and puts it in place only once it is whole) | as above | the same |
 | After Blender put save B in place, before `save_post` | save B, which holds every step | SAVE(A) and the changes since | nothing is replayed and nothing is missing: every record was written before save B, which holds them all. Today's "another save" note shows, needlessly. Starting the journal first in `save_post` keeps this window short |
 | In `save_post`, after the journal started again | save B | SAVE(B) | nothing is needed: save B holds everything |
@@ -100,10 +100,9 @@ back in any row, and the journal starts again at open.
 
 The one loss in the table is R079's: a record of a step held at 4 MB or more (a topology step on a big mesh) is written
 by a helper thread, so a crash can lose the newest such records before they reach the journal. The journal stays a
-prefix of the session: every step before them comes back. What waits for the helper today: `_mark_saved` (the journal's restart in `save_post`), `drain_journal_writer`
-and closing the journal. `save_pre` does not, so a crash while a save is built or written can lose those records too:
-until save B is in place, the file on disk is save A and the journal may lack them. From save B on, the file holds every
-step. The build ticket must make `save_pre` call `drain_journal_writer()` first, which closes the window (see below).
+prefix of the session: every step before them comes back. `save_pre` waits for the helper first
+(`drain_journal_writer()`, #103 point 9), so a crash while a save is built or written loses none of them: until
+save B is in place the file on disk is save A, and the journal holds every record from before the save.
 
 If the crash falls while Blender swaps the files, its backup `.blend1` is save A, and the journal still names save A.
 Renaming `.blend1` back gives a file the journal belongs to, and every step comes back.
@@ -188,16 +187,16 @@ the same journal folder, the steps of a crashed V2 session come back only if V2 
 
 ## For the owner to check
 
-Crash recovery's default is "Last save" (`crash_recovery` in `hindsight/bl/prefs.py`). With that setting, opening the
-.blend after a crash brings back nothing since the last save and starts the journal again, so those steps are gone even
-if the setting is changed afterwards. The decision that a recovered autosave opens without its history counts on the
-journal bringing everything back when the .blend is opened. That holds only with "Unsaved steps".
+Crash recovery's default is "Unsaved steps" since #128 (`crash_recovery` in `hindsight/bl/prefs.py` and `Settings` in
+`hindsight/core/types.py`), taken provisionally: the owner confirms or overrides it in PR #127. With "Last save",
+opening the .blend after a crash brings back nothing since the last save and starts the journal again, so those steps
+are gone even if the setting is changed afterwards. The decision that a recovered autosave opens without its history
+counts on the journal bringing everything back when the .blend is opened. That holds only with "Unsaved steps".
 
-**Recommendation**: make "Unsaved steps" the default in V2, like the other new defaults of 2026-11-22. The cost: a
-session closed normally without saving also leaves its steps in the journal. They come back ahead of the saved state
-the next time the file opens, with the objects as saved. If that is unwanted, a normal close can empty the journal. The
-`exit_pre` handler exists in bpy 5.3.0 but not 4.2.23 (measured), so 4.2 would need Python's `atexit`. Whether either
-one runs at a close and not at a crash is for the build to measure.
+The cost: a session closed normally without saving also leaves its steps in the journal. They come back ahead of the
+saved state the next time the file opens, with the objects as saved. If that is unwanted, a normal close can empty the
+journal; that isn't built. The `exit_pre` handler exists in bpy 5.3.0 but not 4.2.23 (measured), so 4.2 would need
+Python's `atexit`, and whether either one runs at a close and not at a crash is still to be measured.
 
 ## Alternatives considered
 
@@ -221,24 +220,30 @@ one runs at a close and not at a crash is for the build to measure.
 - **Keeping the journal across saves** (only adding SAVE records): it grows with every step ever made, while replay
   reads only what comes after the last SAVE. Lost.
 
-## What the build ticket does with this
+## What the build did with this (#11, #128)
 
-- Keep the journal and its records as they are, with the save id taken from the index part.
-- `save_pre`: wait for the helper thread first (`drain_journal_writer()`, before the parts are built), so a crash during
-  a save loses no step. Test: queue a big record, crash in the middle of a save, recover: every step is back.
-- `save_post`: start the journal again first, then take the parts back. `save_post_fail`: take the parts back and leave
-  the journal. A save whose parts could not all be put back leaves the journal too.
+- The journal and its records are as they were, with the save id taken from the index part.
+- `save_pre` waits for the helper thread first (`drain_journal_writer()`, before the parts are built), so a crash
+  during a save loses no step (`test_bl_journal_writer::test_crash_in_the_middle_of_a_save_loses_no_step`).
+- `save_post` starts the journal again first, then takes the parts back. `save_post_fail` takes the parts back and
+  leaves the journal. A save whose step parts are not all still in Blender's copy leaves the journal too, and since
+  taking the parts back cuts the history, the session journals as an unsaved file until the next save. Only a step
+  part missing by name is seen before the journal would start again; one there with other bytes is cut by the
+  take-back after it, with the journal already started again.
 - At open, a file without its parts: no history, the note, the journal of its path untouched, and the session
   journaling as an unsaved file until it is saved.
 - Tests, each on a format 5 file:
-  - A crash before a save and after one, each bringing every step back.
-  - The journal of save A beside the file of save B: nothing replayed, every step in the file.
-  - A failed save keeping the journal, so recovery replays onto save A.
-  - Replayed steps saved into the open step part byte for byte as the journal held them.
-  - A file without its parts at the journal's own path: the journal byte for byte the same after opening it, the note
-    shown, and the .blend opened afterwards bringing every step back.
-  - A V1 file and its V1 journal replayed, then the first V2 save starting the journal again with the index part's
-    save id.
+  - A crash before a save and after one: `test_bl_format5::test_sculpt_steps_and_crash_journal_after_format5` and
+    `test_crash_after_a_save_of_new_steps_brings_them_back`.
+  - The journal of save A beside the file of save B:
+    `test_bl_format5_journal::test_journal_of_save_a_beside_the_file_of_save_b_replays_nothing`.
+  - A failed save keeping the journal: `test_bl_format5::test_save_blender_cannot_write_keeps_the_journal`; step
+    parts that did not all come back: `test_bl_format5_journal::test_save_whose_step_parts_did_not_all_come_back_keeps_the_journal`.
+  - Replayed steps saved byte for byte: `test_bl_format5_journal::test_replayed_steps_are_saved_as_the_journal_held_them`.
+  - A file without its parts at the journal's own path:
+    `test_bl_format5_journal::test_file_without_its_parts_leaves_the_journal_and_the_blend_brings_every_step_back`,
+    and saved over the .blend: `test_file_without_its_parts_saved_over_the_blend_starts_its_journal_again`.
+  - A V1 file and its V1 journal: `test_bl_beta2_upgrade::test_first_save_after_a_v1_journal_starts_it_again`.
 
 ## How it was measured
 

@@ -318,7 +318,7 @@ class Settings:
     raw_steps: int = 64                # most recent steps per history kept unpacked
     compression: str = "auto"          # auto | zstd | lz4 | zlib | none
     truncation_threshold: int = 10     # confirm before dropping >= this many future steps
-    crash_recovery: str = "LAST_SAVED" # LAST_SAVED | INTERRUPTED
+    crash_recovery: str = "INTERRUPTED" # LAST_SAVED | INTERRUPTED (#128)
     edit_steps_max: int = 300_000      # vertices: Record everything records Edit Mode per operation up to
                                        # this, per visit above (about 20 to 27 ms per 100k per operation)
 

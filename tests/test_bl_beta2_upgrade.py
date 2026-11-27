@@ -148,6 +148,22 @@ def test_last_save_after_a_crash():
     check(want["S"], want["O"], "crash, Last save")
 
 
+def test_first_save_after_a_v1_journal_starts_it_again():
+    """dev/FORMAT5_JOURNAL.md (#128): beta 2's crash journal is replayed onto its file, and the first save by this
+    build starts the journal again, its SAVE naming the index part's save id."""
+    blend, want = place("crash")
+    SETTINGS.crash_recovery = "INTERRUPTED"
+    try:
+        open_file(blend)
+        check(want["S"] + want["S_unsaved"], want["O"], "crash, Unsaved steps", opened_at=len(want["S"]) - 1)
+        bpy.ops.wm.save_mainfile(filepath=blend)
+        recs = persistence.current_journal().read()
+        sid = H.stored_registry(blend).save_id
+        assert sid and [(t, h.get("save_id")) for t, h, _p in recs] == [("SAVE", sid)], recs
+    finally:
+        SETTINGS.crash_recovery = "LAST_SAVED"
+
+
 def test_moved_without_its_folder():
     """Beta 2's default kept the history in a folder: a file moved without it opens, with no history and no error,
     and the user is told to keep the folder next to the .blend."""
@@ -296,7 +312,8 @@ def test_a_newer_hindsights_folder_stays_pointed_at():
 if __name__ == "__main__":
     try:
         for t in (test_history_folder_file, test_history_inside_the_blend, test_saved_both_ways,
-                  test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash, test_moved_without_its_folder,
+                  test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash,
+                  test_first_save_after_a_v1_journal_starts_it_again, test_moved_without_its_folder,
                   test_saved_without_its_folder, test_steps_made_without_its_folder, test_folder_not_read_after_the_save, test_history_folder_file_saved_out_of_memory,
                   test_a_newer_hindsights_folder_stays_pointed_at):
             H.run(t)

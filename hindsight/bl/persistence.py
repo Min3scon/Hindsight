@@ -8,7 +8,7 @@ read); there is no other place to save it (#48, #51). A history folder ``<stem>_
 
 Crash Recovery (``SETTINGS.crash_recovery``):
   LAST_SAVED   loading a file restores only what was saved
-  INTERRUPTED  steps recorded after the last save of an interrupted session are recovered
+  INTERRUPTED  (the default, #128) steps recorded after the last save of an interrupted session are recovered
                from the journal (the mesh stays at the saved cursor; scrub forward to see them)
 """
 from __future__ import annotations
@@ -64,6 +64,9 @@ NOT_STORED_TEXT = ("The history could not be stored in the .blend. Free some mem
 _SAVE_NOTES = (KEPT_LAST_SAVE_TEXT, NOT_STORED_TEXT)      # what a save says; the next save replaces it
 OTHER_SAVE_TEXT = ("Steps from an interrupted session were found, but they belong to another save of this "
                    "file. They were not brought back")
+NO_PARTS_TEXT = ("This file holds no history: Blender saved it on its own (an autosave). Open the .blend you saved "
+                 "to get its history back, with the steps since its last save. Saving this file over it replaces "
+                 "that history")
 STALE_SIDECAR_TEXT = "The history folder is from another save of this file"
 MOVED_IN_TEXT = "The history is now inside the .blend. The folder '{folder}' beside it is no longer used"
 
@@ -76,7 +79,10 @@ _OFF_IN = [set()]
 
 _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 
-_J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12]}    # live journal of the session file
+# The live journal of the session file. "unsaved" (#128): until the next save the session journals as an unsaved
+# file (a file without its parts was opened, or a save's step parts did not all come back), and the journal of the
+# file's path is left as it was
+_J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12], "unsaved": False}
 # the history couldn't be stored in the .blend, which keeps the last save's: on_save_post keeps the journal
 _FALLBACK = {"kept": False}
 # this save moves a V1 folder's history into the .blend (dev/FORMAT5_V1.md): on_save_post says so, once
@@ -230,7 +236,7 @@ def _on_journal(rtype, header, payload_fn=None) -> None:
             note()
     j = _J["journal"]
     if j is None or j.closed:
-        j = _open_journal(_current_blend())
+        j = _open_journal("" if _J["unsaved"] else _current_blend())
     header = dict(header, s=_J["sid"])
     q = _JW["q"]
     if (q is not None and q.unfinished_tasks) or getattr(payload_fn, "size", 0) >= BIG_RECORD[0]:
@@ -280,7 +286,7 @@ def _drain_packer() -> None:
 
 
 def _recovery() -> str:
-    return str(getattr(SETTINGS, "crash_recovery", "LAST_SAVED") or "LAST_SAVED").upper()
+    return str(getattr(SETTINGS, "crash_recovery", "INTERRUPTED") or "INTERRUPTED").upper()
 
 
 def _codec() -> str:
@@ -507,6 +513,17 @@ def _take_parts_back() -> None:
         guard.fail("saving", e, "could not take the history back from Blender's copy")
 
 
+def _parts_all_there() -> bool:
+    """Every step part handed over is still in Blender's copy, checked before the journal starts again (#128).
+    shortcut: a part there by name but with other bytes is only seen by take_back, after it; reading every part
+    here would double the work of taking them back."""
+    text = bpy.data.texts.get(TEXT_NAME)
+    group = text.get(PARTS_PROP) if text is not None else None
+    return _PROTECT["embed"] or all(
+        p.bytes is not None or (group is not None and uid in group and str(i) in group[uid])
+        for uid, ps in runtime.reg().parts.items() for i, p in enumerate(ps))
+
+
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
 def on_save_post(*args) -> None:
@@ -525,13 +542,22 @@ def on_save_post(*args) -> None:
         # The .blend still holds the save before this one, and the journal goes with that save: keep it
         # (on a Save As, at the new path)
         try:
-            _carry_journal(path)
+            if not _J["unsaved"]:       # else the journal of the path stays as it was, and the session unsaved (#128)
+                _carry_journal(path)
         except Exception as e:
             guard.fail("saving", e, "journal error on save")
         _take_parts_back()
         return
+    if not _parts_all_there():
+        # #128: take_back cuts the history below, so the journal of the last good save stays as it is (its steps
+        # come back onto that save) and this session journals as an unsaved file until the next save
+        _close_journal()
+        _J["unsaved"] = True
+        _take_parts_back()
+        return
     # The journal starts again first (dev/FORMAT5_JOURNAL.md): the file on disk and the journal name different
     # saves only between Blender putting the file in place and this handler
+    _J["unsaved"] = False
     try:
         j = _open_journal(path)
         drain_journal_writer()
@@ -596,7 +622,10 @@ def _load_registry(path: str, text):
             return persist.registry_from_bytes(raw)
         except persist.NewerFormatError as e:
             if e.found == persist.FORMAT5:
-                return None     # format 5's stub without its parts (an autosave): no history (#11's 11.9 adds the note)
+                # format 5's stub without its parts (an autosave, quit.blend): no history (dev/FORMAT5_JOURNAL.md)
+                _J["unsaved"] = True
+                _note("WARNING", NO_PARTS_TEXT)
+                return None
             _PROTECT["embed"] = True
             _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
@@ -785,6 +814,7 @@ def _since_save(recs, save_id=None) -> list:
 @guard.guarded("loading")
 def on_load_post(*args) -> None:
     _new_session()
+    _J["unsaved"] = False
     runtime.set_registry(Registry())
     runtime.missing_message[0] = None
     path = _current_blend()
@@ -804,7 +834,7 @@ def on_load_post(*args) -> None:
     j = None
     # D29: a file without history gets no journal until something is recorded (opened on the first
     # step); one with history, or with a journal left by an interrupted session, gets it now
-    if reg is not None or os.path.isfile(journal_path(path)):
+    if not _J["unsaved"] and (reg is not None or os.path.isfile(journal_path(path))):
         try:
             # without recovery the journal is emptied below in any case (not kept): R067 lets it go now
             j = _open_journal(path, keep=recover, discard=not recover)
