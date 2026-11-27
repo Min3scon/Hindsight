@@ -177,6 +177,7 @@ def _save_fails_and_keeps_the_last_save(fails, tag, fake=None, save_as=False):
     assert not os.path.exists(persist.sidecar_dir(path)), f"{tag}: a history folder was written"
     assert H.stored_registry(path).save_id == stored, \
         f"{tag}: the .blend doesn't keep the history of the save before"
+    assert not blender_copy(), f"{tag}: Blender holds a copy of the history after the failed save (#56)"
     kept = getattr(persistence, "KEPT_LAST_SAVE_TEXT", None)
     assert kept in notes(), f"{tag}: the user isn't told"
     # A changed since the save before, and opens below without the history it had then (unless a .blend1
