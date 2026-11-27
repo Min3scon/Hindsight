@@ -101,6 +101,7 @@ WORLD_PREFIX = "world:"
 
 WORLDP_PREFIX = "worldp:"
 COMP_TREE = "comp_tree"
+SCENE_NAME = "name"        # #110: the scene's name; a scene's values without it: the scene isn't there
 
 
 # ----------------------------------------------------------------------------- data no object uses (D151)

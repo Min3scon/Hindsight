@@ -58,6 +58,8 @@ def write_collection_settings(sc, rec) -> None:
             rows = (rec.get("layers") or {}).get(vl.name)
             if not rows:
                 continue
+            if vl.layer_collection is None:
+                vl.update()                       # #110: a scene just made has none until then
             stack = list(vl.layer_collection.children)
             while stack:
                 lc = stack.pop()

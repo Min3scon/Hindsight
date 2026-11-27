@@ -1512,6 +1512,13 @@ def _find_any(uid):
         return None
 
 
+def _scene_history(h) -> bool:
+    """#110: the history of a scene that is gone at its cursor: the step before it deleted the scene, or the
+    step after it makes it (a scene can't change while it's gone, so no other step is between)."""
+    return any(0 <= i < len(h.entries) and isinstance(m := h.entries[i].meta, dict)
+               and isinstance(x := m.get("extra"), dict) and "scene" in x for i in (h.cursor - 1, h.cursor))
+
+
 def _after_mesh_write(ob) -> None:
     try:
         adapters.after_mesh_write(ob)      # D108: UV map flags, once the UV maps exist again
@@ -1530,6 +1537,8 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
             other = _find_any(m)
             if other is not None:
                 states[m] = datarec.baseline(other, m)
+            elif _scene_history(h):
+                states[m] = _STATES.setdefault(m, MeshState({}, {}))    # #110: a scene that isn't there
             continue
         if ob is not None:
             if ob.mode == "EDIT":
@@ -1551,9 +1560,11 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     for target, keys in changes.items():
         ob = _find_any(target)
         st = states.get(target) or _STATES.get(target)
+        mesh_keys, data_keys = datarec.split_keys(keys)
+        if st is not None and adapters.SCENE_NAME in data_keys.get("scene", ()):
+            ob = datarec.scene_here(target, ob, st)       # #110: made again, removed or renamed
         if ob is None or st is None:
             continue
-        mesh_keys, data_keys = datarec.split_keys(keys)
         if not isinstance(ob, bpy.types.Object):
             if data_keys:
                 datarec.write(ob, st, data_keys)
@@ -1845,7 +1856,7 @@ def global_goto(context, g: int, final: bool = True) -> None:
             e = h.entries[piv[1]] if h else None
             if e is not None:
                 tgt = find_object(e.target) or _find_any(e.target)
-                if isinstance(tgt, bpy.types.Object):
+                if isinstance(tgt, bpy.types.Object) and context.view_layer.objects.get(tgt.name) == tgt:
                     _switch_to(context, tgt, e.meta.get("mode", "SCULPT"))
 
 
