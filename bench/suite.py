@@ -84,12 +84,13 @@ def select_groups(only):
 def native_env(root, base_env=None):
     """Environment that makes the root's own shipped Rust wheel the one that gets imported."""
     env = dict(base_env or os.environ)
-    if sys.platform != "linux" or platform.machine() != "x86_64":
+    tags = {("linux", "x86_64"): ("manylinux", "x86_64"), ("win32", "AMD64"): ("win_amd64",)}.get(
+        (sys.platform, platform.machine()))
+    if not tags:
         return env
     wd = os.path.join(root, "hindsight", "wheels")
     try:
-        wheels = [w for w in os.listdir(wd) if w.startswith("hindsight_native") and "manylinux" in w
-                  and "x86_64" in w]
+        wheels = [w for w in os.listdir(wd) if w.startswith("hindsight_native") and all(t in w for t in tags)]
     except OSError:
         return env
     if not wheels:

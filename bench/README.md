@@ -33,7 +33,11 @@ shared 4-core machine. Run old and new through `ab.py`, never one after the othe
 The Rust engine used by a root is the one shipped in that root's own `hindsight/wheels`
 (unpacked to `<tmp>/hs_bench_native/` and put first on `PYTHONPATH`), so an old root runs the
 engine it was released with and a new one the engine it ships. The result file records whether the engine
-loaded (`machine.rust_engine_loaded`).
+loaded (`machine.rust_engine_loaded`). Linux x86_64 and Windows x64 (`win_amd64`) wheels are used this way.
+
+On Windows (#129): there is no `/proc`, so `hwm_mb` is 0 there (not measured: `held_once_mem_f5.py` polls the
+working set from outside), and the idle group times its loops by wall time (`perf_counter`), because Windows'
+`process_time` moves in 15.6 ms ticks.
 
 ## Files
 

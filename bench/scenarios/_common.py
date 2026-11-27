@@ -27,6 +27,11 @@ BENCH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKOUT = os.path.dirname(BENCH)          # the checkout this file lives in (not necessarily ROOT)
 
 
+# CPU seconds of this process. shortcut: Windows' process_time moves in 15.6 ms ticks, so there it is the wall time
+# of the loop (perf_counter); use QueryProcessCycleTime if a Windows scenario ever needs other threads' CPU.
+cpu = time.perf_counter if os.name == "nt" else time.process_time
+
+
 class Opts:
     def __init__(self, argv=None):
         argv = list(sys.argv[1:] if argv is None else argv)
