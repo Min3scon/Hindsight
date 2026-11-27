@@ -975,7 +975,7 @@ def _commit(label: str, uids, mesh: bool, settled: bool = False) -> list:
             extra["scene"] = "deleted" if gone else "made"     # runtime: the history of a scene that can be gone
         records = [DataChange(a, uid, ch) for a, ch in sorted(by_adapter.items())]
         h = rt.reg().history_for(uid)
-        if h is not None and not h.enabled:
+        if h is not None and (not h.enabled or h.held()):
             continue
         if h is None:
             h = rt.reg().create(uid)

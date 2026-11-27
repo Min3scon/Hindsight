@@ -56,6 +56,7 @@ VERIFY = bool(os.environ.get("HINDSIGHT_VERIFY"))
 _BITS = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}
 
 CorruptStep = _N.CorruptStep
+UnknownEncoding = _N.UnknownEncoding      # intact, but a later build's encoding (dev/FORMAT5_ENCODINGS.md)
 
 
 def _json_default(o):
@@ -230,9 +231,18 @@ def step_from_bytes(b) -> Step:
 
 
 def version_of(b) -> int:
-    """3 for format 3 blobs, 1 for formats 1 and 2, 0 if not a step."""
+    """3 for format 3 blobs, 1 for formats 1 and 2, 0 if not a step (the container; the encoding: is_unknown)."""
     magic = bytes(memoryview(b)[:4])
     return 3 if magic == STEP_MAGIC else (1 if magic == STEP_MAGIC_V1 else 0)
+
+
+def is_unknown(b) -> bool:
+    """Do step bytes `b` say they use an encoding this build has no decoder for (a later build's)? Read from the
+    step prefix alone (dev/FORMAT5_ENCODINGS.md); bytes that aren't a step are damage, not unknown."""
+    try:
+        return _N.step_encoding(b[:11]) not in _N.ENCODINGS     # the prefix alone: a Slice isn't copied (#125)
+    except CorruptStep:
+        return False
 
 
 def _same_arrays(a: dict, b: dict) -> bool:

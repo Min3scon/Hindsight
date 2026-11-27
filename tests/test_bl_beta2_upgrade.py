@@ -10,6 +10,7 @@ when "Unsaved steps" is chosen, and not when it isn't; and after one save with t
 file alone (its folder gone) must still hold all of it, and the folder is never read again (#50).
 """
 import base64
+import hashlib
 import json
 import shutil
 import struct
@@ -37,6 +38,11 @@ def place(case):
         os.replace(hsj, persistence.journal_path(blend))
     with open(os.path.join(dst, "expect.json"), encoding="utf-8") as fh:
         return blend, json.load(fh)
+
+
+def sha(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
 
 
 def positions(ob) -> str:
@@ -79,8 +85,25 @@ def quiet(what):
 
 
 def into_the_blend_and_alone(blend, want_s, want_o, what):
-    """Saved once by this build with the default preferences, then opened with its folder gone (#50)."""
+    """Saved once by this build with the default preferences, then opened with its folder gone (#50). That save is
+    the move-in (#67): the .blend holds format 5, its parts every step beta 2 saved as its bytes, CRC-32 and meta,
+    and the folder is left byte for byte, with a note that it is no longer used."""
+    folder = persist.sidecar_file(blend)
+    had = sha(folder) if os.path.isfile(folder) else None
+    held = H.saved_steps(runtime.reg())
     bpy.ops.wm.save_mainfile(filepath=blend)
+    stored = H.stored_text(blend)
+    assert stored.get(persistence.DATA_PROP) == persist.STUB and not stored[persistence.SIDECAR_PROP], what
+    assert persistence.PARTS_PROP in stored and persistence.DATA_BIN_PROP not in stored, (what, list(stored))
+    got = H.saved_steps(H.stored_registry(blend))
+    assert got["settings"] == held["settings"] and set(got) == set(held), what
+    for uid in held:
+        if uid != "settings":     # a step from the crash journal has its bytes only from this save
+            assert got[uid][:3] == held[uid][:3] and len(got[uid][3]) == len(held[uid][3]), (what, uid)
+            assert all(b[0] is None or a == b for a, b in zip(got[uid][3], held[uid][3])), (what, uid)
+    if had:
+        assert sha(folder) == had, f"{what}: the history folder changed"
+        assert [t for _s, t in runtime.load_notes] == [persistence.MOVED_IN_TEXT.format(folder="scene_hindsight")]
     shutil.rmtree(os.path.splitext(blend)[0] + "_hindsight", ignore_errors=True)
     open_file(blend)
     check(want_s, want_o, what + ", saved once and opened without its folder")
@@ -124,6 +147,22 @@ def test_last_save_after_a_crash():
     SETTINGS.crash_recovery = "LAST_SAVED"
     open_file(blend)
     check(want["S"], want["O"], "crash, Last save")
+
+
+def test_first_save_after_a_v1_journal_starts_it_again():
+    """dev/FORMAT5_JOURNAL.md (#128): beta 2's crash journal is replayed onto its file, and the first save by this
+    build starts the journal again, its SAVE naming the index part's save id."""
+    blend, want = place("crash")
+    SETTINGS.crash_recovery = "INTERRUPTED"
+    try:
+        open_file(blend)
+        check(want["S"] + want["S_unsaved"], want["O"], "crash, Unsaved steps", opened_at=len(want["S"]) - 1)
+        bpy.ops.wm.save_mainfile(filepath=blend)
+        recs = persistence.current_journal().read()
+        sid = H.stored_registry(blend).save_id
+        assert sid and [(t, h.get("save_id")) for t, h, _p in recs] == [("SAVE", sid)], recs
+    finally:
+        SETTINGS.crash_recovery = "LAST_SAVED"
 
 
 def test_moved_without_its_folder():
@@ -216,15 +255,15 @@ def test_folder_not_read_after_the_save():
 
 
 def _out_of_memory_save():
-    real = persist.parts_to_bytes
+    real = persist.registry_to_format5      # format 5's save builds the stored history here
 
-    def boom(parts):
+    def boom(*_a, **_k):
         raise MemoryError("test: out of memory building the stored history")
-    persist.parts_to_bytes = boom
+    persist.registry_to_format5 = boom
     try:
         bpy.ops.wm.save_mainfile()
     finally:
-        persist.parts_to_bytes = real
+        persist.registry_to_format5 = real
 
 
 def test_history_folder_file_saved_out_of_memory():
@@ -274,7 +313,8 @@ def test_a_newer_hindsights_folder_stays_pointed_at():
 if __name__ == "__main__":
     try:
         for t in (test_history_folder_file, test_history_inside_the_blend, test_saved_both_ways,
-                  test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash, test_moved_without_its_folder,
+                  test_unsaved_strokes_after_a_crash, test_last_save_after_a_crash,
+                  test_first_save_after_a_v1_journal_starts_it_again, test_moved_without_its_folder,
                   test_saved_without_its_folder, test_steps_made_without_its_folder, test_folder_not_read_after_the_save, test_history_folder_file_saved_out_of_memory,
                   test_a_newer_hindsights_folder_stays_pointed_at):
             H.run(t)

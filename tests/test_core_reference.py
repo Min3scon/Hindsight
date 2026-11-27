@@ -384,7 +384,9 @@ def judge(b, stats):
     ra = outcome(ref_read, b)
     ea = outcome(stepmod.step_from_bytes, b)
     if ea[0] == "err":
-        assert ea[1] in ("CorruptStep", "ValueError"), (ea, b[:40])      # never a panic or a leaked type
+        assert ea[1] in ("CorruptStep", "ValueError", "UnknownEncoding"), (ea, b[:40])      # never a panic or a leaked type
+        # #66: UnknownEncoding only for an intact step prefix that names a later encoding (byte 10 above 4)
+        assert ea[1] != "UnknownEncoding" or (stepmod.is_unknown(b) and b[10] > 4), (ea, b[:40])
         assert "internal error" not in ea[2], ea
     if ra[0] == "ok":
         assert ea[0] == "ok" and stepmod.same_step(ra[1], ea[1]), (str(ea)[:200] if ea[0] == "err" else "different data", b[:60])
@@ -400,7 +402,7 @@ def judge(b, stats):
         assert ea[0] == "err", ("the engine accepted what the reference refused", ra, b[:60])
         stats["both refuse"] += 1
         if ra[1] in ("CorruptStep",):
-            assert ea[1] == "CorruptStep", (ra, ea)
+            assert ea[1] in ("CorruptStep", "UnknownEncoding"), (ra, ea)     # #66: the latter checked above
     r1, e1 = outcome(ref_recompress, b), outcome(stepmod.recompress, b)
     if r1[0] == "ok" and e1 != r1 and _subnormal_time(b):
         # The reference writes `float(time or 0.0)`: where the process flushes subnormals to zero

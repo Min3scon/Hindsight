@@ -62,9 +62,10 @@ def roundtrip(tag):
     assert runtime.missing_message[0] is None
     text = bpy.data.texts.get(persistence.TEXT_NAME)
     assert text is not None and text.use_fake_user
-    # #48: the history is in the saved .blend; #9: after opening it Blender holds no copy
-    assert not text.get("sidecar") and "hindsight_data_bin" not in text and "hindsight_data_bin" in H.stored_text(path)
-    assert "hindsight_data" not in text           # R061: the base64 copy is never written
+    assert not text.get("sidecar")                # #48: the history is in the .blend, in format 5 (#64)
+    stored = H.stored_text(path)
+    assert persistence.PARTS_PROP in stored and stored[persistence.DATA_PROP] == persist.STUB, list(stored)
+    assert persistence.DATA_BIN_PROP not in stored, list(stored)        # nor a format 4 copy
     h = runtime.history_of(ob)
     assert h is not None, "history not restored"
     assert len(h.entries) == 4 and h.cursor == 4, (len(h.entries), h.cursor)

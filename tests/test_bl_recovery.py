@@ -437,6 +437,7 @@ def test_steps_after_values_changed_without_hindsight():
     bpy.ops.wm.save_as_mainfile(filepath=path)
     hindsight.unregister()
     H._registered[0] = False
+    bpy.ops.wm.open_mainfile(filepath=path)      # a session without Hindsight (format 5: Blender holds no parts)
     T.select("A")
     bpy.ops.transform.translate(value=(0, 5, 0))
     bpy.ops.wm.save_as_mainfile(filepath=path)

@@ -40,8 +40,9 @@ V1's crash journal (`HSJ1`) can sit beside any of them.
 In this order, on the Text `.hindsight_history`:
 
 1. No Text: no saved history.
-2. A `hindsight_parts` group: format 5 (#41, #43). If `sidecar` is True as well, an older build saved the file after
-   V2 (see "A format 5 file that V1 saved again").
+2. A `hindsight_parts` group: format 5 (#41, #43). If `sidecar` is True as well, the file still points at a V1
+   folder: V2 saved it while the folder was missing or newer (#8), or an older build saved it after V2 (see "A
+   format 5 file that V1 saved again"). The folder is read too (see there).
 3. `hindsight_data` equal to the stub and no `hindsight_parts`: a copy without its parts, such as Blender's autosave
    (#44). V2 knows the stub by its text, which never changes (#41); it does not decode it.
 4. Anything else: a V1 history, read as below.
@@ -102,9 +103,11 @@ The same for every format:
   `sidecar` is False. So V2 says once, after that save: "The history is now inside the .blend. The folder '{folder}'
   beside it is no longer used". The move-in deletes nothing outside the .blend. Blender's Save Versions keeps the
   V1 file as `.blend1`.
-- **A folder file opened without its folder** saves with no history for those objects, and the folder is not read
-  again even if it comes back. So V2's missing-folder note says: "History folder missing. Put '{folder}' next to the
-  .blend and open it again to see this file's history. Once the file is saved, the folder is no longer read".
+- **A folder file opened without its folder** saves with no history for those objects, and still points at the
+  folder (`sidecar` stays True, #8's rule, `METADATA.md`): once it is back, opening the file gives its histories to
+  every object the parts have none for. A newer Hindsight's folder stays pointed at the same way, and protected.
+  V2's missing-folder note says: "History folder missing. Keep '{folder}' next to the .blend to see this file's
+  history".
 
 ## V1 steps keep their own encoding
 
@@ -130,18 +133,23 @@ leave the stub and the parts untouched (#41, measured in all 9 cases). What happ
   the file, and sets `sidecar` True.
 - **Embedded:** V1 writes nothing (tag, lines 226 to 227), so its steps are gone.
 
-**V2 opens the format 5 parts and does not read V1's folder.** Changes V1 made to recorded objects are changes made
-without Hindsight, and D46 handles them as it does today:
+**V2 opens the format 5 parts, and V1's folder only for objects the parts have no history for.** V2 can't tell this
+folder from one that was missing at V2's save (V1's folders have no save id; the main-branch build's has one of its
+own, never the parts', since V2 writes no folder), so all are read the same way (#8's rule, kept by 31d3600; the
+main-branch build's folder too since #68): a whole history of the folder goes on for each object the parts have none
+for (an object V1 recorded and V2 never did), and nothing is joined onto a history from the parts. Changes V1 made to
+objects the parts have a history for are changes made without Hindsight, and D46 handles them as it does today:
 
 - If `.blend1` still holds the mesh V2 saved (V1 saved once, with Save Versions on), D107 turns the change into one
   topology step.
 - Otherwise that object's history is left out, with D46's message.
 
-When V2 sees `sidecar` True next to `hindsight_parts` (V2 always writes False, so only an older build sets it), it
-adds a note: "This file was saved by an older Hindsight after this one. The steps it recorded are in '{folder}' and
-were not brought back". The next save writes `sidecar` False. The folder stays as it was.
+V2's next save writes `sidecar` False once the folder has been read (True again only while it is missing or newer).
+The folder stays as it was. A history taken whole from the folder keeps V1's sequence numbers, which can repeat the
+parts' (see below): within the history the order is right; on the global timeline its steps may sort among the
+parts' steps of the same numbers.
 
-V1's steps are not joined onto the format 5 history, for three reasons:
+V1's steps are not joined onto a format 5 history, for three reasons:
 
 - **Sequence numbers clash.** V1 recorded with a fresh registry (`next_seq` starts at 1, `hindsight/core/registry.py`
   17), so its sequence numbers repeat the format 5 history's. They are in each step's bytes as well as in its meta
@@ -219,6 +227,39 @@ New ones the build ticket adds, each also on the files above:
 - **Opened without its folder, then saved**: format 5 with no history for those objects. The folder put back
   afterwards is not read, and the note says so beforehand.
 - The full suites on Blender 4.2, 5.0, 5.1, 5.2 and 5.3.
+
+### What #67 built
+
+- **The move-in**: `tests/test_bl_v1_move_in.py` puts formats 1 to 3 (`beta1_format1.hsr`, `beta2wip_format2.hsr`
+  and the new `beta2wip_format3.hsr`, written by the format 3 build's own code, fc2b6d3) in a .blend in each save
+  mode. Opened, the file holds every step as saved. After one save the Text holds the stub, `sidecar` False, the
+  parts and no `hindsight_data_bin` or save id; the parts hold every step's bytes, CRC-32 and meta as V1 saved them,
+  and every position plays back bit for bit from the .blend alone. `test_bl_beta2_upgrade.py` checks the same of
+  beta 2's own files (format 4), crash journal included. `test_core_migration.py` now covers format 3 too.
+- **Blender's copy goes** at open, and closing without saving leaves the .blend's SHA-256 as it was.
+- **The folder note** shows once, after the save that moves a folder's history in.
+- **Not built here**: the missing-folder note keeps #8's wording and rule (a save made while the folder is missing
+  still points at it, and the folder is read again once it is back, #120 review), not the one above. The round trip
+  (a format 5 file V1 saved again) is #68's. The mixed-encodings fixture and the old builds' own .blend files for
+  `test_bl_t1_migrate.py` need the old builds run to make them, and are not made (the bpy module is enough for that,
+  as "What #68 built" found).
+
+### What #68 built
+
+- **The round trip**: `tests/test_bl_older_builds.py` opens `tests/fixtures/older_builds`, made by
+  `make_older_build_files.py`: a format 5 file this build saved, then opened by V1 (beta 2) and by the main-branch
+  build, each run as it was by its own code in bpy 4.2, in each save mode. There it opened with no history, only the
+  "newer Hindsight" note and no error; the build made a stroke on a mesh with a history, a history of its own on a
+  new object and an unrecorded move, and saved over the file. The stub and the parts come back byte for byte. Opened
+  by V2, every saved step is bit-exact and every position plays back both ways; D107 makes the stroke one step (from
+  the `.blend1` that save left) and D46 the move; the new object gets the folder's history (none in the embedded
+  mode). The next save writes `sidecar` False and shows the folder note once, the folder stays byte for byte, and the
+  file opened alone holds all of it.
+- **Fixed**: next to the parts, the main-branch build's folder was skipped because it has a save id, so the
+  histories it recorded on new objects were lost; they now come in as V1's do.
+- **Not built here**: the mixed-encodings fixture and the old builds' .blend files for `test_bl_t1_migrate.py`. They
+  need no Blender binary: the older builds run in the bpy module, as this fixture maker does. The first V1 build's
+  file still needs the beta 1 release zip.
 
 ## For the owner to check
 

@@ -73,7 +73,7 @@ def target_history(r):
 
 def save(path):
     T.select()
-    bpy.ops.wm.save_as_mainfile(filepath=path)
+    H.save_format4(path)        # damage to a format 4 history (read as before); format 5 damage is #69's
 
 
 def reopen(path):

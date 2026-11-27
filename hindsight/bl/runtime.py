@@ -349,7 +349,7 @@ def can_record(obj) -> bool:
     if uid in _REG.disabled:
         return False
     h = _REG.history_for(uid)
-    return h is None or h.enabled
+    return h is None or (h.enabled and not h.held())
 
 
 def _scene_props(context=None):
@@ -943,7 +943,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         full = True
         label = DYNTOPO_VISIT_LABEL
     h = _REG.history_for(uid)
-    if h is not None and not h.enabled:
+    if h is not None and (not h.enabled or h.held()):
         return None
     if h is None and mode not in RECORD_MODES and not _edit and not extras_on(obj):
         # Only a sculpt or paint stroke starts a history. Leaving Edit Mode on an object without
@@ -1526,6 +1526,10 @@ def _after_mesh_write(ob) -> None:
         log.error_once(("after_mesh_write", str(e)), f"could not finish restoring {ob.name}: {e}", e)
 
 
+STOPPED_TEXT = ("The jump stopped at a step saved by a newer Hindsight: every step undoes and redoes itself, so "
+                "this one can't be crossed. Update Hindsight to go past it")
+
+
 def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
     """Move one history to pos and write what changed to Blender. With acc (a global jump), the
     move is noted in acc instead of being pushed onto Blender's undo stack on its own."""
@@ -1550,6 +1554,9 @@ def _goto_history(h, pos: int, final: bool, acc: dict | None = None) -> dict:
             states[m] = ensure_state(ob)
     tracked = [m for m in h.members if m in datarec.tracked_uids()]
     vb = {m: dict(states[m].values) for m in tracked if m in states}
+    lo, hi = h.reach()
+    if final and not lo <= pos <= hi:          # once per jump, not per scrub frame
+        log.warn(STOPPED_TEXT)
     before = h.cursor
     changes = h.goto(pos, states, join_hook=_join_hook)
     wrote_data = False

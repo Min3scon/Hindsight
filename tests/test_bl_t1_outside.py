@@ -26,6 +26,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
+from hindsight.core.types import SETTINGS
 from hindsight.bl import datarec, idmap, runtime
 from hindsight.bl import prefs
 
@@ -36,6 +37,10 @@ def setup():
     L.fresh_scene()
     L.track_all()
     runtime.reg().preserve_modes = False
+    # #128 made Unsaved steps the default. Here register() reads the file and then it is opened again, which
+    # with Unsaved steps replays the first read's RESET (D82): these tests are about one open. Crash recovery's
+    # side of a change made without Hindsight is test_bl_recovery's.
+    SETTINGS.crash_recovery = "LAST_SAVED"
 
 
 def op(o):
@@ -192,6 +197,9 @@ def save_and_change_outside(path, change, keep_backup=True, prints=None):
         bpy.ops.wm.save_as_mainfile(filepath=path)
     hindsight.unregister()
     H._registered[0] = False
+    # A session without Hindsight starts by opening the file: Blender holds the history parts only as read from
+    # disk (format 5: after a save Hindsight holds them, not Blender)
+    bpy.ops.wm.open_mainfile(filepath=path)
     change()
     bpy.ops.wm.save_as_mainfile(filepath=path)
     outside = state()

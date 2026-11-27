@@ -121,9 +121,22 @@ For the last row the save rebuilds the step parts that hold the first and the la
 parts wholly outside them, as when Delete earlier steps drops a history's oldest steps and a new recording cuts its
 newest. The build settles whether the step parts in between are reused untouched or rebuilt once: that depends on how a
 step part numbers its first step after the oldest steps go, which Delete earlier steps needs settled too (and the step
-cap, if `FORMAT5.md`'s owner point 8 keeps it).
+cap, if `FORMAT5.md`'s owner point 8 keeps it). #65 settled it: a step part numbers its first step from the first
+step the history ever recorded, so the step parts in between are reused untouched.
 
 Unknown steps (#42) are not damage: they are kept and saved as they are.
+
+**Built in #69** (engine 0.14.0, API 13): a step part whose length or CRC-32 doesn't match the index part goes
+to the engine's `part_salvage`. An intact step table (its CRC-32, and the index part's number of steps) gives each
+step's place, checked against its CRC-32; a damaged one is replaced by the search by prefix, from where the index
+part says the steps begin. The metas are checked on their own either way. `persist.registry_from_format5` then cuts
+to the reachable steps as before, and lists damage that lost nothing (an index copy, a step part whose every step was
+found) in the load report's `mended`, which the add-on logs. A step part read whole is handed over again at the next
+save; one checked finer is rebuilt. The next save numbers a history's steps from its first step still in a step part
+(`_history_parts`), so the step parts after a rebuilt one are reused untouched. Tests:
+`tests/test_core_format5_damage.py` (each row of "What is lost and what is kept", the engine's search, two histories
+at once, the next save's work and reopen) and `tests/test_bl_format5_damage.py` (the note, the file unchanged when
+closed without saving, the next save, the stub).
 
 ## Alternatives considered
 

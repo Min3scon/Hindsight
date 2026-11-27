@@ -106,7 +106,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
     # Saving
     crash_recovery: EnumProperty(
         name="On open", description="Which history to load when a file is opened",
-        items=CRASH_RECOVERY_ITEMS, default='LAST_SAVED', update=_update)
+        items=CRASH_RECOVERY_ITEMS, default='INTERRUPTED', update=_update)
 
     # History
     truncation_threshold: IntProperty(

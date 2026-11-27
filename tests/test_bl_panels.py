@@ -147,7 +147,9 @@ def test_prefs_class_definition():
     assert list(ann) == PREFS_NAMES, list(ann)
     assert "save_mode" not in {f.name for f in T.Settings.__dataclass_fields__.values()}
     kw = ann["crash_recovery"].keywords
-    assert kw["default"] == 'LAST_SAVED'
+    # #128 (#103 point 5, provisional): Unsaved steps, as a recovered autosave counts on the journal
+    assert kw["default"] == 'INTERRUPTED'
+    assert T.Settings.__dataclass_fields__["crash_recovery"].default == "INTERRUPTED"
     assert [i[0] for i in kw["items"]] == ["LAST_SAVED", "INTERRUPTED"]
     assert ann["max_steps"].keywords["default"] == 10000 and ann["max_steps"].keywords["max"] == 100000
     assert ann["memory_limit_mb"].keywords["name"] == "Memory limit (MB)"

@@ -8,12 +8,14 @@ import contextlib
 import shutil
 import tempfile
 import threading
+import time
 
 import bpy
 
 import tests.harness as H
 from hindsight.bl import persistence, runtime
 from hindsight.core import journal as J
+from hindsight.core import persist
 from hindsight.core import step as stepmod
 from hindsight.core.types import SETTINGS
 
@@ -116,6 +118,56 @@ def test_a_save_waits_for_the_helper():
     assert recs and recs[0][0] == "SAVE" and not [r for r in recs if r[0] == "STEP"], [r[0] for r in recs]
 
 
+def test_crash_in_the_middle_of_a_save_loses_no_step():
+    """dev/FORMAT5_JOURNAL.md (PR #103's point 9): big records still on the helper thread when a save starts, then a
+    crash while the save builds the parts (the last save's .blend and the journal are what is left on disk):
+    opening the file recovers every step."""
+    setup(big=0)
+    ob, _after, path = start("crash_in_save", 2)
+    H.enter(ob, "OBJECT")
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    ob = bpy.data.objects["W"]
+    H.enter(ob, "SCULPT")
+    real_encode = stepmod.step_to_bytes
+
+    def slow(*a, **k):              # the helper is still writing them when the save starts
+        time.sleep(0.3)
+        return real_encode(*a, **k)
+    stepmod.step_to_bytes = slow
+    try:
+        for s in range(3):
+            H.fake_stroke(ob, 90 + s, n=80)
+            assert H.commit(ob) is not None
+        live, state = [e.seq for e in runtime.history_of(ob).entries], H.snapshot(ob)
+        H.enter(ob, "OBJECT")
+        jp, left, real_build = persistence.journal_path(path), {}, persist.registry_to_format5
+
+        def crash(*a, **k):
+            for key, f in (("journal", jp), ("blend", path)):
+                with open(f, "rb") as fh:
+                    left[key] = fh.read()
+            return real_build(*a, **k)
+        persist.registry_to_format5 = crash
+        try:
+            bpy.ops.wm.save_as_mainfile(filepath=path)
+        finally:
+            persist.registry_to_format5 = real_build
+    finally:
+        stepmod.step_to_bytes = real_encode
+    H.fresh()                       # let go of the file and its journal, then put back what the crash left
+    SETTINGS.crash_recovery = "INTERRUPTED"
+    for key, f in (("journal", jp), ("blend", path)):
+        with open(f, "wb") as fh:
+            fh.write(left[key])
+    bpy.ops.wm.open_mainfile(filepath=path)
+    ob = bpy.data.objects["W"]
+    h = runtime.history_of(ob)
+    assert [e.seq for e in h.entries] == live and h.cursor == 2, ([e.seq for e in h.entries], h.cursor)
+    H.enter(ob, "SCULPT")
+    runtime.goto(C, len(live))
+    H.assert_same(H.snapshot(ob), state, "every step after the last save")
+
+
 def test_small_records_stay_on_the_main_thread():
     setup(big=1 << 40)
     ob, _after, path = start("small", 1)
@@ -133,7 +185,7 @@ if __name__ == "__main__":
     try:
         for t in (test_big_records_are_encoded_off_the_main_thread_in_order,
                   test_recovery_after_records_written_by_the_helper, test_a_save_waits_for_the_helper,
-                  test_small_records_stay_on_the_main_thread):
+                  test_small_records_stay_on_the_main_thread, test_crash_in_the_middle_of_a_save_loses_no_step):
             H.run(t)
     finally:
         persistence.BIG_RECORD[0] = persistence.BIG_RECORD_DEFAULT

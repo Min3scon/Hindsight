@@ -44,7 +44,7 @@ Read the file. Key points:
   (`seq,label,mode,target,time,kind,extra`). `.load() -> Step`, `.pack(codec)`, `.to_bytes(codec)`,
   `.nbytes()`, `.is_packed()`.
 - `Settings` dataclass + module global `SETTINGS` (max_steps=10000, memory_limit_mb=4096, raw_steps=64,
-  compression="auto", truncation_threshold=10, crash_recovery="LAST_SAVED").
+  compression="auto", truncation_threshold=10, crash_recovery="INTERRUPTED").
 
 ## 2. Storage engine — `core/codec.py`, `core/delta.py`, `core/step.py`, `core/store.py`
 
@@ -285,7 +285,7 @@ Add-on preferences (`bl/prefs.py`): class `HINDSIGHT_AP_prefs(bpy.types.AddonPre
 of the extension root (`base_package` passed from `__init__`), properties (each `update=` copies into
 `core.types.SETTINGS` via `bl.prefs.sync_settings(prefs)`):
 `crash_recovery` Enum LAST_SAVED/INTERRUPTED ("Crash Recovery",
-items "Last Saved", "Interrupted Session"), `truncation_threshold` Int 10 ("Truncation Warning Threshold"),
+items "Last Saved", "Interrupted Session", default INTERRUPTED since #128), `truncation_threshold` Int 10 ("Truncation Warning Threshold"),
 `max_steps` Int 10000 ("Max Undo Steps", 1..10000), `memory_limit_mb` Int 4096 ("Memory Limit (MB)"),
 `raw_steps` Int 64 ("Uncompressed Recent Steps"), `compression` Enum AUTO/ZSTD/LZ4/ZLIB/NONE ("Compression"),
 scrubber appearance: `scrub_height` Int 6 px, `scrub_margin` Int 18 px, `scrub_color` FloatVector(4, COLOR_GAMMA)

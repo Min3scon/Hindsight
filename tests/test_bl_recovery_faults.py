@@ -67,9 +67,12 @@ def to_object_mode():
         bpy.ops.object.mode_set(mode="OBJECT")
 
 
-def save(path):
+def save(path, format4=False):
     to_object_mode()
-    bpy.ops.wm.save_as_mainfile(filepath=path)
+    if format4:
+        H.save_format4(path)         # a format 4 history, which every build reads as before
+    else:
+        bpy.ops.wm.save_as_mainfile(filepath=path)
     return {o.name: H.snapshot(o) for o in bpy.data.objects if o.type == "MESH"}
 
 
@@ -157,7 +160,7 @@ def _save_fails_and_keeps_the_last_save(fails, tag, fake=None, save_as=False):
         book.stroke(obs["B"], 20 + s)
     path = os.path.join(TMP, f"kept_{tag}.blend")
     save(path)
-    stored = bpy.data.texts[persistence.TEXT_NAME][persistence.SAVE_ID_PROP]
+    stored = runtime.reg().save_id
     book.stroke(obs["A"], 10)            # B is unchanged since that save
     real = getattr(persist, fails)
 
@@ -171,9 +174,7 @@ def _save_fails_and_keeps_the_last_save(fails, tag, fake=None, save_as=False):
     finally:
         setattr(persist, fails, real)
     assert not os.path.exists(persist.sidecar_dir(path)), f"{tag}: a history folder was written"
-    assert not blender_copy(), f"{tag}: Blender's copy of the history is left behind (#56)"
-    text = H.stored_text(path)
-    assert persistence.DATA_BIN_PROP in text and text[persistence.SAVE_ID_PROP] == stored, \
+    assert H.stored_registry(path).save_id == stored, \
         f"{tag}: the .blend doesn't keep the history of the save before"
     kept = getattr(persistence, "KEPT_LAST_SAVE_TEXT", None)
     assert kept in notes(), f"{tag}: the user isn't told"
@@ -202,9 +203,9 @@ def _save_fails_and_keeps_the_last_save(fails, tag, fake=None, save_as=False):
 
 
 def test_embed_save_out_of_memory_keeps_the_history():
-    """The last save's copy is taken out of the .blend before the new one is built (so three copies are
-    never held at once); building then runs out of memory. Before #48 the history went to a folder."""
-    _save_fails_and_keeps_the_last_save("parts_to_bytes", "bytes")
+    """Building the parts runs out of memory. Blender let go of the last save's parts when the file was opened
+    (#64), so they are read back from the .blend on disk. Before #48 the history went to a folder."""
+    _save_fails_and_keeps_the_last_save("registry_to_format5", "bytes")
 
 
 def test_embed_save_blender_fails_to_write():
@@ -244,20 +245,21 @@ def test_embed_save_blender_fails_to_write():
 
 
 def test_embed_save_fails_before_the_old_copy_is_touched():
-    """Building the history fails before the last save's copy is taken out of the .blend."""
-    _save_fails_and_keeps_the_last_save("registry_parts", "parts")
+    """Packing one history's steps fails, before the last save's copy is touched."""
+    _save_fails_and_keeps_the_last_save("_history_parts", "parts")
 
 
 def test_embed_save_fails_as_blender_stores_it():
     """The new history is built, but Blender can't take its copy of it (stood in for by a value Blender
     refuses): the last save's copy, taken out of the .blend to save memory, must still go back."""
-    _save_fails_and_keeps_the_last_save("parts_to_bytes", "store", fake=lambda parts: object())
+    _save_fails_and_keeps_the_last_save("registry_to_format5", "store",
+                                        fake=lambda reg, codec="auto": (b"", {"x": [object()]}))
 
 
 def test_embed_save_as_out_of_memory_takes_the_journal():
     """A Save As that can't store the history: the new .blend keeps the last save's history, so the crash
     journal since that save must go with it, or a crash loses every step since."""
-    _save_fails_and_keeps_the_last_save("parts_to_bytes", "save_as", save_as=True)
+    _save_fails_and_keeps_the_last_save("registry_to_format5", "save_as", save_as=True)
 
 
 def test_save_failure_note_goes_when_a_save_works():
@@ -304,15 +306,15 @@ def test_first_save_out_of_memory_keeps_the_history():
 @contextlib.contextmanager
 def _no_room_in_blend():
     """Building the history to store in the .blend runs out of memory."""
-    real = persist.parts_to_bytes
+    real = persist.registry_to_format5
 
-    def boom(parts):
+    def boom(*a, **k):
         raise MemoryError("test: out of memory building the stored history")
-    persist.parts_to_bytes = boom
+    persist.registry_to_format5 = boom
     try:
         yield
     finally:
-        persist.parts_to_bytes = real
+        persist.registry_to_format5 = real
 
 
 def test_save_with_recording_paused_after_changes():
@@ -570,7 +572,7 @@ def test_damaged_saved_history():
             for s in range(4):
                 book.stroke(obs["A"], 20 + s)
             path = os.path.join(TMP, f"damaged_{store}_{kind}.blend")
-            file_state = save(path)
+            file_state = save(path, format4=True)     # format 5 damage is #69's
             if store == "folder":
                 _as_v1_folder(path)         # #48: no save writes a folder; V1's still opens
                 f = persist.sidecar_file(path)

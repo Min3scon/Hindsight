@@ -23,6 +23,12 @@ Where a fact has no source, this page says "not measured" or "no report".
    that script when a session's container is built; it was created on 2026-11-18 and its setup script
    is unproven until a fresh session has started on it. `bash tools/build_native.sh` rebuilds the six
    engine wheels into `hindsight/wheels/`.
+   On a Windows PC with the GNU Rust toolchain and no MSVC, `maturin build --release --zig` builds all six too
+   (0.14.0, #69), given two settings: the host's build scripts take getrandom's `windows_legacy` backend
+   (`RUSTC_BOOTSTRAP=1`, `CARGO_UNSTABLE_HOST_CONFIG=true`, `CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST=true`,
+   `CARGO_TARGET_APPLIES_TO_HOST=false`, `CARGO_HOST_RUSTFLAGS=--cfg getrandom_backend="windows_legacy"`), since
+   its default needs `dlltool` and `as`; and Windows ARM64 links libunwind
+   (`CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS=-C link-arg=-lunwind`).
    - No GPU in the container. Since 2026-11-18 the "Hindsight" environment allows `download.blender.org`:
      Blender 4.2 and 5.3 Linux binaries are unpacked in `blender/` next to the repository checkout and
      `python3 tools/ci/run_suite.py --blender <binary>` runs the suite in them. Real Blender also runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
@@ -103,7 +109,7 @@ Where a fact has no source, this page says "not measured" or "no report".
 - Tests in `tests/`, UI tests in `tests_ui/`, benchmarks in `bench/`, tools in `tools/`.
 ### What runs in Rust today
 
-Engine `hindsight_native` 0.11.0, API 10 (0.11.0: `extents_into`, the Movie Mode camera's extents of points in place, R085; `morph_dab` refuses arrays of the wrong type; 0.10.0: `morph_dab`, one Morph History dab in one pass, R083; 0.9.0: `same_values`, the recorder's strict "nothing changed" check, R070; `diff` on two threads from 4 MB per array, R071; idle recompression at zstd level 15 for data up to 1 MB and 19 above, R072; 0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
+Engine `hindsight_native` 0.14.0, API 13 (0.14.0: `part_salvage`, a damaged step part's steps found from its step table or by their prefix, #69; 0.13.0: `step_encoding`, `ENCODINGS` and `UnknownEncoding`, a step's encoding read from its step prefix and a later build's encoding told apart from damage, #66; 0.12.0: format 5's index part and step parts, `index_build`, `index_read`, `part_build`, `part_read`, #64; 0.11.0: `extents_into`, the Movie Mode camera's extents of points in place, R085; `morph_dab` refuses arrays of the wrong type; 0.10.0: `morph_dab`, one Morph History dab in one pass, R083; 0.9.0: `same_values`, the recorder's strict "nothing changed" check, R070; `diff` on two threads from 4 MB per array, R071; idle recompression at zstd level 15 for data up to 1 MB and 19 above, R072; 0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
 diff, apply, pack and unpack, its numpy code is `tests/reference/delta.py`; `record_step` exists and is
 tested but `runtime.commit` doesn't use it, since the stroke is already diffed once). The engine is required: if it
 can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
@@ -121,6 +127,8 @@ fails if anything under `hindsight/` imports them.
 | `same_values` (strict equality: exact types at every level, floats by bits, dicts in the same key order; API 8) | `bl/datarec._same_values`: the "nothing changed" check of every recorded object at every operation (R070); False leaves the marshal compare deciding |
 | `morph_dab` (one Morph History dab: box test, distance, falloff, mask, the stroke's strongest weight and the blend, in place; API 9) | `bl/morph.apply_morph_at` (R083); its numpy code is `tests/reference/morph_dab.py` |
 | `extents_into` (extents of points, or of the rows an index names, for k camera bases, merged in place; the product written out left to right; API 10) | `core/framing.extents`, `extents_multi`, `history_extents_multi` (R085); their numpy code is `tests/reference/framing.py` |
+| `index_build`, `index_read`, `part_build`, `part_read` (format 5's index part and step parts, built and read with their CRC-32s, the steps copied, never decoded; API 11) | `tests/test_core_format5.py` (the save and open of format 5 use them next, #64) |
+| `step_encoding`, `ENCODINGS` (1, 3, 4), `UnknownEncoding`: a step's encoding from its step prefix; a step in an encoding this build doesn't know is never decoded nor re-packed (API 12) | `core/step.py` `is_unknown`, `core/persist.py` (open), `core/history.py` `reach`, `held`; `tests/test_core_format5_encodings.py` (#66) |
 | errors `CorruptStep`, `CorruptBlob`, `CorruptDelta`, `NewerFormatError`, `EngineMissing` | `core/native.py` |
 
 Still Python: history, store, persist, journal, registry, global timeline, framing, morph, and the whole

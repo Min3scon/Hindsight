@@ -262,7 +262,8 @@ Left to other tickets:
 - **#8**: removing what writes a history folder, and the Save history preference.
 - **The build**: how a step part numbers its first step after the oldest steps go (Delete earlier steps, and the step
   cap and the memory limit if point 8 keeps them), which decides whether the step parts after a drop are reused or
-  rebuilt once (#43); and removing what writes formats 1 to 4.
+  rebuilt once (#43): settled by #65, counted from the first step the history ever recorded, so they are reused;
+  and removing what writes formats 1 to 4.
 
 With the owner's answer to point 4 above, #11 can start (its other blocker is #8): no question for the owner is left
 that changes the bytes of a format 5 file. The other points change later sub-issues only.

@@ -30,12 +30,15 @@ def test_embed_bytes_are_the_history_file():
     path = os.path.join(TMP, "both.blend")
     for round_ in range(2):                       # the second save replaces the stored bytes
         bpy.ops.wm.save_as_mainfile(filepath=path)
-        text = H.stored_text(path)
-        stored = text[persistence.DATA_BIN_PROP]
-        assert isinstance(stored, bytes)
-        assert persistence.DATA_PROP not in text, "the base64 text of earlier builds is written again"
-        want = persist.registry_to_bytes(runtime.reg(), SETTINGS.compression)
-        assert stored == want, round_
+        # format 5 (#64): the stub, and the parts as the history builds them (no format 4 copy, no base64)
+        stored = H.stored_text(path)
+        assert persistence.DATA_BIN_PROP not in stored and stored[persistence.DATA_PROP] == persist.STUB, list(stored)
+        index, parts = persist.registry_to_format5(runtime.reg(), SETTINGS.compression)
+        g = stored[persistence.PARTS_PROP]
+        assert set(g) == {"index", "index_copy"} | set(parts), (round_, list(g))
+        assert g["index"] == index and g["index_copy"] == index, round_
+        assert {u: [g[u][str(i)] for i in range(len(ps))] for u, ps in parts.items()} == parts, round_
+        assert all(len(g[u]) == len(ps) for u, ps in parts.items()), round_
         assert not os.path.isdir(persist.sidecar_dir(path)), "a history folder was written"
         H.enter(ob, "SCULPT")
         _record(ob, [40 + round_])
