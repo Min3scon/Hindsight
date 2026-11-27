@@ -2,7 +2,6 @@
 in one click (objects added later follow, D36), shows as on only when all of them are, and switches
 them all off again. Hindsight's own Movie Mode objects are never switched on."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import shutil
 import tempfile
 import time
 import bpy
@@ -190,29 +189,38 @@ def test_a_file_saved_with_everything_switched_off_opens_with_it_off():
 
 def test_a_file_whose_history_did_not_load_keeps_its_choice():
     """Review of #105: a file saved with "Everything in this file" switched off, whose history can't
-    be read when it opens (here its history folder is gone), doesn't get the default: the choice is
-    in that history, so nothing is switched on."""
+    be read when it opens, doesn't get the default: the choice is in that history, so nothing is switched
+    on. #51 took the history folder this used to delete; now the .blend holds format 5's stub without its
+    parts, as Blender's autosave writes it (no Python handler runs)."""
+    from hindsight.bl import persistence
     from hindsight.core import persist
-    from hindsight.core.types import SETTINGS
     L.fresh_scene()
-    was, SETTINGS.save_mode = SETTINGS.save_mode, "SIDECAR"
+    path = os.path.join(TMP, "unread", "off.blend")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    bpy.ops.wm.save_as_mainfile(filepath=path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    bpy.ops.hindsight.record_file(on=False)
+    a = bpy.data.objects["A"]
+    a.location.x += 1
+    L.tick_like("move")
+    bpy.ops.wm.save_mainfile()
+    auto = os.path.join(TMP, "unread", "autosave.blend")
+    hl = bpy.app.handlers
+    gone = [(lst, fn) for lst in (hl.save_pre, hl.save_post) for fn in (persistence.on_save_pre, persistence.on_save_post)
+            if fn in lst]
+    for lst, fn in gone:
+        lst.remove(fn)
     try:
-        path = os.path.join(TMP, "unread", "off.blend")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        bpy.ops.wm.save_as_mainfile(filepath=path)
-        bpy.ops.wm.open_mainfile(filepath=path)
-        bpy.ops.hindsight.record_file(on=False)
-        a = bpy.data.objects["A"]
-        a.location.x += 1
-        L.tick_like("move")
-        bpy.ops.wm.save_mainfile()
-        assert os.path.isdir(persist.sidecar_dir(path))
-        shutil.rmtree(persist.sidecar_dir(path))
-        bpy.ops.wm.open_mainfile(filepath=path)
-        assert runtime.missing_message[0], "the history didn't load"
-        assert not runtime.reg().everything and not datarec.file_tracked(), "nothing switched on"
+        bpy.ops.wm.save_as_mainfile(filepath=auto, copy=True)
     finally:
-        SETTINGS.save_mode = was
+        for lst, fn in gone:
+            lst.append(fn)
+    stored = H.stored_text(auto)
+    assert stored.get(persistence.DATA_PROP) == persist.STUB and persistence.PARTS_PROP not in stored, list(stored)
+    os.replace(auto, path)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert persistence.NO_PARTS_TEXT in [t for _s, t in runtime.load_notes], "the history didn't load"
+    assert not runtime.reg().everything and not datarec.file_tracked(), "nothing switched on"
 
 
 def test_a_crash_keeps_everything_switched_off():
@@ -222,8 +230,7 @@ def test_a_crash_keeps_everything_switched_off():
     from hindsight.bl import persistence
     from hindsight.core.types import SETTINGS
     L.fresh_scene()
-    was = SETTINGS.save_mode, SETTINGS.crash_recovery
-    SETTINGS.save_mode, SETTINGS.crash_recovery = "SIDECAR", "INTERRUPTED"
+    was, SETTINGS.crash_recovery = SETTINGS.crash_recovery, "INTERRUPTED"
     try:
         path = os.path.join(TMP, "crash_off", "off.blend")
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -243,7 +250,7 @@ def test_a_crash_keeps_everything_switched_off():
         assert h is not None and len(h.entries) == 1, "the saved step came back"
         assert not runtime.reg().everything and not datarec.file_tracked(), "still off"
     finally:
-        SETTINGS.save_mode, SETTINGS.crash_recovery = was
+        SETTINGS.crash_recovery = was
 
 
 def test_a_crash_after_one_switch_off_keeps_the_default_on_the_rest():
@@ -253,11 +260,11 @@ def test_a_crash_after_one_switch_off_keeps_the_default_on_the_rest():
     stays all off."""
     from hindsight.bl import persistence
     from hindsight.core.types import SETTINGS
-    was = SETTINGS.save_mode, SETTINGS.crash_recovery
+    was = SETTINGS.crash_recovery
     try:
         for off in ("A", "B", "file"):          # A's id is in the file, B's is given when it opens
             L.fresh_scene()
-            SETTINGS.save_mode, SETTINGS.crash_recovery = "SIDECAR", "INTERRUPTED"
+            SETTINGS.crash_recovery = "INTERRUPTED"
             path = os.path.join(TMP, "crash_one_off_" + off, "one.blend")
             os.makedirs(os.path.dirname(path), exist_ok=True)
             prefs.FORCE["record_scope"] = "SCULPT"
@@ -285,7 +292,7 @@ def test_a_crash_after_one_switch_off_keeps_the_default_on_the_rest():
             h = runtime.history_of(bpy.data.objects["A"])
             assert h is not None and len(h.entries) == 1, (off, "the saved stroke came back")
     finally:
-        SETTINGS.save_mode, SETTINGS.crash_recovery = was
+        SETTINGS.crash_recovery = was
         prefs.FORCE["record_scope"] = None
 
 
