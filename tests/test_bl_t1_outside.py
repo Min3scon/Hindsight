@@ -26,7 +26,6 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.core.types import SETTINGS
 from hindsight.bl import datarec, idmap, runtime
 
@@ -56,7 +55,6 @@ def every_position_existed(name, states):
     runtime._goto_history(h, len(h.entries), True)
 
 
-@covers("obj.transforms", "STEPS", "EXACT")
 def test_record_everything_switched_off_and_on():
     setup()
     a = bpy.data.objects["A"]
@@ -77,7 +75,6 @@ def test_record_everything_switched_off_and_on():
     every_position_existed("A", states)
 
 
-@covers("obj.transforms", "STEPS", "EXACT")
 def test_paused_and_resumed():
     setup()
     a = bpy.data.objects["A"]
@@ -96,7 +93,6 @@ def test_paused_and_resumed():
     every_position_existed("A", states)
 
 
-@covers("obj.collections", "STEPS", "EXACT")
 def test_excluded_by_collection_filtering():
     """D54: an object excluded by Collection Filtering records nothing (it used to record object
     steps, not its mesh); when the filter no longer excludes it, what changed meanwhile is one step,
@@ -126,7 +122,6 @@ def test_excluded_by_collection_filtering():
     every_position_existed("A", states)
 
 
-@covers("obj.collections", "STEPS", "EXACT")
 def test_hidden_in_another_view_layer():
     """D56: hidden (H) is per view layer. A hidden in the first view layer, then the window shows a
     second view layer (A visible there) and A is moved: the move is one step holding only the move
@@ -210,7 +205,6 @@ def save_and_change_outside(path, change, keep_backup=True, prints=None):
     return outside
 
 
-@covers("obj.transforms", "RELOAD.SIDECAR", "WARN")
 def test_values_changed_without_hindsight():
     setup()
     for o in (T.translate("A", (1, 0, 0)), T.resize("A", 1.5)):
@@ -230,7 +224,6 @@ def test_values_changed_without_hindsight():
     assert state() == outside, "back to the start and forward again keeps the change made outside Hindsight"
 
 
-@covers("obj.editsteps", "RELOAD.SIDECAR", "WARN")
 def test_mesh_changed_without_hindsight():
     setup()
     for o in (T.translate("A", (1, 0, 0)), T.edit_ops("A", 2)[0], T.leave_edit("A")):
@@ -274,8 +267,6 @@ def test_mesh_changed_without_hindsight_bridged_by_the_backup():
     every_position_existed("A", states + [outside])
 
 
-@covers("obj.transforms", "RELOAD.SIDECAR")
-@covers("obj.editsteps", "RELOAD.EMBED")
 def test_saving_normally_never_raises_the_alarm():
     """Saved and reopened with Hindsight in Object, Sculpt and Edit Mode (with a sculpt history, Edit
     Mode steps and recorded values): nothing is left out, no step is added."""

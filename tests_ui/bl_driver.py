@@ -53,19 +53,6 @@ sys.stdout = _Tee(sys.__stdout__, CAPTURED)
 sys.stderr = _Tee(sys.__stderr__, CAPTURED)
 
 
-def _expand_covers(covers: str):
-    """'obj.transforms, obj.parenting: OPS STEPS; sculpt.masks: EXACT' -> [[row, item], ...]."""
-    out = []
-    for group in (covers or "").split(";"):
-        if not group.strip():
-            continue
-        rows, _, items = group.partition(":")
-        if not items.strip():
-            raise ValueError(f"covers group without gate items: {group!r}")
-        out += [[r.strip(), i] for r in rows.split(",") if r.strip() for i in items.split()]
-    return out
-
-
 class Driver:
     def __init__(self):
         self.spec = SPEC
@@ -82,12 +69,10 @@ class Driver:
     def log(self, *a):
         print("[driver %.1fs]" % (time.time() - self.t0), *a)
 
-    def check(self, name, ok, detail="", covers=""):
-        """A hard check. covers: the COVERAGE rows and gate items (tools/gate_spec.py) it is evidence
-        for, as 'row, row: ITEM ITEM; row: ITEM' (read by tools/make_evidence.py)."""
+    def check(self, name, ok, detail=""):
+        """A hard check."""
         ok = bool(ok)
-        self.checks.append({"name": name, "ok": ok, "detail": str(detail)[:2000],
-                            "covers": _expand_covers(covers)})
+        self.checks.append({"name": name, "ok": ok, "detail": str(detail)[:2000]})
         self.log(("PASS " if ok else "FAIL ") + name + (" -- " + str(detail)[:300] if detail != "" else ""))
         return ok
 

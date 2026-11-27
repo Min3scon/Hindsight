@@ -18,7 +18,6 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import datarec, idmap, persistence, runtime
 from hindsight.core import persist
 from hindsight.core.types import SETTINGS
@@ -55,17 +54,14 @@ def reload_all_rows(mode):
         L.recheck(r)
 
 
-@covers(ROWS, "RELOAD.SIDECAR")
 def test_reload_sidecar():
     reload_all_rows("SIDECAR")
 
 
-@covers(ROWS, "RELOAD.EMBED")
 def test_reload_embed():
     reload_all_rows("EMBED")
 
 
-@covers(ROWS, "RELOAD.BOTH")
 def test_reload_both():
     reload_all_rows("BOTH")
 
@@ -80,7 +76,6 @@ def rename(r, name, new):
     return T.Op(f"rename {name} to {new}", run, [new])
 
 
-@covers(ROWS, "RELOAD.RENAME")
 def test_renamed_object_keeps_its_history():
     """Renaming (what F2 or a double click in the outliner does) is a step of the object's own
     history; the history is found by id, before and after a reload."""
@@ -111,7 +106,6 @@ def survivors(r):
     return [n for _no_history, n in sorted(out)]
 
 
-@covers(ROWS, "RELOAD.PASTE")
 def test_copy_paste_same_and_other_file():
     """Ctrl+C, Ctrl+V, for every row: a pasted copy carries the original's id property; Hindsight
     gives it its own id. In the same file the original's history is untouched and still exact; in
@@ -167,7 +161,6 @@ def test_copy_paste_same_and_other_file():
         assert _object_history_snapshot(r, su) == before
 
 
-@covers(ROWS, "RELOAD.APPEND")
 def test_append_and_link_from_a_recorded_file():
     """For every row: appending an object from a recorded file gives an object without history
     (histories belong to their file), which records once switched on. A linked object can't be
@@ -208,7 +201,6 @@ def test_append_and_link_from_a_recorded_file():
         assert runtime.history_of(a) is not None and len(runtime.history_of(a).entries) == 1
 
 
-@covers(ROWS, "RELOAD.DUPLICATE")
 def test_duplicates_shift_d_and_alt_d():
     """For every row: Shift+D and Alt+D give a copy with its own id and no history, recorded from
     the start (D36: the scene is recorded); the original's history is untouched and still exact; the

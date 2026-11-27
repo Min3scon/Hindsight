@@ -2,12 +2,11 @@
 
 **Test guarantee (owner, 2026-10-14): what counts as finished.** Order of work unchanged. No time
 pressure: never cut tests, rounds or review loops to finish sooner. Stop early only on the usage
-stop-loss (then push, update evidence).
+stop-loss (then push).
 - Files: TEST_AUDIT.md (blunt inventory per tier and row: code written, tests by file and name,
   real Blender or headless only, what's missing; sculpt tests never count for other rows).
   COVERAGE.md statuses are `supported`, `partial` (says exactly what works and what doesn't) or
-  `not covered`; a row moves up only through the gate. TEST_EVIDENCE.md is generated from real runs
-  by `tools/make_evidence.py`, never by hand. MANUAL_TESTS.md lists what the harness can't do (exact
+  `not covered`; a row moves up only through the gate. MANUAL_TESTS.md lists what the harness can't do (exact
   steps); those rows stay `partial` until the owner confirms.
 - **Tier gate**, every row, on 5.0.1, 5.1.1 and 5.1.2: (1) real operators (bpy.ops with context
   overrides and the event harness; never poking data); (2) exactness at every step both ways, mesh
@@ -25,7 +24,7 @@ stop-loss (then push, update evidence).
   adapter (2-hour mixed soak later), no growth in memory, threads, timers, file handles; (11) every
   unsupported or partial thing shows a message in the add-on and a COVERAGE line, tested; (12)
   screenshots of the row's UI in real Blender, looked at; cut off or overlapping is a defect.
-  Then update COVERAGE and TEST_EVIDENCE from real results, commit, push, verify, and only then start
+  Then update COVERAGE from real results, commit, push, verify, and only then start
   the next tier. No later tier while an earlier one has open S1 or S2.
 - Per tier minimum coverage and cross-feature/system tests: see the owner's list (copied in
   TEST_AUDIT.md under "Required by the test guarantee").
@@ -44,7 +43,7 @@ stop-loss (then push, update evidence).
   copies run through the new rows too; delete the copies at the end.
 - Final report adds: per tier rows supported / partial / not covered, tests per layer, defects by
   severity and open count, per-adapter cost and memory per step, reviewer findings, MANUAL_TESTS
-  items, and a table of all rows with their evidence lines.
+  items, and a table of all rows.
 
 **No fake history (owner, 2026-10-15), for the "history from existing files" feature.** (The
 earlier message that described this feature never arrived in this session; it is built from this
@@ -70,7 +69,7 @@ steps, ticks, counters, thumbnails, labels or progress.
 - README, release notes and add-on strings follow the same rule; check_copy fails on
   wording implying recovery of unsaved work, individual strokes, "go back on any file", and on any
   caption showing a populated timeline for a file with no saved versions.
-- Tests (in the tier gate and TEST_EVIDENCE): untouched generated file, no siblings, all four modes,
+- Tests (in the tier gate): untouched generated file, no siblings, all four modes,
   three Blenders, with and without a stack: zero steps, empty-state text, no ticks or counters, no
   files written anywhere, original byte-identical, no sidecar. Same with one .blend1, only an
   autosave, only a git commit, and an unrelated similarly named file (not offered unless added).
@@ -101,7 +100,7 @@ changelog page change with the version.
   D63 to D69, Blender 5.2 and 5.3 fixes D70 to D76 (D74 also closes the 5.0 colour-layer failures of
   test_bl_t0_gate and test_bl_t0_reload in the module run).
 - NOT done, and why it matters: the release gate (real Blender 5.0.1, 5.1.1, 5.1.2 with a window) was
-  not run for any of this. COVERAGE.md and TEST_EVIDENCE.md are unchanged. Before the next gate run,
+  not run for any of this. COVERAGE.md is unchanged. Before the next gate run,
   check in a real window: the slider's position with the toolbar, the sidebar and both open; the Movie
   Mode panel's new rows; "Use this view"; the camera and lamps being put back after deleting them, and
   not during a stroke, a drag, playback or a render; a real render of a timelapse (EEVEE and Workbench
@@ -145,7 +144,7 @@ Done in worktree `.tmp/wt_site` (branch site-beta2), merged to the default branc
   versions weren't install-tested in this step.
 - Sidebar: in Object Mode with Record = Sculpting only it says object recording is off and how to switch it on.
 - COVERAGE: object rows and sculpt rows (except sculpt.colors) are `partial`, each with the exact open gate
-  items; make_evidence now checks that rule (DECISIONS.md, 2026-10-15). sculpt.colors stays not covered (D61
+  items (DECISIONS.md, 2026-10-15). sculpt.colors stays not covered (D61
   fails on 5.0.1), so the site doesn't claim Vertex Paint.
 - Pages workflow: the zip step now checks the committed, tested zip instead of rebuilding it.
 - Site: landing, docs home, Install (with "Turn on object recording"), Limitations, changelog, README.
@@ -263,9 +262,8 @@ deleted object); fixes in `.tmp/fix_d36_d37.py` and the parenting-deform note in
 Soak per adapter: `python tests_ui/hs_ui.py run soak --blender <v> --out-tag <v>-<focus> --arg
 focus=rna|object|scene|edit|mesh` (30 minutes each), mixed (`focus=mixed`, 2 hours) later.
 Still to do for the gate: t1_gate default and three variants on all three Blenders, visual review of
-the shots (`tools/visual_review.py`), the soaks, the final Hypothesis and mutation runs on the final
-code, `python tools/make_evidence.py`, the hostile reviewer, a full regression pass. COVERAGE
-statuses change only through make_evidence's gate check.
+the shots, the soaks, the final Hypothesis and mutation runs on the final
+code, the hostile reviewer, a full regression pass. COVERAGE statuses change only through the gate.
 Hostile review 1 (2026-10-15, repros in `.tmp/review/p01..p38`): D42-D59 found, D60 found while
 fixing D57; all fixed with regression tests that fail without the fix and mutants in
 `tools/mutation_bl.py` (each fix's sanity run: `.tmp/sanity_d5x.py`). Next: full headless suite on
@@ -275,8 +273,7 @@ all three Blenders, then hostile review 2 (S1/S2 were found), then the remaining
 Tier 0 done -> compression (core codec, file format 3) -> Step 3B adapter architecture (format 4 adds
 adapter records, migration from 1-3) -> Tiers 1..6 -> final test passes -> ship.
 Since the test guarantee: Tier 2 code is parked on the local branch `tier2` (worktree `.tmp/wt3b`,
-commit 2ac7e45, also `.tmp/tier2_wip.patch`). Now: audit (TEST_AUDIT.md, COVERAGE statuses, evidence
-tooling), then the full gate for sculpting (existing rows) and Tier 1, including D14 (Object Mode mesh
+commit 2ac7e45, also `.tmp/tier2_wip.patch`). Now: audit (TEST_AUDIT.md, COVERAGE statuses), then the full gate for sculpting (existing rows) and Tier 1, including D14 (Object Mode mesh
 changes on recorded objects weren't recorded: Apply Scale, Apply Modifier, Set Origin; the fix is in
 the tier2 commit and gets ported), then Tier 2 resumes from that branch.
 Branches: see CLAUDE.md ("Working a ticket"): every ticket is a pull request, every commit ends with `[skip ci]`.

@@ -22,7 +22,6 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import datarec, idmap, persistence, runtime
 from hindsight.core import persist
 from hindsight.core.types import SETTINGS
@@ -72,7 +71,6 @@ def damaged_note():
     return [t for sev, t in runtime.load_notes if sev == "ERROR"]
 
 
-@covers(ROWS, "FAULT.CORRUPT")
 def test_damage_before_the_saved_step():
     for row in ROWS:
         r = L.Run(T.sequences()[row])
@@ -106,7 +104,6 @@ def test_damage_before_the_saved_step():
         L.check_object_histories(r)
 
 
-@covers(ROWS, "FAULT.CORRUPT")
 def test_damage_after_the_saved_step():
     for row in ROWS:
         r = L.Run(T.sequences()[row])

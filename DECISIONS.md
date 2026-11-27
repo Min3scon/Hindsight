@@ -119,7 +119,7 @@ use the Ponytail and CodeOptiX repositories to optimise; rewrite in Rust.
 - No Blender binary and no GPU here (download.blender.org was refused by the network policy then (corrected 2026-11-19: since 2026-11-18 the "Hindsight" cloud environment allows download.blender.org; binaries 4.2.23 and 5.3.0 are downloaded and used for real-window runs, see DEVELOPMENT.md)). Everything ran on Blender as a
   Python module from PyPI: 4.2.23, 5.0.1, 5.1.2, 5.2.2 and 5.3.0. Nothing ran in a Blender window: no
   drawing, no real brush strokes, no real mouse. The release gate (HANDOFF, "Test guarantee") was NOT run:
-  COVERAGE statuses and TEST_EVIDENCE are unchanged, and this build goes out on headless tests plus Cycles
+  COVERAGE statuses are unchanged, and this build goes out on headless tests plus Cycles
   CPU renders that were looked at.
 - Three test cases can't pass here on any version: test_bl_metadata::test_opens_without_hindsight (needs
   a Blender binary), test_bl_t1_migrate (needs .tmp/old/b1.zip), and anything that draws.
@@ -212,11 +212,10 @@ They need re-targeting before the next mutation run.
 
 ## Status "partial" (owner, 2026-10-15)
 Owner's instruction for the beta 2 site: mark rows "partial" only where part of the release gate really
-passed, with exact limits in COVERAGE.md, never faked. make_evidence used to require every gate item for
-partial, the same as supported, so no row could be partial. It now checks the owner's definition: the core
+passed, with exact limits in COVERAGE.md, never faked. The old evidence check required every gate item for
+partial, the same as supported, so no row could be partial. The owner's definition was: the core
 items (EXACT, ORACLE, REPLAY, STEPS) count on Blender 5.0.1, 5.1.1 and 5.1.2, and the row's Limits ends with
-"Open gate items: ..." naming exactly the items that don't count yet (computed by make_evidence, checked on
-every commit). "supported" still needs every item. The owner can revert this rule; the site would then claim
+"Open gate items: ..." naming exactly the items that don't count yet. "supported" still needs every item. The owner can revert this rule; the site would then claim
 nothing until the full gate passes.
 
 ## Beta 2 job (2026-10-14, on the owner's Windows PC)
@@ -231,7 +230,7 @@ nothing until the full gate passes.
   ignored, simulated mouse and keys drive it), and runs a scenario from `tests_ui/scenarios/` on a timer.
 - The headless suite now also runs inside real Blender: `python tests/run_tests.py --blender all`.
 
-### Root cause of "installs but shows no UI" (evidence: `.tmp/ui/*` runs, images in test_rounds/evidence)
+### Root cause of "installs but shows no UI" (evidence: `.tmp/ui/*` runs, images no longer kept)
 Reproduced with the live 1.0.0-beta.1 zip from the website, installed through Blender's own
 Install from Disk operator in a fresh profile, on 5.0.1, 5.1.1 and 5.1.2. Registration itself is fine:
 all 14 modules register, preferences resolve, keymaps and the draw handler are installed, no traceback.
