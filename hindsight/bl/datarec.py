@@ -792,11 +792,17 @@ def _data_diff(old: dict, new: dict) -> dict:
 
 def _moves_only(changes: dict) -> list:
     """The keys of changes that only come and go with ownership. An action that appears or goes
-    while the object starts or stops playing one (the first keyframe, D120) is a change of its own."""
+    while the object starts or stops playing one (the first keyframe, D120) is a change of its own, and so
+    is a material that appears or goes while its slots change (D163: made with a slot, it goes back with it)."""
     assigned = any(k[0] == "object" and adapters.assignment_path(k[1]) for k in changes)
+    slotted = ("object", "slots") in changes
     return [k for k, (a, b) in changes.items()
             if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])
-            and not (assigned and k[1].startswith(adapters.ACT_PREFIX))]
+            and not (assigned and k[1].startswith(adapters.ACT_PREFIX))
+            and not (slotted and k[1].startswith(_MAT_PATHS))]
+
+
+_MAT_PATHS = (adapters.MAT_PREFIX, adapters.MATP_PREFIX, adapters.MATA_PREFIX)
 
 
 def _owner_moves(st, changes: dict) -> None:
@@ -1139,7 +1145,8 @@ def sync_missing_refs(idb, st: MeshState, data_keys: dict) -> None:
     if not d:
         return
     cap = None
-    for _path, (_ref, aid, apath) in list(d.items()):
+    # D164: once per recorded value; two references it waits for (two slots) would set WANTED to the capture
+    for aid, apath in {(aid, apath) for _ref, aid, apath in d.values()}:
         if apath not in data_keys.get(aid, ()) or (aid, apath) not in st.values:
             continue
         if cap is None:
@@ -1450,6 +1457,7 @@ def forget() -> None:
     _RECENT.clear()
     _CLOCK.update(last=None, gap=0.0, batch=None)
     adapters.forget_materials()
+    adapters.loose.forget_snapshots()
     _BODIES.clear()
     _BODY_DIRTY.clear()
     _SCENE_UIDS.clear()

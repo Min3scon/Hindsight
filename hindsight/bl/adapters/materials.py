@@ -407,10 +407,31 @@ def _write_items(node, items: dict) -> None:
             set_struct_values(it, {k: x for k, x in w.items() if k not in ("socket_type", "data_type")})
 
 
-def write_material(muid: str, rec: dict) -> None:
+def _make_material_again(muid: str, rec: dict):
+    """D163: a material made with a slot that a jump took away going back: made again under its id (the
+    record, written next, holds its name and settings)."""
+    name = (rec.get("values") or {}).get("name")
+    if not isinstance(name, str):
+        return None
+    try:
+        m = bpy.data.materials.new(name)
+        if rec.get("tree") is not None and getattr(m, "node_tree", None) is None:
+            m.use_nodes = True              # Blender 4.2: a new material has no node tree
+        m[idmap.UID_PROP] = muid
+        idmap.note(m, muid)
+        return m
+    except Exception as e:
+        log.error_once(("mat_new", str(e)), f"could not make the material {name} again: {e}", e)
+        return None
+
+
+def write_material(muid: str, rec: dict, make: bool = False) -> None:
+    """make: a material slot's (D163); a world's record (scene, loose) never makes a Material."""
     m = idmap.find(muid)
     if m is None:
-        return
+        m = _make_material_again(muid, rec) if make else None
+        if m is None:
+            return
     _MAT_CACHE.pop(m.session_uid, None)
     _OBMAT_CACHE.clear()
     try:
@@ -529,16 +550,14 @@ def write_material_slots(ob, rec) -> None:
             oref = row[2] if len(row) > 2 else None
             sl = ob.material_slots[i]
             dm = idmap.find(dref) if dref else None
-            if dref and dm is None:
-                _note_ref(ob, f"data.materials[{i}]", dref, None, "object", "slots")
+            _note_ref(ob, f"data.materials[{i}]", dref, dm, "object", "slots")   # D60: noted, or forgotten
             if mats[i] != dm:
                 mats[i] = dm                      # the mesh's material (also behind an object link)
             if sl.link != link:
                 sl.link = link
             if link == "OBJECT":
                 om = idmap.find(oref) if oref else None
-                if oref and om is None:
-                    _note_ref(ob, f"material_slots[{i}].material", oref, None, "object", "slots")
+                _note_ref(ob, f"material_slots[{i}].material", oref, om, "object", "slots")
                 if sl.material != om:
                     sl.material = om
         if 0 <= int(active) < len(ob.material_slots) and ob.active_material_index != int(active):

@@ -148,7 +148,8 @@ class HINDSIGHT_OT_record_file(bpy.types.Operator):
     bl_idname = "hindsight.record_file"
     bl_label = "Record Everything in This File"
     bl_description = ("Record everything on every object in this file, and objects being added and deleted. "
-                      "Objects added later are recorded too. Needs Record set to Everything")
+                      "Objects added later are recorded too. Needs Record set to Everything. Never recorded: "
+                      "data linked from another .blend file, files on disk and Blender's preferences")
     bl_options = {'REGISTER'}
 
     on: bpy.props.BoolProperty(default=True, options={'SKIP_SAVE'})

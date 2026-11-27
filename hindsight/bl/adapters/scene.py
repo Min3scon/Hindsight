@@ -12,7 +12,7 @@ from .idprops import anim_of, id_props, write_anim_of, write_id_props
 from .keys import (
     ANIMATED, COLL_SETTINGS, COMP_TREE, INV_GROUPS, LOOSE_PREFIXES, META_PREFIX, NGA_PREFIX, NG_PREFIX,
     WORLDP_PREFIX, WORLD_PREFIX)
-from .loose import _make_loose_again, _queue_loose_removals, scene_loose, write_loose
+from .loose import _make_loose_again, _queue_left_action, _queue_loose_removals, _snapshots_back, scene_loose, write_loose
 from .materials import capture_tree, group_owner_map, group_record, write_group, write_material, write_tree
 from .objects import _recreate_object, _remove_object
 
@@ -63,6 +63,7 @@ class SceneAdapter(Adapter):
         for path, v in values.items():          # D151: data no object or scene uses
             if path.startswith(LOOSE_PREFIXES):
                 write_loose(path, v)
+        _snapshots_back(values, recorded, replace=True)     # D154: what still differs from its snapshot
         for path, v in values.items():          # D146: and their animation
             if path.startswith(NGA_PREFIX) and isinstance(v, dict):
                 ng = idmap.find(path[len(NGA_PREFIX):])
@@ -81,10 +82,12 @@ class SceneAdapter(Adapter):
         if COLL_SETTINGS in values and values[COLL_SETTINGS] is not MISSING:
             write_collection_settings(idb, values[COLL_SETTINGS])
         if "objects" not in values or values["objects"] is MISSING or recorded is None:
+            _snapshots_back(values, recorded, colls=True)
             return
         want = set(values["objects"])
         have = {idmap.uid_of(o): o for o in idb.objects if not rigmark.is_rig(o)}   # never removes those
         for uid in sorted(set(have) - want):
+            _queue_left_action(have[uid], recorded)
             _remove_object(have[uid])
         made = []
         for uid in sorted(want - set(have)):
@@ -97,6 +100,9 @@ class SceneAdapter(Adapter):
                 if par is not None:
                     ob.parent = par
                     ob.matrix_parent_inverse = to_rna(body["parent_inverse"])
+        _snapshots_back(values, recorded, colls=True)     # D179: collections after the objects they hold
+
+
 _SCENE_SKIP = frozenset(_UI_PROPS | {
     "name", "use_fake_user", "use_extra_user", "is_runtime_data", "tag", "asset_data", "annotation",
     "frame_current", "frame_subframe", "frame_float", "time_jump_unit", "time_jump_delta",
