@@ -143,7 +143,7 @@ def extents(points, basis, tan_x, tan_y, chunk: int = 65536):
     x,y,z = points @ basis; None when there are no finite points. `basis` may be any 3x3 matrix
     (see `shifted`). R085: measured by the engine in one pass (`extents_into`), the product written
     out left to right in float64 (numpy's matmul went through BLAS: the last bits may differ from
-    before); tests/reference/framing.py has the numpy version it equals. `chunk` is unused (kept for
+    before); tests/reference/framing_extents.py has the numpy version it equals. `chunk` is unused (kept for
     callers): nothing is copied."""
     p = _flat_points(points)
     if p is None:

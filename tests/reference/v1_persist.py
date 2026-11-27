@@ -39,7 +39,7 @@ import zlib
 
 import numpy as np
 
-from .journal import atomic_write, atomic_write_json
+from .v1_journal import atomic_write, atomic_write_json
 from hindsight.core.types import Entry
 
 REG_MAGIC = b"HSR1"

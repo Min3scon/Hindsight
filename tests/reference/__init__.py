@@ -10,7 +10,7 @@ import contextlib
 @contextlib.contextmanager
 def pure():
     """Run a block with hindsight.core.delta's functions replaced by the reference (numpy) ones.
-    (History: use reference.history.History, which crosses steps one at a time in Python.)"""
+    (History: use reference.history_goto.History, which crosses steps one at a time in Python.)"""
     from hindsight.core import delta
     from . import delta as ref
     names = ("diff", "apply", "pack_delta", "unpack_delta", "unpack_at")   # packed_size is only in the reference

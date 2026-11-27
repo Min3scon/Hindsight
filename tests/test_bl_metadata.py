@@ -30,7 +30,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.reference import persist as v1_persist   # V1's folder writer, for V1 files
+from tests.reference import v1_persist   # V1's folder writer, for V1 files
 from hindsight.bl import camrig, cleanup, datarec, persistence, prefs, rigmark, runtime
 from hindsight.core import persist
 

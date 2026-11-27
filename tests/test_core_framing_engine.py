@@ -1,7 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import tests.runner as RN
 """R085: the Movie Mode camera's extents are measured by the engine (`extents_into`): bit for bit the numpy
-reference (tests/reference/framing.py `extents`, the product written out left to right) on random points of both
+reference (tests/reference/framing_extents.py `extents`, the product written out left to right) on random points of both
 float types with NaN, infinite and overflowing rows, any 3x3 basis, a subset by index; equal to the numpy code
 from before R085 (BLAS) to the last bits; the history walk equal to the old walk the same way; and its refusals."""
 import numpy as np
@@ -9,7 +9,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(__file__))
 from hindsight.core import framing as F  # noqa: E402
 from hindsight.core.native import ENGINE  # noqa: E402
-from reference import framing as R  # noqa: E402
+from reference import framing_extents as R# noqa: E402
 
 
 def same(a, b):

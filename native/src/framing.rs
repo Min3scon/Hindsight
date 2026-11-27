@@ -4,7 +4,7 @@
 //! For each basis b and its tangents (tx, ty), each point p gives x, y, z = p @ b and the extents are
 //! [max(x + z*tx), max(z*tx - x), max(y + z*ty), max(z*ty - y), min z, max z]; a row whose x, y or z isn't finite
 //! is left out for that basis. Here p @ b is p0*b0j + p1*b1j + p2*b2j, left to right, in float64, as the
-//! Python reference (tests/reference/framing.py) writes it with numpy's elementwise operations. numpy's
+//! Python reference (tests/reference/framing_extents.py) writes it with numpy's elementwise operations. numpy's
 //! matmul, used before, goes through BLAS, whose sums are fused and ordered its own way: the extents differ
 //! from it in the last bits only.
 

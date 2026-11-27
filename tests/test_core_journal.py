@@ -20,7 +20,7 @@ from hindsight.core.types import (
     POSITION_KEY, MASK_KEY, HIDE_VERT_KEY, FACE_SET_KEY,
     EDGE_VERTS_KEY, CORNER_VERT_KEY, CORNER_EDGE_KEY, FACE_OFFSETS_KEY,
 )
-from tests.reference.persist import save_sidecar    # V1's folder writer: no V2 code writes one (#53)
+from tests.reference.v1_persist import save_sidecar  # V1's folder writer: no V2 code writes one (#53)
 
 FORCE_STANDINS = os.environ.get("HS_STANDINS") == "1" or "--standins" in sys.argv
 STANDINS = []

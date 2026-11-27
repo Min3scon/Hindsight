@@ -3,7 +3,7 @@
 History.goto hands runs of packed DELTA steps of one object to hindsight_native.apply_steps, which
 applies them in Rust and stops before any step it doesn't take; goto crosses that step in Python.
 Every test here runs the same jumps on twin histories, once with the engine (apply_steps) and once
-with tests/reference/history.py (the Python loop, one step at a time), and compares after each jump: the
+with tests/reference/history_goto.py (the Python loop, one step at a time), and compares after each jump: the
 cursor, the changed keys per object (and the order of the objects), every array (dtype, shape,
 bytes), the removed channels, the recorded values, and any exception (type and message).
 
@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import test_core_codec as tc                                     # noqa: E402  (damaged-blob maker)
 from hindsight.core import codec, delta, native, step as stepmod   # noqa: E402
 from hindsight.core.history import History, MeshState           # noqa: E402
-from reference.history import History as RefHistory                # noqa: E402
+from reference.history_goto import History as RefHistory              # noqa: E402
 from hindsight.core.types import (                              # noqa: E402
     ADD, CHANNEL_TYPES, DATA, DELTA, MISSING, POSITION_KEY, TOPO, XOR,
     ChannelDelta, DataChange, Entry, Snapshot, Step, key_dtype, key_width, make_key,

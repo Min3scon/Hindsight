@@ -14,7 +14,7 @@ from hindsight.core.types import (
 )
 
 sys.path.insert(0, os.path.dirname(__file__))   # tests/: the reference copies (Blender's --python adds no path)
-from reference import framing as RF  # noqa: E402
+from reference import framing_extents as RF  # noqa: E402
 
 A, B = "objA", "objB"
 

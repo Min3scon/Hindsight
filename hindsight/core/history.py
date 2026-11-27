@@ -282,7 +282,7 @@ class History:
         """The loop of goto: consecutive packed DELTA steps of one object are crossed by one engine
         call (apply_steps), which stops before any step it doesn't take (other kinds and formats,
         extras, channels that appear or go, damage); that step is then crossed here, one at a time,
-        so results and exceptions are those of tests/reference/history.py. The engine call releases
+        so results and exceptions are those of tests/reference/history_goto.py. The engine call releases
         the GIL; its helper threads (decompressing ahead) run no Python, so they don't compete with
         Blender's main thread for the interpreter as Python threads did. Steps of an object that is
         not being moved are skipped without being decoded."""
