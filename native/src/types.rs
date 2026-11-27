@@ -11,6 +11,11 @@ use pyo3::prelude::*;
 use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyDict, PyList, PyModule, PyString, PyTuple};
 use pyo3::PyTypeInfo;
+use pyo3::{PyTraverseError, PyVisit};
+
+// The cycle collector sees what each object holds, as it does through a dataclass (gc.get_referents, cycles freed).
+macro_rules! gc_visit { ($v:ident, $s:ident; $($f:ident),*) => {{ $($v.call(&$s.$f)?;)* Ok(()) }} }
+macro_rules! gc_clear { ($s:ident; $($f:ident),*) => { Python::with_gil(|py| { $($s.$f = py.None();)* }) } }
 
 const FALLBACK: &str = r#"
 from dataclasses import dataclass, field
@@ -266,6 +271,8 @@ impl ChannelDelta {
     fn __richcmp__(slf: &Bound<'_, Self>, o: &Bound<'_, PyAny>, op: CompareOp) -> PyResult<PyObject> { dc_cmp(slf.as_any(), o, op, "ChannelDelta") }
     fn __repr__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { dc_repr(slf.as_any(), "ChannelDelta") }
     fn __reduce__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { reduce(slf.as_any(), CD) }
+    fn __traverse__(&self, v: PyVisit<'_>) -> Result<(), PyTraverseError> { gc_visit!(v, self; key, idx, vals, exists, op) }
+    fn __clear__(&mut self) { gc_clear!(self; key, idx, vals, exists, op) }
 }
 
 // --------------------------------------------------------------------------- Snapshot
@@ -313,6 +320,8 @@ impl Snapshot {
     fn __richcmp__(slf: &Bound<'_, Self>, o: &Bound<'_, PyAny>, op: CompareOp) -> PyResult<PyObject> { dc_cmp(slf.as_any(), o, op, "Snapshot") }
     fn __repr__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { dc_repr(slf.as_any(), "Snapshot") }
     fn __reduce__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { reduce(slf.as_any(), SN) }
+    fn __traverse__(&self, v: PyVisit<'_>) -> Result<(), PyTraverseError> { gc_visit!(v, self; counts, arrays) }
+    fn __clear__(&mut self) { gc_clear!(self; counts, arrays) }
 }
 
 // --------------------------------------------------------------------------- MISSING, DataChange
@@ -382,6 +391,8 @@ impl DataChange {
     fn __richcmp__(slf: &Bound<'_, Self>, o: &Bound<'_, PyAny>, op: CompareOp) -> PyResult<PyObject> { dc_cmp(slf.as_any(), o, op, "DataChange") }
     fn __repr__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { dc_repr(slf.as_any(), "DataChange") }
     fn __reduce__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { reduce(slf.as_any(), DC) }
+    fn __traverse__(&self, v: PyVisit<'_>) -> Result<(), PyTraverseError> { gc_visit!(v, self; adapter, target, changes) }
+    fn __clear__(&mut self) { gc_clear!(self; adapter, target, changes) }
 }
 
 // --------------------------------------------------------------------------- Step
@@ -457,6 +468,10 @@ impl Step {
     fn __richcmp__(slf: &Bound<'_, Self>, o: &Bound<'_, PyAny>, op: CompareOp) -> PyResult<PyObject> { dc_cmp(slf.as_any(), o, op, "Step") }
     fn __repr__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { dc_repr(slf.as_any(), "Step") }
     fn __reduce__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { reduce(slf.as_any(), ST) }
+    fn __traverse__(&self, v: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        gc_visit!(v, self; seq, label, mode, target, time, kind, deltas, before, after, extra, records)
+    }
+    fn __clear__(&mut self) { gc_clear!(self; seq, label, mode, target, time, kind, deltas, before, after, extra, records) }
 }
 
 // --------------------------------------------------------------------------- Slice
@@ -541,6 +556,8 @@ impl Slice {
     #[classattr]
     fn __slots__(py: Python<'_>) -> PyObject { slots(py, SL) }
     fn __reduce__(slf: &Bound<'_, Self>) -> PyResult<PyObject> { reduce(slf.as_any(), SL) }
+    fn __traverse__(&self, v: PyVisit<'_>) -> Result<(), PyTraverseError> { gc_visit!(v, self; part, off, n) }
+    fn __clear__(&mut self) { gc_clear!(self; part, off, n) }
 }
 
 // --------------------------------------------------------------------------- Entry
@@ -714,6 +731,9 @@ impl Entry {
         let state = (s.meta.clone_ref(py), s.step.clone_ref(py), s.bc.clone_ref(py), s.nb.clone_ref(py));
         Ok((slf.get_type(), PyTuple::empty_bound(py), state).into_py(py))
     }
+
+    fn __traverse__(&self, v: PyVisit<'_>) -> Result<(), PyTraverseError> { gc_visit!(v, self; meta, step, bc, nb) }
+    fn __clear__(&mut self) { gc_clear!(self; meta, step, bc, nb) }
 
     fn __setstate__(slf: &Bound<'_, Self>, state: (PyObject, PyObject, PyObject, PyObject)) {
         let mut s = slf.borrow_mut();

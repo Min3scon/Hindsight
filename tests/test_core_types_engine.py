@@ -168,6 +168,42 @@ def test_eq_hash_copy_pickle():
         assert equiv._diff(plain(c.meta), plain(e.meta)) is None
 
 
+def test_gc_sees_what_each_holds():
+    """The cycle collector reaches what an object holds, as through the dataclass: the held-bytes walk of
+    test_core_format5_once (gc.get_referents) finds it, and a cycle through the object is freed."""
+    import gc, weakref
+
+    class W:
+        pass
+
+    def reach(o, x):
+        todo, seen = [o], set()
+        for _ in range(3):              # the object, its __dict__ or slots, their values
+            nxt = []
+            for y in todo:
+                if y is x:
+                    return True
+                if id(y) not in seen and not isinstance(y, type):
+                    seen.add(id(y))
+                    nxt += gc.get_referents(y)
+            todo = nxt
+        return any(y is x for y in todo)
+
+    def held_and_freed(mod, t):
+        w = W()
+        n = {"Step": 4, "Entry": 3}.get(t, len(NAMES.get(t, "abc")))
+        o = getattr(mod, t)(*({"Entry": [None, None, w], "Slice": [w, 0, 1]}.get(t) or [w] * n))
+        found = reach(o, w)
+        w.o, r = o, weakref.ref(w)
+        del o, w
+        gc.collect()
+        return found, r() is None
+
+    for t in ("ChannelDelta", "Snapshot", "DataChange", "Step", "Slice", "Entry"):
+        same(lambda: held_and_freed(RT, t), lambda: held_and_freed(T, t))
+        assert held_and_freed(RT, t) == (True, True), t
+
+
 def test_key_helpers():
     for k in ("position|POINT|FLOAT_VECTOR", "a|b|c|INT8", "|FACE|INT", "a|b", "", "x|y|NOPE", 5, None, b"a|b|c"):
         for fn in ("split_key", "key_dtype", "key_width"):
@@ -292,7 +328,7 @@ def test_random_and_hostile_steps():
 
 
 for t in (test_names_are_the_engines, test_settings_is_a_dataclass, test_constructors_and_methods,
-          test_eq_hash_copy_pickle, test_key_helpers, test_slice_and_entry, test_corpus_steps,
+          test_eq_hash_copy_pickle, test_gc_sees_what_each_holds, test_key_helpers, test_slice_and_entry, test_corpus_steps,
           test_random_and_hostile_steps):
     H.run(t)
 H.finish()

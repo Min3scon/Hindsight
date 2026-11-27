@@ -19,10 +19,6 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import native as _native
-
-_N = _native.ENGINE
-
 # data_type -> (numpy native dtype, width per element, foreach property name)
 CHANNEL_TYPES = {
     "FLOAT": (np.float32, 1, "value"),
@@ -66,12 +62,17 @@ JOIN = "JOIN"     # join of several objects; extra holds join info; before/after
 DATA = "DATA"     # data records only (adapters other than the mesh recorder)
 
 
-make_key, split_key, key_dtype, key_width, bits_dtype = (_N.make_key, _N.split_key, _N.key_dtype, _N.key_width,
-                                                      _N.bits_dtype)
-ChannelDelta, Snapshot, DataChange, Step, Slice, Entry = (_N.ChannelDelta, _N.Snapshot, _N.DataChange, _N.Step,
-                                                          _N.Slice, _N.Entry)
-MISSING = _N.MISSING        # a path that doesn't exist on one side of a change (a constraint added, a key removed)
-_N.types_setup(CHANNEL_TYPES, BITS_DTYPE, __package__ + ".step")
+try:
+    from .native import ENGINE as _N
+except ImportError:     # EngineMissing: Settings and the tables still import (prefs.py), so the add-on can say why
+    _N = None
+if _N is not None:
+    make_key, split_key, key_dtype, key_width, bits_dtype = (_N.make_key, _N.split_key, _N.key_dtype,
+                                                          _N.key_width, _N.bits_dtype)
+    ChannelDelta, Snapshot, DataChange, Step, Slice, Entry = (_N.ChannelDelta, _N.Snapshot, _N.DataChange, _N.Step,
+                                                              _N.Slice, _N.Entry)
+    MISSING = _N.MISSING    # a path that doesn't exist on one side of a change (a constraint added, a key removed)
+    _N.types_setup(CHANNEL_TYPES, BITS_DTYPE, __package__ + ".step")
 
 
 @dataclass
