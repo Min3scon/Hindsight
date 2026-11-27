@@ -1,4 +1,4 @@
-"""Step encoding: adversarial round trips and damaged input.
+"""Step encoding, tested with adversarial round trips and damaged input.
 
 Round trips: random and awkward data (NaN payloads, -0, denormals, infinities, extreme integers,
 an empty step, one element, every element, huge index gaps, smooth and noisy runs) through every
