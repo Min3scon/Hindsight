@@ -7,11 +7,9 @@ no Python fallback for those. If the module cannot be loaded, importing this fil
 EngineMissing with the reason, and so does importing anything that needs the engine.
 
 ENGINE   the module (always set when this file imported)
-lib      the same module (kept for callers that ask whether it is there)
 
 Nothing in the shipped add-on has a Python path any more: delta.py, step.py, codec.py and
-history.py call the engine. The Python versions are in tests/reference/. HINDSIGHT_NATIVE is read
-by nobody (CI sets it to "require", which is what happens anyway).
+history.py call the engine. The Python versions are in tests/reference/.
 """
 from __future__ import annotations
 
@@ -48,6 +46,3 @@ def _load():
 
 ENGINE = _load()
 crc32 = ENGINE.crc32        # zlib.crc32 (same values, any buffer, an optional start value), about 10x faster
-ERROR = None
-lib = ENGINE
-AVAILABLE = True

@@ -71,14 +71,12 @@ def _history_lines():
 
 
 def _engine_line() -> str:
-    """Which engine finds changes and applies steps: the Rust one, or the Python one it falls back to."""
+    """Whether the Rust engine loaded (importing it raises EngineMissing when it did not)."""
     try:
-        from ..core import native
-        if native.AVAILABLE:
-            return "Engine: Rust"
-        return "Engine: Python (" + (native.ERROR or "the Rust engine isn't installed for this system") + ")"
+        from ..core import native  # noqa: F401
+        return "Engine: Rust"
     except Exception as e:
-        return f"Engine: Python ({e})"
+        return f"Engine: missing ({e})"
 
 
 def diagnostics_text() -> str:
