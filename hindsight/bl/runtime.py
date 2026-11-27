@@ -997,6 +997,7 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
         for ok_, idx, inverse, move in ((fwd, back) if UNDO_DIRECTION[0] == "redo" else (back, fwd)):
             if ok_ and _inverse_matches(step, h.entries[idx].load(), st, inverse):
                 h.cursor += move
+                UNDO_MOVES[0] += 1
                 _apply_to_state(st, step)
                 if inverse:
                     _LAST_UNDO_MATCH[0] = time.time()
@@ -1303,19 +1304,23 @@ def _tick_once() -> bool:
         multires.tick(ob_)
     if _DIRTY and stroke_running():
         return painting   # never split a stroke, even if a slow modifier stack pauses its updates
+    _commit_dirty(DEBOUNCE)
+    return painting
+
+
+def _commit_dirty(wait: float) -> None:
     now = time.time()
     for uid, t in list(_DIRTY.items()):
         # A stroke that has finished is committed at once, so quick strokes stay separate steps.
         # Changes without a stroke operator (filters run from a menu, scripts) wait for the
         # updates to settle.
-        if uid in _STROKE_SEEN or now - t >= DEBOUNCE:
+        if uid in _STROKE_SEEN or now - t >= wait:
             ob = find_object(uid)
             if ob is None or not _mode_recorded(ob.mode):
                 _DIRTY.pop(uid, None)
                 _STROKE_SEEN.discard(uid)
                 continue
             commit(ob)
-    return painting
 
 
 # R069: a baseline's topology (edge and corner indices: about 50 MB at 1M vertices) is packed on a helper
@@ -1399,7 +1404,8 @@ def tick() -> float:
     except Exception as e:
         log.error_once(("datarec_tick", str(e)), f"data recorder error: {e}", e)
     try:
-        from . import camrig
+        from . import camrig, movie
+        movie.follow_new_steps()
         camrig.tick()
     except Exception as e:
         log.error_once(("camrig_tick", str(e)), f"Movie Mode camera error: {e}", e)
@@ -1408,6 +1414,7 @@ def tick() -> float:
 
 OP_GROUP = [None]             # [first step number] while one operator's changes are recorded (D52)
 UNDO_DIRECTION = ["undo"]      # which way Blender's last undo or redo went (see commit, datarec.on_undo)
+UNDO_MOVES = [0]               # histories moved by Blender's undo or redo: Movie Mode's Step value follows (#107)
 
 
 @persistent
@@ -1631,6 +1638,8 @@ def goto(context, pos: int, final: bool = True) -> None:
         return
     if _PAUSED:
         end_paused(now=True)                 # D153: a paused Dyntopo visit is a step before any jump
+    _commit_dirty(0.0)                       # #107: so is a change still waiting to settle (a filter)
+    datarec.flush_pending()
     if use_global(context):
         global_goto(context, pos, final)
     else:

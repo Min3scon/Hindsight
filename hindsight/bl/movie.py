@@ -15,7 +15,8 @@ from . import guard, runtime
 
 DATA_PATH = "hindsight.movie_step"
 _BUSY = [False]   # re-entrancy guard (goto / keying write meshes and the Step value)
-_SHOWN = {}       # the Step value last applied, what that jump was planned from, the whole frame it was for
+_SHOWN = {}       # the Step value last applied, what that jump was planned from, the whole frame it was for,
+                  # the next step number then
 
 
 def _takes_vis(fn) -> bool:
@@ -64,6 +65,19 @@ def _histories_now() -> tuple:
     return _histories_key(frozenset(runtime._visible_uids()))
 
 
+def _seq() -> tuple:
+    """What a recorded step changes, and what Blender's undo / redo changes (a cursor, no new step number)."""
+    r = runtime.reg()
+    return (id(r), r.next_seq, runtime.UNDO_MOVES[0])
+
+
+def _recorded_since(want) -> bool:
+    """True if, in the same registry, steps were recorded or Blender's undo / redo moved a history since
+    the Step value `want` was last applied."""
+    then, now = _SHOWN.get("seq"), _seq()
+    return want == _SHOWN.get("want") and then is not None and then[0] == now[0] and then[1:] != now[1:]
+
+
 def _apply(context, value) -> bool:
     """Move the global timeline to `value` if Movie Mode is active. True if it moved.
 
@@ -91,8 +105,17 @@ def _apply(context, value) -> bool:
     if not groups:
         return False
     target = max(0, min(want, len(groups)))
+    if _recorded_since(want):
+        # #107: a step recorded with Movie Mode on (a stroke at the end) stays shown and the Step value
+        # follows it; jumping back would let the next change throw it away. An undo of it sticks the same way
+        want = target = pos
+        _BUSY[0] = True
+        try:
+            sh.id_data.hindsight.movie_step = pos      # sh is a read-only proxy in the frame handler
+        finally:
+            _BUSY[0] = False
     if target == pos:
-        _SHOWN.update(want=want, histories=_histories_key(vis))
+        _SHOWN.update(want=want, histories=_histories_key(vis), seq=_seq())
         return False
     prev = getattr(runtime.goto, "_movie", False)
     _BUSY[0] = True
@@ -109,7 +132,7 @@ def _apply(context, value) -> bool:
         runtime.IN_HANDLER[0] = False
         _BUSY[0] = False
     _lamps_follow(context.scene)
-    _SHOWN.update(want=want, histories=_histories_key(vis))
+    _SHOWN.update(want=want, histories=_histories_key(vis), seq=_seq())
     return True
 
 
@@ -134,6 +157,15 @@ def on_step_changed(context) -> None:
     sh = _props(context.scene)
     if sh is not None:
         _apply(context, sh.movie_step)
+
+
+@guard.guarded("movie")
+def follow_new_steps() -> None:
+    """#107: the timer moves the Step value onto steps recorded while Movie Mode is on, so it says what
+    the scene shows (a frame change that comes first does the same)."""
+    sh = _props(bpy.context.scene)
+    if _active(sh) and _recorded_since(sh.movie_step) and not bpy.app.is_job_running('RENDER'):
+        _apply(bpy.context, sh.movie_step)      # not while a render reads the scene: after it
 
 
 @persistent

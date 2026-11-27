@@ -638,12 +638,13 @@ def _last_label(default: str = "Change") -> str:
 
 
 @guard.guarded("datarec")
-def tick() -> None:
+def tick(flush: bool = False) -> None:
     """Called from the runtime timer: commit when an operation has ended. When an operator finishes,
     every tracked datablock is compared (some operators, such as hiding in the viewport, don't send
-    the object an update); otherwise only those that changed, once changes settle."""
+    the object an update); otherwise only those that changed, once changes settle. flush (before a
+    jump, which runs suspended): changes are recorded without waiting for them to settle."""
     rt = _rt()
-    if rt._SUSPEND[0] or _operation_running():
+    if not flush and (rt._SUSPEND[0] or _operation_running()):
         return
     idle = not any_tracked()
     if not idle:
@@ -657,7 +658,7 @@ def tick() -> None:
         _OPS["marker"] = marker
     if not _DIRTY and not finished:
         return
-    settled = bool(_DIRTY) and _now() - max(_DIRTY.values()) >= _settle_time()
+    settled = bool(_DIRTY) and (flush or _now() - max(_DIRTY.values()) >= _settle_time())
     if finished or settled:
         prev = _OPS["marker"]
         _OPS["marker"] = marker
@@ -853,6 +854,14 @@ def _mesh_step(ob, uid: str, label: str):
         return None
     deep = "corners" if len(ob.data.vertices) <= OBJECT_DEEP_MAX else False
     return rt._observe(ob, st, True, label, "OBJECT", deep=deep)
+
+
+@guard.guarded("datarec")
+def flush_pending() -> None:
+    """#107: an operator that ended since the timer last ran, or a change still waiting to settle, is
+    recorded before a jump moves any history. Kept for later, it would count as made at the new
+    position and throw away every step after it."""
+    tick(flush=True)
 
 
 @guard.guarded("datarec")
@@ -1420,6 +1429,8 @@ def _on_undo(direction: str):
         st.values = vals
         if mesh_step is not None:
             rt._apply_to_state(st, mesh_step)
+    if moved:
+        rt.UNDO_MOVES[0] += 1
     _DIRTY.clear()
     _MESH_DIRTY.clear()
     rt.tag_redraw_all()
