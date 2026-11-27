@@ -5,7 +5,7 @@ Design for #41, part of #7 ("Design the history's new layout inside the .blend")
 exactly, Blender's in-memory copy is dropped after opening and put back while saving (#9), and V1 keeps a format 5
 history untouched and opens the .blend without it. Other parts of #7 build on this one: how a step's encoding carries a
 version (#42), how a damaged part is found and what survives it (#43), the crash journal (#44), moving V1's formats 1
-to 4 in (#45), and what opening costs at 100,000 steps (#46).
+to 4 in (#45), and what opening costs at 100,000 steps (#46). `dev/FORMAT5.md` (#47) puts them together.
 
 Every number below was measured, and "How it was measured" at the end says how, or it is marked as an estimate or a
 choice.
@@ -29,6 +29,7 @@ Text ".hindsight_history"   fake user; V1's container, kept as it is
 ├─ sidecar                  False                                         always in the file and in memory
 └─ hindsight_parts          group                                         in the saved file, and in memory only
    ├─ index                 bytes: the index part                         while a save runs
+   ├─ index_copy            bytes: the same index part again (#43)
    ├─ <history uid>         group, one per history (a uid is 16 hex characters)
    │  ├─ "0"                bytes: full step part (about 4 MiB)
    │  ├─ "1"                bytes: full step part
@@ -52,7 +53,13 @@ Text ".hindsight_history"   fake user; V1's container, kept as it is
 - **A step part** holds a header and then its packed steps back to back. The header gives the number of the first step,
   and for each step its length, its CRC-32 and the step's meta (label, kind, sequence number and so on). In V1 the metas
   of every step sit in the one JSON header and are written again at every save; here each meta is written with its
-  step and stays there. What a step's bytes look like, and how their encoding is versioned, is #42.
+  step and stays there. What a step's bytes look like, and how their encoding is versioned, is in
+  `dev/FORMAT5_ENCODINGS.md` (#42).
+
+How each part is checked when the file opens, what survives a damaged one, and what that adds to this layout (a
+second copy of the index part, and a CRC-32 on each step part's step table and metas) is in `dev/FORMAT5_DAMAGE.md`
+(#43). How the crash journal fits around saving and opening, and what a file recovered from Blender's autosave does,
+is in `dev/FORMAT5_JOURNAL.md` (#44).
 
 ### How a history is split into step parts
 
@@ -92,7 +99,8 @@ In format 5:
 - **Opening** (`load_post`): Hindsight reads the index part, then reads each step part and deletes Blender's copy of it
   straight away, then deletes the group. The stub and `sidecar` stay. Reading part by part, the memory above the
   opened file peaked at 4 MB (one part), against 257 MB when every part is read first and the group deleted after
-  (256 MB in 64 parts, 4.2 and 5.3). What opening costs at 100,000 steps is #46.
+  (256 MB in 64 parts, 4.2 and 5.3). What opening costs at 100,000 steps is in
+  `dev/FORMAT5_OPENING.md` (#46).
 - **Between saves**: Blender holds only the stub and `sidecar`. Blender's autosave therefore writes a file without
   the history parts (the accepted cost in `DECISIONS.md`); V2 knows such a file by the stub without a
   `hindsight_parts` group.
@@ -155,7 +163,8 @@ before. In the folder and both modes the build wrote its own history folder and 
 
 What this leaves for #45: a file V2 saved, then saved again by an older build that recorded in it, has the format 5
 parts beside the older build's own history folder (or, in the embedded mode, its new steps nowhere, as V1 does for any
-newer history). Which one V2 opens is #45's to settle; the parts themselves are always intact. "Remove Hindsight data"
+newer history). Which one V2 opens is #45's to settle; the parts themselves are always intact. #45 settles it in
+`dev/FORMAT5_V1.md`: V2 opens the parts, and D46 handles what the older build changed. "Remove Hindsight data"
 in an older build deletes the whole Text (V1 `cleanup.py` 128 to 130), as the user asked.
 
 ## Alternatives considered
