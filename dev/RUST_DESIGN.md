@@ -1,6 +1,6 @@
 # Rust engine design (R2 to R6)
 
-Status: M1 implemented in this branch. M2 to M6 are design only.
+Status: M1 implemented in this branch. M2 to M6 are design only. The rewrite of everything else (#24) is planned in `dev/RUST_PLAN.md`, which replaces "What should not move" and "M3 revisited" below.
 
 ## Goal
 
