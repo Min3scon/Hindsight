@@ -24,15 +24,11 @@ except Exception as e:
     out["engine_version"] = f"unknown: {e}"
 try:
     from hindsight.core import native
-    out["rust_engine_loaded"] = native.lib is not None
+    out["rust_engine_loaded"] = True
     out["native_api_expected"] = getattr(native, "API", None)
-    if native.lib is not None:
-        out["native_module"] = getattr(native.lib, "__file__", None)
-        out["native_api"] = getattr(native.lib, "API", None)
-        out["native_version"] = getattr(native.lib, "__version__", None)
-    else:
-        out["native_error"] = native.ERROR
-    out["hindsight_native_env"] = os.environ.get("HINDSIGHT_NATIVE", "")
+    out["native_module"] = getattr(native.ENGINE, "__file__", None)
+    out["native_api"] = getattr(native.ENGINE, "API", None)
+    out["native_version"] = getattr(native.ENGINE, "__version__", None)
 except Exception as e:
     out["rust_engine_loaded"] = False
     out["native_error"] = f"{type(e).__name__}: {e}"

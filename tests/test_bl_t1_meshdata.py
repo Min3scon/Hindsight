@@ -16,7 +16,6 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import idmap, runtime
 
 C = bpy.context
@@ -56,7 +55,6 @@ def edit_sequence():
     return [by["grab"], by["extrude"], by["bevel"], by["inset"], by["delete"], by["subdivide"], T.leave_edit("E")]
 
 
-@covers("obj.editsteps", "EXACT", "ORACLE")
 def test_weights_and_shape_keys_survive_topology_steps():
     r = L.Run(edit_sequence(), setup=rich_scene)
     e = bpy.data.objects["E"]
