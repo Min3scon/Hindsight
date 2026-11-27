@@ -26,6 +26,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
+from hindsight.core.types import SETTINGS
 from hindsight.bl import datarec, idmap, runtime
 from hindsight.bl import prefs
 
@@ -36,6 +37,10 @@ def setup():
     L.fresh_scene()
     L.track_all()
     runtime.reg().preserve_modes = False
+    # #128 made Unsaved steps the default. Here register() reads the file and then it is opened again, which
+    # with Unsaved steps replays the first read's RESET (D82): these tests are about one open. Crash recovery's
+    # side of a change made without Hindsight is test_bl_recovery's.
+    SETTINGS.crash_recovery = "LAST_SAVED"
 
 
 def op(o):
