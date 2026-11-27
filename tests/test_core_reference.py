@@ -9,11 +9,13 @@ Corpus: tests/fixtures/step_corpus_base.zip, 46 steps written by the baseline ch
 66fcdf8) with tests/reference/make_step_corpus.py. The same script run with the engine and with the
 reference writes identical bytes (checked below), so one corpus stands for all three.
 """
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import ast
+import importlib
 import json
 import struct
-import traceback
 import zipfile
 import zlib
 
@@ -80,13 +82,13 @@ def test_nothing_in_hindsight_imports_the_reference():
             if "tests/reference" in text.replace("\\", "/") and "import" in text and "tests.reference" in text:
                 bad.append((os.path.relpath(path, ROOT), "mentions tests.reference"))
     assert not bad, bad
-    import hindsight.core.step, hindsight.core.codec              # noqa: F401
+    for name in ("step", "codec"):
+        importlib.import_module(f"hindsight.core.{name}")
     loaded = [m for m in sys.modules if m.startswith("hindsight.") and getattr(sys.modules[m], "__file__", "")
               and "reference" in os.path.relpath(sys.modules[m].__file__, ROOT).split(os.sep)]
     assert not loaded, loaded
     assert stepmod.step_to_bytes.__module__ == "hindsight.core.step"
     assert stepmod._N is native.ENGINE and codec._N is native.ENGINE
-    print("PASS test_nothing_in_hindsight_imports_the_reference")
 
 
 def test_engine_runs_the_container():
@@ -102,7 +104,6 @@ def test_engine_runs_the_container():
                 imported.add((node.module or "").split(".")[0])
         assert not imported & {"zstandard", "lz4", "zlib"}, (name, imported)
     assert "zstandard" not in sys.modules or "hindsight" not in (getattr(sys.modules["zstandard"], "__file__", "") or "")
-    print("PASS test_engine_runs_the_container")
 
 
 # ------------------------------------------------------------------------------ codec
@@ -156,7 +157,7 @@ def test_codec_bytes_equal_the_libraries():
     assert codec.resolve("bogus") == "zlib" and codec.resolve("auto") == "zstd"
     note = "all bytes equal" if PY_ZSTD == ENGINE_ZSTD else \
         f"zstd compared by content: python-zstandard has libzstd {PY_ZSTD}, the engine {ENGINE_ZSTD}"
-    print(f"PASS test_codec_bytes_equal_the_libraries ({note})")
+    print(f"  test_codec_bytes_equal_the_libraries ({note})")
 
 
 def outcome(fn, *a):
@@ -203,7 +204,7 @@ def test_codec_reads_like_the_reference():
         assert str(e) == "empty blob" and not isinstance(e, codec.CorruptBlob)
     else:
         raise AssertionError("empty blob accepted")
-    print(f"PASS test_codec_reads_like_the_reference ({len(cases)} blobs x 7 sizes)")
+    print(f"  test_codec_reads_like_the_reference ({len(cases)} blobs x 7 sizes)")
 
 
 def test_codec_hostile_sizes():
@@ -225,7 +226,6 @@ def test_codec_hostile_sizes():
             pass
         else:
             raise AssertionError("accepted a 3 GB claim")
-    print("PASS test_codec_hostile_sizes")
 
 
 # ------------------------------------------------------------------------------ steps
@@ -259,7 +259,7 @@ def test_steps_equal_the_reference():
                     for strong in (False, True):
                         total += check_pair(st, name, effort, strong)
                         n += 1
-    print(f"PASS test_steps_equal_the_reference ({n} steps written, read and recompressed both ways, {total} bytes)")
+    print(f"  test_steps_equal_the_reference ({n} steps written, read and recompressed both ways, {total} bytes)")
 
 
 def test_property():
@@ -273,7 +273,6 @@ def test_property():
             check_pair(st, name, delta.QUICK if quick else delta.NORMAL, strong)
 
     prop()
-    print("PASS test_property")
 
 
 def test_corpus():
@@ -316,7 +315,7 @@ def test_corpus():
         rewritten += 1
     assert kinds == {"DELTA", "TOPO", "JOIN", "DATA"}, kinds
     assert strong_rows > 0
-    print(f"PASS test_corpus ({len(index)} baseline steps read by both, {rewritten} written back identically, "
+    print(f"  test_corpus ({len(index)} baseline steps read by both, {rewritten} written back identically, "
           f"{strong_rows} of them strong: at level 19 and, with the rule, the same step)")
 
 
@@ -337,7 +336,7 @@ def test_legacy_files():
                 assert stepmod.recompress(e.blob) == ref_recompress(e.blob) or stepmod.version_of(e.blob) == 1
                 n += 1
     assert n > 0
-    print(f"PASS test_legacy_files ({n} steps of old files, engine equals reference)")
+    print(f"  test_legacy_files ({n} steps of old files, engine equals reference)")
 
 
 # ------------------------------------------------------------------------------ hostile
@@ -443,7 +442,7 @@ def test_hostile_blobs():
         for _ in range(12 if len(b) > 20000 else 25):
             judge(mutate(rng, b, patch=bool(rng.integers(2))), stats)
             n += 1
-    print(f"PASS test_hostile_blobs ({n} damaged blobs: {stats})")
+    print(f"  test_hostile_blobs ({n} damaged blobs: {stats})")
 
 
 def test_subnormal_time_is_kept():
@@ -467,7 +466,7 @@ def test_subnormal_time_is_kept():
             if ref is not None and not _subnormal_time(m):
                 assert ref == out
             n += 1
-    print(f"PASS test_subnormal_time_is_kept ({n} mutations)")
+    print(f"  test_subnormal_time_is_kept ({n} mutations)")
 
 
 def test_hostile_headers():
@@ -483,7 +482,7 @@ def test_hostile_headers():
             b[pos] = v
             b = bytes(b[:4]) + struct.pack("<I", zlib.crc32(bytes(b[8:]))) + bytes(b[8:])
             judge(b, stats)
-    print(f"PASS test_hostile_headers ({stats})")
+    print(f"  test_hostile_headers ({stats})")
 
 
 def _peak_mb() -> float:
@@ -534,13 +533,11 @@ def test_no_unbounded_allocation():
     body[8:12] = struct.pack("<I", 0xFFFFFFFF)
     rest = bytearray(blob[:10 + hl + 1]) + body
     rest[4:8] = struct.pack("<I", zlib.crc32(bytes(rest[8:])))
-    try:
+    with contextlib.suppress(stepmod.CorruptStep):
         stepmod.step_from_bytes(bytes(rest))
-    except stepmod.CorruptStep:
-        pass
     grew = _peak_mb() - before
     assert grew < 200, f"peak memory grew {grew:.0f} MB on claims of gigabytes"
-    print(f"PASS test_no_unbounded_allocation (peak grew {grew:.0f} MB)")
+    print(f"  test_no_unbounded_allocation (peak grew {grew:.0f} MB)")
 
 
 # ------------------------------------------------------------------------------ api
@@ -557,7 +554,7 @@ def test_errors_and_exceptions():
             pass
         else:
             raise AssertionError(bad)
-    st = captured_steps(1, n_steps=5)[0]
+    captured_steps(1, n_steps=5)[0]
     for kw in ({"kind": "NOPE"},):
         try:
             stepmod.step_to_bytes(Step(1, "l", "m", "t", 0.0, kw["kind"], []))
@@ -571,7 +568,6 @@ def test_errors_and_exceptions():
         assert "step field too long" in str(e)
     else:
         raise AssertionError("long mode accepted")
-    print("PASS test_errors_and_exceptions")
 
 
 def test_input_types():
@@ -585,7 +581,6 @@ def test_input_types():
         assert stepmod.version_of(v) == 3
     for v in (bytearray(b"hello" * 100), memoryview(b"hello" * 100), np.frombuffer(b"hello" * 100, np.uint8)):
         assert codec.decompress(codec.compress(v, "zstd")) == bytes(v)
-    print("PASS test_input_types")
 
 
 def test_decoded_arrays_are_owned_and_writable():
@@ -599,7 +594,6 @@ def test_decoded_arrays_are_owned_and_writable():
     s3 = stepmod.step_from_bytes(stepmod.step_to_bytes(snap_step, "zstd"))
     for a in s3.before.arrays.values():
         assert a.flags.writeable and a.flags.c_contiguous
-    print("PASS test_decoded_arrays_are_owned_and_writable")
 
 
 def test_gil_released():
@@ -626,14 +620,14 @@ def test_gil_released():
         t.join()
     assert codec.decompress(blob, len(data)) == data
     assert ticks[0] > elapsed * 100, f"the other thread ran {ticks[0]} times in {elapsed:.2f} s"
-    print(f"PASS test_gil_released ({ticks[0]} ticks of another thread during a {elapsed:.2f} s compress)")
+    print(f"  test_gil_released ({ticks[0]} ticks of another thread during a {elapsed:.2f} s compress)")
 
 
 def test_record_equals_diff_and_encode():
     """record(): the whole stroke in one engine call gives the bytes of diff per channel, a Step and
     the Python reference writing it (every channel type, runs and scatters, channels that appear or
     go, a changed empty channel, sizes that differ, nothing changed)."""
-    from hindsight.core.types import ADD, CHANNEL_TYPES, ChannelDelta, make_key
+    from hindsight.core.types import CHANNEL_TYPES, make_key
     keys = [make_key(f"c_{t.lower()}", "POINT", t) for t in CHANNEL_TYPES]
     rng = np.random.default_rng(21)
     n = 0
@@ -643,7 +637,6 @@ def test_record_equals_diff_and_encode():
         for key in keys:
             if rng.random() < 0.3:
                 continue
-            dt = np.dtype(ns.key_dtype(key))
             w = ns.key_width(key)
             old = ns.values(rng, key, nv)
             how = ["run", "scatter", "nudge", "all", "same"][int(rng.integers(5))]
@@ -686,7 +679,7 @@ def test_record_equals_diff_and_encode():
                     n += 1
     how = "bytes equal the reference" if bytes_comparable("zstd") else \
         f"zstd compared by content: libzstd {PY_ZSTD} in python-zstandard, {ENGINE_ZSTD} in the engine"
-    print(f"PASS test_record_equals_diff_and_encode ({n} strokes, {how})")
+    print(f"  test_record_equals_diff_and_encode ({n} strokes, {how})")
 
 
 def main():
@@ -695,16 +688,9 @@ def main():
              test_steps_equal_the_reference, test_property, test_corpus, test_legacy_files, test_hostile_blobs,
              test_subnormal_time_is_kept, test_hostile_headers, test_no_unbounded_allocation, test_errors_and_exceptions, test_input_types,
              test_decoded_arrays_are_owned_and_writable, test_gil_released]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

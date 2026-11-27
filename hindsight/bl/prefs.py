@@ -4,12 +4,18 @@
 so `register(base_package)` sets it before registering the class.
 """
 
+import contextlib
 import dataclasses
 
 import bpy
+
+from . import reg
 from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty
 
 from ..core import types as _types
+
+SCRUB_DEFAULTS = dict(scrub_height=6, scrub_margin=18, scrub_width_pct=60, scrub_color=(1.0, 0.6, 0.24, 1.0),
+                      scrub_bg_color=(0.1, 0.1, 0.1, 0.6), scrub_show_counter=True)
 
 _base_package = None
 
@@ -46,11 +52,9 @@ def sync_settings(prefs) -> None:
 
 
 def _redraw() -> None:
-    try:
+    with contextlib.suppress(Exception):
         from . import runtime
         runtime.tag_redraw_all()
-    except Exception:
-        pass
 
 
 def _update(self, context):
@@ -71,11 +75,9 @@ _KIND_DEFAULT = {k for k, _l, _d in _KIND_ITEMS}
 
 
 def _update_kinds(self, context):
-    try:
+    with contextlib.suppress(Exception):
         from . import datarec
         datarec.rebaseline()
-    except Exception:
-        pass
 
 
 RECORD_SCOPE_ITEMS = (
@@ -140,24 +142,24 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
     # On-screen slider
     scrub_height: IntProperty(
         name="Height", description="Thickness of the on-screen slider",
-        default=6, min=2, max=64, subtype='PIXEL', update=_update_appearance)
+        default=SCRUB_DEFAULTS["scrub_height"], min=2, max=64, subtype='PIXEL', update=_update_appearance)
     scrub_margin: IntProperty(
         name="Bottom margin", description="Gap between the slider and the bottom of the viewport",
-        default=18, min=0, max=1000, subtype='PIXEL', update=_update_appearance)
+        default=SCRUB_DEFAULTS["scrub_margin"], min=0, max=1000, subtype='PIXEL', update=_update_appearance)
     scrub_width_pct: IntProperty(
         name="Width", description="Slider width as a share of the viewport width",
-        default=60, min=5, max=100, subtype='PERCENTAGE', update=_update_appearance)
+        default=SCRUB_DEFAULTS["scrub_width_pct"], min=5, max=100, subtype='PERCENTAGE', update=_update_appearance)
     scrub_color: FloatVectorProperty(
         name="Colour", description="Colour of the filled part and the handle",
         size=4, subtype='COLOR_GAMMA', min=0.0, max=1.0,
-        default=(1.0, 0.6, 0.24, 1.0), update=_update_appearance)
+        default=SCRUB_DEFAULTS["scrub_color"], update=_update_appearance)
     scrub_bg_color: FloatVectorProperty(
         name="Track colour", description="Colour of the empty part of the slider",
         size=4, subtype='COLOR_GAMMA', min=0.0, max=1.0,
-        default=(0.1, 0.1, 0.1, 0.6), update=_update_appearance)
+        default=SCRUB_DEFAULTS["scrub_bg_color"], update=_update_appearance)
     scrub_show_counter: BoolProperty(
         name="Show step counter", description="Show the step number next to the slider",
-        default=True, update=_update_appearance)
+        default=SCRUB_DEFAULTS["scrub_show_counter"], update=_update_appearance)
 
     record_scope: EnumProperty(
         name="Record",
@@ -247,6 +249,21 @@ def draw_scrubber_props(layout, prefs) -> None:
     layout.prop(prefs, "scrub_show_counter")
 
 
+FORCE = {}  # tests: preference name -> value (None unsets), for runs where the preferences aren't registered
+
+
+def value(name, default):
+    """One preference: a test's FORCE entry, else the registered preferences' value, else `default`."""
+    v = FORCE.get(name)
+    if v is not None:
+        return v
+    with contextlib.suppress(Exception):
+        p = get_prefs()
+        if p is not None:
+            return getattr(p, name, default)
+    return default
+
+
 def get_prefs(context=None):
     """The add-on's preferences, or None (not registered / not enabled as an add-on)."""
     if not _base_package:
@@ -267,17 +284,10 @@ def register(base_package: str = None):
     global _base_package
     _base_package = base_package or _root_package()
     HINDSIGHT_AP_prefs.bl_idname = _base_package
-    for cls in classes:
-        bpy.utils.register_class(cls)
-    try:
+    reg.register_classes(classes)
+    with contextlib.suppress(Exception):
         sync_settings(get_prefs())
-    except Exception:
-        pass
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

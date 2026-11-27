@@ -1,4 +1,5 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """R071: the engine's diff splits large arrays over threads; the result is byte for byte the one-thread one.
 
   chunks      every item size (1, 2, 4, 8) and width, row counts around the split points, changes on,
@@ -11,7 +12,6 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
   threads     a large diff runs with the GIL released (another thread runs meanwhile)"""
 import threading
 import time
-import traceback
 
 import numpy as np
 
@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference co
 from reference import delta as rdelta                 # noqa: E402
 from hindsight.core import delta, step as stepmod     # noqa: E402
 from hindsight.core.native import ENGINE              # noqa: E402
-from hindsight.core.types import ADD, DELTA, Step, make_key   # noqa: E402
+from hindsight.core.types import DELTA, Step, make_key
 
 RNG = np.random.default_rng(71)
 DT = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}
@@ -64,7 +64,7 @@ def test_chunk_boundaries():
                     for t in (None, 2, 3, 4):
                         assert engine(a, b, isz, w, t) == one, (isz, w, n, t, rows[:5])
                     n_cases += 1
-    print(f"PASS test_chunk_boundaries ({n_cases} arrays, threads 1 to 4 and automatic)")
+    print(f"  test_chunk_boundaries ({n_cases} arrays, threads 1 to 4 and automatic)")
 
 
 def _big(key, nbytes):
@@ -116,7 +116,7 @@ def test_automatic_threads_equal_one_thread():
                     n += 1
     finally:
         delta.DIFF_THREADS[0] = None
-    print(f"PASS test_automatic_threads_equal_one_thread ({n} arrays of 4 to 13 MB)")
+    print(f"  test_automatic_threads_equal_one_thread ({n} arrays of 4 to 13 MB)")
 
 
 def test_record_of_large_channels():
@@ -141,7 +141,7 @@ def test_record_of_large_channels():
             want = stepmod.step_to_bytes(st, "zstd", eff, False)
             assert got == want, (how, eff, len(got), len(want))
             cases += 1
-    print(f"PASS test_record_of_large_channels ({cases} blobs, 12 MB and 5 MB channels)")
+    print(f"  test_record_of_large_channels ({cases} blobs, 12 MB and 5 MB channels)")
 
 
 def test_large_diff_releases_the_gil():
@@ -168,22 +168,15 @@ def test_large_diff_releases_the_gil():
         t.join()
     assert all(g == want for g in got)
     assert ran > 20, ran
-    print(f"PASS test_large_diff_releases_the_gil (a second thread ran {ran} turns during 20 diffs of 16 MB)")
+    print(f"  test_large_diff_releases_the_gil (a second thread ran {ran} turns during 20 diffs of 16 MB)")
 
 
 def main():
     tests = [test_chunk_boundaries, test_automatic_threads_equal_one_thread, test_record_of_large_channels,
              test_large_diff_releases_the_gil]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

@@ -45,7 +45,6 @@ permissions:
   contents: read
 
 env:
-  HINDSIGHT_NATIVE: require        # a missing or broken native module is an error, never a silent fallback
   HINDSIGHT_VERIFY: "1"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
 
@@ -90,7 +89,7 @@ jobs:
       - name: The add-on loads the native engine inside Blender
         run: |
           "${{ steps.blender.outputs.exe }}" -b --factory-startup --python-exit-code 1 --python-expr \
-            "import sys; sys.path.insert(0, '.'); from hindsight.core import native; print('native module', native.lib.__file__)"
+            "import sys; sys.path.insert(0, '.'); from hindsight.core import native; print('native module', native.ENGINE.__file__)"
       - name: Whole suite in the Blender binary
         env:
           FILTER: ${{ github.event.inputs.filter }}

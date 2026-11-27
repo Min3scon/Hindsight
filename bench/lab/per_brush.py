@@ -7,7 +7,7 @@ import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 import numpy as np
-from bench_codec import load_corpus, frac, codec, body
+from bench_codec import load_corpus, codec, body
 comp, _ = codec("zstd3")
 def ent(r):
     return float(np.mean(np.log2(np.abs(r) + 1) + 1)) if r.size else 0.0

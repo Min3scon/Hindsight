@@ -163,13 +163,3 @@ def unpack_at(mv, off: int):
         return ChannelDelta(key, _EMPTY_IDX.copy(), np.zeros((0, w), dtype=bdt), (e0, e1), ADD if add else XOR), end
     return ChannelDelta(key, np.frombuffer(ib, _U32), np.frombuffer(vb, bdt).reshape(k, w), (e0, e1),
                         ADD if add else XOR), end
-
-
-def packed_size(b, offset: int = 0) -> int:
-    """Byte length of the packed delta starting at `offset` (for streaming parsers)."""
-    magic = bytes(b[offset:offset + 2])
-    if magic == _MAGIC_V1:
-        _m, _f, isz, w, dsz, klen, k, _first = _HDR_V1.unpack_from(b, offset)
-        return _HDR_V1.size + klen + max(k - 1, 0) * dsz + k * isz * w
-    _m, _f, isz, w, _c, klen, k, ilen = _HDR.unpack_from(b, offset)
-    return _HDR.size + klen + (ilen + w + k * isz * w if k else 0)

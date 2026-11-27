@@ -150,7 +150,7 @@ def test_separate_new_object_new_history():
 
 
 def test_separate_operator_exec():
-    dupsep = setup()
+    setup()
     ob = sculpted(1)
     uid = runtime.obj_uid(ob)
     H.enter(ob, "EDIT")
