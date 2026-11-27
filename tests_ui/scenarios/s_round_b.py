@@ -76,7 +76,7 @@ def run(d):
         tag = fname.replace(".blend", "")
         _open(d, fname)
         yield 1.0
-        ob = _activate(d, objname)
+        _activate(d, objname)
         yield from C.show_sidebar_tab(d)
         mark = d.console_mark()
         for mode in ("OBJECT", "SCULPT", "VERTEX_PAINT", "EDIT"):
@@ -105,13 +105,13 @@ def run(d):
                 {k: v for k, v in d.notes.items() if k.startswith(tag)})
 
     # per-object histories in the multi-object scene
-    a = _activate(d, "Sculpted_05")
+    _activate(d, "Sculpted_05")
     C.set_mode(d, "SCULPT")
     yield 0.5
     yield from C.real_stroke(d, 1)
     yield from C.real_stroke(d, 2)
     ia = C.info(d)
-    b = _activate(d, "Sculpted_06")
+    _activate(d, "Sculpted_06")
     C.set_mode(d, "SCULPT")
     yield 0.5
     with d.override():

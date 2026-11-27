@@ -12,7 +12,7 @@ import bpy
 import numpy as np
 
 import tests.harness as H
-from hindsight.bl import camrig, runtime
+from hindsight.bl import camrig
 import test_bl_camrig_modifiers as T
 
 C = bpy.context

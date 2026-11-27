@@ -4,13 +4,14 @@ ROOT = sys.argv[1]; sys.path.insert(0, ROOT); os.chdir(ROOT)
 import bpy
 import tests.harness as H
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 N = int(sys.argv[2]); C = bpy.context
 H.fresh()
 for i in range(N):
     bpy.ops.mesh.primitive_cube_add(size=0.3, location=(i, 0, 0))
     if i % 3 == 0:
         C.active_object.constraints.new("COPY_ROTATION")
-datarec.FORCE_SCOPE[0] = "EVERYTHING"
+prefs.FORCE["record_scope"] = "EVERYTHING"
 for o in list(C.scene.objects):
     datarec.set_tracked(o, True)
 datarec.set_tracked(C.scene, True)

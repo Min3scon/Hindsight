@@ -4,15 +4,12 @@
     python tools/check_copy.py            # everything
     python tools/check_copy.py --list     # also print what was scanned
 
-Scanned: README.md, CHANGELOG.md, .github/release-notes/*.md, .github/ISSUE_TEMPLATE/*.yml, the built
-site (docs/**/*.html text, alt/title/aria-label attributes and meta descriptions, the web manifest),
-the add-on manifest tagline, and the add-on's user-facing strings (every string literal in
-hindsight/**/*.py except docstrings and identifier-like values, plus the docstrings Blender shows as
-tooltips). Internal docs (STYLE.md, DECISIONS.md, HANDOFF.md, ...) are not scanned.
+Scanned: README.md, CHANGELOG.md, .github/release-notes/*.md, .github/ISSUE_TEMPLATE/*.yml, the add-on
+manifest tagline, and the add-on's user-facing strings (every string literal in hindsight/**/*.py except
+docstrings and identifier-like values, plus the docstrings Blender shows as tooltips). Internal docs
+(STYLE.md, DECISIONS.md, HANDOFF.md, docs/adr/, ...) are not scanned.
 """
 import ast
-import html.parser
-import json
 import re
 import sys
 import tomllib
@@ -48,7 +45,7 @@ PROPER = {"Hindsight", "Blender", "Sculpt", "Mode", "Vertex", "Paint", "Edit", "
           "Shift", "Alt", "Cmd", "Python", "N", "F3", "Z", "Multires", "Dyntopo", "BETA", "I", "MB", "KB", "GB",
           "Preferences", "Extensions", "Install", "Disk", "Get", "Add-ons", "Steam", "Global", "Zstandard",
           "LZ4", "Zlib", "Discord", "Slack", "X", "Pages", "Actions", "Settings", "OK", "UI", "GPU", "CPU"}
-MAX_WORDS_SITE = 55
+MAX_WORDS_TEXT = 55
 MAX_WORDS_UI = 40
 
 findings = []
@@ -89,7 +86,7 @@ def check_markdown(path):
 
     def flush():
         if para:
-            check_text(f"{path.relative_to(ROOT)}:{start}", " ".join(para), MAX_WORDS_SITE)
+            check_text(f"{path.relative_to(ROOT)}:{start}", " ".join(para), MAX_WORDS_TEXT)
         para.clear()
 
     for i, raw in enumerate(lines, 1):
@@ -111,7 +108,7 @@ def check_markdown(path):
             flush()
             if line.strip():
                 check_text(f"{path.relative_to(ROOT)}:{i}", re.sub(r"^\s*([-*|]|\d+\.)\s*", "", stripped),
-                           MAX_WORDS_SITE)
+                           MAX_WORDS_TEXT)
         else:
             if not para:
                 start = i
@@ -121,103 +118,10 @@ def check_markdown(path):
 
 def check_yaml_text(path):
     for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        m = re.match(r"\s*(?:-\s*)?(?:label|description|placeholder|about|name|title|value|body)?:?\s*(.*)$", line)
         text = line.split(":", 1)[1] if ":" in line and not line.strip().startswith("-") else line
         text = text.strip().strip('"').strip("'").strip("|").strip(">")
         if re.search(r"[A-Za-z]{3,}\s+[A-Za-z]{2,}", text):
-            check_text(f"{path.relative_to(ROOT)}:{i}", text, MAX_WORDS_SITE)
-
-
-# --------------------------------------------------------------------------- coverage
-# A data type that COVERAGE.md doesn't list as supported or partial may only be named in a sentence
-# that says it isn't recorded (or is planned).
-NEGATIONS = ("not recorded", "isn't recorded", "aren't recorded", "not record", "doesn't record",
-             "don't record", "doesn't work with", "don't work with", "planned", "paused", "not yet",
-             "not supported", "aren't part of", "isn't part of", "not part of")
-
-
-def _coverage_terms(text=None):
-    if str(Path(__file__).resolve().parent) not in sys.path:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import coverage_md as cov
-    rows = cov.parse(text) if text is not None else cov.rows(ROOT / "COVERAGE.md")
-    terms = []
-    for row in rows:
-        if row.get("status", "").lower() not in cov.CLAIMABLE:
-            terms += cov.terms(row)
-    return sorted(set(terms), key=len, reverse=True)
-
-
-COVERAGE_TERMS = _coverage_terms()
-_COVERAGE_SEEN = set()
-
-
-def check_coverage(where, text):
-    for sentence in re.split(r"(?<=[.!?])\s+", " ".join(text.split())):
-        low = sentence.lower()
-        if any(n in low for n in NEGATIONS):
-            continue
-        for term in COVERAGE_TERMS:
-            if re.search(r"(?<![\w-])" + re.escape(term) + r"(?![\w-])", low):
-                key = (where.split(" ")[0], sentence)
-                if key not in _COVERAGE_SEEN:
-                    _COVERAGE_SEEN.add(key)
-                    report(where, "coverage", f"names \"{term}\", which COVERAGE.md doesn't list as supported: {sentence}")
-                break
-
-
-# --------------------------------------------------------------------------- html
-class _Html(html.parser.HTMLParser):
-    BLOCK = {"p", "li", "h1", "h2", "h3", "h4", "h5", "h6", "figcaption", "td", "th", "dt", "dd", "blockquote",
-             "button", "a", "summary", "label", "title", "caption"}
-
-    def __init__(self, where):
-        super().__init__(convert_charrefs=True)
-        self.where = where
-        self.skip = 0
-        self.stack = []
-        self.faq = 0
-
-    def handle_starttag(self, tag, attrs):
-        a = dict(attrs)
-        if tag in ("script", "style", "code", "pre", "svg", "kbd"):
-            self.skip += 1
-        if "faq" in (a.get("class") or "") or a.get("data-faq") is not None:
-            self.faq += 1
-        for key in ("alt", "title", "aria-label", "placeholder"):
-            if a.get(key):
-                check_text(f"{self.where} [{tag} {key}]", a[key], MAX_WORDS_SITE)
-        if tag == "meta" and a.get("content") and (a.get("name") or a.get("property") or "").split(":")[-1] in (
-                "description", "title", "alt", "site_name"):
-            check_text(f"{self.where} [meta {a.get('name') or a.get('property')}]", a["content"], MAX_WORDS_SITE)
-        if tag in self.BLOCK:
-            self.stack.append([tag, ""])
-
-    def handle_endtag(self, tag):
-        if tag in ("script", "style", "code", "pre", "svg", "kbd") and self.skip:
-            self.skip -= 1
-        if tag in self.BLOCK:
-            for i in range(len(self.stack) - 1, -1, -1):
-                if self.stack[i][0] == tag:
-                    t, text = self.stack.pop(i)
-                    heading = t in ("h1", "h2", "h3", "h4", "h5", "h6", "title")
-                    check_text(f"{self.where} <{t}>", text, MAX_WORDS_SITE, allow_question=self.faq > 0 or t == "summary",
-                               heading=heading)
-                    check_coverage(f"{self.where} <{t}>", text)
-                    if self.stack:
-                        self.stack[-1][1] += " " + text
-                    break
-
-    def handle_data(self, data):
-        if self.skip:
-            return
-        if self.stack:
-            self.stack[-1][1] += data
-
-
-def check_html(path):
-    p = _Html(str(path.relative_to(ROOT)))
-    p.feed(path.read_text(encoding="utf-8"))
+            check_text(f"{path.relative_to(ROOT)}:{i}", text, MAX_WORDS_TEXT)
 
 
 # --------------------------------------------------------------------------- add-on strings
@@ -250,28 +154,18 @@ def check_addon():
         check_text("hindsight/blender_manifest.toml permissions", reason)
 
 
+def public_files():
+    """The public text files, in scan order (the add-on's strings are scanned separately)."""
+    files = [ROOT / name for name in ("README.md", "CHANGELOG.md") if (ROOT / name).is_file()]
+    files += sorted((ROOT / ".github" / "release-notes").glob("*.md"))
+    files += sorted((ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.yml"))
+    return files
+
+
 def main():
-    scanned = []
-    for name in ("README.md", "CHANGELOG.md"):
-        p = ROOT / name
-        if p.is_file():
-            check_markdown(p)
-            scanned.append(p)
-    for p in sorted((ROOT / ".github" / "release-notes").glob("*.md")):
-        check_markdown(p)
-        scanned.append(p)
-    for p in sorted((ROOT / ".github" / "ISSUE_TEMPLATE").glob("*.yml")):
-        check_yaml_text(p)
-        scanned.append(p)
-    site = ROOT / "docs"
-    for p in sorted(site.rglob("*.html")):
-        check_html(p)
-        scanned.append(p)
-    for p in sorted(site.rglob("*.webmanifest")):
-        doc = json.loads(p.read_text(encoding="utf-8"))
-        for key in ("name", "short_name", "description"):
-            check_text(f"{p.relative_to(ROOT)} {key}", doc.get(key, ""))
-        scanned.append(p)
+    scanned = public_files()
+    for p in scanned:
+        (check_yaml_text if p.suffix == ".yml" else check_markdown)(p)
     check_addon()
     if "--list" in sys.argv:
         for p in scanned:

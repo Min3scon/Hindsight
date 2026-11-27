@@ -14,6 +14,7 @@ import bmesh
 import numpy as np
 import tests.harness as H
 from hindsight.bl import meshio, runtime
+from hindsight.bl import prefs
 from hindsight.bl import warnings as W
 
 C = bpy.context
@@ -43,7 +44,7 @@ def dyntopo(ob, on=True):
 
 def setup():
     H.fresh()
-    runtime.FORCE_DYNTOPO[0] = True
+    prefs.FORCE["record_dyntopo"] = True
     bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=8)
     ob = C.active_object
     ob.name = "Dyn"
@@ -92,12 +93,11 @@ def recorded_session():
 
 def test_off_by_default_pauses_as_before():
     ob = setup()
-    runtime.FORCE_DYNTOPO[0] = None
+    prefs.FORCE["record_dyntopo"] = None
     assert not runtime.dyntopo_on()
     dyntopo(ob)
     assert W.blocking(C, ob), "Dyntopo must still pause recording when the preference is off"
     assert runtime.commit(ob) is None
-    from hindsight.bl import prefs
     assert prefs.HINDSIGHT_AP_prefs.__annotations__["record_dyntopo"].keywords["default"] is False
     print("PASS test_off_by_default_pauses_as_before")
 
@@ -161,7 +161,7 @@ def paused_session(big):
     face limit); while it pauses, Dyntopo triangulates the mesh and an edit (hidden from Hindsight) moves it."""
     ob = setup()
     if not big:
-        runtime.FORCE_DYNTOPO[0] = False
+        prefs.FORCE["record_dyntopo"] = False
     for k in range(2):
         H.fake_stroke(ob, k + 1)
         assert runtime.commit(ob) is not None
@@ -216,10 +216,10 @@ def test_paused_visit_becomes_one_step():
             runtime.goto(C, n + 1)
             assert read(ob)[:2] == after[:2], (end, read(ob), after)
             runtime.DYNTOPO_TRIS_MAX = old
-            runtime.FORCE_DYNTOPO[0] = True
+            prefs.FORCE["record_dyntopo"] = True
     finally:
         runtime.DYNTOPO_TRIS_MAX = old
-        runtime.FORCE_DYNTOPO[0] = True
+        prefs.FORCE["record_dyntopo"] = True
     print("PASS test_paused_visit_becomes_one_step")
 
 
@@ -228,5 +228,5 @@ if __name__ == "__main__":
               test_a_change_after_going_back_replaces_the_later_steps, test_big_mesh_still_pauses,
               test_dyntopo_layers_are_not_recorded, test_paused_visit_becomes_one_step):
         H.run(t)
-    runtime.FORCE_DYNTOPO[0] = None
+    prefs.FORCE["record_dyntopo"] = None
     H.finish()

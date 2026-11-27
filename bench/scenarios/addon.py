@@ -28,8 +28,7 @@ NAMES = ("addon_import", "addon_register_cold", "addon_unregister_cold", "addon_
 def child(root):
     sys.path.insert(0, root)
     os.chdir(root)
-    import bpy  # noqa: F401
-    import numpy  # noqa: F401
+    __import__("bpy"), __import__("numpy")      # loaded before the clock starts
     t = time.perf_counter()
     import hindsight
     import importlib

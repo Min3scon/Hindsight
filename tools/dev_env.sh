@@ -98,7 +98,7 @@ setup_bpy_venv() {
   if pip_has "$dir" bpy "$ver"; then
     info "bpy$n: bpy $ver already installed"
   else
-    "$dir/bin/python" -m pip install -q "bpy==$ver" || { warn "bpy$n: installing bpy==$ver failed"; return; }
+    "$dir/bin/python" -m pip install -q --no-compile "bpy==$ver" || { warn "bpy$n: installing bpy==$ver failed"; return; }
     info "bpy$n: installed bpy $ver"
   fi
   "$dir/bin/python" -m pip install -q "${TEST_PINS[@]}" || warn "bpy$n: installing ${TEST_PINS[*]} failed"
@@ -154,13 +154,26 @@ setup_blender() {   # setup_blender 5.3 -> real binary unpacked in BLENDER_DIR/5
 info "repository $ROOT, venvs $VENVS, venvs wanted: $SELECT"
 mkdir -p "$VENVS" || warn "cannot create $VENVS"
 IFS=',' read -r -a NUMS <<< "$SELECT"
-for n in "${NUMS[@]}"; do [ -n "$n" ] && setup_bpy_venv "$n"; done
-if [ "$RUST" = 1 ]; then setup_tools_venv; setup_rust; fi
+# The parts download and install side by side (a new cloud session waits for all of it). What they share is
+# made first, one at a time: the interpreters (apt) and uv.
+for n in "${NUMS[@]}"; do [ -n "$n" ] && { find_python "$(py_minor "$n")" >/dev/null || true; }; done
+command -v uv >/dev/null 2>&1 || python3 -m pip install -q uv >/dev/null 2>&1 || true
+LOGS="$(mktemp -d)"
+JOBS=()
+job() { local name="$1"; shift; ( "$@" ) > "$LOGS/$name" 2>&1 & JOBS+=("$name"); }
+for n in "${NUMS[@]}"; do [ -n "$n" ] && job "bpy$n" setup_bpy_venv "$n"; done
+if [ "$RUST" = 1 ]; then job rust eval 'setup_tools_venv; setup_rust'; fi
 if [ -n "$BLENDERS" ]; then
   mkdir -p "$BLENDER_DIR"
   IFS=',' read -r -a BVS <<< "$BLENDERS"
-  for v in "${BVS[@]}"; do [ -n "$v" ] && setup_blender "$v"; done
+  for v in "${BVS[@]}"; do [ -n "$v" ] && job "blender$v" setup_blender "$v"; done
 fi
+wait
+for name in "${JOBS[@]}"; do
+  cat "$LOGS/$name"
+  WARNINGS=$((WARNINGS + $(grep -c "^dev_env: WARN" "$LOGS/$name")))
+done
+rm -rf "$LOGS"
 
 if [ "$WARNINGS" -eq 0 ]; then info "done, no warnings"; else info "done with $WARNINGS warning(s) above"; fi
 [ "$STRICT" = 1 ] && [ "$WARNINGS" -gt 0 ] && exit 1
