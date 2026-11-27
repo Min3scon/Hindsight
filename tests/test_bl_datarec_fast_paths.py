@@ -76,13 +76,13 @@ class _NoFrame:
 def plain_paths():
     """Every shortcut off: the recorder runs as it did before them."""
     saved = [(idmap, "frame", idmap.frame), (idmap, "frame_cache", idmap.frame_cache),
-             (datarec, "_fast_diff_ok", datarec._fast_diff_ok), (adapters, "normalise", adapters.normalise),
+             (datarec, "_fast_diff_ok", datarec._fast_diff_ok), (adapters.core, "normalise", adapters.core.normalise),
              (datarec, "_is_scene_uid", datarec._is_scene_uid),
              (datarec, "_local_scene_ids", datarec._local_scene_ids)]
     idmap.frame = _NoFrame
     idmap.frame_cache = lambda: None
     datarec._fast_diff_ok = lambda: False
-    adapters.normalise = old_normalise
+    adapters.core.normalise = old_normalise
     datarec._is_scene_uid = old_is_scene_uid
     datarec._local_scene_ids = lambda: None
     try:

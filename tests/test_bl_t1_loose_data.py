@@ -333,17 +333,17 @@ def test_many_unused_materials_bounded_cost():
     L.track_all()
     L.tick_like("baseline")
     calls = [0]
-    real = adapters.material_record
+    real = adapters.materials.material_record
 
     def spy(m, owner=None):
         if m.session_uid not in adapters._MAT_CACHE:
             calls[0] += 1
         return real(m, owner)
-    adapters.material_record = spy
+    adapters.materials.material_record = spy
     try:
         L.tick_like("nothing")
     finally:
-        adapters.material_record = real
+        adapters.materials.material_record = real
     assert calls[0] <= adapters.LOOSE_READ_MAX, (calls[0], adapters.LOOSE_READ_MAX)
     # a change of the one read last is still found within a few operations
     mats[-1].roughness = 0.33

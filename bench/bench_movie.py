@@ -126,7 +126,7 @@ def _cat(func):
     if "/hindsight/" not in fn:
         return "other"
     mod = fn.rsplit("/", 1)[-1]
-    if mod in ("globaltl.py", "movie.py", "filtering.py", "idmap.py", "guard.py", "adapters.py",
+    if "/hindsight/bl/adapters/" in fn or mod in ("globaltl.py", "movie.py", "filtering.py", "idmap.py", "guard.py",
                "registry.py"):
         return "handler bookkeeping"
     if mod in ("history.py", "step.py", "codec.py", "delta.py", "store.py", "types.py"):
