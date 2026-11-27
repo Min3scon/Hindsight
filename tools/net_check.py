@@ -30,7 +30,7 @@ SITES = [
     "https://download.blender.org/release/", "https://www.blender.org/", "https://docs.blender.org/",
     "https://projects.blender.org/", "https://extensions.blender.org/", "https://blenderartists.org/",
     "https://www.reddit.com/", "https://old.reddit.com/", "https://en.wikipedia.org/", "https://stackoverflow.com/",
-    "https://github.com/", "https://api.github.com/", "https://min3scon.github.io/Hindsight/",
+    "https://github.com/", "https://api.github.com/",
     "https://pypi.org/", "https://crates.io/", "https://80.lv/", "https://superhivemarket.com/",
     "https://www.youtube.com/", "https://productionresultssa1.blob.core.windows.net/",
 ]

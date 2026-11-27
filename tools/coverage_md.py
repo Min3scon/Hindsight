@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 STATUSES = ("supported", "partial", "not covered")
-CLAIMABLE = ("supported", "partial")          # statuses the site may name as recorded
+CLAIMABLE = ("supported", "partial")          # statuses public text may name as recorded
 
 
 def parse(text: str) -> list:

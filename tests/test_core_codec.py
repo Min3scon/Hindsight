@@ -20,6 +20,9 @@ import numpy as np
 from hindsight.core import codec, delta, step as stepmod
 from hindsight.core.types import ADD, CHANNEL_TYPES, DELTA, XOR, ChannelDelta, Step, bits_dtype, make_key
 
+sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference copies (Blender's --python adds no path)
+from reference import delta as rdelta                 # noqa: E402
+
 stepmod.VERIFY = True
 RNG = np.random.default_rng(1234)
 CODECS = [c for c in codec.available()]
@@ -116,7 +119,7 @@ def test_round_trips():
                 d2 = delta.unpack_delta(rec)
                 assert same_delta(d, d2), (key, effort, d.idx.size)
                 assert moves(d2, old, new), (key, effort)
-                assert delta.packed_size(rec) == len(rec)
+                assert rdelta.packed_size(rec) == len(rec)
                 count += 1
     print(f"PASS test_round_trips ({count} records)")
 

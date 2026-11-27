@@ -399,14 +399,6 @@ def tag_redraw_all() -> None:
 
 
 # ----------------------------------------------------------------------------- state
-def _sync_edit(obj) -> None:
-    if obj.mode == "EDIT":
-        try:
-            obj.update_from_editmode()
-        except Exception:
-            pass
-
-
 def extras_on(obj) -> bool:
     """D43: vertex group weights and shape keys are part of the mesh state of objects recorded with
     Record everything."""

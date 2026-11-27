@@ -29,8 +29,7 @@ FORBIDDEN_DIRS = (".tools/", ".venv/", "node_modules/", ".blender_profiles/", "t
 
 # Internal working docs may name the local workspace (D:\Hindsight, D:\Hindsight-backup, D:\Hindsight-work).
 # Every other file is treated as public and may not contain any drive-letter path.
-INTERNAL_DOCS = {"HANDOFF.md", "DEFECTS.md", "DECISIONS.md", "TEST_ROUNDS.md", "STYLE.md", "SITE_PLAN.md",
-                 "ROLLBACK.md"}
+INTERNAL_DOCS = {"HANDOFF.md", "DEFECTS.md", "DECISIONS.md", "TEST_ROUNDS.md", "STYLE.md", "ROLLBACK.md"}
 WORKSPACE_PATH = re.compile(r"\bD:[\\/]Hindsight(?:-backup|-work)?\b", re.IGNORECASE)
 
 SECRET_PATTERNS = [
