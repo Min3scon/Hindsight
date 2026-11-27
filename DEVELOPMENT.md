@@ -64,22 +64,18 @@ Where a fact has no source, this page says "not measured" or "no report".
      wheel on Install from Disk (moved aside 2026-11-19).
    - User-facing text: `python3 tools/check_copy.py`.
 4. Benchmarks: see section f.
-5. Commits: small, subject ends with ` [skip ci]` so no Pages deploy runs. A commit without it deploys the
-   site, which is only done at a release (HANDOFF "TOP PRIORITY").
+5. Commits: small, subject ends with ` [skip ci]` (CLAUDE.md, "Working a ticket").
 
 ## b. Repository and branch state
 
-- Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default and the
-  Pages source. No pull requests: work is merged into this branch after its tests pass.
+- Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default. No pull requests: work is merged into this branch after its tests pass.
 - Main line (2026-11-19, evening): `f95fc2f`, everything up to R080 with engine 0.9.0 (API 8), full suites on 5.3 and
   4.2 before the push. The main session works in the worktree `.claude/worktrees/main-session` (detached; merged
   into the branch through a temporary worktree with a `[skip ci]` merge commit). No agent is running: the Rust
   agent was stopped on 2026-11-19 at about 17:00 after an hour waiting on a permission prompt; its R078 was
   measured by the main session and reverted (OPTIMISATION_LOG).
-- Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and `docs/download/hindsight.zip`
-  is the beta.2 zip. `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
-- The site (`site/`, `docs/`) is not edited outside a release (owner: "don't edit site, just get the add-on
-  updated").
+- Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and the beta.2 zip is on GitHub
+  Releases (`v1.0.0-beta.2`). `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
 
 ## c. Architecture
 
@@ -177,10 +173,9 @@ Status words, exactly one per row:
 - **blocked**: cannot start until something else exists.
 - **not started**: nothing was written.
 
-### The Limitations page (the plan's table, one row per line)
+### The limitations (the plan's table, one row per line)
 
-The site page is changed only as part of a release, when a line has passed the real-window gate (owner's
-rule). Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbered sections) and
+Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbered sections) and
 `dev/reports/LIMITS-B.md` (not recorded, adapter seam, packages P0 to P8).
 
 | # | Line | Planned outcome (phase) | Status | Test that proves it |
@@ -263,8 +258,7 @@ DEFECTS.md).
   `_IDX_ENC` in `delta.py`, unused local in `history.py`. Done since: the unused call in `joinsep.py` (HINDSIGHT_OT_join.invoke). Not done:
   unused imports (pyflakes is clean on `hindsight/` since 2026-11-19 except the deliberate import check in
   `ui_panel.engine_error`), duplicated keymap boilerplate in `joinsep.py`
-  and `ops_core.py`, the unused `@fontsource-variable/*` devDependencies and the undeclared
-  `chrome-launcher` in the site's tooling. 103 empty-except and 34 cyclic-import findings from CodeQL were
+  and `ops_core.py` (the site's tooling findings went with the website, #5). 103 empty-except and 34 cyclic-import findings from CodeQL were
   not individually triaged (the cyclic imports are lazy imports on purpose).
 - `dev/reports/ponytail_audit.md`: items 1, 2, 3, 4, 5, 6, 9, 10, 11 and 13 were done by earlier work in
   this job (see `DEFECTS.md` D63 to D69 and `OPTIMISATION_LOG.md`); item 7 (dead code, about 60 lines) and
@@ -371,15 +365,13 @@ Owner decisions (2026-11-18, from the plan):
   the add-on ships one implementation. Wheels for every Blender platform, adding Windows ARM64 and Linux
   ARM64 (the manifest `platforms` lists exactly what has a wheel). The add-on shows a clear error panel
   if the module cannot load and never records with a broken engine.
-- Publish a beta per phase to the site's download zip (only the zip and the generated changelog page
-  change). Beta 3 first, after Phase 0.
+- Publish a beta per phase (since the website was removed in #5: on GitHub Releases). Beta 3 first, after
+  Phase 0.
 - The unmerged agent work was to be merged first (RUNTIME merged; CAMERA and MOVIE not).
-- Earlier owner instructions of the job: "don't edit site, just get the add-on updated"; "use as many sub
-  agents as you want to optimise it"; "rewrite in rust"; "check all this and see if these are still true
-  and if true fix" (the two lists on the Limitations page); the site page changes only at a release when a
-  line has passed the gate.
-- Owner rules in `HANDOFF.md`: whenever work stops, the last thing is making the newest working site live
-  after the safety check (top priority); the test guarantee; no fake history.
+- Earlier owner instructions of the job: "use as many sub agents as you want to optimise it"; "rewrite in
+  rust"; "check all this and see if these are still true and if true fix" (the two lists on the website's
+  former Limitations page).
+- Owner rules in `HANDOFF.md`: the test guarantee; no fake history.
 
 Decisions taken by the orchestrator for the next phase (the Phase 2 notes of the session, `agents/PHASE2.md`,
 now lost; the owner can overrule; they were to be recorded in `DECISIONS.md`, where they are not yet):
