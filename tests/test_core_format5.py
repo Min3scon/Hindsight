@@ -60,8 +60,8 @@ def _metas(metas):
 def test_engine_api_14():
     # API 12 (#66): step_encoding, ENCODINGS, UnknownEncoding; decoding a later encoding raises UnknownEncoding
     # API 13 (#69): part_salvage (tests/test_core_format5_damage.py)
-    # API 14 (#146): the step JSON (tests/test_core_step_json.py)
-    assert native.API == 14 and N.API == 14, (native.API, N.API)
+    # API 15 (#147): the step's shapes, step_from_bytes and same_step (tests/test_core_types_engine.py)
+    assert native.API == 15 and N.API == 15, (native.API, N.API)
 
 
 def test_step_part_round_trip_bit_exact():

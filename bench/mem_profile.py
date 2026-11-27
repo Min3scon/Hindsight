@@ -115,8 +115,8 @@ def breakdown(h):
                     + (e.step.after.nbytes() if e.step.after is not None else 0) for e in raw)
     ovh, blob_hdr = entry_overhead(h.entries)
     # raw step Python objects (Step, ChannelDelta, ndarray headers)
-    raw_obj = sum(sys.getsizeof(e.step) + sys.getsizeof(e.step.__dict__)
-                  + sum(sys.getsizeof(d) + sys.getsizeof(d.__dict__) + sys.getsizeof(d.idx) - d.idx.nbytes
+    raw_obj = sum(sys.getsizeof(e.step) + sys.getsizeof(getattr(e.step, "__dict__", ()))
+                  + sum(sys.getsizeof(d) + sys.getsizeof(getattr(d, "__dict__", ())) + sys.getsizeof(d.idx) - d.idx.nbytes
                         + sys.getsizeof(d.vals) - d.vals.nbytes for d in e.step.deltas) for e in raw)
     n = max(1, len(h.entries))
     return {"steps": len(h.entries), "packed_steps": len(packed), "raw_steps": len(raw),

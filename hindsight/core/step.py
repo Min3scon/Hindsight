@@ -1,7 +1,7 @@
 """Step (de)serialisation. The container (header, checksum, codecs, every record of every kind of
 step, formats 1 to 4) is done by the Rust engine (native/src/step.rs); this module turns Python
-objects (Step, ChannelDelta, Snapshot, DataChange, extras) into buffers for it and back. Pure Python +
-numpy, no bpy.
+objects (Step, ChannelDelta, Snapshot, DataChange, extras) into buffers for it; building them back from a blob
+and same_step are the engine's too (native/src/types.rs, #147). Pure Python + numpy, no bpy.
 
 Step blob, formats 3 and 4 (written since beta 2):
   b"HSS3" | u32 CRC-32 of everything after this field | u16 header length | header | body
@@ -35,7 +35,7 @@ import numpy as np
 
 from . import native as _native
 from .delta import NORMAL, QUICK
-from .types import key_width, ADD, DATA, DELTA, JOIN, MISSING, TOPO, XOR, ChannelDelta, DataChange, Snapshot, Step
+from .types import key_width, ADD, DATA, DELTA, JOIN, MISSING, TOPO, DataChange, Snapshot, Step
 
 _N = _native.ENGINE
 
@@ -50,8 +50,6 @@ RECORDS_FLAG = 16
 QUICK_FLAG = 8
 # Tests set this (or HINDSIGHT_VERIFY=1): every written step is read back and compared.
 VERIFY = bool(os.environ.get("HINDSIGHT_VERIFY"))
-
-_BITS = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}
 
 CorruptStep = _N.CorruptStep
 UnknownEncoding = _N.UnknownEncoding      # intact, but a later build's encoding (dev/FORMAT5_ENCODINGS.md)
@@ -79,13 +77,7 @@ def snapshot_to_bytes(s: Snapshot) -> bytes:
     return b"".join(_snapshot_parts(s))
 
 
-def _snapshot(parsed) -> Snapshot:
-    counts, arrays = parsed
-    return Snapshot(dict(counts), {key: np.frombuffer(buf, dtype=dstr) for key, dstr, buf in arrays})
-
-
-def snapshot_from_bytes(b) -> Snapshot:
-    return _snapshot(_N.snapshot_decode(b))
+snapshot_from_bytes = _N.snapshot_from_bytes
 
 
 # --------------------------------------------------------------------------- data records
@@ -144,28 +136,7 @@ _extra = _N.step_extra
 read_header = _N.read_header          # step metadata without decompressing the body
 
 
-def step_from_bytes(b) -> Step:
-    (ver, seq, t, kind, label, mode, target, extra_b, _quick, deltas, before, after, snaps,
-     rec_b) = _N.step_decode(b)
-    extra = _extra(extra_b)
-    out = []
-    for key, add, e0, e1, k, w, isz, ib, vb in deltas:
-        bdt = _BITS[isz]
-        if k == 0:
-            idx, vals = np.zeros(0, dtype=np.uint32), np.zeros((0, w), dtype=bdt)
-        else:
-            idx, vals = np.frombuffer(ib, dtype=np.uint32), np.frombuffer(vb, dtype=bdt).reshape(k, w)
-        out.append(ChannelDelta(key, idx, vals, (e0, e1), ADD if add else XOR))
-    try:
-        before = _snapshot(before) if before is not None else None
-        after = _snapshot(after) if after is not None else None
-        if snaps is not None:
-            extra[SNAPSHOTS_KEY] = {uid: _snapshot(s) for uid, s in snaps}
-        records = records_from_bytes(rec_b) if rec_b is not None else []
-    except (ValueError, KeyError, TypeError, UnicodeDecodeError, RecursionError) as e:
-        raise CorruptStep(f"step blob: damaged ({e})") from e
-    return Step(seq=seq, label=label, mode=mode, target=target, time=t, kind=kind, deltas=out,
-                before=before, after=after, extra=extra, records=records)
+step_from_bytes = _N.step_from_bytes     # the Step built in the engine (#147)
 
 
 def version_of(b) -> int:
@@ -183,47 +154,7 @@ def is_unknown(b) -> bool:
         return False
 
 
-def _same_arrays(a: dict, b: dict) -> bool:
-    if a.keys() != b.keys():
-        return False
-    return all(a[k].dtype == b[k].dtype and a[k].tobytes() == b[k].tobytes() for k in a)
-
-
-def _same_snap(a, b) -> bool:
-    if a is None or b is None:
-        return a is b
-    return a.counts == b.counts and _same_arrays(a.arrays, b.arrays)
-
-
-def same_step(a: Step, b: Step) -> bool:
-    """True if two steps hold exactly the same data (deltas compared after decoding to the same
-    form: XOR deltas only equal XOR deltas, ADD only ADD). Used by HINDSIGHT_VERIFY and tests."""
-    if (a.seq, a.label, a.mode, a.target, a.kind) != (b.seq, b.label, b.mode, b.target, b.kind):
-        return False
-    if float(a.time or 0.0) != float(b.time or 0.0) or len(a.deltas) != len(b.deltas):
-        return False
-    for x, y in zip(a.deltas, b.deltas):
-        if (x.key, x.op, tuple(x.exists)) != (y.key, y.op, tuple(y.exists)):
-            return False
-        if not np.array_equal(np.asarray(x.idx, np.int64), np.asarray(y.idx, np.int64)):
-            return False
-        xv, yv = np.asarray(x.vals), np.asarray(y.vals)
-        if xv.dtype != yv.dtype or xv.reshape(-1).tobytes() != yv.reshape(-1).tobytes():
-            return False
-    if not (_same_snap(a.before, b.before) and _same_snap(a.after, b.after)):
-        return False
-    if records_to_bytes(a.records) != records_to_bytes(b.records):
-        return False
-    ea, eb = dict(a.extra or {}), dict(b.extra or {})
-    sa, sb = ea.pop(SNAPSHOTS_KEY, None), eb.pop(SNAPSHOTS_KEY, None)
-    if _N.json_loads(_dumps(ea)) != _N.json_loads(_dumps(eb)):
-        return False
-    if (sa is None) != (sb is None):
-        return False
-    if sa is not None:
-        if list(sa) != list(sb) or not all(_same_snap(sa[k], sb[k]) for k in sa):
-            return False
-    return True
+same_step = _N.same_step     # True if two steps hold exactly the same data (HINDSIGHT_VERIFY and tests)
 
 
 def recompress(b) -> bytes | None:
