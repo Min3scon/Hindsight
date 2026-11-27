@@ -13,7 +13,8 @@ the area you're working in, as you would ADRs.
 
 ## Before exploring, read these
 
-- **`CONTEXT.md`** at the repo root (this repo has a single context; there is no `CONTEXT-MAP.md`).
+- **`GLOSSARY.md`** at the repo root (this repo has a single context; there is no `CONTEXT-MAP.md`). Older versions of
+  these skills call this file `CONTEXT.md`; in this repo it is `GLOSSARY.md`, as in Matt Pocock's current skills.
 - **`dev/adr/`** — read ADRs that touch the area you're about to work in.
 - **`DECISIONS.md`** — the decision log from before the ADR folder.
 
@@ -23,7 +24,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 ```
 /
-├── CONTEXT.md
+├── GLOSSARY.md
 ├── DECISIONS.md          ← decisions before dev/adr/ existed
 ├── dev/adr/
 │   ├── 0001-....md
@@ -33,7 +34,7 @@ If any of these files don't exist, **proceed silently**. Don't flag their absenc
 
 ## Use the glossary's vocabulary
 
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
+When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `GLOSSARY.md`. Don't drift to synonyms the glossary explicitly avoids.
 
 If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/domain-modeling`).
 

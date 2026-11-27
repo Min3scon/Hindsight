@@ -31,6 +31,33 @@ disk and read them back when needed? Answer: no, inside the Blender file.)
 - The new layout of the history in the .blend (format 5) is accepted: a file saved by the new build opens in beta 2
   or beta 3 without its history, which those builds keep untouched until the PC is updated (owner, 2026-11-22: "do
   what's best"). The order of the work is the one in DEVELOPMENT.md section i (owner left it to the recommendation).
+- Build first, then optimise (owner, 2026-11-22): everything is built before the optimisation work starts, instead of
+  optimising midway, which wastes time when later building changes the code again. The optimisation phase is at
+  least 100 measured rounds and does not stop at 100: it keeps going until optimising no longer finds real gains
+  ("not 100 rounds for the sake of it").
+- The next release is V2, not "beta 3" (owner, 2026-11-22): the version out now is V1, no longer a beta (the
+  owner's teacher has it on his website), though its files say 1.0.0-beta.2. V2's version number is 2.0.0.
+- The work's end point (owner, 2026-11-22): V2 ready to release, everything built first, then optimised, tested on
+  Blender 4.2 to 5.3. The release itself stays the owner's call.
+- When optimising stops (owner, 2026-11-22, replacing a proposed "no Hindsight cost above 10%" rule): there is no
+  fixed target, for time or for memory ("I can't just say make it use 1 gigabyte of RAM"). If it can be optimised,
+  optimise it; if it can be optimised again, keep going; stop only when nothing more can be gained without taking
+  away some of what the add-on does. The aim is that it runs very well on any PC and uses little RAM. In practice:
+  the phase ends when a full profiling pass over every scenario finds nothing left to try, every remaining cost
+  having been attempted and the attempts reverted, or being Blender's own. At least 100 rounds in all.
+- The website is no longer needed (owner, 2026-11-22): V1 is not hosted there any more. Deleting it, hiding it or
+  keeping it is left to the recommendation. This replaces the rule that `docs/` and `site/` are only changed for a
+  release.
+- The code itself is optimised too (owner, 2026-11-22): as small as possible while keeping every function. A check
+  for slop (project-triage) comes early in the build phase, right after the website goes, and its fixes come before
+  the rest of the build; shrinking the code is also part of the optimisation phase, alongside speed and memory.
+- Add-on testing (owner, 2026-11-22): V2 must work with basically every add-on people use. Tested with the 1,000
+  most-downloaded add-ons on Blender's extensions platform (5,000 would mostly add add-ons with very few users), plus
+  the most popular paid ones where a copy is provided; after everything else is built, before any optimisation.
+- Pull requests (owner, 2026-11-22): the work of every ticket goes up as a pull request in the shape of Matt Pocock's
+  `pr` skill (Summary, Evidence, Merge Danger), so the owner can review it quickly; never as a plain commit. Matt
+  Pocock's skills are used for the work (`implement` with `tdd` and `code-review`, `research`, `diagnosing-bugs`). The
+  steps are in CLAUDE.md, "Working a ticket". The glossary is `GLOSSARY.md`, the name his current skills use.
 
 ## Finishing plan (owner, 2026-11-18 evening; status lives in DEVELOPMENT.md)
 
