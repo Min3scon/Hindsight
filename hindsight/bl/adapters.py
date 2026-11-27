@@ -12,7 +12,6 @@ Hindsight id (or None).
 from __future__ import annotations
 
 import struct
-import time
 
 import bpy
 
@@ -3945,9 +3944,3 @@ _F64 = struct.Struct("<d")
 
 def for_datablock(idb) -> list:
     return [a for a in ADAPTERS.values() if a.handles(idb)]
-
-
-def timed_capture(adapter, idb) -> tuple:
-    t = time.perf_counter()
-    v = adapter.capture(idb)
-    return v, (time.perf_counter() - t) * 1000.0

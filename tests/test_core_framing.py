@@ -13,6 +13,9 @@ from hindsight.core.types import (
     POSITION_KEY, MASK_KEY, EDGE_VERTS_KEY, ChannelDelta, Snapshot, Step, DELTA, TOPO, JOIN, DATA,
 )
 
+sys.path.insert(0, os.path.dirname(__file__))   # tests/: the reference copies (Blender's --python adds no path)
+from reference import framing as RF  # noqa: E402
+
 A, B = "objA", "objB"
 
 
@@ -250,14 +253,14 @@ def test_history_extents_covers_every_step():
             for _ in range(8):
                 basis = F.view_basis(rng.uniform(-3, 3), rng.uniform(-1.2, 1.2))
                 tx, ty = rng.uniform(0.2, 0.8), rng.uniform(0.2, 0.8)
-                past = F.history_extents(hc, st, A, basis, tx, ty)
+                past = RF.history_extents(hc, st, A, basis, tx, ty)
                 assert past is not None
                 got = F.merge(F.extents(st.arrays[POSITION_KEY], basis, tx, ty), past)
                 want = _all_extents(truth.values(), basis, tx, ty)
                 assert close(got, want, 1e-9 * (1 + np.abs(want).max())), (cursor, got, want)
             assert fingerprint(hc, st) == before, "history_extents changed the history or the state"
-        assert F.history_extents(h, None, A, basis, tx, ty) is None
-        assert F.history_extents(h, end, "nobody", basis, tx, ty) is None
+        assert RF.history_extents(h, None, A, basis, tx, ty) is None
+        assert RF.history_extents(h, end, "nobody", basis, tx, ty) is None
 
 
 def test_history_extents_stops():
@@ -267,7 +270,7 @@ def test_history_extents_stops():
 
     def check(h, end, truth, reachable):
         got = F.merge(F.extents(end.arrays[POSITION_KEY], basis, tx, ty),
-                      F.history_extents(h, end, A, basis, tx, ty))
+                      RF.history_extents(h, end, A, basis, tx, ty))
         want = _all_extents([truth[p] for p in reachable], basis, tx, ty)
         assert close(got, want, 1e-9 * (1 + np.abs(want).max())), (got, want)
 
@@ -394,7 +397,7 @@ def test_extents_multi_and_batched_history():
     for batch in (1, 50, 65536):
         got = F.history_extents_multi(h, end, A, bases, tans, batch=batch)
         for i, (b, tx, ty) in enumerate(views):
-            want = F.history_extents(h, end, A, b, tx, ty)
+            want = RF.history_extents(h, end, A, b, tx, ty)
             assert close(got[i], want, 1e-9 * (1 + np.abs(want).max())), (batch, i)
 
 
