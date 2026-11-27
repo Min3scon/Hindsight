@@ -70,7 +70,56 @@ def test_each_side_gets_its_own_copy():
     assert equiv.check(grow, grow, []) == 1
 
 
+class Obj:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class Slot:
+    __slots__ = ("x", "y")
+
+
+def test_objects_compare_both_sides_names():
+    """An attribute only one side has is a difference, None against no attribute too; an object with nothing set on
+    it is compared with ==."""
+    assert "on one side only" in fails(lambda: Obj(a=1), lambda: Obj(a=1, extra=2))
+    assert "on one side only" in fails(lambda: Obj(a=1, x=None), lambda: Obj(a=1))
+    s1, s2 = Slot(), Slot()
+    s1.x, s2.x, s2.y = 1, 1, 2
+    assert "on one side only" in fails(lambda: s1, lambda: s2)
+    assert "top" in fails(lambda: Obj(), lambda: object.__new__(Obj))   # nothing set: object() == is identity
+    assert equiv.check(lambda: Obj(a=[1.5]), lambda: Obj(a=[1.5])).a == [1.5]
+
+
+def test_registry_key_sees_the_load_report_and_runs_no_shipped_code():
+    """equiv.registry (the key a move's registry reading is checked with) includes the load report, so a move that
+    reports damage differently fails; and it never calls persist's own helpers."""
+    from tests import corpus as C
+    from hindsight.core import persist
+    data = C.payload("beta2/folder/scene_hindsight/history.hsr", "registry")
+
+    def changed(b):
+        reg = persist.registry_from_bytes(b)
+        reg.load_report = dict(reg.load_report, damaged=list(reg.load_report.get("damaged", [])) + ["x"])
+        return reg
+
+    saved, persist._meta_for_json = persist._meta_for_json, None      # the key must not need it
+    try:
+        assert equiv.check(persist.registry_from_bytes, lambda b: persist.registry_from_bytes(b), data,
+                           key=equiv.registry).histories
+        assert "load_report" in fails(persist.registry_from_bytes, changed, data, key=equiv.registry)
+        for _n, b in C.damaged(data, "registry"):
+            try:
+                persist.registry_from_bytes(b)
+            except ValueError:
+                continue
+            assert "load_report" in fails(persist.registry_from_bytes, changed, b, key=equiv.registry)
+    finally:
+        persist._meta_for_json = saved
+
+
 for t in (test_same_results_and_bytes_pass, test_a_different_value_fails, test_different_bytes_written_fail,
-          test_a_different_exception_fails, test_each_side_gets_its_own_copy):
+          test_a_different_exception_fails, test_each_side_gets_its_own_copy,
+          test_objects_compare_both_sides_names, test_registry_key_sees_the_load_report_and_runs_no_shipped_code):
     H.run(t)
 H.finish()

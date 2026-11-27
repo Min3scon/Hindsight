@@ -2,7 +2,7 @@
 the engine run on the same input, and must give the same result, write the same bytes and raise the same exception
 (class and message), bit for bit.
 
-    equiv.check(ref.registry_from_bytes, persist.registry_from_bytes, data, key=H.saved_steps)
+    equiv.check(ref.registry_from_bytes, persist.registry_from_bytes, data, key=equiv.registry)
     equiv.check(ref.atomic_write, journal.atomic_write, equiv.Out("h.bin"), data)
 
 Each side gets its own deep copy of the arguments; an `Out(name)` argument becomes a path in a fresh empty folder
@@ -11,6 +11,7 @@ and the files in the two folders must be the same. Floats compare by their bits 
 itself), numpy arrays by dtype, shape and bytes, other objects by type and attributes.
 """
 import copy
+import json
 import os
 import shutil
 import struct
@@ -67,7 +68,9 @@ def _run(f, args, kw):
     rkw = {k: real(v) for k, v in kw.items()}
     try:
         out = f(*rargs, **rkw)
-    except Exception as exc:          # noqa: BLE001 - the exception is what is compared
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except BaseException as exc:      # noqa: BLE001 - the exception is what is compared (an engine panic too)
         out = exc
     files = {}
     for i, d in enumerate(dirs):
@@ -111,9 +114,41 @@ def _diff(a, b, at="top", seen=None):
         return next((w for k in a if (w := _diff(a[k], b[k], f"{at}[{k!r}]", seen))), None)
     if isinstance(a, (set, frozenset)):
         return None if a == b else at
-    attrs = getattr(a, "__dict__", None)
-    if attrs is not None or hasattr(a, "__slots__"):
-        names = list(attrs) if attrs is not None else []
-        names += [s for c in type(a).__mro__ for s in getattr(c, "__slots__", ()) if hasattr(a, s)]
-        return next((w for n in names if (w := _diff(getattr(a, n), getattr(b, n, None), f"{at}.{n}", seen))), None)
+    if hasattr(a, "__dict__") or hasattr(a, "__slots__"):
+        na, nb = _names(a), _names(b)                # both sides' names: one only one side has is a difference
+        if na != nb:
+            return f"{at} (attributes {sorted(na ^ nb)} on one side only)"
+        w = next((w for n in sorted(na) if (w := _diff(getattr(a, n), getattr(b, n), f"{at}.{n}", seen))), None)
+        if w is not None or na:
+            return w                                 # nothing set on it: only its == can tell (below)
     return None if a == b else at
+
+
+def _names(o):
+    """The attributes set on an object: its __dict__ and every __slots__ slot that holds a value."""
+    out = set(getattr(o, "__dict__", None) or ())
+    for c in type(o).__mro__:
+        sl = getattr(c, "__slots__", ())
+        out.update(n for n in ((sl,) if isinstance(sl, str) else sl) if n not in ("__dict__", "__weakref__")
+                   and hasattr(o, n))
+    return out
+
+
+def _meta(m):
+    """A step's meta as the file keeps it, through plain json: the extra's snapshots left out."""
+    m = dict(m or {})
+    if isinstance(m.get("extra"), dict):
+        m["extra"] = {k: v for k, v in m["extra"].items() if k != "_snapshots"}
+    return json.loads(json.dumps(m))
+
+
+def registry(reg):
+    """The key for a registry a move reads (equiv.check(..., key=equiv.registry)): its load report (format, damaged,
+    mended), its settings, and each history's members, cursor, morph target and steps as (bytes, CRC-32, meta).
+    It runs no shipped code, so the reference's result is never read through a move's engine (rule 1)."""
+    out = {"load_report": reg.load_report,
+           "settings": (reg.next_seq, reg.use_global, reg.preserve_modes, dict(reg.by_object), set(reg.disabled),
+                        set(reg.everything))}
+    for uid, h in reg.histories.items():
+        out[uid] = (list(h.members), h.cursor, h.morph_target, [(*e.blob_crc(), _meta(e.meta)) for e in h.entries])
+    return out

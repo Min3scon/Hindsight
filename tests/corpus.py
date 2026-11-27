@@ -79,7 +79,8 @@ def damaged(data, kind):
 
 def damaged_parts(parts):
     """[(name, parts)]: copies of format 5's parts with the index part, or the first step part, cut short or with a
-    flipped byte (see damaged)."""
+    flipped byte (see damaged); the index copy flipped or gone, both index parts cut short (no readable index), and the
+    first step part missing."""
     uid = next(k for k in parts if k not in ("index", "index_copy"))
     first = min(parts[uid], key=int)
     out = []
@@ -94,4 +95,22 @@ def damaged_parts(parts):
             else:
                 copy[uid][first] = b
             out.append((f"{name}:{what}", copy))
+
+    def edit(name, **parts_set):
+        copy = {k: (dict(v) if isinstance(v, dict) else v) for k, v in parts.items()}
+        for k, v in parts_set.items():
+            if v is None:
+                copy.pop(k, None)
+            else:
+                copy[k] = v
+        return (name, copy)
+
+    idx, cp = bytes(parts["index"]), bytes(parts.get("index_copy") or parts["index"])
+    out.append(edit("index_copy:flip_middle", index_copy=cp[:len(cp) // 2] + bytes([cp[len(cp) // 2] ^ 0xFF])
+                    + cp[len(cp) // 2 + 1:]))
+    out.append(edit("index+index_copy:cut_in_half", index=idx[:len(idx) // 2], index_copy=cp[:len(cp) // 2]))
+    out.append(edit("index_copy:missing", index_copy=None))
+    missing = edit(f"{uid}/{first}:missing")
+    missing[1][uid].pop(first)
+    out.append(missing)
     return out
