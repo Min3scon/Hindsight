@@ -1,5 +1,5 @@
 """framing.history_extents_multi over STEPS injected strokes at N vertices (Movie Mode framing walk)."""
-import os, sys, time, cProfile, pstats, io, json, statistics
+import os, sys, time, cProfile, pstats, io, json
 ROOT = sys.argv[1]; N = sys.argv[2]; STEPS = sys.argv[3]; PROF = len(sys.argv) > 4
 sys.argv = [sys.argv[0], ROOT, N, STEPS, "1"]
 sys.path.insert(0, os.path.join(ROOT, "bench"))

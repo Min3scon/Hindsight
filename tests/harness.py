@@ -26,9 +26,6 @@ if ROOT not in sys.path:
 
 import hindsight  # noqa: E402
 from hindsight.bl import runtime, meshio  # noqa: E402
-from hindsight.core.types import (  # noqa: E402
-    POSITION_KEY, MASK_KEY, FACE_SET_KEY, HIDE_VERT_KEY, HIDE_POLY_KEY,
-)
 
 _registered = [False]
 _failures = []

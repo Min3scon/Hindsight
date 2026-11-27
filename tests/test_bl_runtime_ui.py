@@ -60,7 +60,6 @@ def test_visible_uids_same_answers():
 
 def _reference_step_list(context, around=12):
     """step_list as it was: every step's label built, then the window taken."""
-    from hindsight.core import globaltl  # noqa: F401
     out = []
     if runtime.use_global(context):
         vis = runtime._visible_uids()

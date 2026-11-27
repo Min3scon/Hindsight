@@ -3,7 +3,6 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 replaced (tests/reference/morph_dab.py): the same positions, the same strongest weights and the same count, bit
 for bit, on random meshes and strokes (masks out of range and NaN, hidden vertices, vertices one float32 step
 either side of the box and of the sphere), dab after dab on the same arrays; and its refusals."""
-import struct
 
 import numpy as np
 

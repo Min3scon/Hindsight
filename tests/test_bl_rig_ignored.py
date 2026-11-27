@@ -97,7 +97,7 @@ def test_added_rig_records_nothing():
 
 def test_global_history_keeps_rig():
     setup()
-    cam, key = rig("camera"), rig("key")
+    rig("camera"), rig("key")
     L.tick_like("add Movie Mode objects")
     want = {n: state(n) for n in ("Hindsight Camera", "Hindsight Key")}
     control_camera()

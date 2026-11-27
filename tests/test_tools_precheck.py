@@ -78,6 +78,22 @@ def test_forbidden_dirs():
     print("PASS test_forbidden_dirs")
 
 
+def test_pyflakes_reports_filtered():
+    out = ["tests\a.py:3:1: 'os' imported but unused",
+           "tests\a.py:9:5: local variable 'x' is assigned to but never used",
+           "tests\a.py:4:1: syntax error in forward annotation 'Vector'",
+           "tests\a.py:5:1: undefined name 'bpy_prop'"]
+    assert pc.keep_pyflakes_reports(out) == [out[0], out[1]]
+    print("PASS test_pyflakes_reports_filtered")
+
+
+def test_pyflakes_scope():
+    assert pc.lintable("tests/test_x.py") and pc.lintable("bench/scenarios/a.py") and pc.lintable("tools/t.py")
+    assert pc.lintable("tests_ui/s.py")
+    assert not pc.lintable("hindsight/bl/runtime.py") and not pc.lintable("tests/data.json")
+    print("PASS test_pyflakes_scope")
+
+
 def main():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

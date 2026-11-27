@@ -17,7 +17,7 @@ import numpy as np
 from hindsight.core import codec, delta, persist, step as stepmod
 from hindsight.core.history import History, MeshState
 from hindsight.core.registry import Registry
-from hindsight.core.types import (ADD, DATA, DELTA, MISSING, POSITION_KEY, DataChange, Entry, Step)
+from hindsight.core.types import DATA, DELTA, MISSING, POSITION_KEY, DataChange, Step
 
 stepmod.VERIFY = True
 WEIRD = [0.0, -0.0, math.inf, -math.inf, 5e-324, -5e-324, 1.1754943508222875e-38, 3.4028234663852886e+38,

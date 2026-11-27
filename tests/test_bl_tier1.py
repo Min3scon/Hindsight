@@ -148,7 +148,6 @@ def test_collections_visibility_names():
 
 def test_kinds_switch_off_and_on():
     a, b, c = setup()
-    uid = runtime.obj_uid(b)
     datarec.FORCE_KINDS[0] = {"transforms"}
     datarec.rebaseline()
     k = b.constraints.new("COPY_ROTATION")

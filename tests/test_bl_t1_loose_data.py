@@ -119,7 +119,7 @@ def test_going_back_over_a_making_keeps_what_is_used_now():
     m = bpy.data.materials.new("Later")
     m.use_fake_user = True
     L.tick_like("make material")
-    t = bpy.data.texts.new("later.txt")
+    bpy.data.texts.new("later.txt")
     L.tick_like("make text")
     a.data.materials.append(m)
     L.tick_like("assign")
@@ -146,7 +146,7 @@ def test_loose_making_on_the_global_timeline():
     read = lambda: (bpy.data.texts.get("g.txt") is not None, bpy.data.materials.get("GMat") is not None,
                     tuple(round(x, 3) for x in bpy.data.objects["A"].location))
     states = [read()]
-    t = bpy.data.texts.new("g.txt")
+    bpy.data.texts.new("g.txt")
     L.tick_like("text")
     states.append(read()); seqs.append(L.max_seq())
     m = bpy.data.materials.new("GMat")
@@ -166,7 +166,7 @@ def test_loose_making_on_the_global_timeline():
 
 def test_loose_making_survives_save_reload_and_recovery():
     import shutil, tempfile
-    from hindsight.bl import datarec, persistence
+    from hindsight.bl import datarec
     from hindsight.core.types import SETTINGS
     tmp = tempfile.mkdtemp(prefix="hs_loose152_")
     try:

@@ -11,7 +11,6 @@ throwaway folder under .tmp/ and --factory-startup is passed.
 """
 import glob
 import os
-import re
 import subprocess
 import sys
 import time

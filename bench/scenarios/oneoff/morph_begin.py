@@ -1,6 +1,6 @@
 """Morph History: time of begin (a stroke start) over REPS strokes, the first and the later ones. Was: time per dab (apply_morph_at) on an N-vertex grid sphere, 40 dabs along a path, radius ~3% of verts.
 Usage: python morph_dab.py ROOT N [prof]. Prints AB {json}."""
-import os, sys, time, statistics, json, cProfile, pstats, io
+import os, sys, time, statistics, json
 ROOT = sys.argv[1]; N = int(sys.argv[2]); PROF = len(sys.argv) > 3
 sys.path.insert(0, ROOT); sys.path.insert(0, os.path.join(ROOT, "tests"))
 if os.environ.get("HS_ENGINE"): sys.path.insert(0, os.environ["HS_ENGINE"])

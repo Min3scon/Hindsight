@@ -23,7 +23,7 @@ def run(d):
     d.shot("A_first_run_status_bar")
 
     # ---------------------------------------------------------------- object mode, no history
-    ob = C.fresh_sphere(d)
+    C.fresh_sphere(d)
     C.frame_view(d)
     yield from C.show_sidebar_tab(d)
     win, area, reg, ui, space = d.view3d()
