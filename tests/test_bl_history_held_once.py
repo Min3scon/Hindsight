@@ -2,8 +2,10 @@
 (the bytes on the Text ``.hindsight_history``) is dropped, so it is in memory once. A history Hindsight doesn't
 read (from a newer Hindsight, or unreadable) is not dropped: it stays in the file untouched, as before.
 #55: a save puts the copy back only for the write (Save, Save As and Save Copy alike) and takes it out after.
-#57: a file recovered from Blender's autosave opens cleanly without its history; after a crash the .blend itself and
-the crash journal bring every step back, even when the autosave was recovered first."""
+#57: a file recovered from Blender's autosave opens without its history (format 5's stub without its parts, with
+#128's note); after a crash the .blend itself and the crash journal bring every step back, even when the autosave was
+recovered first. Format 5 (#127) keeps no bytes or save id on the Text; the newer and unreadable cases are format 4
+files (H.save_format4), whose reading is unchanged."""
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import json
 import shutil
@@ -90,7 +92,7 @@ def test_blenders_copy_goes_after_opening_and_every_step_plays_back():
     bpy.ops.wm.open_mainfile(filepath=p)
     assert copies() == [], copies()
     text = bpy.data.texts[persistence.TEXT_NAME]
-    assert text.get(persistence.SAVE_ID_PROP) == runtime.reg().save_id      # the rest of the Text stays
+    assert text.get(persistence.DATA_PROP) == persist.STUB and persistence.SAVE_ID_PROP not in text  # the stub stays
     ob = bpy.data.objects["E"]
     h = runtime.history_of(ob)
     assert h is not None and len(h.entries) == len(states) - 1
@@ -131,10 +133,11 @@ def test_save_as_save_and_save_copy_each_take_blenders_copy_out_again():
 
 def test_a_newer_history_stays_and_is_saved_back_untouched():
     p, _ = saved_with_states()
+    H.save_format4(p)
     blob = H.stored_text(p)[persistence.DATA_BIN_PROP]
     (jlen,) = U32.unpack_from(blob, 4)
     doc = json.loads(blob[8:8 + jlen])
-    doc["format"] = doc["version"] = persist.FORMAT_VERSION + 1
+    doc["format"] = doc["version"] = persist.FORMAT5 + 1      # newer than any this build reads (5 is format 5)
     js = json.dumps(doc).encode()
     newer = persist.REG_MAGIC + U32.pack(len(js)) + js + blob[8 + jlen:]
     stored_as(p, newer)
@@ -151,6 +154,7 @@ def test_a_newer_history_stays_and_is_saved_back_untouched():
 
 def test_an_unreadable_history_stays_and_is_saved_back_untouched():
     p, _ = saved_with_states()
+    H.save_format4(p)
     raw = bytearray(H.stored_text(p)[persistence.DATA_BIN_PROP])
     raw[:4] = b"JUNK"
     stored_as(p, bytes(raw))
@@ -183,8 +187,9 @@ def test_blenders_undo_after_opening_does_not_bring_the_copy_back():
     assert h is not None and len(h.entries) == len(states) - 1
 
 
-# #57: Blender's autosave runs no save hooks, so it holds no copy of the history: a file recovered from it opens
-# without its history (the accepted cost). After a crash, the .blend itself and the crash journal bring every step back.
+# #57: Blender's autosave runs no save hooks, so it holds no copy of the history (format 5's stub without its parts):
+# a file recovered from it opens without its history and says so (the accepted cost, #128). After a crash, the .blend
+# itself and the crash journal bring every step back.
 def with_unsaved_steps(n=2):
     """Saved with every step, then ``n`` steps more recorded on top and not saved; the state at each position."""
     SETTINGS.crash_recovery = "INTERRUPTED"
@@ -202,13 +207,21 @@ def with_unsaved_steps(n=2):
 
 
 def autosave_of(p):
-    """What Blender's autosave writes: the session as it is in memory, written without Hindsight's save hooks."""
+    """What Blender's autosave writes: the session as it is in memory, written without Hindsight's save hooks. (Not
+    persistence.unregister(): turning Hindsight off puts the parts back on the Text for a save without it, #124.)"""
     a = os.path.join(os.path.dirname(p), "e_1234_autosave.blend")
-    persistence.unregister()
+    hl = bpy.app.handlers
+    gone = [(lst, fn) for lst in (hl.save_pre, hl.save_post) for fn in (persistence.on_save_pre, persistence.on_save_post)
+            if fn in lst]
+    for lst, fn in gone:
+        lst.remove(fn)
     try:
         bpy.ops.wm.save_as_mainfile(filepath=a, copy=True)
     finally:
-        persistence.register()
+        for lst, fn in gone:
+            lst.append(fn)
+    stored = H.stored_text(a)
+    assert stored.get(persistence.DATA_PROP) == persist.STUB and persistence.PARTS_PROP not in stored, list(stored)
     return a
 
 
@@ -216,7 +229,8 @@ def opened_cleanly_without_history(work):
     ob = bpy.data.objects["E"]
     assert runtime.history_of(ob) is None
     assert positions(ob) == work, "the autosave's work didn't come back"
-    assert not runtime.load_notes and runtime.missing_message[0] is None, (runtime.load_notes, runtime.missing_message)
+    assert [t for _s, t in runtime.load_notes] == [persistence.NO_PARTS_TEXT], runtime.load_notes     # #128
+    assert runtime.missing_message[0] is None, runtime.missing_message
     assert not guard.failed(), guard.failed()
 
 
