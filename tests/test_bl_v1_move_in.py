@@ -18,7 +18,7 @@ import bpy
 
 import tests.harness as H
 from tests.test_core_migration import FILES, FIX, check_all_positions
-from hindsight.bl import persistence, runtime
+from hindsight.bl import idmap, persistence, runtime
 from hindsight.core import persist
 
 TMP = tempfile.mkdtemp(prefix="hindsight_v1_move_in_")
@@ -64,8 +64,10 @@ def with_default(want, v1, what):
     """`want` with #10's default on: nobody chose in a V1 file, so opening it switches "Everything in this file" on
     (#105) for every object, and a save with a history keeps the ids it gave out. Each open gives out its own."""
     reg = runtime.reg()
-    assert reg.file_default and set(v1.by_object) <= reg.everything, f"{what}: the default is not on (#10)"
-    return dict(want, settings=want["settings"][:5] + (set(reg.everything),))
+    ids = {idmap.uid_of(x) for x in (*bpy.data.scenes, *bpy.data.objects)}
+    assert reg.file_default and reg.everything == ids, f"{what}: the default is not on, or not for every object (#10)"
+    assert set(v1.by_object) <= ids, what
+    return dict(want, settings=want["settings"][:5] + (set(ids),))
 
 
 def move_in(name, mode):
