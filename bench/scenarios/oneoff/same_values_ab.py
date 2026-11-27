@@ -8,13 +8,14 @@ A = datarec._same_values as before R070 (the marshal compare alone, copied here)
 Each round times 5 calls of each case on each side, in the order A B or B A (alternating). Prints one
 line "AB {...}": per case the median of the round medians and the best, in ms, for A and B, and the
 _same_values share alone (the function timed around its 501 calls in one operation)."""
-import json, marshal, os, statistics, sys, time
+import json, marshal, statistics, sys, time
 ROOT = sys.argv[1]
 ROUNDS = int(sys.argv[2]) if len(sys.argv) > 2 else 15
 sys.path.insert(0, ROOT)
 import bpy
 import tests.harness as H
 from hindsight.bl import datarec
+from hindsight.bl import prefs
 assert datarec.__file__.startswith(ROOT), datarec.__file__
 C = bpy.context
 
@@ -38,7 +39,7 @@ for i in range(500):
     if i % 3 == 0:
         C.active_object.constraints.new("COPY_ROTATION")
 obs = list(C.scene.objects)
-datarec.FORCE_SCOPE[0] = "EVERYTHING"
+prefs.FORCE["record_scope"] = "EVERYTHING"
 for o in obs:
     datarec.set_tracked(o, True)
 datarec.set_tracked(C.scene, True)

@@ -3,7 +3,7 @@ import bpy
 import numpy as np
 import tests.harness as H
 from hindsight.bl import runtime, joinsep
-from hindsight.core.types import SETTINGS, JOIN
+from hindsight.core.types import JOIN
 
 C = bpy.context
 

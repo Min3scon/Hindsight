@@ -46,7 +46,7 @@ class Book:
         before = H.snapshot(ob)
         H.fake_stroke(ob, seed, n=40)
         step = H.commit(ob)
-        h = runtime.history_of(ob)
+        runtime.history_of(ob)
         if step is None:
             return None
         self.after[step.seq] = H.snapshot(ob)
@@ -543,7 +543,6 @@ def run_session(seed, n_actions=24):
             elif a < 0.92:
                 file_state = save(path)
         cut = None
-        jp = persistence.journal_path(path)
         n = _journal_len(path)
         if rng.random() < 0.7:
             cut = rng.randint(1, n)

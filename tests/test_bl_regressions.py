@@ -15,7 +15,7 @@ from hindsight.bl import guard, runtime, scrubber  # noqa: E402
 def test_handlers_survive_file_open():
     """Beta 1: recorder handlers were not @persistent, so File > Open silently stopped recording."""
     H.fresh()
-    ob = H.make_mesh(500)
+    H.make_mesh(500)
     path = os.path.join(tempfile.mkdtemp(prefix="hs_reg_"), "f.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)

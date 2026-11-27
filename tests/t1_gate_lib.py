@@ -11,6 +11,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_ops as T
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 from hindsight.bl import warnings as W
 from hindsight.core import globaltl
 
@@ -28,8 +29,8 @@ def snap() -> dict:
 
 
 def track_all():
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
-    datarec.FORCE_KINDS[0] = None
+    prefs.FORCE["record_scope"] = "EVERYTHING"
+    prefs.FORCE["record_kinds"] = None
     for ob in list(C.scene.objects):
         datarec.set_tracked(ob, True)
     datarec.set_tracked(C.scene, True)

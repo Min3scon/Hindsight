@@ -5,7 +5,7 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
-from hindsight.bl import adapters, runtime
+from hindsight.bl import runtime
 
 C = bpy.context
 V3 = bpy.app.version >= (4, 3, 0)
