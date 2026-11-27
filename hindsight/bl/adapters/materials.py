@@ -407,14 +407,15 @@ def _write_items(node, items: dict) -> None:
             set_struct_values(it, {k: x for k, x in w.items() if k not in ("socket_type", "data_type")})
 
 
-def _make_material_again(muid: str, rec: dict):
-    """D163: a material made with a slot that a jump took away going back: made again under its id (the
-    record, written next, holds its name and settings)."""
+def _make_material_again(muid: str, rec: dict, coll: str):
+    """D163: a material made with a slot that a jump took away going back, or (#123) a scene's world that a save
+    left out with the deleted scene that alone used it: made again under its id (the record, written next, holds
+    its name and settings)."""
     name = (rec.get("values") or {}).get("name")
     if not isinstance(name, str):
         return None
     try:
-        m = bpy.data.materials.new(name)
+        m = getattr(bpy.data, coll).new(name)
         if rec.get("tree") is not None and getattr(m, "node_tree", None) is None:
             m.use_nodes = True              # Blender 4.2: a new material has no node tree
         m[idmap.UID_PROP] = muid
@@ -425,11 +426,12 @@ def _make_material_again(muid: str, rec: dict):
         return None
 
 
-def write_material(muid: str, rec: dict, make: bool = False) -> None:
-    """make: a material slot's (D163); a world's record (scene, loose) never makes a Material."""
+def write_material(muid: str, rec: dict, make: str = "") -> None:
+    """make: where a missing one is made again: "materials" for a material slot's (D163), "worlds" for a scene's
+    world (#123). A loose record makes none here (_make_loose_again does)."""
     m = idmap.find(muid)
     if m is None:
-        m = _make_material_again(muid, rec) if make else None
+        m = _make_material_again(muid, rec, make) if make else None
         if m is None:
             return
     _MAT_CACHE.pop(m.session_uid, None)

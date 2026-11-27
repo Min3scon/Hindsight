@@ -46,9 +46,13 @@ class SceneAdapter(Adapter):
 
     def write(self, idb, values: dict, recorded=None) -> None:
         write_id_props(idb, values)             # D114: custom properties and add-on data
+        st = values.get("settings")
+        uses = st.get("scene", {}).get("world") if isinstance(st, dict) else None
         for path, v in values.items():          # D116: the world before the settings that point at it
             if path.startswith(WORLD_PREFIX) and isinstance(v, dict):
-                write_material(path[len(WORLD_PREFIX):], v)
+                wu = path[len(WORLD_PREFIX):]
+                # #123: the world it uses here, gone because a save left it out with a deleted scene, is made again
+                write_material(wu, v, make="worlds" if uses == {"ref": wu} else "")
             elif path.startswith(WORLDP_PREFIX) and isinstance(v, dict):
                 w = idmap.find(path[len(WORLDP_PREFIX):])
                 if w is not None:

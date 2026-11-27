@@ -130,7 +130,7 @@ class ObjectAdapter(Adapter):
             write_modifiers(idb, values, recorded)
         for path, v in values.items():          # D112: materials before the slots that hold them
             if path.startswith(MAT_PREFIX) and isinstance(v, dict):
-                write_material(path[len(MAT_PREFIX):], v, make=True)
+                write_material(path[len(MAT_PREFIX):], v, make="materials")
             elif path.startswith(MAT_PREFIX) and v is MISSING and (m := idmap.find(path[len(MAT_PREFIX):])):
                 queue_left(m, "lm")             # D163: back over the slot that made it
             elif path.startswith(MATP_PREFIX) and isinstance(v, dict):
