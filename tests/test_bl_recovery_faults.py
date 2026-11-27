@@ -18,7 +18,7 @@ import bpy
 import tests.harness as H
 from hindsight.bl import runtime, persistence, joinsep
 from hindsight.core import persist
-from hindsight.core.journal import Journal
+from hindsight.core.journal import Journal, _records, _scan
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -85,23 +85,17 @@ def interrupt(path, cut=None):
 
 
 def cut_journal(jp, n):
+    """Cut the journal after its first `n` records (all of them if it has fewer): one scan finds
+    where each record ends, then the file is cut at that offset."""
     j = Journal(jp)
-    ends = []
-    size = 0
-    # record boundaries: read once, then find the size of each prefix
     recs = j.read()
     j.close()
+    ends = []
     with open(jp, "rb") as fh:
-        data = fh.read()
-    for k in range(len(data) + 1):
-        if len(ends) == n:
-            break
-        tmp = jp + ".probe"
-        with open(tmp, "wb") as fh:
-            fh.write(data[:k])
-        if len(Journal(tmp).read()) == len(ends) + 1:
-            ends.append(k)
-        os.remove(tmp)
+        for rec in _records(_scan(fh, os.path.getsize(jp), False), []):
+            if len(ends) == n:
+                break
+            ends.append(rec[1])
     size = ends[-1] if ends else 0
     with open(jp, "r+b") as fh:
         fh.truncate(size)
