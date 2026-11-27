@@ -61,7 +61,8 @@ def test_engine_api_14():
     # API 12 (#66): step_encoding, ENCODINGS, UnknownEncoding; decoding a later encoding raises UnknownEncoding
     # API 13 (#69): part_salvage (tests/test_core_format5_damage.py)
     # API 15 (#147): the step's shapes, step_from_bytes and same_step (tests/test_core_types_engine.py)
-    assert native.API == 15 and N.API == 15, (native.API, N.API)
+    # API 16 (#148): topology packing (tests/test_core_topopack.py)
+    assert native.API == 16 and N.API == 16 and N.topo_pack, (native.API, N.API)
 
 
 def test_step_part_round_trip_bit_exact():

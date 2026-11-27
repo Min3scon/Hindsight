@@ -40,7 +40,7 @@ import zlib
 import numpy as np
 
 from .v1_journal import atomic_write, atomic_write_json
-from hindsight.core.types import Entry
+from .types import Entry
 
 REG_MAGIC = b"HSR1"
 FORMAT_VERSION = 4
@@ -287,7 +287,7 @@ def registry_from_bytes(b):
             meta = metas[i] if i < len(metas) else None
             if meta is None:
                 try:
-                    from hindsight.core.step import step_from_bytes
+                    from .step import step_from_bytes
                     meta = step_from_bytes(blob).meta()
                 except Exception:
                     slots.append(None)
@@ -338,7 +338,7 @@ def sidecar_dir(blend_path: str) -> str:
 
 
 def save_sidecar(reg, blend_path: str) -> None:
-    from hindsight.core.types import SETTINGS
+    from .types import SETTINGS
     folder = sidecar_dir(blend_path)
     os.makedirs(folder, exist_ok=True)
     parts = registry_parts(reg, getattr(SETTINGS, "compression", "auto") or "auto")
@@ -453,7 +453,7 @@ def replay(reg, records: list) -> int:
     ``reg.replay_report`` is {"stopped": {history uid: steps left out}}. The last journaled cursor of a
     history is kept in ``h.recovered_cursor``."""
     from hindsight.core.history import History
-    from hindsight.core.step import step_from_bytes
+    from .step import step_from_bytes
 
     start = 0
     for i, rec in enumerate(records):

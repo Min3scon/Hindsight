@@ -13,7 +13,7 @@ history.py call the engine. The Python versions are in tests/reference/.
 """
 from __future__ import annotations
 
-API = 15                    # the module's API number (native/src/lib.rs) this code is written for
+API = 16                    # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
 # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
 # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
@@ -32,6 +32,8 @@ API = 15                    # the module's API number (native/src/lib.rs) this c
 # step from its blob and comparing two steps (#147).
 # API 14: + json_setup, json_dumps, json_loads, records_to_bytes, records_from_bytes, step_extra, read_header:
 # the JSON of a step's extra and data records and read_header's dict, with the stdlib json on the error path (#146).
+# API 16: + topo_pack, topo_unpack, topo_hash, topo_pack_all, topo_packed_bytes: a mesh's topology packed, hashed and
+# unpacked (topopack.py, #148).
 
 
 class EngineMissing(ImportError):

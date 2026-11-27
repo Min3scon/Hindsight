@@ -46,16 +46,16 @@ def start(tag, n):
 def encode_threads():
     """The thread id of every step encoding while inside the block."""
     threads = []
-    real = stepmod.step_to_bytes
+    real = stepmod.parts_to_bytes
 
     def spy(*a, **k):
         threads.append(threading.get_ident())
         return real(*a, **k)
-    stepmod.step_to_bytes = spy
+    stepmod.parts_to_bytes = spy
     try:
         yield threads
     finally:
-        stepmod.step_to_bytes = real
+        stepmod.parts_to_bytes = real
 
 
 def test_big_records_are_encoded_off_the_main_thread_in_order():
@@ -128,12 +128,12 @@ def test_crash_in_the_middle_of_a_save_loses_no_step():
     bpy.ops.wm.save_as_mainfile(filepath=path)
     ob = bpy.data.objects["W"]
     H.enter(ob, "SCULPT")
-    real_encode = stepmod.step_to_bytes
+    real_encode = stepmod.parts_to_bytes
 
     def slow(*a, **k):              # the helper is still writing them when the save starts
         time.sleep(0.3)
         return real_encode(*a, **k)
-    stepmod.step_to_bytes = slow
+    stepmod.parts_to_bytes = slow
     try:
         for s in range(3):
             H.fake_stroke(ob, 90 + s, n=80)
@@ -153,7 +153,7 @@ def test_crash_in_the_middle_of_a_save_loses_no_step():
         finally:
             persist.registry_to_format5 = real_build
     finally:
-        stepmod.step_to_bytes = real_encode
+        stepmod.parts_to_bytes = real_encode
     H.fresh()                       # let go of the file and its journal, then put back what the crash left
     SETTINGS.crash_recovery = "INTERRUPTED"
     for key, f in (("journal", jp), ("blend", path)):

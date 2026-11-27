@@ -22,9 +22,10 @@ import zlib
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
-from reference import codec as rcodec, pure, step as rstep                  # noqa: E402
+from reference import codec as rcodec, pure, step as rstep, types as rtypes  # noqa: E402
+from tests import equiv                                                     # noqa: E402
 import test_core_native_steps as ns                                         # noqa: E402
-from hindsight.core import codec, delta, native, step as stepmod            # noqa: E402
+from hindsight.core import codec, delta, native, step as stepmod, types     # noqa: E402
 from hindsight.core.types import DELTA, Entry, Step                         # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -35,12 +36,12 @@ RNG = np.random.default_rng(7)
 
 def ref_write(st, *a):
     with pure():
-        return rstep.step_to_bytes(st, *a)
+        return rstep.step_to_bytes(equiv.like(st, rtypes), *a)       # the reference gets its own objects
 
 
 def ref_read(b):
     with pure():
-        return rstep.step_from_bytes(b)
+        return equiv.like(rstep.step_from_bytes(b), types)           # the engine's, for same_step
 
 
 def ref_recompress(b):
@@ -89,6 +90,30 @@ def test_nothing_in_hindsight_imports_the_reference():
     assert not loaded, loaded
     assert stepmod.step_to_bytes.__module__ == "hindsight.core.step"
     assert stepmod._N is native.ENGINE and codec._N is native.ENGINE
+
+
+# hindsight/core modules that are facades of the engine, their Python in tests/reference (dev/RUST_PLAN.md)
+FACADES = ("codec", "crc", "delta", "step", "topopack", "types")
+
+
+def test_no_reference_imports_a_facade():
+    """Rule 1 (dev/RUST_PLAN.md): a reference imports the reference copy of a moved module, never its facade, so no
+    test checks the engine against itself (#144's review). Not counted: pure(), whose job is to patch delta's facade,
+    and make_step_corpus.py, which writes the corpus with both sides."""
+    facades = {"hindsight.core." + f for f in FACADES}
+    bad = []
+    folder = os.path.join(ROOT, "tests", "reference")
+    for f in sorted(os.listdir(folder)):
+        if not f.endswith(".py") or f in ("__init__.py", "make_step_corpus.py"):
+            continue
+        for node in ast.walk(ast.parse(open(os.path.join(folder, f), encoding="utf-8").read())):
+            mods = []
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                mods = [node.module] + [f"{node.module}.{a.name}" for a in node.names]
+            elif isinstance(node, ast.Import):
+                mods = [a.name for a in node.names]
+            bad += [f"{f}:{node.lineno} {m}" for m in mods if m in facades]
+    assert not bad, bad
 
 
 def test_engine_runs_the_container():
@@ -685,7 +710,8 @@ def test_record_equals_diff_and_encode():
 
 
 def main():
-    tests = [test_record_equals_diff_and_encode, test_nothing_in_hindsight_imports_the_reference, test_engine_runs_the_container,
+    tests = [test_record_equals_diff_and_encode, test_nothing_in_hindsight_imports_the_reference,
+             test_no_reference_imports_a_facade, test_engine_runs_the_container,
              test_codec_bytes_equal_the_libraries, test_codec_reads_like_the_reference, test_codec_hostile_sizes,
              test_steps_equal_the_reference, test_property, test_corpus, test_legacy_files, test_hostile_blobs,
              test_subnormal_time_is_kept, test_hostile_headers, test_no_unbounded_allocation, test_errors_and_exceptions, test_input_types,

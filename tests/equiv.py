@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import struct
+import sys
 import tempfile
 
 import numpy as np
@@ -154,3 +155,59 @@ def registry(reg):
     for uid, h in reg.histories.items():
         out[uid] = (list(h.members), h.cursor, h.morph_target, [(*e.blob_crc(), _meta(e.meta)) for e in h.entries])
     return out
+
+
+# The step's shapes by attribute (hindsight.core.types and tests/reference/types.py have the same ones, #147).
+SHAPES = {"Step": ("seq", "label", "mode", "target", "time", "kind", "deltas", "before", "after", "extra", "records"),
+          "ChannelDelta": ("key", "idx", "vals", "exists", "op"), "Snapshot": ("counts", "arrays"),
+          "DataChange": ("adapter", "target", "changes")}
+
+
+_HOMES = ("hindsight.core.types", "tests.reference.types", "reference.types")   # the reference loads under both names
+
+
+def _home(o):
+    """'MISSING' or the shape's name if o is one of the engine's or a reference's, else None."""
+    mods = [sys.modules[m] for m in _HOMES if m in sys.modules]
+    if any(o is getattr(m, "MISSING", None) for m in mods):
+        return "MISSING"
+    name = type(o).__name__
+    if name in SHAPES and any(getattr(m, name, None) is type(o) for m in mods):
+        return name
+    return None
+
+
+def like(o, types, _depth=0):
+    """o with every Step, ChannelDelta, Snapshot, DataChange and MISSING (the engine's or the reference's) made of
+    `types`' classes (hindsight.core.types or tests/reference/types.py), inside lists, tuples and dicts: a reference
+    is given its own objects (rule 1, dev/RUST_PLAN.md), the engine its own. Subclasses and other types stay as they
+    are. shortcut: below 100 levels of nesting o is left as it is (the deep values of the tests hold no steps)."""
+    h = _home(o)
+    if h == "MISSING":
+        return types.MISSING
+    if h is not None:
+        return getattr(types, h)(**{n: like(getattr(o, n), types, _depth + 1) for n in SHAPES[h]})
+    t = type(o)
+    if _depth > 100:
+        return o
+    if t in (list, tuple):
+        return t(like(x, types, _depth + 1) for x in o)
+    if t is dict:
+        return {like(k, types, _depth + 1): like(v, types, _depth + 1) for k, v in o.items()}
+    return o
+
+
+def plain(o, _depth=0):
+    """The engine's and the references' objects in one form to compare: (class name, attributes), MISSING a string."""
+    h = _home(o)
+    if h == "MISSING":
+        return "<MISSING>"
+    if h is not None:
+        return (h,) + tuple((n, plain(getattr(o, n), _depth + 1)) for n in SHAPES[h])
+    if _depth > 100:
+        return o
+    if type(o) in (list, tuple):
+        return type(o)(plain(x, _depth + 1) for x in o)
+    if type(o) is dict:
+        return {k: plain(v, _depth + 1) for k, v in o.items()}
+    return o

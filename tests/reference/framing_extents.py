@@ -8,7 +8,7 @@ import numpy as np
 
 from hindsight.core import framing as F
 from hindsight.core.history import MeshState
-from hindsight.core.types import JOIN, POSITION_KEY
+from .types import JOIN, POSITION_KEY
 
 
 def extents(points, basis, tan_x, tan_y):

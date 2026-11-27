@@ -15,7 +15,7 @@ import time
 import weakref
 
 from .codec import NONE, ZLIB_MAX, ZSTD_MAX
-from .step import QUICK_FLAG, STEP_MAGIC, recompress, step_to_bytes
+from .step import QUICK_FLAG, STEP_MAGIC, parts_to_bytes, recompress, step_parts
 
 _STOP = object()
 _STRONG = frozenset((ZSTD_MAX, ZLIB_MAX, NONE))   # codec.is_strong's codes
@@ -107,7 +107,12 @@ class Packer:
             self._inflight.add(id(entry))
             self._pending += 1
         self._last_submit = time.monotonic()
-        self._q.put((entry, codec))
+        step = entry.step
+        try:
+            parts = step_parts(step)     # the JSON now, on the main thread: the worker gets no Python values (owner point 1)
+        except Exception as e:           # as the worker did: counted, the entry stays raw
+            parts = e
+        self._q.put((entry, codec, step, parts))
 
     def pending(self) -> int:
         with self._cond:
@@ -142,13 +147,14 @@ class Packer:
                 return
             if item is _NUDGE:
                 continue
-            entry, codec = item
+            entry, codec, step, parts = item
             while not self._stopped and not self._hurry and time.monotonic() - self._last_submit < QUIET_S:
                 time.sleep(0.05)
             try:
-                step = entry.step
-                if step is not None:
-                    blob = step_to_bytes(step, codec)
+                if isinstance(parts, Exception):
+                    raise parts
+                if entry.step is step:
+                    blob = parts_to_bytes(parts, codec)
                     if entry.step is step:      # not replaced/packed meanwhile
                         entry.blob = blob
                         entry.step = None

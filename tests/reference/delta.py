@@ -37,7 +37,7 @@ import struct
 import numpy as np
 
 from hindsight.core import native as _native
-from hindsight.core.types import ADD, XOR, ChannelDelta, bits_dtype, key_width
+from .types import ADD, XOR, ChannelDelta, bits_dtype, key_width
 
 _U32 = np.uint32
 _EMPTY_IDX = np.zeros(0, dtype=_U32)

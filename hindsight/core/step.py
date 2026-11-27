@@ -57,7 +57,7 @@ UnknownEncoding = _N.UnknownEncoding      # intact, but a later build's encoding
 
 # The JSON of extras and data records runs in the engine (#146): the same bytes and exceptions as
 # the reference copy (tests/reference/step_json).
-_json_default, _enc_value, _dec_value = _N.json_setup(MISSING, DataChange)
+_json_default = _N.json_setup(MISSING, DataChange)[0]      # its encoder and decoder of values: only the engine uses them
 _dumps = _N.json_dumps
 
 
@@ -111,8 +111,10 @@ def record_step(kind, seq, t, label, mode, target, channels, extra=None, codec="
                      _dumps(extra) if extra else b"", chs, effort == QUICK, codec, strong)
 
 
-def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
-    """Format 3 blob. effort QUICK (0) is for the crash-recovery journal, on the main thread."""
+def step_parts(step: Step) -> tuple:
+    """What the engine encodes a step from: its JSON already bytes, its arrays the step's own. Taken on the main thread
+    when a step is handed to the journal writer or the packer, so a thread gets no Python values and a later edit
+    of the step doesn't change its bytes (owner point 1, dev/RUST_PLAN.md)."""
     if step.kind not in _KINDS:
         raise ValueError(f"unknown step kind {step.kind!r}")
     extra = dict(step.extra or {})
@@ -122,10 +124,19 @@ def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong:
     before = _snapshot_parts(step.before) if step.before is not None else None
     after = _snapshot_parts(step.after) if step.after is not None else None
     snap_parts = [(str(uid), _snapshot_parts(s)) for uid, s in snaps.items()] if snaps is not None else None
-    blob = _N.step_encode(
-        step.kind, int(step.seq), float(step.time or 0.0), step.label or "", step.mode or "", step.target or "",
-        _dumps(extra) if extra else b"", parts, before, after, snap_parts,
-        records_to_bytes(step.records) if step.records else None, effort == QUICK, codec, strong)
+    return (step.kind, int(step.seq), float(step.time or 0.0), step.label or "", step.mode or "", step.target or "",
+            _dumps(extra) if extra else b"", parts, before, after, snap_parts,
+            records_to_bytes(step.records) if step.records else None)
+
+
+def parts_to_bytes(parts: tuple, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
+    """The blob of step_parts(step): the delta packing, codec and checksum in the engine (GIL released)."""
+    return _N.step_encode(*parts, effort == QUICK, codec, strong)
+
+
+def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
+    """Format 3 blob. effort QUICK (0) is for the crash-recovery journal, on the main thread."""
+    blob = parts_to_bytes(step_parts(step), codec, effort, strong)
     if VERIFY and not same_step(step, step_from_bytes(blob)):
         raise AssertionError(f"step {step.seq}: written blob does not read back the same")
     return blob

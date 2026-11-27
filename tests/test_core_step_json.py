@@ -17,7 +17,7 @@ import numpy as np  # noqa: E402
 import tests.harness as H  # noqa: E402
 import tests.runner as R  # noqa: E402
 from tests import corpus as C, equiv  # noqa: E402
-from tests.reference import step_json as ref  # noqa: E402
+from tests.reference import step_json as ref, types as RT  # noqa: E402
 from hindsight.core import step  # noqa: E402
 from hindsight.core.types import MISSING, DataChange  # noqa: E402
 
@@ -36,14 +36,19 @@ EDGE_FLOATS = [0.0, -0.0, 1.0, -1.0, 0.1, 1e16, 1e15, 9999999999999998.0, 1e-4, 
                float("-inf"), 2.0 ** 53, 2.0 ** 63, 0.30000000000000004, 100.0, 1e100, 3.4028234663852886e38]
 
 
+def on_ref(f):
+    """f given the reference's own objects (equiv.like): DataChange and MISSING of tests/reference/types.py."""
+    return lambda *a: f(*equiv.like(a, RT))
+
+
 def same(fn, *args):
-    return equiv.check(getattr(ref, fn), getattr(step, fn), *args)
+    return equiv.check(on_ref(getattr(ref, fn)), getattr(step, fn), *args, key=equiv.plain)
 
 
 def same_deep(fn, v):
     """same() for a value too deep for equiv.check's deepcopy: both sides get the one object (neither changes it)."""
     out = []
-    for f in (getattr(ref, fn), getattr(step, fn)):
+    for f in (on_ref(getattr(ref, fn)), getattr(step, fn)):
         try:
             out.append(("result", f(v)))
         except Exception as e:                  # noqa: BLE001 - the exception is what is compared
@@ -123,7 +128,7 @@ def test_hypothesis_values():
     def run(v, w, k):
         same("_dumps", {k: v, "w": w})
         recs = [DataChange(k, "t", {"p": (v, w), k: (MISSING, v)})]
-        b = equiv.check(ref.records_to_bytes, step.records_to_bytes, recs)
+        b = equiv.check(on_ref(ref.records_to_bytes), step.records_to_bytes, recs)
         same("records_from_bytes", b)
     run()
 

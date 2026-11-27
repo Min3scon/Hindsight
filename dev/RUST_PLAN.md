@@ -53,13 +53,13 @@ merging the stack, in the order of the pull requests (on #24).
 1. **The oracle.** The Python that moves goes to `tests/reference/` (by `git mv`, unchanged but for its imports);
    the module under `hindsight/` keeps its public names and signatures and holds no algorithm. A reference imports
    the reference copy of a moved module, never its facade, so nothing is checked against itself: the move that
-   turns a module into a facade switches every reference importing it to the copy, in the same PR (today
-   `tests/reference/step.py:37`, `delta.py:40` and `persist.py:43`, `v1_persist.py` after 24.1, import `core/types.py`;
-   inside its functions `v1_persist.py` also imports `history.History` and `registry.Registry` (`:224`, `:225`, `:455`),
-   `step.step_from_bytes` (`:290`, `:456`) and `types.SETTINGS` (`:341`), so 24.3, 24.4 and 24.6 switch those, since
-   `tests/test_core_framing_crc.py:424` takes it as the oracle of `persist.registry_from_bytes`; and
-   `framing_extents.py:10` imports `history.MeshState`, which 24.4 switches). `tests/test_core_reference.py`
-   keeps failing if anything under `hindsight/` imports a reference module.
+   turns a module into a facade switches every reference importing it to the copy, in the same PR. 24.3 (#148) switched
+   the references of `core/types.py`, `step.py`, `topopack.py`, `codec.py` and `crc.py` (`tests/reference/step.py`,
+   `delta.py`, `types.py`, `framing_extents.py`, `topopack.py`, and `v1_persist.py`'s `Entry`, `step_from_bytes` and
+   `SETTINGS`); still to switch: `v1_persist.py`'s `history.History` and `registry.Registry` (`:224`, `:225`,
+   `:455`; 24.4 and 24.6, since `tests/test_core_framing_crc.py:424` takes it as the oracle of
+   `persist.registry_from_bytes`) and `framing_extents.py:10`'s `history.MeshState` (24.4). `tests/test_core_reference.py`
+   fails if a reference imports a facade (its `FACADES`, which each move adds to) and keeps failing if anything under `hindsight/` imports a reference module.
 2. **Equivalence, test first.** Before the engine code: property tests (hypothesis), the corpus of real files from
    formats 1 to 5 (#129) and hostile input (cut short, flipped bytes, huge lengths, wrong types) compare engine and
    reference bit for bit: results, bytes written, exception class and message. Hostile input never crashes the

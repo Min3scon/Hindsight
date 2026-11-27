@@ -17,7 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
-from hindsight.core.crc import crc32
+from zlib import crc32                        # the engine's crc32 gives the same values
 
 import numpy as np
 
@@ -300,7 +300,7 @@ class Entry:
     def pack(self, codec: str = "auto") -> None:
         if self.step is None:
             return
-        from hindsight.core.step import step_to_bytes
+        from tests.reference.step import step_to_bytes
         self.blob = step_to_bytes(self.step, codec)
         self.step = None
 
@@ -309,7 +309,7 @@ class Entry:
         b = self.blob
         if b is not None:
             return b
-        from hindsight.core.step import step_to_bytes
+        from tests.reference.step import step_to_bytes
         return step_to_bytes(self.step, codec, effort)
 
 

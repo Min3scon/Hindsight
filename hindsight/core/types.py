@@ -41,7 +41,6 @@ POSITION_KEY = "position|POINT|FLOAT_VECTOR"
 MASK_KEY = ".sculpt_mask|POINT|FLOAT"
 FACE_SET_KEY = ".sculpt_face_set|FACE|INT"
 HIDE_VERT_KEY = ".hide_vert|POINT|BOOLEAN"
-HIDE_POLY_KEY = ".hide_poly|FACE|BOOLEAN"
 
 # Topology arrays inside a Snapshot (not normal attributes)
 EDGE_VERTS_KEY = ".edge_verts|EDGE|INT32_2D"
