@@ -293,18 +293,30 @@ def test_join_after_the_save():
     H.assert_same(H.snapshot(bpy.data.objects["B"]), b_file, "B after a round trip")
 
 
+def change_without_hindsight(path, seed):
+    """A session without Hindsight strokes the mesh and saves; no backup copy is left (D107 aside)."""
+    H.fresh(register=False)
+    bpy.ops.wm.open_mainfile(filepath=path)
+    H.fake_stroke(bpy.data.objects[NAME], seed, n=80)
+    bpy.ops.wm.save_mainfile()
+    if os.path.isfile(path + "1"):
+        os.remove(path + "1")
+
+
+def assert_left_out(path):
+    setup()
+    bpy.ops.wm.open_mainfile(filepath=path)
+    assert runtime.history_of(bpy.data.objects[NAME]) is None
+    assert any(runtime.OUTSIDE_MESH_TEXT.format(name=NAME) == t for t in notes()), notes()
+
+
 # D82: a mesh changed in a session without Hindsight: that object's history is left out when the
 # file is opened. Strokes made after that must come back after an interruption.
 def test_strokes_after_a_mesh_changed_without_hindsight():
     setup()
     ob, _after, path = start("outside_mesh", 3)
     save(ob, path)
-    H.fresh(register=False)                      # a session without Hindsight
-    bpy.ops.wm.open_mainfile(filepath=path)
-    H.fake_stroke(bpy.data.objects[NAME], 99, n=80)
-    bpy.ops.wm.save_mainfile()
-    if os.path.isfile(path + "1"):
-        os.remove(path + "1")                    # no backup copy: the history is left out (D107 aside)
+    change_without_hindsight(path, 99)
     setup()
     bpy.ops.wm.open_mainfile(filepath=path)
     ob = bpy.data.objects[NAME]
@@ -322,16 +334,8 @@ def test_strokes_after_a_mesh_changed_without_hindsight():
     assert not notes(), notes()
     check(ob, after, file_state)
     # the same file changed again without Hindsight is caught again
-    H.fresh(register=False)
-    bpy.ops.wm.open_mainfile(filepath=path)
-    H.fake_stroke(bpy.data.objects[NAME], 98, n=80)
-    bpy.ops.wm.save_mainfile()
-    if os.path.isfile(path + "1"):
-        os.remove(path + "1")
-    setup()
-    bpy.ops.wm.open_mainfile(filepath=path)
-    assert runtime.history_of(bpy.data.objects[NAME]) is None
-    assert any(runtime.OUTSIDE_MESH_TEXT.format(name=NAME) == t for t in notes()), notes()
+    change_without_hindsight(path, 98)
+    assert_left_out(path)
 
 
 # R060: the same, with the session before the interruption run by a build before R060: the file's
@@ -348,12 +352,7 @@ def test_strokes_after_a_mesh_changed_without_hindsight_by_an_older_build():
     try:
         ob, _after, path = start("outside_mesh_old", 3)
         save(ob, path)
-        H.fresh(register=False)                  # a session without Hindsight
-        bpy.ops.wm.open_mainfile(filepath=path)
-        H.fake_stroke(bpy.data.objects[NAME], 99, n=80)
-        bpy.ops.wm.save_mainfile()
-        if os.path.isfile(path + "1"):
-            os.remove(path + "1")
+        change_without_hindsight(path, 99)
         setup()
         bpy.ops.wm.open_mainfile(filepath=path)
         ob = bpy.data.objects[NAME]
@@ -376,16 +375,8 @@ def test_strokes_after_a_mesh_changed_without_hindsight_by_an_older_build():
     assert not notes(), notes()
     check(ob, after, file_state)
     # the same file changed again without Hindsight is caught again
-    H.fresh(register=False)
-    bpy.ops.wm.open_mainfile(filepath=path)
-    H.fake_stroke(bpy.data.objects[NAME], 98, n=80)
-    bpy.ops.wm.save_mainfile()
-    if os.path.isfile(path + "1"):
-        os.remove(path + "1")
-    setup()
-    bpy.ops.wm.open_mainfile(filepath=path)
-    assert runtime.history_of(bpy.data.objects[NAME]) is None
-    assert any(runtime.OUTSIDE_MESH_TEXT.format(name=NAME) == t for t in notes()), notes()
+    change_without_hindsight(path, 98)
+    assert_left_out(path)
 
 
 # D107 with D82: the change is bridged from Blender's backup copy; strokes after it come back after an
