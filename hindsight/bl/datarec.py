@@ -353,7 +353,8 @@ def _refresh_mesh_users(read=None) -> None:
         # it uses the mesh), then (D45) the one whose history holds any, then the first by name. So an
         # owner that took over at a delete gives the mesh back when Blender's undo of the delete brings
         # the object that recorded it back (its own steps undone first)
-        uid = min((not records_mesh(u, True), u != keep, not records_mesh(u, False), n, u) for n, u, _o in us)[4]
+        uid = us[0][1] if len(us) == 1 else \
+            min((not records_mesh(u, True), u != keep, not records_mesh(u, False), n, u) for n, u, _o in us)[4]
         ob = next(o for _n, u, o in us if u == uid)
         if _MESH_OF.get(uid) != ptr and ob.mode != "EDIT":
             # D44: it records a mesh it didn't before (Make Single User, the owner deleted, a duplicate
