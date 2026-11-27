@@ -42,15 +42,18 @@ def on_ref(f):
 
 
 def same(fn, *args):
-    return equiv.check(on_ref(getattr(ref, fn)), getattr(step, fn), *args, key=equiv.plain)
+    # no wrapper where there is nothing to convert: its frame would move where a RecursionError hits (3.11)
+    f = on_ref(getattr(ref, fn)) if equiv.holds_shapes(args) else getattr(ref, fn)
+    return equiv.check(f, getattr(step, fn), *args, key=equiv.plain)
 
 
 def same_deep(fn, v):
     """same() for a value too deep for equiv.check's deepcopy: both sides get the one object (neither changes it)."""
     out = []
-    for f in (on_ref(getattr(ref, fn)), getattr(step, fn)):
+    # the reference's own objects taken first: a wrapper's frame would move where a RecursionError hits (3.11)
+    for f, x in ((getattr(ref, fn), equiv.like(v, RT)), (getattr(step, fn), v)):
         try:
-            out.append(("result", f(v)))
+            out.append(("result", f(x)))
         except Exception as e:                  # noqa: BLE001 - the exception is what is compared
             out.append(equiv._exc(e))
     assert out[0] == out[1], (fn, out)
