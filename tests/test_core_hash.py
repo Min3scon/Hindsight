@@ -1,3 +1,4 @@
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import tests.runner as R
 """R060: the engine's Hasher128 (xxh3-128, seed 0), which makes the mesh fingerprints.
@@ -129,10 +130,8 @@ def test_buffer_kinds():
     # a refused piece leaves the hasher as it was
     h = ENGINE.Hasher128()
     h.update(b"abc")
-    try:
+    with contextlib.suppress(TypeError, BufferError, ValueError):
         h.update("text")
-    except (TypeError, BufferError, ValueError):
-        pass
     assert h.hexdigest() == KNOWN[b"abc"]
 
 

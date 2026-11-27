@@ -1,6 +1,7 @@
 """Hindsight runtime: recorder (stroke detection, capture), playback and the API used by the UI."""
 from __future__ import annotations
 
+import contextlib
 import os
 import time
 
@@ -73,15 +74,13 @@ _DYN_WANT: dict = {}     # uid -> Dyntopo on or off after the jump being written
 def _dyn_at(h, pos: int) -> bool:
     """Whether Dyntopo was on at history position pos: each step committed with Dyntopo on (or just
     turned off) holds extra["dyn"] = [before, after] (D145); no record means off."""
-    try:
+    with contextlib.suppress(Exception):
         if pos > 0:
             d = (h.entries[pos - 1].meta.get("extra") or {}).get("dyn")
             return bool(d and d[1])
         if h.entries:
             d = (h.entries[0].meta.get("extra") or {}).get("dyn")
             return bool(d and d[0])
-    except Exception:
-        pass
     return False
 
 
@@ -194,12 +193,10 @@ def set_registry(r: Registry) -> None:
     _NATIVE_PENDING.clear()
     WEIGHTS_CLAMPED.clear()
     _TRACK.update(name=None, uid=None, mode=None)
-    try:
+    with contextlib.suppress(Exception):
         from . import datarec, idmap
         datarec.forget()
         idmap.forget(session=True)
-    except Exception:
-        pass
 
 
 def settings():
@@ -489,28 +486,24 @@ _PAINTING = [None]     # D142: uid of the object a texture painting stroke is ru
 
 
 def _image_stroke_running() -> bool:
-    try:
+    with contextlib.suppress(Exception):
         for win in bpy.context.window_manager.windows:
             for op in getattr(win, "modal_operators", ()):
                 if op.bl_idname == "PAINT_OT_image_paint":
                     return True
-    except Exception:
-        pass
     return False
 
 
 def _image_editor_images() -> set:
     """Names of the images shown in an Image Editor in Paint mode (2D texture painting)."""
     out = set()
-    try:
+    with contextlib.suppress(Exception):
         for win in bpy.context.window_manager.windows:
             for area in win.screen.areas:
                 if area.type == "IMAGE_EDITOR":
                     sp = area.spaces.active
                     if getattr(sp, "mode", None) == "PAINT" and sp.image is not None:
                         out.add(sp.image.name)
-    except Exception:
-        pass
     return out
 
 
@@ -606,7 +599,7 @@ def ensure_state(obj, refresh: bool = False) -> MeshState:
 def _exclusion_test():
     """is_excluded for many objects in a row: the same answers, with what doesn't depend on the
     object looked up once (the slider asks for every object on every redraw in global mode)."""
-    try:
+    with contextlib.suppress(Exception):
         sh = filtering._scene_props(bpy.context.scene)
         if sh is None or sh.filter_mode not in ("BLACKLIST", "WHITELIST"):
             # Collection Filtering off: only Hindsight's own Movie Mode objects are left out
@@ -616,8 +609,6 @@ def _exclusion_test():
                 except Exception:
                     return False
             return test
-    except Exception:
-        pass
     return is_excluded
 
 
@@ -628,7 +619,7 @@ def _visible_uids() -> set:
         u = any_uid(ob)
         if u is not None and not excluded(ob):
             out.add(u)
-    try:
+    with contextlib.suppress(Exception):
         from . import datarec
         out |= {u for u in datarec.tracked_uids() if datarec._is_scene_uid(u)}
         if any(datarec._is_scene_uid(u) for u in datarec.tracked_uids()):
@@ -639,8 +630,6 @@ def _visible_uids() -> set:
                 for m in h.members:
                     if m not in out and idmap.find(m) is None:
                         out.add(m)
-    except Exception:
-        pass
     return out
 
 
@@ -854,11 +843,9 @@ def _refresh_toggle() -> bool:
 def _sculpt_refresh(obj) -> None:
     if bpy.app.background:
         return
-    try:
+    with contextlib.suppress(Exception):
         bpy.ops.object.mode_set(mode="OBJECT")
         bpy.ops.object.mode_set(mode="SCULPT")
-    except Exception:
-        pass
 
 
 def commit_edit(obj, label: str = "Edit", deep: bool = True):
@@ -998,12 +985,10 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     if label is None:
         label = {"SCULPT": "Sculpt", "VERTEX_PAINT": "Vertex Paint", "WEIGHT_PAINT": "Weight Paint", "TEXTURE_PAINT": "Texture Paint",
                  "EDIT": "Edit Mode"}.get(mode, "Change")
-        try:
+        with contextlib.suppress(Exception):
             ops = bpy.context.window_manager.operators
             if len(ops):
                 label = ops[-1].bl_label or label
-        except Exception:
-            pass
     label = _shared(label)
     dyn = dyntopo_active(obj)
     if dyn:
@@ -1094,11 +1079,9 @@ def commit(obj, label: str | None = None, mode: str | None = None, full: bool = 
     entry = h.entries[-1]
     _journal("STEP", {"hist": h.uid, "at": at}, step_payload(entry))
     _enforce(h)
-    try:
+    with contextlib.suppress(Exception):
         from . import datarec
         datarec.drop_undone_jumps()
-    except Exception:
-        pass
     tag_redraw_all()
     return step
 
@@ -1121,11 +1104,9 @@ def _put_back_after_native_undo(obj, st: MeshState, step: Step, text: str = NATI
     else:
         bpy.app.timers.register(_later, first_interval=0.0)
     log.warn(text)
-    try:
+    with contextlib.suppress(Exception):
         from .selfcheck import flash_status
         flash_status("Hindsight: " + text, 10.0)
-    except Exception:
-        pass
 
 
 def _revert(obj, st: MeshState, step: Step) -> None:
@@ -1179,11 +1160,9 @@ def _note_eviction(n: int) -> None:
         MEMORY["warned"] = True
         text = MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
         log.warn(text)
-        try:
+        with contextlib.suppress(Exception):
             from .selfcheck import flash_status
             flash_status("Hindsight: " + text, 15.0)
-        except Exception:
-            pass
 
 
 def _journal_drop(h, n) -> None:
@@ -1679,13 +1658,11 @@ _STROKE_OPS = frozenset({
 
 
 def stroke_running() -> bool:
-    try:
+    with contextlib.suppress(Exception):
         for win in bpy.context.window_manager.windows:
             for op in getattr(win, "modal_operators", ()):
                 if op.bl_idname in _STROKE_OPS:
                     return True
-    except Exception:
-        pass
     return False
 
 
@@ -2399,10 +2376,8 @@ def memory_stats() -> dict:
     active_b = 0
     active_s = 0
     ah = None
-    try:
+    with contextlib.suppress(Exception):
         ah = history_of(_ctx_active(bpy.context))
-    except Exception:
-        pass
     gkey = (store._packer_key(packer), _ENFORCE_COUNT[0], id(_REG))   # read before any size
     hs = _REG.all()
     if len(_HIST_BYTES) > 2 * len(hs) + 16:
@@ -2426,11 +2401,9 @@ def warnings_for(context, obj) -> list:
     if MEMORY["evicted"]:
         out.append(("WARNING", MEMORY_TEXT.format(limit=int(SETTINGS.memory_limit_mb))
                     + f". Dropped so far: {MEMORY['evicted']} steps"))
-    try:
+    with contextlib.suppress(Exception):
         from .warnings import collect
         out.extend(collect(context, obj))
-    except Exception:
-        pass
     return out
 
 
@@ -2463,8 +2436,6 @@ def unregister() -> None:
         ex.shutdown(wait=False)
     global packer
     if packer is not None:
-        try:
+        with contextlib.suppress(Exception):
             packer.stop()
-        except Exception:
-            pass
         packer = None

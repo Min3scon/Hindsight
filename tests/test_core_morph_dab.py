@@ -1,3 +1,4 @@
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import tests.runner as RN
 """R083: the engine's `morph_dab` (one dab of the Morph History brush in one pass) against the numpy code it
@@ -160,11 +161,9 @@ def test_refusals():
     assert bad(hidden=np.zeros(n, np.uint8))
     shared = np.zeros(n * 3 + n * 2, np.float32)
     assert bad(co=shared[:n * 3], acc=shared[n:].view(np.float64)[:n])         # co and acc share memory
-    try:
+    with contextlib.suppress(BufferError, TypeError, ValueError):
         ENGINE.morph_dab(bytes(n * 12), ok["start"], ok["target"], ok["acc"], None, None, 0.0, 0.0, 0.0, 1.0, 1.0)
         raise AssertionError("a read-only co was taken")
-    except (BufferError, TypeError, ValueError):
-        pass
     assert ENGINE.morph_dab(co, ok["start"], ok["target"], ok["acc"], None, None, 0.0, 0.0, 0.0, 1.0, 1.0) == 0
     e = np.zeros(0, np.float32)
     assert ENGINE.morph_dab(e, e, e, np.zeros(0), None, None, 0.0, 0.0, 0.0, 1.0, 1.0) == 0

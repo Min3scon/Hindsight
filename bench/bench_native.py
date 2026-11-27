@@ -30,6 +30,7 @@ engine as they were). Alternating rounds in one process; min and median ms, then
 of one write and one read (tracemalloc, and VmHWM over VmRSS). Needs the zstandard and lz4 Python
 packages for the reference side.
 """
+import contextlib
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests"))
@@ -344,11 +345,9 @@ def main():
     out = {"date": time.strftime("%Y-%m-%d"), "machine": platform.platform(), "cpu": platform.processor(),
            "cpus": os.cpu_count(), "python": sys.version.split()[0], "numpy": np.__version__,
            "codecs": codec.available(), "native": LIB.__file__, "load": os.getloadavg(), "cases": []}
-    try:
+    with contextlib.suppress(OSError, StopIteration):
         with open("/proc/cpuinfo") as fh:
             out["cpu"] = next(l.split(":", 1)[1].strip() for l in fh if l.startswith("model name"))
-    except (OSError, StopIteration):
-        pass
     print(out["machine"], out["cpu"], "Python", out["python"], "numpy", out["numpy"])
     for nv in (100_000, 1_000_000):
         out["cases"].append(case(nv))

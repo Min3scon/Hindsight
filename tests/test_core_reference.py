@@ -9,6 +9,7 @@ Corpus: tests/fixtures/step_corpus_base.zip, 46 steps written by the baseline ch
 66fcdf8) with tests/reference/make_step_corpus.py. The same script run with the engine and with the
 reference writes identical bytes (checked below), so one corpus stands for all three.
 """
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import tests.runner as R
 import ast
@@ -532,10 +533,8 @@ def test_no_unbounded_allocation():
     body[8:12] = struct.pack("<I", 0xFFFFFFFF)
     rest = bytearray(blob[:10 + hl + 1]) + body
     rest[4:8] = struct.pack("<I", zlib.crc32(bytes(rest[8:])))
-    try:
+    with contextlib.suppress(stepmod.CorruptStep):
         stepmod.step_from_bytes(bytes(rest))
-    except stepmod.CorruptStep:
-        pass
     grew = _peak_mb() - before
     assert grew < 200, f"peak memory grew {grew:.0f} MB on claims of gigabytes"
     print(f"  test_no_unbounded_allocation (peak grew {grew:.0f} MB)")

@@ -2,6 +2,7 @@
 
 Movie Mode only plays history back, it never changes it: no step is ever recorded from here.
 """
+import contextlib
 import inspect
 import math
 
@@ -133,10 +134,8 @@ def on_frame_change(scene, depsgraph=None) -> None:
     else:
         value = sh.movie_step
         if depsgraph is not None:
-            try:
+            with contextlib.suppress(Exception):
                 value = scene.evaluated_get(depsgraph).hindsight.movie_step
-            except Exception:
-                pass
     _apply(_no_operator_context(bpy.context), value)
     _SHOWN["frame"] = frame
 

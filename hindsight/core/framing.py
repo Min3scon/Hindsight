@@ -8,6 +8,7 @@ and back (local Z) in world space; the camera looks along -back.
 """
 from __future__ import annotations
 
+import contextlib
 import math
 
 import numpy as np
@@ -210,15 +211,13 @@ def fit(ext, basis, tan_x, tan_y, min_distance: float = 1e-3):
 
 def bounds(points):
     """(world min xyz, world max xyz) of the finite points, or None."""
-    try:
+    with contextlib.suppress(TypeError, ValueError):
         q = np.asarray(points)
         if q.dtype.kind == "f" and q.size and q.size % 3 == 0:
             q = q.reshape(-1, 3)
             lo, hi = q.min(axis=0), q.max(axis=0)          # no float64 copy unless something isn't finite
             if np.isfinite(lo).all() and np.isfinite(hi).all():
                 return lo.astype(np.float64), hi.astype(np.float64)
-    except (TypeError, ValueError):
-        pass
     p = _points(points)
     if p is None:
         return None
