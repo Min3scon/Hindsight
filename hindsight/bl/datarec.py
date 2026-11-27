@@ -327,7 +327,8 @@ _KEYS: dict = {}
 def refresh_mesh_users() -> None:
     """Which tracked object records each mesh (to see Object Mode changes to it). D39: a mesh shared
     by linked duplicates (Alt+D) is recorded once, by its owner: the object that recorded it first
-    (kept while it uses the mesh), otherwise the first by name. Any other user of the mesh records
+    (kept while it uses the mesh, but given back to one whose steps are before its cursor, D187),
+    otherwise the first by name. Any other user of the mesh records
     only its own object data, and an object that becomes the owner starts from its mesh as it is."""
     with idmap.frame():
         _refresh_mesh_users()
@@ -343,16 +344,16 @@ def _refresh_mesh_users(read=None) -> None:
     owners = {}
     rt = _rt()
 
-    def records_mesh(u):
+    def records_mesh(u, applied):
         h = rt.reg().history_for(u)
-        return h is not None and any(e.meta.get("kind") != DATA for e in h.entries)
+        return h is not None and any(e.meta.get("kind") != DATA for e in h.entries[:h.cursor if applied else None])
     for ptr, us in users.items():
         keep = _MESH_OWNER.get(ptr)
-        if any(u == keep for _n, u, _o in us):
-            uid = keep
-        else:
-            # D45: the object whose history already holds this mesh's steps, then the first by name
-            uid = min((0 if records_mesh(u) else 1, n, u) for n, u, _o in us)[2]
+        # the object whose history holds this mesh's steps up to its cursor, then the owner kept (while
+        # it uses the mesh), then (D45) the one whose history holds any, then the first by name. So an
+        # owner that took over at a delete gives the mesh back when Blender's undo of the delete brings
+        # the object that recorded it back (its own steps undone first)
+        uid = min((not records_mesh(u, True), u != keep, not records_mesh(u, False), n, u) for n, u, _o in us)[4]
         ob = next(o for _n, u, o in us if u == uid)
         if _MESH_OF.get(uid) != ptr and ob.mode != "EDIT":
             # D44: it records a mesh it didn't before (Make Single User, the owner deleted, a duplicate
@@ -821,13 +822,17 @@ def _data_diff(old: dict, new: dict) -> dict:
 def _moves_only(changes: dict) -> list:
     """The keys of changes that only come and go with ownership. An action that appears or goes
     while the object starts or stops playing one (the first keyframe, D120) is a change of its own, and so
-    is a material that appears or goes while its slots change (D163: made with a slot, it goes back with it)."""
+    is a material put in or taken out of the slots (D163: made with a slot, it goes back with it; D188)."""
     assigned = any(k[0] == "object" and adapters.assignment_path(k[1]) for k in changes)
-    slotted = ("object", "slots") in changes
+    # D163 only for a material put in or taken out of the slots: one in them on both sides that an
+    # object starts or stops recording changed owner (a stale owner's values after a jump, say)
+    old, new = ({m for row in v[:-1] for m in row[1:] if m} if v is not MISSING else set()
+                for v in changes.get(("object", "slots"), (MISSING, MISSING)))
+    slotted = old ^ new
     return [k for k, (a, b) in changes.items()
             if (a is MISSING or b is MISSING) and adapters.owned_path(k[0], k[1])
             and not (assigned and k[1].startswith(adapters.ACT_PREFIX))
-            and not (slotted and k[1].startswith(_MAT_PATHS))]
+            and not (k[1].startswith(_MAT_PATHS) and k[1].split(":", 1)[1].split("|", 1)[0] in slotted)]
 
 
 _MAT_PATHS = (adapters.MAT_PREFIX, adapters.MATP_PREFIX, adapters.MATA_PREFIX)
