@@ -548,6 +548,9 @@ def _tick_state():
 
 
 def _idle_tick_run(full: bool):
+    # each run starts from the default Record: the first run's Sculpting only must not reach the second run's
+    # fresh scene, where turning Hindsight on opens the file (#125) and the default gives ids out (#105)
+    prefs.FORCE["record_scope"] = None
     L.fresh_scene()
     T.duplicate("B", linked=True).run()
     L.track_all()
