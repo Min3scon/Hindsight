@@ -18,6 +18,7 @@ import bpy
 from ..core.history import DATA_MARK, MeshState
 from ..core.native import ENGINE as _ENGINE
 from ..core.types import DATA, MISSING, DataChange, Entry, Step
+from .prefs import value as _pref
 from . import adapters, guard, idmap, log, rigmark
 
 SETTLE = 0.3
@@ -63,18 +64,8 @@ _MESH_OF: dict = {}          # owner uid -> pointer of the mesh its state was re
 OBJECT_DEEP_MAX = 1_000_000  # vertices; above this an Object Mode check compares counts and values only
 
 
-FORCE_SCOPE = [None]         # tests: "EVERYTHING" or "SCULPT" when the preferences aren't registered
-
-
 def scope_everything() -> bool:
-    if FORCE_SCOPE[0] is not None:
-        return FORCE_SCOPE[0] == "EVERYTHING"
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        return p is not None and getattr(p, "record_scope", "SCULPT") == "EVERYTHING"
-    except Exception:
-        return False
+    return _pref("record_scope", "SCULPT") == "EVERYTHING"
 
 
 def _rt():
@@ -262,17 +253,8 @@ def _state(uid: str) -> MeshState:
 
 def enabled_kinds():
     """Data kinds switched on in the preferences (None: all)."""
-    if FORCE_KINDS[0] is not None:
-        return set(FORCE_KINDS[0])
-    with contextlib.suppress(Exception):
-        from .prefs import get_prefs
-        p = get_prefs()
-        if p is not None and hasattr(p, "record_kinds"):
-            return {k.lower() for k in p.record_kinds}
-    return None
-
-
-FORCE_KINDS = [None]          # tests: a set of kind ids
+    kinds = _pref("record_kinds", None)
+    return None if kinds is None else {k.lower() for k in kinds}
 
 
 def capture(idb) -> dict:

@@ -26,6 +26,7 @@ if ROOT not in sys.path:
 from tests import runner  # noqa: E402
 import hindsight  # noqa: E402
 from hindsight.bl import runtime, meshio  # noqa: E402
+from hindsight.bl import prefs
 
 _registered = [False]
 
@@ -47,8 +48,8 @@ def fresh(register=True):
     datarec.forget()          # module state from an earlier test must not leak into this one
     idmap.forget()
     guard.reset()
-    datarec.FORCE_SCOPE[0] = None
-    datarec.FORCE_KINDS[0] = None
+    prefs.FORCE["record_scope"] = None
+    prefs.FORCE["record_kinds"] = None
 
 
 def make_mesh(n_verts_approx=2000, name="Obj", location=(0, 0, 0)):

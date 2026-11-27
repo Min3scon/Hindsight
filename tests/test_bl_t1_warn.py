@@ -14,6 +14,7 @@ import tests.harness as H
 from tests import t1_ops as T
 from tests import t1_gate_lib as L
 from hindsight.bl import datarec, runtime, ui_panel
+from hindsight.bl import prefs
 from hindsight.bl import warnings as W
 
 C = bpy.context
@@ -62,7 +63,7 @@ def _commit():
 def setup(scene_on=True):
     H.fresh()
     T.build_scene()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     for n in T.NAMES:
         datarec.set_tracked(bpy.data.objects[n], True)
     if scene_on:
@@ -169,7 +170,7 @@ def test_linked_objects():
     path = os.path.join(tempfile.mkdtemp(prefix="hs_warn_"), "lib.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     bpy.ops.wm.link(filepath=os.path.join(path, "Object", "A"), directory=os.path.join(path, "Object"), filename="A")
     assert shows("A", W.TXT_EV_LINKED)
 
@@ -192,7 +193,7 @@ def test_recorded_data_not_called_unrecorded():
     for t in gone:
         assert t in flat, t
     datarec.set_tracked(a, True)
-    datarec.FORCE_SCOPE[0] = "SCULPT"
+    prefs.FORCE["record_scope"] = "SCULPT"
     flat = " ".join(sidebar_text("A").split())
     for t in gone:
         assert t in flat, t
@@ -201,7 +202,7 @@ def test_recorded_data_not_called_unrecorded():
 def test_nothing_said_with_sculpting_only():
     setup()
     bpy.data.objects["A"].keyframe_insert("location", frame=1)
-    datarec.FORCE_SCOPE[0] = "SCULPT"
+    prefs.FORCE["record_scope"] = "SCULPT"
     text = sidebar_text("A")
     for t in (W.TXT_EV_ANIMATED, W.TXT_EV_NOT_ON, W.TXT_EV_NEW_COLLECTIONS, W.TXT_EV_LISTS):
         assert " ".join(t.split("{")[0].split()) not in " ".join(text.split()), t

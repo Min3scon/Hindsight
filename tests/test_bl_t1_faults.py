@@ -16,6 +16,7 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_ops as T
 from hindsight.bl import adapters, datarec, guard, idmap, runtime, selfcheck
+from hindsight.bl import prefs
 
 C = bpy.context
 ROWS = {"rna": ["obj.transforms", "obj.parenting"], "object": ["obj.constraints", "obj.collections"],
@@ -25,7 +26,7 @@ ROWS = {"rna": ["obj.transforms", "obj.parenting"], "object": ["obj.constraints"
 def setup():
     H.fresh()
     T.build_scene()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     for ob in list(C.scene.objects):
         datarec.set_tracked(ob, True)
     datarec.set_tracked(C.scene, True)

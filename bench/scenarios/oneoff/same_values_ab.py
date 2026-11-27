@@ -15,6 +15,7 @@ sys.path.insert(0, ROOT)
 import bpy
 import tests.harness as H
 from hindsight.bl import datarec
+from hindsight.bl import prefs
 assert datarec.__file__.startswith(ROOT), datarec.__file__
 C = bpy.context
 
@@ -38,7 +39,7 @@ for i in range(500):
     if i % 3 == 0:
         C.active_object.constraints.new("COPY_ROTATION")
 obs = list(C.scene.objects)
-datarec.FORCE_SCOPE[0] = "EVERYTHING"
+prefs.FORCE["record_scope"] = "EVERYTHING"
 for o in obs:
     datarec.set_tracked(o, True)
 datarec.set_tracked(C.scene, True)

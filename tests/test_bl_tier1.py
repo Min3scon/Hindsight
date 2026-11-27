@@ -12,6 +12,7 @@ import numpy as np
 
 import tests.harness as H
 from hindsight.bl import adapters, datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 F = struct.Struct("<f")
@@ -35,8 +36,8 @@ def state(ob):
 
 def setup():
     H.fresh()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
-    datarec.FORCE_KINDS[0] = None
+    prefs.FORCE["record_scope"] = "EVERYTHING"
+    prefs.FORCE["record_kinds"] = None
     a = H.make_mesh(200, name="A", location=(2, 0, 0))
     b = H.make_mesh(200, name="B", location=(0, 1, 0))
     c = H.make_mesh(200, name="Target", location=(0, 0, 3))
@@ -148,14 +149,14 @@ def test_collections_visibility_names():
 
 def test_kinds_switch_off_and_on():
     a, b, c = setup()
-    datarec.FORCE_KINDS[0] = {"transforms"}
+    prefs.FORCE["record_kinds"] = {"transforms"}
     datarec.rebaseline()
     k = b.constraints.new("COPY_ROTATION")
     assert not rec(b), "constraints are switched off"
     b.location = (1, 1, 1)
     steps = rec(b)
     assert len(steps) == 1 and {p for r in steps[0].records for p in r.changes} == {"location"}, steps
-    datarec.FORCE_KINDS[0] = None
+    prefs.FORCE["record_kinds"] = None
     datarec.rebaseline()
     assert not rec(b), "switching a kind back on records nothing by itself"
     k.influence = 0.5
@@ -367,7 +368,7 @@ def test_deleted_object_back_after_reload():
     path = os.path.join(d, "t.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     assert bpy.data.objects.get("A") is None and not any(m.name.startswith("Sphere") and m.users == 0
                                                          for m in bpy.data.meshes if False)
     scene_goto(0)
@@ -424,6 +425,6 @@ for t in (test_parenting, test_constraints, test_collections_visibility_names, t
           test_random_mix, test_edit_mode_steps, test_edit_mode_default_unchanged, test_edit_step_cost,
           test_objects_added_deleted, test_deleted_object_back_after_reload, test_step_list):
     H.run(t)
-datarec.FORCE_SCOPE[0] = None
-datarec.FORCE_KINDS[0] = None
+prefs.FORCE["record_scope"] = None
+prefs.FORCE["record_kinds"] = None
 H.finish()

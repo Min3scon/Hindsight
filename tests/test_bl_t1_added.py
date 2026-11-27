@@ -19,6 +19,7 @@ from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.core import globaltl
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 from hindsight.bl import warnings as W
 
 C = bpy.context
@@ -122,7 +123,7 @@ def test_first_edit_visit_is_a_step():
         orig_max = runtime.SETTINGS.edit_steps_max
         if how == "edit steps off":
             from hindsight.bl import adapters
-            datarec.FORCE_KINDS[0] = set(adapters.KINDS) - {"edit_steps"}
+            prefs.FORCE["record_kinds"] = set(adapters.KINDS) - {"edit_steps"}
         else:
             runtime.SETTINGS.edit_steps_max = 10        # stands in for a mesh over 300,000 vertices
         try:
@@ -147,7 +148,7 @@ def test_first_edit_visit_is_a_step():
             assert O.read_mesh(a, O.mesh_state) == after, how
         finally:
             runtime.SETTINGS.edit_steps_max = orig_max
-            datarec.FORCE_KINDS[0] = None
+            prefs.FORCE["record_kinds"] = None
 
 
 def test_dragging_while_a_linked_duplicate_is_in_edit_mode():
@@ -235,7 +236,7 @@ def test_the_owner_of_a_shared_mesh_after_a_reload():
     path = os.path.join(tempfile.mkdtemp(prefix="hs_owner_"), "owner.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     zed, a1 = bpy.data.objects["Zed"], bpy.data.objects["A.001"]
     datarec.refresh_mesh_users()
     assert datarec.mesh_owned_elsewhere(a1) and not datarec.mesh_owned_elsewhere(zed)
@@ -583,7 +584,7 @@ def test_a_reference_that_waits_after_a_reload():
             hindsight.register()
             H._registered[0] = True
         bpy.ops.wm.open_mainfile(filepath=path)
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         b = bpy.data.objects["B"]
         if outside:
             assert "refers to" not in _notes(b) and b.parent == bpy.data.objects["C"], _notes(b)

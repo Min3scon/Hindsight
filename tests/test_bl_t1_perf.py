@@ -23,6 +23,7 @@ import tests.harness as H
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 ROWS = ("obj.transforms", "obj.parenting", "obj.constraints", "obj.collections", "obj.addremove", "obj.editsteps")
@@ -45,7 +46,7 @@ def scene(n, tracked):
         C.active_object.name = f"N{i}"
         if i % 3 == 0:
             C.active_object.constraints.new("COPY_ROTATION")
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     for o in list(C.scene.objects)[:tracked]:
         datarec.set_tracked(o, True)
     datarec.set_tracked(C.scene, True)
@@ -125,7 +126,7 @@ def test_object_mode_mesh_check_cost():
     for n, limit in OBJECT_MESH_MS.items():
         H.fresh()
         ob = H.make_mesh(n, name="M")
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         datarec.set_tracked(ob, True)
         T.select("M")
         times = []

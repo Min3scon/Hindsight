@@ -291,7 +291,7 @@ items "Last Saved", "Interrupted Session"), `truncation_threshold` Int 10 ("Trun
 `raw_steps` Int 64 ("Uncompressed Recent Steps"), `compression` Enum AUTO/ZSTD/LZ4/ZLIB/NONE ("Compression"),
 scrubber appearance: `scrub_height` Int 6 px, `scrub_margin` Int 18 px, `scrub_color` FloatVector(4, COLOR_GAMMA)
 (1.0, 0.6, 0.24, 1.0), `scrub_bg_color` (0.1, 0.1, 0.1, 0.6), `scrub_show_counter` Bool True, `scrub_width_pct` Int 60.
-Helper: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`.
+Helpers: `def get_prefs(context=None) -> HINDSIGHT_AP_prefs | None`; `value(name, default)` (the one preference reader: `prefs.FORCE[name]` if a test set it, else the preference, else `default`); `SCRUB_DEFAULTS` (the six slider defaults above, shared with the scrubber).
 
 Operator idnames (all `bl_idname = "hindsight.<name>"`, labels exactly as listed):
 - `hindsight.step_back` "Step Back" / `hindsight.step_forward` "Step Forward" (Ctrl+Z / Ctrl+Shift+Z, `oskey` variants)

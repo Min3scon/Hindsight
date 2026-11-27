@@ -28,6 +28,7 @@ from tests import t1_gate_lib as L
 from tests import t1_ops as T
 from hindsight.core.types import SETTINGS
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 
@@ -201,7 +202,7 @@ def save_and_change_outside(path, change, keep_backup=True, prints=None):
     hindsight.register()
     H._registered[0] = True
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     return outside
 
 
@@ -294,7 +295,7 @@ def test_saving_normally_never_raises_the_alarm():
         path = os.path.join(tempfile.mkdtemp(prefix="hs_normal_"), f"normal_{mode.lower()}.blend")
         bpy.ops.wm.save_as_mainfile(filepath=path)
         bpy.ops.wm.open_mainfile(filepath=path)
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         after = {h.uid: len(h.entries) for h in runtime.reg().histories.values()}
         assert after == before, (mode, before, after)
         assert not any("wasn't running" in t for _s, t in runtime.load_notes), (mode, runtime.load_notes)
@@ -327,7 +328,7 @@ def test_blake2b_prints_saved_normally_never_raise_the_alarm():
             bpy.ops.wm.save_as_mainfile(filepath=path)
         for form in (OLD_FORM, X3_FORM):
             bpy.ops.wm.open_mainfile(filepath=path)
-            datarec.FORCE_SCOPE[0] = "EVERYTHING"
+            prefs.FORCE["record_scope"] = "EVERYTHING"
             loaded_prints(form)
             after = {h.uid: len(h.entries) for h in runtime.reg().histories.values()}
             assert after == before, (mode, form, before, after)

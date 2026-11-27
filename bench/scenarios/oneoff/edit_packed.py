@@ -5,10 +5,11 @@ ROOT = sys.argv[1]; sys.path.insert(0, ROOT)
 import bpy, bmesh
 import tests.harness as H
 from hindsight.bl import datarec, runtime
+from hindsight.bl import prefs
 sys.argv = [sys.argv[0]]
 import tests.test_bl_topo_pack as T
 H.fresh()
-datarec.FORCE_SCOPE[0] = "EVERYTHING"
+prefs.FORCE["record_scope"] = "EVERYTHING"
 ob = H.make_mesh(300_000, name="E")
 datarec.set_tracked(ob, True)
 datarec.finish_operation("baseline")

@@ -18,6 +18,7 @@ from tests import t1_ops as T
 from hindsight.core import globaltl, persist
 from hindsight.core.types import SETTINGS
 from hindsight.bl import datarec, idmap, log, rigmark, runtime, ui_panel
+from hindsight.bl import prefs
 
 C = bpy.context
 TMP = tempfile.mkdtemp(prefix="hs_rig_ignored_")
@@ -230,7 +231,7 @@ def test_sidebar_says_hindsight_own():
     ctx = SimpleNamespace(scene=C.scene, active_object=cam, view_layer=C.view_layer,
                           preferences=C.preferences, window_manager=C.window_manager, region=None, area=None)
     for scope in ("EVERYTHING", "SCULPT"):
-        datarec.FORCE_SCOPE[0] = scope
+        prefs.FORCE["record_scope"] = scope
         for units in (None, 13):
             lay = _Layout()
             ui_panel.draw_main(lay, ctx, units)
@@ -239,7 +240,7 @@ def test_sidebar_says_hindsight_own():
             assert "Collection Filtering" not in t and "Select a mesh" not in t, (scope, t)
             assert not any(n == "operator" and a and a[0] == "hindsight.record_everything"
                            for n, a, _kw in lay.log), "no switch to record it"
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     assert len(datarec.RIG_TEXT.split()) <= 40
 
 
@@ -257,7 +258,7 @@ def test_rig_ignored_after_reload():
     bpy.ops.wm.save_as_mainfile(filepath=path)
     assert os.path.isdir(persist.sidecar_dir(path))
     bpy.ops.wm.open_mainfile(filepath=path)
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     assert glen() == n_before, "the history came back with the file"
     for name, w in want.items():
         assert state(name) == w, (name, state(name), w)
