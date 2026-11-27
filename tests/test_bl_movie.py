@@ -619,6 +619,7 @@ def test_a_stroke_at_the_end_moves_the_step_value():
     sc, sh = C.scene, C.scene.hindsight
     n = runtime.scrub_info(C)["len"]
     sh.movie_mode = True
+    a = bpy.data.objects["A"]           # #113: Movie Mode going on walks the history and makes A again
     sh.movie_step = n                           # the end
     H.fake_stroke(a, 2); assert H.commit(a) is not None
     s1 = H.snapshot(a)
@@ -654,6 +655,7 @@ def test_undo_of_a_followed_stroke_sticks():
     sc, sh = C.scene, C.scene.hindsight
     n = runtime.scrub_info(C)["len"]
     sh.movie_mode = True
+    a = bpy.data.objects["A"]           # #113: Movie Mode going on walks the history and makes A again
     sh.movie_step = n
     s0 = H.snapshot(a)
 
@@ -693,6 +695,7 @@ def test_undo_of_a_followed_change_sticks_in_object_mode():
     sc, sh = C.scene, C.scene.hindsight
     n = runtime.scrub_info(C)["len"]
     sh.movie_mode = True
+    a = bpy.data.objects["A"]           # #113: Movie Mode going on walks the history and makes A again
     sh.movie_step = n
     a.location.x = 3.0
     L.tick_like("Move")
@@ -725,6 +728,7 @@ def test_an_operator_that_just_ended_survives_a_jump_back():
     n = runtime.scrub_info(C)["len"]
     assert n == k + 2, (k, n)
     sh.movie_mode = True
+    a = bpy.data.objects["A"]           # #113: Movie Mode going on walks the history and makes A again
     sh.movie_step = n
     real = datarec._ops_marker
     datarec._OPS["marker"] = (0, 0)
@@ -758,6 +762,7 @@ def test_a_change_waiting_in_sculpt_mode_survives_a_jump_back():
     sh = C.scene.hindsight
     n = runtime.scrub_info(C)["len"]
     sh.movie_mode = True
+    a = bpy.data.objects["A"]           # #113: Movie Mode going on walks the history and makes A again
     sh.movie_step = n
     H.fake_stroke(a, 3)
     runtime._DIRTY[runtime.obj_uid(a)] = runtime.time.time()   # waiting to settle
