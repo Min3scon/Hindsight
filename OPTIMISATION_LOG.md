@@ -204,6 +204,12 @@ its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy)
 | | `edit_step_100k` | 39.22 ms | 39.46 ms | 1.01, 1.00 (1.00, 0.95) | 44% / 1% (11% / 18%) |
 | | all 26 of `commit`, `jumps` and `editmode` | | | medians 0.97 to 1.05 (0.93 to 1.04), best times 1.00 to 1.02 (0.96 to 1.04), inside the A/A band | |
 | | held memory (`held_once_mem_f5.py`, 100k vertices, 6,000 steps, 3 rounds, each root alone with its own engine) | after open 604.5 and 604.8 MB, save peak 692.2 and 693.3 MB (the two sides of its A/A; 519.5 MB before open) | after open 605.5 and 605.0 MB, save peak 693.4 and 692.1 MB (519.9 MB before open) | 1.00 | rounds within 1 MB, save peak within 15 MB |
+| 24.3c (#148): topology packing in the engine, the step encoded at the hand-off (0.16.0 at 294345b against 0.17.0 at 3349156, before the #151 merge; `bench/results/ab_294345b_vs_148-run1.md`, `-run2.md`, and `-run3-editmode.md` for `editmode` alone) | `commit_100k` | 0.6968 ms | 0.7032 ms | 1.01, 1.00 (1.03, 0.96) | 24% / 16% (20% / 34%) |
+| | `jump_3000_back_100k` | 61.2 ms | 60.6 ms | 0.99, 0.96 (1.03, 0.99) | 34% / 9% (16% / 21%) |
+| | `edit_step_100k` | 41.99 ms | 41.41 ms | 0.99, 1.02 (1.02, 1.00; third run 1.05, 1.07) | 6% / 13% (17% / 12%; 9% / 18%) |
+| | `edit_step_300k` | 121.4 ms | 119.1 ms | 0.98, 1.10 (1.04, 1.08; third run 0.98, 1.01) | 9% / 27% (10% / 16%; 22% / 18%) |
+| | all 26 of `commit`, `jumps` and `editmode` | | | best times 0.96 to 1.03 (0.87 to 1.04; third run 0.98 to 1.05), inside the A/A band or faster; medians 0.88 to 1.10 (0.84 to 1.27): above the band only `edit_step_300k` (gone in the third run) and `goto_bl_1_100k` 1.27 in the second run (spread 151% / 63%, best time 1.01) | |
+| | held memory (`held_once_mem_f5.py`, 100k vertices, 6,000 steps, 3 rounds, each root alone with its own engine) | after open 604.7 and 604.9 MB, save peak 691.8 and 693.7 MB (the two sides of its A/A; 519.8 MB before open) | after open 604.6 and 605.4 MB, save peak 693.0 and 693.9 MB (519.7 MB before open) | 1.00 | rounds within 1 MB after open, save peak within 10 MB |
 
 ## Count
 
