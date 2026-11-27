@@ -13,6 +13,8 @@ Modes (scene.hindsight.filter_mode):
 
 import contextlib
 import bpy
+
+from . import reg
 from bpy.props import StringProperty
 
 
@@ -168,13 +170,8 @@ classes = (
 
 
 def register():
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    reg.register_classes(classes)
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

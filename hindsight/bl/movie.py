@@ -7,6 +7,8 @@ import inspect
 import math
 
 import bpy
+
+from . import reg
 from bpy.app.handlers import persistent
 
 from . import guard, runtime
@@ -249,8 +251,7 @@ classes = (HINDSIGHT_OT_quick_auto_key,)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     if on_frame_change not in bpy.app.handlers.frame_change_post:
         bpy.app.handlers.frame_change_post.append(on_frame_change)
 
@@ -261,8 +262,4 @@ def unregister():
         if fn is on_frame_change or getattr(fn, "__name__", "") == "on_frame_change" and \
                 getattr(fn, "__module__", "") == __name__:
             hl.remove(fn)
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except RuntimeError:
-            pass
+    reg.unregister_classes(classes)

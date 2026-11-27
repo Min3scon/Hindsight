@@ -368,8 +368,4 @@ def register():
 
 
 def unregister():
-    global _handle
-    if _handle is not None:
-        with contextlib.suppress(Exception):
-            bpy.types.SpaceView3D.draw_handler_remove(_handle, 'WINDOW')
-        _handle = None
+    _remove_overlay()

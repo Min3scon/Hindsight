@@ -8,6 +8,8 @@ import contextlib
 import dataclasses
 
 import bpy
+
+from . import reg
 from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty
 
 from ..core import types as _types
@@ -282,15 +284,10 @@ def register(base_package: str = None):
     global _base_package
     _base_package = base_package or _root_package()
     HINDSIGHT_AP_prefs.bl_idname = _base_package
-    for cls in classes:
-        bpy.utils.register_class(cls)
+    reg.register_classes(classes)
     with contextlib.suppress(Exception):
         sync_settings(get_prefs())
 
 
 def unregister():
-    for cls in reversed(classes):
-        try:
-            bpy.utils.unregister_class(cls)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

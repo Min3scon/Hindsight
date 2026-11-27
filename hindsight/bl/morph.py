@@ -5,6 +5,8 @@ import contextlib
 import weakref
 
 import bpy
+
+from . import reg
 import numpy as np
 
 from ..core import morph as M
@@ -349,8 +351,7 @@ classes = (HINDSIGHT_OT_morph_stroke,)
 
 
 def register():
-    for c in classes:
-        bpy.utils.register_class(c)
+    reg.register_classes(classes)
     _tool_registered[0] = False
     try:
         bpy.utils.register_tool(HINDSIGHT_TOOL_morph_history, after={"builtin.annotate"},
@@ -372,8 +373,4 @@ def unregister():
         with contextlib.suppress(Exception):
             bpy.utils.unregister_tool(HINDSIGHT_TOOL_morph_history)
         _tool_registered[0] = False
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)

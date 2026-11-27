@@ -14,7 +14,7 @@ import bpy
 from bpy.app.handlers import persistent
 
 from ..core.registry import new_uid
-from . import guard, log, runtime, warnings
+from . import guard, log, reg, runtime, warnings
 
 MSG_SEPARATE = "The separated part becomes a new object with its own, empty history"
 MSG_EXTRACT = "The extracted mesh becomes a new object with its own, empty history"
@@ -218,23 +218,13 @@ _keymaps = []
 def _add_keymaps():
     if _keymaps:
         return
-    wm = bpy.context.window_manager
-    kc = wm.keyconfigs.addon if wm else None
-    if kc is None:
-        return
-    km = kc.keymaps.new(name="Mesh", space_type="EMPTY")
-    _keymaps.append((km, km.keymap_items.new("hindsight.separate", "P", "PRESS")))
-    km = kc.keymaps.new(name="Object Mode", space_type="EMPTY")
-    _keymaps.append((km, km.keymap_items.new("hindsight.duplicate_linked", "D", "PRESS", alt=True)))
+    reg.add_keymap(_keymaps, "Mesh", "hindsight.separate", "P")
+    reg.add_keymap(_keymaps, "Object Mode", "hindsight.duplicate_linked", "D", alt=True)
 
 
 # ----------------------------------------------------------------------------- register
 def register():
-    for c in classes:
-        try:
-            bpy.utils.register_class(c)
-        except ValueError:
-            pass  # already registered
+    reg.register_classes(classes, again_ok=True)
     _add_keymaps()
     hl = bpy.app.handlers.depsgraph_update_post
     if _on_depsgraph not in hl:
@@ -245,22 +235,13 @@ def register():
 
 
 def unregister():
-    for km, k in _keymaps:
-        try:
-            km.keymap_items.remove(k)
-        except Exception:
-            pass
-    _keymaps.clear()
+    reg.remove_keymaps(_keymaps)
     for hl, fn in ((bpy.app.handlers.depsgraph_update_post, _on_depsgraph),
                    (bpy.app.handlers.load_post, _on_load)):
         while fn in hl:
             hl.remove(fn)
     if bpy.app.timers.is_registered(_deferred_linked_warning):
         bpy.app.timers.unregister(_deferred_linked_warning)
-    for c in reversed(classes):
-        try:
-            bpy.utils.unregister_class(c)
-        except Exception:
-            pass
+    reg.unregister_classes(classes)
     _NAMES.clear()
     _LAST_COUNT[0] = -1
