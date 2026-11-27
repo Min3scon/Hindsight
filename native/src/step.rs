@@ -982,7 +982,7 @@ fn step_decode(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<PyObject> {
 /// delta count, before size, after size, [(uid, size)] or None, raw body length, written quickly,
 /// records size); format 1 and 2 -> (1, header JSON bytes). Checks the checksum, not the body.
 #[pyfunction]
-fn step_info(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+pub(crate) fn step_info(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<PyObject> {
     guard(|| {
         let inp = input(blob)?;
         let b = inp.get();

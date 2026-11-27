@@ -134,6 +134,14 @@ The review of #142 asked for design choices. These are the answers the moves fol
    checkout of that commit> --b <the last commit>` over every scenario of `bench/suite.py`, with a move's target
    (within noise, held memory not higher) and a move's rule: slower beyond noise goes to the owner with the numbers.
 
+5. **CPython's messages (24.3a, 24.6; #144's review, point 6).** The engine keeps CPython's json and codec
+   messages word for word, as #144 recommended: its fast path reads exact types only, and anything else and every
+   error run the reference's Python with the stdlib json from inside the engine (24.3a: `native/src/stepjson.rs`),
+   so the result and the exception are the reference's, per Python version (on 3.11 the engine call's own count
+   against the recursion limit is given back for the fallback, so a `RecursionError` hits where it did). The cost is
+   on the error path only: over the corpus's steps no stdlib json runs. If the owner lets the messages differ, the
+   fallback can go and `tests/equiv.py` compares those functions' exceptions by class only.
+
 ## What stays in Python
 
 First version; #141 makes it final. Each stays because it needs Blender's Python API, or is glue that only calls

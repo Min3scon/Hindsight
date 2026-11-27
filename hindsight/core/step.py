@@ -28,7 +28,6 @@ handles it as bytes.
 """
 from __future__ import annotations
 
-import json
 import os
 import struct
 
@@ -48,7 +47,6 @@ _FIXED = struct.Struct("<BBBBQdI")
 SNAPSHOTS_KEY = "_snapshots"
 _KINDS = {DELTA: 0, TOPO: 1, JOIN: 2, DATA: 3}
 RECORDS_FLAG = 16
-_MISSING_JSON = {"$": "missing"}
 QUICK_FLAG = 8
 # Tests set this (or HINDSIGHT_VERIFY=1): every written step is read back and compared.
 VERIFY = bool(os.environ.get("HINDSIGHT_VERIFY"))
@@ -59,18 +57,10 @@ CorruptStep = _N.CorruptStep
 UnknownEncoding = _N.UnknownEncoding      # intact, but a later build's encoding (dev/FORMAT5_ENCODINGS.md)
 
 
-def _json_default(o):
-    if isinstance(o, np.generic):
-        return o.item()
-    if isinstance(o, np.ndarray):
-        return o.tolist()
-    if isinstance(o, (set, frozenset, tuple)):
-        return list(o)
-    raise TypeError(f"not JSON serialisable: {type(o).__name__}")
-
-
-def _dumps(obj) -> bytes:
-    return json.dumps(obj, separators=(",", ":"), default=_json_default).encode("utf-8")
+# The JSON of extras and data records runs in the engine (#146): the same bytes and exceptions as
+# the reference copy (tests/reference/step_json).
+_json_default, _enc_value, _dec_value = _N.json_setup(MISSING, DataChange)
+_dumps = _N.json_dumps
 
 
 # --------------------------------------------------------------------------- snapshots
@@ -99,41 +89,8 @@ def snapshot_from_bytes(b) -> Snapshot:
 
 
 # --------------------------------------------------------------------------- data records
-def _enc_value(v):
-    if v is MISSING:
-        return _MISSING_JSON
-    if isinstance(v, (tuple, list)):
-        return [_enc_value(x) for x in v]
-    if isinstance(v, dict):
-        return {"$d": {str(k): _enc_value(x) for k, x in v.items()}}
-    return v
-
-
-def _dec_value(v):
-    if isinstance(v, dict):
-        if v == _MISSING_JSON:
-            return MISSING
-        if len(v) == 1 and isinstance(v.get("$d"), dict):
-            return {k: _dec_value(x) for k, x in v["$d"].items()}
-        raise ValueError("records: unexpected object value")
-    if isinstance(v, list):
-        return [_dec_value(x) for x in v]
-    return v
-
-
-def records_to_bytes(records: list) -> bytes:
-    out = [[r.adapter, r.target, [[p, _enc_value(o), _enc_value(n)] for p, (o, n) in r.changes.items()]]
-           for r in records]
-    return json.dumps(out, separators=(",", ":"), allow_nan=True).encode("utf-8")
-
-
-def records_from_bytes(b) -> list:
-    out = []
-    for adapter, target, changes in json.loads(bytes(b).decode("utf-8")):
-        if not isinstance(adapter, str) or not isinstance(target, str):
-            raise ValueError("records: bad adapter or target")
-        out.append(DataChange(adapter, target, {str(p): (_dec_value(o), _dec_value(n)) for p, o, n in changes}))
-    return out
+records_to_bytes = _N.records_to_bytes
+records_from_bytes = _N.records_from_bytes
 
 
 # --------------------------------------------------------------------------- writing
@@ -183,27 +140,8 @@ def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong:
 
 
 # --------------------------------------------------------------------------- reading
-def _extra(raw: bytes) -> dict:
-    if not raw:
-        return {}
-    try:
-        e = json.loads(raw.decode("utf-8"))
-        return dict(e)
-    except (ValueError, TypeError) as e:
-        raise CorruptStep(f"step blob: bad header ({e})") from e
-
-
-def read_header(b) -> dict:
-    """Step metadata without decompressing the body."""
-    r = _N.step_info(b)
-    if r[0] == 1:
-        return json.loads(bytes(r[1]).decode("utf-8"))
-    _v, kind, seq, t, label, mode, target, extra, nd, before, after, snaps, raw, quick, records = r
-    meta = {"seq": seq, "label": label, "mode": mode, "target": target, "time": t, "kind": kind,
-            "extra": _extra(extra)}
-    return {"v": 3, "meta": meta, "deltas": nd, "before": before, "after": after,
-            "snaps": None if snaps is None else [[u, n] for u, n in snaps], "raw": raw, "quick": quick,
-            "records": records}
+_extra = _N.step_extra
+read_header = _N.read_header          # step metadata without decompressing the body
 
 
 def step_from_bytes(b) -> Step:
@@ -278,7 +216,7 @@ def same_step(a: Step, b: Step) -> bool:
         return False
     ea, eb = dict(a.extra or {}), dict(b.extra or {})
     sa, sb = ea.pop(SNAPSHOTS_KEY, None), eb.pop(SNAPSHOTS_KEY, None)
-    if json.loads(_dumps(ea)) != json.loads(_dumps(eb)):
+    if _N.json_loads(_dumps(ea)) != _N.json_loads(_dumps(eb)):
         return False
     if (sa is None) != (sb is None):
         return False

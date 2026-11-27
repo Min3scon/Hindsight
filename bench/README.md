@@ -68,6 +68,7 @@ headless. The packer thread is drained before each timed commit.
 | commit | `goto_bl_1_100k`, `goto_bl_300_100k` | `runtime.goto` in Blender (history read plus mesh write) over 1 and 300 steps (both ways) at 100k |
 | jumps | `jump_{1,30,300,3000}_{fwd,back}_{100k,1m}` | core `History.goto` over a 5,000-step packed history (newest 64 raw). Memory on `jump_300_fwd_*` and `jump_3000_back_*` |
 | jumps | `drag_5000_{fwd,back}_{100k,1m}` | a drag across the whole history: 100 slider events of 50 steps, each way |
+| stepjson | `stepjson_write_corpus`, `stepjson_read_corpus`, `stepjson_header_corpus` | `step.py`'s JSON over every step of the corpus (`tests/corpus.py`: the registries of `FILES`, the 6,000 steps of `big_format5`): `_dumps` of the extras and `records_to_bytes`, `_extra` and `records_from_bytes` of those bytes, `read_header` (#146) |
 | saveload | `{save,open}_{folder,embed}_100k_{1000,6000}` | `save_as_mainfile` and `open_mainfile`, history folder and Embed, 1,000 and 6,000 steps, memory included (`saveload_bench.py`) |
 | editmode | `edit_step_100k`, `edit_step_300k` | `datarec.finish_operation` after a Move in Edit Mode (2% selected), split in `commit_ms`/`edit_step_ms` |
 | datarec | `dr_finish_nochange_500`, `dr_finish_move_500` | operator finish with 500 recorded objects, nothing changed / one moved |

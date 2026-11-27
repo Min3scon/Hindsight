@@ -37,6 +37,7 @@ GROUPS = {
              + [f"drag_5000_{d}_{t}" for t in T for d in ("fwd", "back")],
     "saveload": [f"{op}_{m}_100k_{s}" for s in (1000, 6000) for op in ("save", "open") for m in ("folder", "embed")],
     "editmode": ["edit_step_100k", "edit_step_300k"],
+    "stepjson": ["stepjson_write_corpus", "stepjson_read_corpus", "stepjson_header_corpus"],
     "datarec": ["dr_finish_nochange_500", "dr_finish_move_500", "dr_tick_idle_500", "dr_on_update_500",
                 "dr_prime_500"],
     "draw": [f"redraw_{k}_{c}" for c in ("1obj_object", "1obj_global", "50obj_object", "50obj_global",
