@@ -43,8 +43,10 @@ def positions(ob):
 
 
 def copies():
+    """The history keys Blender holds on the Text; format 5's stub is not a copy of the history."""
     text = bpy.data.texts[persistence.TEXT_NAME]
-    return [k for k in (persistence.DATA_PROP, persistence.DATA_BIN_PROP) if k in text]
+    return [k for k in (persistence.DATA_PROP, persistence.DATA_BIN_PROP, persistence.PARTS_PROP)
+            if k in text and not (k == persistence.DATA_PROP and text[k] == persist.STUB)]
 
 
 def saved_with_states():
