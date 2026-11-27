@@ -270,7 +270,14 @@ def test_corpus_steps():
     print(f"  test_corpus_steps ({n} steps)")
 
 
+def test_json_kept_out_of_python():
+    """step.py holds no JSON of its own: its names are the engine's (or call it)."""
+    src = open(step.__file__, encoding="utf-8").read()
+    assert "json." not in src and "import json" not in src, "step.py still runs Python JSON"
+
+
 for t in (test_extra_json_is_the_reference_for_random_values, test_float_and_string_bits, test_hypothesis_values,
-          test_records_json_round_trip, test_hostile_values, test_hostile_bytes, test_corpus_steps):
+          test_records_json_round_trip, test_hostile_values, test_hostile_bytes, test_corpus_steps,
+          test_json_kept_out_of_python):
     H.run(t)
 H.finish()
