@@ -1,7 +1,7 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import tomllib
 import tests.harness as H
-from hindsight.bl import beta
+from hindsight.bl import notice
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 
@@ -28,24 +28,27 @@ class _Rec:
         return op
 
 
-def test_manifest_is_beta():
+def test_manifest_tagline_has_no_beta():
     m = tomllib.load(open(os.path.join(ROOT, "hindsight", "blender_manifest.toml"), "rb"))
-    assert "-beta" in m["version"], m["version"]
-    assert "(beta)" in m["tagline"]
+    assert "beta" not in m["tagline"].lower(), m["tagline"]
 
 
-def test_beta_tag_and_report_button():
+def test_no_beta_label_and_report_button():
     log = []
-    beta.draw_header_tag(_Rec(log))
-    assert ("label", "BETA") in log
-    log.clear()
-    beta.draw_note(_Rec(log))
-    assert any(e[0] == "label" and e[1].startswith("Beta.") for e in log)
+    notice.draw_note(_Rec(log))
+    assert all("beta" not in e[1].lower() for e in log if e[0] == "label"), log
     ops = [e for e in log if e[0] == "op"]
     assert ops and ops[0][1] == "wm.url_open" and ops[0][2] == "Report a bug"
-    assert ops[0][3].url == beta.ISSUES_URL and "issues" in beta.ISSUES_URL
+    assert ops[0][3].url == notice.ISSUES_URL and "issues" in notice.ISSUES_URL
 
 
-H.run(test_manifest_is_beta)
-H.run(test_beta_tag_and_report_button)
+def test_no_beta_text_in_the_ui_sources():
+    for name in ("header.py", "ui_panel.py", "notice.py"):
+        src = open(os.path.join(ROOT, "hindsight", "bl", name), encoding="utf-8").read()
+        assert "beta" not in src.lower(), name
+
+
+H.run(test_manifest_tagline_has_no_beta)
+H.run(test_no_beta_label_and_report_button)
+H.run(test_no_beta_text_in_the_ui_sources)
 H.finish()

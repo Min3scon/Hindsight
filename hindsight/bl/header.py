@@ -26,9 +26,6 @@ class VIEW3D_PT_hindsight_popover(bpy.types.Panel):
         layout = self.layout
         row = layout.row()
         row.label(text="Undo History", icon='RECOVER_LAST')
-        sub = row.row()
-        sub.alignment = 'RIGHT'
-        sub.label(text="BETA")
         draw_main(layout, context, units=UNITS)
         box = layout.column()
         if draw_step_list(box, context, around=6):

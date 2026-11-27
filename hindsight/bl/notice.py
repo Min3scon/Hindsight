@@ -1,14 +1,6 @@
-"""The small beta notice shared by the sidebar, the popover and the add-on preferences."""
+"""The small notice shared by the sidebar, the popover and the add-on preferences."""
 ISSUES_URL = "https://github.com/Min3scon/Hindsight/issues/new/choose"
-NOTE = "Beta. Back up your files, and tell me what breaks."
-
-
-def draw_header_tag(layout) -> None:
-    """A small 'BETA' tag for a panel header."""
-    row = layout.row()
-    row.alignment = 'RIGHT'
-    row.enabled = False
-    row.label(text="BETA")
+NOTE = "Back up your files, and tell me what breaks."
 
 
 def draw_note(layout) -> None:

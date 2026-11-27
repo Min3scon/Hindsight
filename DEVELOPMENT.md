@@ -74,8 +74,9 @@ Where a fact has no source, this page says "not measured" or "no report".
   into the branch through a temporary worktree with a `[skip ci]` merge commit). No agent is running: the Rust
   agent was stopped on 2026-11-19 at about 17:00 after an hour waiting on a permission prompt; its R078 was
   measured by the main session and reverted (OPTIMISATION_LOG).
-- Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and the beta.2 zip is on GitHub
-  Releases (`v1.0.0-beta.2`). `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
+- Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2` (V1), and the beta.2 zip is on GitHub
+  Releases (`v1.0.0-beta.2`). The manifest becomes 2.0.0 at release, not before. `CHANGELOG.md` has a `2.0.0` (V2)
+  section. V2 is not released.
 
 ## c. Architecture
 
@@ -361,8 +362,7 @@ Owner decisions (2026-11-18, from the plan):
   the add-on ships one implementation. Wheels for every Blender platform, adding Windows ARM64 and Linux
   ARM64 (the manifest `platforms` lists exactly what has a wheel). The add-on shows a clear error panel
   if the module cannot load and never records with a broken engine.
-- Publish a beta per phase (since the website was removed in #5: on GitHub Releases). Beta 3 first, after
-  Phase 0.
+- Publish V2 on GitHub Releases (the website was removed in #5), after Phase 0.
 - The unmerged agent work was to be merged first (RUNTIME merged; CAMERA and MOVIE not).
 - Earlier owner instructions of the job: "use as many sub agents as you want to optimise it"; "rewrite in
   rust"; "check all this and see if these are still true and if true fix" (the two lists on the website's
@@ -374,7 +374,7 @@ now lost; the owner can overrule; they were to be recorded in `DECISIONS.md`, wh
 
 - Derived datablocks (materials, node groups, images, actions, armature, light, camera, curve data) are
   recorded in the history of the recorded object that uses them, shared ones by the D39 owner rule.
-- New record kinds make the file format 5 only when used; beta 2 and beta 3 refuse format 5.
+- New record kinds make the file format 5 only when used; V1 (1.0.0-beta.2) and the earlier builds of V2 refuse format 5.
 - Moving a node alone is not a step; a node's position is stored with it.
 - Texture paint is its own kind, off by default. Other new kinds are on by default, under Record >
   Everything. The default of the whole-file switch stays "Sculpting only" until a kind has passed the

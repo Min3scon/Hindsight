@@ -201,7 +201,7 @@ class HINDSIGHT_AP_prefs(bpy.types.AddonPreferences):
 
     def draw(self, context):
         layout = self.layout
-        from .beta import draw_note
+        from .notice import draw_note
         draw_note(layout)
 
         def section(title, icon):

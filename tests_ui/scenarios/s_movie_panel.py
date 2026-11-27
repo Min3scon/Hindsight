@@ -1,4 +1,4 @@
-"""The Movie Mode panel's rows in a real window (HANDOFF beta 3 checklist).
+"""The Movie Mode panel's rows in a real window (HANDOFF V2 checklist).
 
 The panel is closed by default and Blender has no call that opens a panel, so the scenario registers it
 again without DEFAULT_CLOSED (a fresh sidebar then shows it open), opens the Undo History tab with Movie

@@ -113,13 +113,13 @@ changelog page change with the version.
 - Still open from the audit (report: DECISIONS.md, "The two linked repositories"): duplicate helpers
   (finding 8) and about 60 lines of dead code (finding 7).
 - Crash recovery (D77 to D83, DECISIONS "Crash recovery keeps the saved state"): done, tested on 4.2 and
-  5.3 (tests/test_bl_recovery.py, tests/test_core_journal.py). 1.0.0-beta.3 is NOT released yet: the
+  5.3 (tests/test_bl_recovery.py, tests/test_core_journal.py). V2 (once called beta 3) is NOT released yet: the
   manifest still says beta.2 and docs/download/hindsight.zip is the beta.2 zip.
 - Since then (2026-11-18 evening to 2026-11-19): every agent branch was merged or replaced; the Rust
   engine is required (0.5.1, API 5; Python copies in tests/reference); both lists of the limitations
   page were checked line by line and almost every line is fixed or recorded now (DEVELOPMENT.md
   section d, DEFECTS.md D77 to D141). The current state, branches, test matrix and next actions are in
-  DEVELOPMENT.md. 1.0.0-beta.3 is still not released. Real-window checks (2026-11-19, in this container: Xvfb,
+  DEVELOPMENT.md. V2 (once called beta 3) is still not released. Real-window checks (2026-11-19, in this container: Xvfb,
   Mesa llvmpipe, Blender binaries 5.3.0 and 4.2.23, `tests_ui/hs_ui.py`): the slider with toolbar, sidebar,
   both and neither; Movie Mode (camera and lamps, Use this view, put back after Delete but not during a
   stroke, a drag, playback or a render, Workbench and EEVEE timelapse renders); Weight, Vertex, Texture Paint

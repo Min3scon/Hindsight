@@ -1,4 +1,4 @@
-"""Movie Mode in a real window (HANDOFF, beta 3 checklist).
+"""Movie Mode in a real window (HANDOFF, V2 checklist).
 
 The camera and three lamps Movie Mode adds; "Use this view" turning the camera; the camera and a lamp
 put back after being deleted, but never in the middle of a stroke, a drag (G), playback or a render;
