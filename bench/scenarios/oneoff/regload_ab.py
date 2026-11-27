@@ -22,7 +22,9 @@ h.cursor = len(h.entries); reg.histories["H0"] = h; reg.by_object["a"] = "H0"; r
 data = persist.registry_to_bytes(reg)
 tmp = tempfile.mkdtemp(prefix="hs_regload_")
 blend = os.path.join(tmp, "f.blend")
-persist.save_sidecar(reg, blend)
+os.makedirs(persist.sidecar_dir(blend))       # a V1 history folder: V2 never writes one (#53)
+with open(persist.sidecar_file(blend), "wb") as fh:
+    fh.write(data)
 del reg, h
 out = {"engine": native.ENGINE.__file__.split("/")[-3] if hasattr(native.ENGINE, "__file__") else "?", "steps": len(blobs), "mb": round(len(data) / 2**20, 1)}
 for name, fn in (("file", lambda: persist.load_sidecar(blend)), ("bytes", lambda: persist.registry_from_bytes(data))):

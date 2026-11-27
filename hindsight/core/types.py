@@ -40,17 +40,13 @@ POSITION_KEY = "position|POINT|FLOAT_VECTOR"
 MASK_KEY = ".sculpt_mask|POINT|FLOAT"
 FACE_SET_KEY = ".sculpt_face_set|FACE|INT"
 HIDE_VERT_KEY = ".hide_vert|POINT|BOOLEAN"
-HIDE_EDGE_KEY = ".hide_edge|EDGE|BOOLEAN"
 HIDE_POLY_KEY = ".hide_poly|FACE|BOOLEAN"
-SHARP_FACE_KEY = "sharp_face|FACE|BOOLEAN"
 
 # Topology arrays inside a Snapshot (not normal attributes)
 EDGE_VERTS_KEY = ".edge_verts|EDGE|INT32_2D"
 CORNER_VERT_KEY = ".corner_vert|CORNER|INT"
 CORNER_EDGE_KEY = ".corner_edge|CORNER|INT"
 FACE_OFFSETS_KEY = "face_offsets|FACE|INT"  # length = face_count + 1
-
-DOMAINS = ("POINT", "EDGE", "FACE", "CORNER")
 
 
 def make_key(name: str, domain: str, data_type: str) -> str:
@@ -184,9 +180,6 @@ class Step:
     extra: dict = field(default_factory=dict)     # JSON-serialisable metadata
     records: list = field(default_factory=list)  # list[DataChange] (any kind; DATA steps have only these)
 
-    def is_topo(self) -> bool:
-        return self.kind in (TOPO, JOIN)
-
     def nbytes(self) -> int:
         n = 256 + sum(d.nbytes() for d in self.deltas) + sum(r.nbytes() for r in self.records)
         if self.before is not None:
@@ -202,6 +195,37 @@ class Step:
 
 
 _NO_BLOB = (None, None)
+
+
+class Slice:
+    """A saved step's bytes inside its step part (#125): read out of `part.bytes` by offset, so the history is held
+    once. `part.bytes` is None while Blender holds the step part, during a save."""
+    __slots__ = ("part", "off", "n")
+
+    def __init__(self, part, off: int, n: int):
+        self.part, self.off, self.n = part, int(off), int(n)
+
+    def __len__(self) -> int:
+        return self.n
+
+    def __getitem__(self, i):
+        """A byte, or a copy of a run of bytes (step 1), as the step's own bytes would give."""
+        if type(i) is slice:
+            a, z, _ = i.indices(self.n)
+            return self.part.bytes[self.off + a:self.off + max(a, z)]
+        if i < 0:
+            i += self.n
+        if not 0 <= i < self.n:
+            raise IndexError(i)
+        return self.part.bytes[self.off + i]
+
+    def copy(self):
+        """The step's bytes, copied out (None while Blender holds the step part)."""
+        b = self.part.bytes
+        return None if b is None else b[self.off:self.off + self.n]
+
+    def view(self):
+        return memoryview(self.part.bytes)[self.off:self.off + self.n]
 
 
 class Entry:
@@ -229,15 +253,18 @@ class Entry:
 
     @property
     def blob(self) -> Optional[bytes]:
-        return self._bc[0]
+        b = self._bc[0]
+        return b.copy() if type(b) is Slice else b
 
     @blob.setter
     def blob(self, b: Optional[bytes]) -> None:
         self._bc = _NO_BLOB if b is None else (b, crc32(b) & 0xFFFFFFFF)
 
     def blob_crc(self):
-        """(packed bytes, their CRC-32), read together; (None, None) while the step is raw."""
-        return self._bc
+        """(packed bytes, their CRC-32), read together; (None, None) while the step is raw. `_bc` is the same pair
+        as held, a Slice in place of bytes for a step read out of its step part (#125)."""
+        bc = self._bc
+        return (bc[0].copy(), bc[1]) if type(bc[0]) is Slice else bc
 
     @property
     def seq(self) -> int:
@@ -257,7 +284,8 @@ class Entry:
     def nbytes(self) -> int:
         if self.step is not None:
             return self.step.nbytes()
-        return len(self.blob) + 128 if self.blob is not None else 128
+        b = self._bc[0]                 # a Slice gives its length without a copy
+        return len(b) + 128 if b is not None else 128
 
     def load(self) -> Step:
         """Return the Step, unpacking (without caching) if packed."""
@@ -275,8 +303,9 @@ class Entry:
 
     def to_bytes(self, codec: str = "auto", effort: int = 1) -> bytes:
         """Packed form. effort 0 (fast) for writes on the main thread; 1 (best) otherwise."""
-        if self.blob is not None:
-            return self.blob
+        b = self.blob
+        if b is not None:
+            return b
         from .step import step_to_bytes
         return step_to_bytes(self.step, codec, effort)
 
@@ -289,7 +318,6 @@ class Settings:
     raw_steps: int = 64                # most recent steps per history kept unpacked
     compression: str = "auto"          # auto | zstd | lz4 | zlib | none
     truncation_threshold: int = 10     # confirm before dropping >= this many future steps
-    save_mode: str = "SIDECAR"         # SIDECAR | EMBED | BOTH
     crash_recovery: str = "LAST_SAVED" # LAST_SAVED | INTERRUPTED
     edit_steps_max: int = 300_000      # vertices: Record everything records Edit Mode per operation up to
                                        # this, per visit above (about 20 to 27 ms per 100k per operation)

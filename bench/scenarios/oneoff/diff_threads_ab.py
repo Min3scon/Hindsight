@@ -20,6 +20,7 @@ import tests.harness as H
 import _common as K
 import hindsight_native
 from hindsight.bl import runtime
+from hindsight.bl import prefs
 from hindsight.core import delta
 assert runtime.__file__.startswith(ROOT), runtime.__file__
 BL = K.load_bench_module("bench_bl")
@@ -59,7 +60,7 @@ mat.use_nodes = True
 canvas.data.materials.append(mat)
 img = bpy.data.images.new("Tex", 2048, 2048, alpha=True, float_buffer=True)
 mat.node_tree.nodes.new("ShaderNodeTexImage").image = img
-runtime.FORCE_TEXTURE[0] = True
+prefs.FORCE["record_texture_painting"] = True
 H.enter(canvas, "TEXTURE_PAINT")
 px = np.empty(2048 * 2048 * 4, np.float32)
 img.pixels.foreach_get(px)

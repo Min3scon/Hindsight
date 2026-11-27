@@ -1,11 +1,11 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """History menu operators: each calls the right runtime function, polls follow history/recording state.
 
 Uses a FAKE runtime (the real one is not required) and a minimal scene PropertyGroup when the add-on's
 own props are not registered.
 """
 import types
-import traceback
 
 import bpy
 
@@ -237,15 +237,7 @@ def test_unregister():
     assert hasattr(bpy.types, "HINDSIGHT_MT_history")
 
 
-ok = True
 for _name, _fn in list(globals().items()):
     if _name.startswith("test_") and callable(_fn):
-        try:
-            _fn()
-            print("PASS", _name)
-        except Exception:
-            ok = False
-            print("FAIL", _name)
-            traceback.print_exc()
-sys.stdout.flush()
-os._exit(0 if ok else 1)
+        R.run(_fn)
+R.finish()

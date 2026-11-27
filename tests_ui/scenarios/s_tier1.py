@@ -40,7 +40,7 @@ def scene_names():
 
 def run(d):
     rt = C.mod("runtime")
-    datarec = C.mod("datarec")
+    C.mod("datarec")
     idmap = C.mod("idmap")
     mark = d.console_mark()
     yield 1.0

@@ -3,6 +3,7 @@
 Everything the add-on prints goes through here. ``error_once`` prints the full traceback the first
 time a given error happens and stays quiet after that.
 """
+import contextlib
 import os
 import sys
 import time
@@ -34,10 +35,8 @@ def _emit(level, text):
     stamp = time.strftime("%H:%M:%S")
     for line in str(text).splitlines() or [""]:
         _LINES.append(f"{stamp} {level:5s} {line}")
-    try:
+    with contextlib.suppress(Exception):
         print(f"{PREFIX}: {text}" if level != "TRACE" else text, file=sys.stdout)
-    except Exception:
-        pass
 
 
 def info(text):
@@ -99,14 +98,12 @@ def scrub(text):
         v = os.environ.get(var)
         if v and len(v) > 3:
             reps.append((v, "<" + var.lower() + ">"))
-    try:
+    with contextlib.suppress(Exception):
         import bpy
         fp = bpy.data.filepath
         if fp:
             reps.append((os.path.dirname(fp), "<blend dir>"))
             reps.append((os.path.basename(fp), "<blend>"))
-    except Exception:
-        pass
     reps.sort(key=lambda r: -len(r[0]))
     for old, new in reps:
         s = s.replace(old, new).replace(old.replace("\\", "/"), new)

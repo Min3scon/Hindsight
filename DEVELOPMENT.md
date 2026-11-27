@@ -23,6 +23,12 @@ Where a fact has no source, this page says "not measured" or "no report".
    that script when a session's container is built; it was created on 2026-11-18 and its setup script
    is unproven until a fresh session has started on it. `bash tools/build_native.sh` rebuilds the six
    engine wheels into `hindsight/wheels/`.
+   On a Windows PC with the GNU Rust toolchain and no MSVC, `maturin build --release --zig` builds all six too
+   (0.14.0, #69), given two settings: the host's build scripts take getrandom's `windows_legacy` backend
+   (`RUSTC_BOOTSTRAP=1`, `CARGO_UNSTABLE_HOST_CONFIG=true`, `CARGO_UNSTABLE_TARGET_APPLIES_TO_HOST=true`,
+   `CARGO_TARGET_APPLIES_TO_HOST=false`, `CARGO_HOST_RUSTFLAGS=--cfg getrandom_backend="windows_legacy"`), since
+   its default needs `dlltool` and `as`; and Windows ARM64 links libunwind
+   (`CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_RUSTFLAGS=-C link-arg=-lunwind`).
    - No GPU in the container. Since 2026-11-18 the "Hindsight" environment allows `download.blender.org`:
      Blender 4.2 and 5.3 Linux binaries are unpacked in `blender/` next to the repository checkout and
      `python3 tools/ci/run_suite.py --blender <binary>` runs the suite in them. Real Blender also runs on GitHub: workflow `Blender tests` (`.github/workflows/blender.yml`, started by
@@ -47,7 +53,7 @@ Where a fact has no source, this page says "not measured" or "no report".
    - all: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py`
    - some: `HINDSIGHT_PY=<venv>/bin/python python3 tests/run_tests.py recovery` (a substring of the file name)
    - one file: `<venv>/bin/python tests/test_bl_recovery.py`; each test prints `PASS test_name` or `FAIL test_name`
-   - The engine is always used (no Python path ships; `HINDSIGHT_NATIVE` selects nothing any more, the
+   - The engine is always used (no Python path ships; the
      Python versions are in `tests/reference/`). The runner sets `HINDSIGHT_VERIFY=1` (every written step
      is read back and compared).
    - Sculpt brush operators crash headless; tests simulate strokes with `tests/harness.py`.
@@ -64,22 +70,18 @@ Where a fact has no source, this page says "not measured" or "no report".
      wheel on Install from Disk (moved aside 2026-11-19).
    - User-facing text: `python3 tools/check_copy.py`.
 4. Benchmarks: see section f.
-5. Commits: small, subject ends with ` [skip ci]` so no Pages deploy runs. A commit without it deploys the
-   site, which is only done at a release (HANDOFF "TOP PRIORITY").
+5. Commits: small, subject ends with ` [skip ci]` (CLAUDE.md, "Working a ticket").
 
 ## b. Repository and branch state
 
-- Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default and the
-  Pages source. No pull requests: work is merged into this branch after its tests pass.
+- Repository `Min3scon/Hindsight`. One branch, `claude/lucid-brahmagupta-9gsdsn`, is the default. No pull requests: work is merged into this branch after its tests pass.
 - Main line (2026-11-19, evening): `f95fc2f`, everything up to R080 with engine 0.9.0 (API 8), full suites on 5.3 and
   4.2 before the push. The main session works in the worktree `.claude/worktrees/main-session` (detached; merged
   into the branch through a temporary worktree with a `[skip ci]` merge commit). No agent is running: the Rust
   agent was stopped on 2026-11-19 at about 17:00 after an hour waiting on a permission prompt; its R078 was
   measured by the main session and reverted (OPTIMISATION_LOG).
-- Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and `docs/download/hindsight.zip`
-  is the beta.2 zip. `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
-- The site (`site/`, `docs/`) is not edited outside a release (owner: "don't edit site, just get the add-on
-  updated").
+- Version: `hindsight/blender_manifest.toml` still says `1.0.0-beta.2`, and the beta.2 zip is on GitHub
+  Releases (`v1.0.0-beta.2`). `CHANGELOG.md` has a `1.0.0-beta.3` section. 1.0.0-beta.3 is not released.
 
 ## c. Architecture
 
@@ -90,9 +92,9 @@ Where a fact has no source, this page says "not measured" or "no report".
   lz4, zlib), `history.py` (one object's history, cursor, `goto`), `store.py` (caps, memory tiers, the
   background `Packer`), `registry.py`, `persist.py` (file formats 1 to 4, journal replay), `journal.py`
   (crash journal), `globaltl.py` (global timeline), `framing.py` (camera framing for Movie Mode),
-  `morph.py`, `importer.py`, `native.py` (loader of the Rust module).
+  `morph.py`, `native.py` (loader of the Rust module).
 - `hindsight/bl/`: the Blender side. `runtime.py` (recording, jumps, timers), `meshio.py` (mesh reads and
-  writes), `datarec.py` and `adapters.py` (Record everything: objects, constraints, collections, RNA
+  writes), `datarec.py` and the `adapters/` package (Record everything: objects, constraints, collections, RNA
   values), `idmap.py`, `persistence.py` (save, load, recovery), `scrubber.py` (on-screen slider),
   `ui_panel.py`, `ui_menu.py`, `header.py`, `warnings.py`, `prefs.py`, `props.py`, `filtering.py`,
   `movie.py`, `camrig.py`, `rigmark.py` (Movie Mode), `dupsep.py`, `joinsep.py`, `morph.py`, `log.py`,
@@ -104,12 +106,9 @@ Where a fact has no source, this page says "not measured" or "no report".
   systems, Python 3.11 and 3.13; the run was of the 0.1.0 wheels, the 0.2.0 wheels were cross-built and
   have not been run on Windows or macOS). They have not run inside a real Blender on any platform.
 - Tests in `tests/`, UI tests in `tests_ui/`, benchmarks in `bench/`, tools in `tools/`.
-- `HINDSIGHT_NATIVE`: unset or `1` uses the module if it loads (any API from 1 to 2, per function
-  fallback), `0` forces Python, `require` demands API 2.
-
 ### What runs in Rust today
 
-Engine `hindsight_native` 0.9.0, API 8 (0.9.0: `same_values`, the recorder's strict "nothing changed" check, R070; `diff` on two threads from 4 MB per array, R071; idle recompression at zstd level 15 for data up to 1 MB and 19 above, R072; 0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
+Engine `hindsight_native` 0.14.0, API 13 (0.14.0: `part_salvage`, a damaged step part's steps found from its step table or by their prefix, #69; 0.13.0: `step_encoding`, `ENCODINGS` and `UnknownEncoding`, a step's encoding read from its step prefix and a later build's encoding told apart from damage, #66; 0.12.0: format 5's index part and step parts, `index_build`, `index_read`, `part_build`, `part_read`, #64; 0.11.0: `extents_into`, the Movie Mode camera's extents of points in place, R085; `morph_dab` refuses arrays of the wrong type; 0.10.0: `morph_dab`, one Morph History dab in one pass, R083; 0.9.0: `same_values`, the recorder's strict "nothing changed" check, R070; `diff` on two threads from 4 MB per array, R071; idle recompression at zstd level 15 for data up to 1 MB and 19 above, R072; 0.8.0: `Hasher128`, xxh3-128 for the mesh fingerprints, R060; 0.7.0: `crc32` for the registry, the journal and the step checksums, M5; 0.6.0: zstd bodies over 1 MB get a long window and long distance matching, R049; M1 and the M2 part merged 2026-11-19: `delta.py` calls the engine for
 diff, apply, pack and unpack, its numpy code is `tests/reference/delta.py`; `record_step` exists and is
 tested but `runtime.commit` doesn't use it, since the stroke is already diffed once). The engine is required: if it
 can't load, the add-on says so in the sidebar and records nothing (D118); there is no Python fallback in
@@ -125,11 +124,14 @@ fails if anything under `hindsight/` imports them.
 | `Hasher128` (xxh3-128 by xxhash-rust, streaming, GIL released for bytes of 64 KB and more, API 7) | `bl/meshio.fingerprint`: mesh fingerprints, written "x3:" + 32 hex digits (saved prints, the RESET of a mesh changed without Hindsight, Blender's undo after a jump); a value without a tag (earlier builds) is compared by hashing with blake2b again, an unknown tag is never a change |
 | step container: formats 1 to 4 read, 3 and 4 written, all step kinds, recompress, CRC | `core/step.py` (facade) |
 | `same_values` (strict equality: exact types at every level, floats by bits, dicts in the same key order; API 8) | `bl/datarec._same_values`: the "nothing changed" check of every recorded object at every operation (R070); False leaves the marshal compare deciding |
+| `morph_dab` (one Morph History dab: box test, distance, falloff, mask, the stroke's strongest weight and the blend, in place; API 9) | `bl/morph.apply_morph_at` (R083); its numpy code is `tests/reference/morph_dab.py` |
+| `extents_into` (extents of points, or of the rows an index names, for k camera bases, merged in place; the product written out left to right; API 10) | `core/framing.extents`, `extents_multi`, `history_extents_multi` (R085); their numpy code is `tests/reference/framing.py` |
+| `index_build`, `index_read`, `part_build`, `part_read` (format 5's index part and step parts, built and read with their CRC-32s, the steps copied, never decoded; API 11) | `tests/test_core_format5.py` (the save and open of format 5 use them next, #64) |
+| `step_encoding`, `ENCODINGS` (1, 3, 4), `UnknownEncoding`: a step's encoding from its step prefix; a step in an encoding this build doesn't know is never decoded nor re-packed (API 12) | `core/step.py` `is_unknown`, `core/persist.py` (open), `core/history.py` `reach`, `held`; `tests/test_core_format5_encodings.py` (#66) |
 | errors `CorruptStep`, `CorruptBlob`, `CorruptDelta`, `NewerFormatError`, `EngineMissing` | `core/native.py` |
 
 Still Python: history, store, persist, journal, registry, global timeline, framing, morph, and the whole
-Blender side (by design: it needs bpy). `HINDSIGHT_NATIVE=0` only switches `delta.py` to its Python paths
-for tests and A/B runs.
+Blender side (by design: it needs bpy). The Python paths of `delta.py` live in `tests/reference/` for tests and A/B runs.
 
 ### Migration plan to Rust (from the approved plan)
 
@@ -149,9 +151,9 @@ interface design (module layout, buffer ownership, error mapping, threading, mil
 | R3 | History engine: a `History` pyclass owning entries, cursor, goto planning and application through borrowed numpy buffers, caps, eviction and tier accounting, drop, truncate and join bookkeeping; Python keeps a thin facade | done as far as it pays: measured first, Python glue is about 3% of a jump (OPTIMISATION_LOG "Tried"), so no pyclass; `History.goto` crosses packed steps only through the engine's `apply_steps`, the Python loop is `tests/reference/history.py` |
 | R4 | Recording pipeline: one native `record()` per stroke (diff, pack, compress, journal append, GIL released, reusing the `foreach_get` buffers); fingerprints from arrays already read | partial: `record_step` exists in the engine (API 4) but commit doesn't use it (it would diff twice; saving below 4%, see "Tried"); the journal blob is lz4 (R043) |
 | R5 | Background packer as a Rust thread (zstd 19 off the GIL, idle policy kept) | not started |
-| R6 | Global timeline (incremental groups, transition), `framing.history_extents`, morph blending | not started |
+| R6 | Global timeline (incremental groups, transition), `framing.history_extents_multi`, morph blending | partial: the Morph History dab (R083, engine 0.10.0), the camera extents and the history walk's measuring (R085, 0.11.0; the walk itself, stepping through the history, stays Python); the global timeline not started |
 | Rust required | Python copies to `tests/reference/`, clear error panel if the module cannot load, never record with a broken engine | done: no Python path ships (`tests/reference/`), `EngineMissing` and the panel's engine message (`test_bl_engine_missing`), HINDSIGHT_NATIVE selects nothing any more |
-| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.9.0 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
+| Wheels for Windows ARM64 and Linux ARM64 | manifest `platforms` lists exactly what has a wheel | done: six 0.11.0 wheels (Linux and Windows x64 and ARM64, macOS x64 and arm64) in `hindsight/wheels`, listed in the manifest; `native.yml` loads them on GitHub runners |
 
 Stays Python (needs `bpy`): `foreach_get` and `foreach_set`, RNA capture in datarec and adapters,
 vertex group weight reads, handlers, UI and drawing, operators. Their cost is attacked by doing less
@@ -175,10 +177,9 @@ Status words, exactly one per row:
 - **blocked**: cannot start until something else exists.
 - **not started**: nothing was written.
 
-### The Limitations page (the plan's table, one row per line)
+### The limitations (the plan's table, one row per line)
 
-The site page is changed only as part of a release, when a line has passed the real-window gate (owner's
-rule). Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbered sections) and
+Design for each line: `dev/reports/LIMITS-A.md` (known limits, 12 numbered sections) and
 `dev/reports/LIMITS-B.md` (not recorded, adapter seam, packages P0 to P8).
 
 | # | Line | Planned outcome (phase) | Status | Test that proves it |
@@ -261,8 +262,7 @@ DEFECTS.md).
   `_IDX_ENC` in `delta.py`, unused local in `history.py`. Done since: the unused call in `joinsep.py` (HINDSIGHT_OT_join.invoke). Not done:
   unused imports (pyflakes is clean on `hindsight/` since 2026-11-19 except the deliberate import check in
   `ui_panel.engine_error`), duplicated keymap boilerplate in `joinsep.py`
-  and `ops_core.py`, the unused `@fontsource-variable/*` devDependencies and the undeclared
-  `chrome-launcher` in the site's tooling. 103 empty-except and 34 cyclic-import findings from CodeQL were
+  and `ops_core.py` (the site's tooling findings went with the website, #5). 103 empty-except and 34 cyclic-import findings from CodeQL were
   not individually triaged (the cyclic imports are lazy imports on purpose).
 - `dev/reports/ponytail_audit.md`: items 1, 2, 3, 4, 5, 6, 9, 10, 11 and 13 were done by earlier work in
   this job (see `DEFECTS.md` D63 to D69 and `OPTIMISATION_LOG.md`); item 7 (dead code, about 60 lines) and
@@ -275,10 +275,13 @@ DEFECTS.md).
 
 ## e. Test matrix
 
-Latest runs (2026-11-19):
+Latest runs (2026-11-19 and 20):
 
 | Level | Code | Result |
 |---|---|---|
+| bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine 0.9.0 required | main-session e0257e3 (R081, the R080 and same_values test fixes) | 119/121 each, only the two known failures (m098) |
+| Real Blender binaries, bpy modules and real windows on GitHub (Blender tests run 44607176687) | 9474c1c | all green: the suite in the 4.2, 5.0.1, 5.1.2, 5.2 and 5.3 binaries (only the known test_bl_t1_migrate), the Windows and macOS bpy modules, the window jobs on all five versions |
+| same (Blender tests run 44570506405, Native engine run 44570510722) | f95fc2f | Native engine green; Blender tests green except `test_core_same_values` in the 5.3 binary (hypothesis refuses subnormal floats where Blender flushes them to zero; fixed in e0257e3, DEFECTS test changes) |
 | bpy module in the container, 5.3.0 and 4.2.23, whole suite, engine required | main line 7dc4853 (D111 to D118, Rust M1) | 84/86 each; the two failures are the known ones below |
 | same | main-session-3 45924a0 (D119 to D145, Multires, Dyntopo, journal lz4; merged as 9280a71) | 5.3: 103/105, 4.2: 103/105 (the 4.2 run's wrapper was killed after test_bl_warnings; the files after it were run one by one, all passing); the two failures are the known ones below |
 | same | main-session-4 4d856db (adds D119 to D134) | 5.3: 94/96; 4.2: the known two failures in the part that ran before the code moved on (a final run is pending) |
@@ -366,15 +369,13 @@ Owner decisions (2026-11-18, from the plan):
   the add-on ships one implementation. Wheels for every Blender platform, adding Windows ARM64 and Linux
   ARM64 (the manifest `platforms` lists exactly what has a wheel). The add-on shows a clear error panel
   if the module cannot load and never records with a broken engine.
-- Publish a beta per phase to the site's download zip (only the zip and the generated changelog page
-  change). Beta 3 first, after Phase 0.
+- Publish a beta per phase (since the website was removed in #5: on GitHub Releases). Beta 3 first, after
+  Phase 0.
 - The unmerged agent work was to be merged first (RUNTIME merged; CAMERA and MOVIE not).
-- Earlier owner instructions of the job: "don't edit site, just get the add-on updated"; "use as many sub
-  agents as you want to optimise it"; "rewrite in rust"; "check all this and see if these are still true
-  and if true fix" (the two lists on the Limitations page); the site page changes only at a release when a
-  line has passed the gate.
-- Owner rules in `HANDOFF.md`: whenever work stops, the last thing is making the newest working site live
-  after the safety check (top priority); the test guarantee; no fake history.
+- Earlier owner instructions of the job: "use as many sub agents as you want to optimise it"; "rewrite in
+  rust"; "check all this and see if these are still true and if true fix" (the two lists on the website's
+  former Limitations page).
+- Owner rules in `HANDOFF.md`: the test guarantee; no fake history.
 
 Decisions taken by the orchestrator for the next phase (the Phase 2 notes of the session, `agents/PHASE2.md`,
 now lost; the owner can overrule; they were to be recorded in `DECISIONS.md`, where they are not yet):
@@ -416,16 +417,22 @@ Blockers:
 
 ## i. Next actions, in priority order
 
-1. Pushed: everything up to R080 as f95fc2f (engine 0.9.0; full suites on 5.3 and 4.2: only the two sandbox-only failures,
-   after the R080 test fix 8f14dc1). Both workflows were started on it (Blender tests on 4.2 to 5.3 with the window job, and
-   Native engine). Since then on main-session: R081 (Morph History dab 38 to 14 ms at 1M), R082 and R078 measured and
-   reverted; to push after the next full suites.
-2. The recorder's remaining overhead at 500 objects (about 40 to 48 ms per operation): capture 31 ms spread over many small parts (none over 1 ms per 500 objects in the object adapter), `_same_values` 7.5 ms (two marshal dumps per object). Reading plain rows at once (R062) and keying values in C (R063) were measured and reverted. The strict value comparison in the engine is R070 (7.4 to 3.2 ms inside the check).
-3. Owner decisions at release: the defaults of Record texture painting, Record Multires and Record Dyntopo
-   (all tried in real windows on 5.3.0 and 4.2.23), and of the record scope (L2).
-4. Release 1.0.0-beta.3 when the owner asks: bump the manifest, build the zip, install-test, update
-   `docs/download/hindsight.zip`, push without `[skip ci]`.
-5. Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
-6. More optimisation rounds toward the owner's 100 (82 logged: 69 kept, 13 reverted). Next candidates: R6 in Rust (Movie Mode's framing walk, 186 ms at 1,000 steps of 100k, half of it the projection math in `framing.extents`; the Morph History dab's box test, falloff and blend in one pass, about 9 of its 14 ms at 1M). Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; the native parse of the step table was R078, reverted: within the spread). Also left (2026-11-19): a stroke at 1M (2.7 ms: the diff and the read, 1 ms each), a Dyntopo step at 100k triangles after R079 (about 55 ms, 45 to 50 of them Blender's `ed.flush_edits`), long histories (a commit 0.14 ms at 1,000 steps and 0.17 ms at 50,000; every redraw path the same at 1,000 and 50,000 steps), Morph History's start of a stroke (22 to 31 ms at 1M, 3 to 33 steps from the target), Embed save at 6,000 steps (Hindsight 103 of 206 ms: building the 55 MB copy and Blender's own copy of it, both page faults), jumps and drags unchanged since dd9f35b (bench/results/ab_dd9f35b_vs_head.md). Memory over a long session (5,000 strokes at 100k with jumps and saves): the add-on's heap grows by the history and about 0.65 KB of objects per step, nothing else (tracemalloc); the process grows a little more, as it does with the same strokes unrecorded (bench/results/soak_2026-11-19.txt).
-8. Next measured candidates (2026-11-19): (a) done as R069 (a baseline's topology packed while idle); (b) done as R070 and R071 (engine 0.9.0): the recorder's strict compare (7.4 to 3.2 ms per operation at 500 objects) and the diff on two threads (a 2K texture stroke's diff 8.3 to 5.0 ms); R072 lowered idle recompression of strokes to zstd level 15 (packer CPU per step 0.53 to 0.61); (c) opening a history folder parses about 6 us per step in Python (1,000 steps: 16 ms of the 30 ms open).
-7. Dyntopo memory (LIMITS-A 1.6): done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.
+The plan lives on GitHub as a wayfinder map: [Map: Hindsight V2](https://github.com/Min3scon/Hindsight/issues/3),
+18 tickets (2026-11-22). Its destination: V2 (2.0.0) ready to release, everything built first, then optimised until
+nothing more can be gained without losing function. Work the map, not this list: the next ticket is the first open,
+unblocked, unassigned one (each blocked ticket starts with a `Blocked by:` line). The decisions behind it are in
+DECISIONS.md, the words in GLOSSARY.md.
+
+In order: the build phase (remove the website; check the codebase for slop and fix what it finds; design and build
+format 5, where saves only write new steps; history always inside the .blend; Blender's copy dropped after opening;
+Record everything by default; record making and deleting file-level datablocks; test with real third-party add-ons
+once the owner names them; call it V2 in the changelog), then the optimisation phase (real brush strokes at 1M as test
+data; smaller steps; Record everything fast in big scenes; fast and light at 100,000 steps on 1M vertices, with the
+Rust moves where they pay; shrink the code; keep optimising until nothing is left). Proving V1 histories upgrade
+intact is done.
+
+Older notes, kept:
+
+- Window scenarios on 4.2 for the older rounds: Rounds A to D pass 91 on 4.2.23 14/16 (round_b passed 18/18 on a rerun with its software-GL check; round_c with a 1,000-step session runs over an hour under software GL and left no result).
+- Looked at and left (no round): add-on start 25 ms, idle timers 8 ms of CPU a minute, Weight Paint weight reads (77 ms at 100k on 5.3; no bulk read in Blender, every loop form measured within 10%), Edit Mode step at 300k (26 of 35 ms are Blender's update_from_editmode), entering and leaving Sculpt Mode at 1M (Hindsight's share under 0.1 ms), saving with the history folder at 6,000 steps (fsync, rename and write are 118 of about 165 ms), opening it (about 100 ms; the native parse of the step table was R078, reverted: within the spread). Also left (2026-11-19): a stroke at 1M (2.7 ms: the diff and the read, 1 ms each), a Dyntopo step at 100k triangles after R079 (about 55 ms, 45 to 50 of them Blender's `ed.flush_edits`), long histories (a commit 0.14 ms at 1,000 steps and 0.17 ms at 50,000; every redraw path the same at 1,000 and 50,000 steps), Morph History's start of a stroke (22 to 31 ms at 1M, 3 to 33 steps from the target), Embed save at 6,000 steps (Hindsight 103 of 206 ms: building the 55 MB copy and Blender's own copy of it, both page faults), jumps and drags unchanged since dd9f35b (bench/results/ab_dd9f35b_vs_head.md). Memory over a long session (5,000 strokes at 100k with jumps and saves): the add-on's heap grows by the history and about 0.65 KB of objects per step, nothing else (tracemalloc); the process grows a little more, as it does with the same strokes unrecorded (bench/results/soak_2026-11-19.txt).
+- Dyntopo memory: done as far as it goes without a format bump (R049: packed TOPO steps halved, `before` shares the previous step's `after` in memory). What is left is one mesh per link of the chain; a delta-coded `after` needs a step format bump and the neighbouring entry at read time.

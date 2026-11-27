@@ -2,11 +2,11 @@
 """Run the test suite (tests/run_tests.py) in real Blender or with a bpy module, keep a full log.
 
     python tools/ci/run_suite.py --blender ~/blender/blender-5.3.0-linux-x64/blender --log out/log.txt
-    python tools/ci/run_suite.py --python /home/user/venvs/bpy53/bin/python core_codec
+    python tools/ci/run_suite.py --python <venv>/bin/python core_codec
     python tools/ci/run_suite.py --python PY --known-fail test_bl_t1_migrate.py
 
-A positional argument is a substring of test file names (what run_tests.py takes). HINDSIGHT_NATIVE and
-the rest of the environment pass through. --known-fail NAME (repeatable) names a test file whose failure
+A positional argument is a substring of test file names (what run_tests.py takes). The
+environment passes through. --known-fail NAME (repeatable) names a test file whose failure
 is reported as "known" and does not fail the run; the file still runs and its log is kept. Use it only
 for failures that come from the machine (a missing file or Blender binary), never to hide a bug.
 Writes a Markdown summary to $GITHUB_STEP_SUMMARY when that is set. Exit 0 all good, 1 failures,
@@ -46,7 +46,7 @@ def main(argv=None):
         cmd += ["--skip", s]
     if a.filter:
         cmd.append(a.filter)
-    print("run:", " ".join(cmd), "| HINDSIGHT_NATIVE=" + env.get("HINDSIGHT_NATIVE", ""), flush=True)
+    print("run:", " ".join(cmd), flush=True)
 
     log = None
     if a.log:
@@ -74,8 +74,8 @@ def main(argv=None):
     npass = sum(int(m.group("p")) for m in rows)
     secs = time.time() - t0
     md = [f"### {mode}", "",
-          f"{len(rows) - len(bad) - len(kfail)}/{len(rows)} files ok, {npass} PASS lines, {secs:.0f} s, "
-          f"HINDSIGHT_NATIVE={env.get('HINDSIGHT_NATIVE', '(unset)')}", ""]
+          f"{len(rows) - len(bad) - len(kfail)}/{len(rows)} files ok, {npass} PASS lines, {secs:.0f} s"
+          ""]
     if bad:
         md += ["Failed files:"] + [f"- `{m.group('file')}` (pass={m.group('p')} fail={m.group('f')} rc={m.group('rc')})"
                                    for m in bad] + [""]

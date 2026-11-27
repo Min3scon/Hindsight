@@ -76,7 +76,6 @@ def head_blob(target_verts, name="Blob", seed=0):
     z = r * np.cos(T) * 1.18
     body = np.stack([x, y, z], -1).reshape(-1, 3)
     verts = np.concatenate([[[0, 0, 1.18 * (1 + a[1])]], body, [[0, 0, -1.18 * (1 - a[1] * 0.0)]]]).astype(np.float32)
-    quads = []
     idx = lambda i, j: 1 + i * seg + (j % seg)
     i = np.arange(rings - 2)[:, None]
     j = np.arange(seg)[None, :]
@@ -247,7 +246,7 @@ def make_awkward():
         return (x[0], 0, 0)
 
     ob = link(head_blob(3000, "Multires", seed=500), "Multires", location=place())
-    m = ob.modifiers.new("Multires", 'MULTIRES')
+    ob.modifiers.new("Multires", 'MULTIRES')
     with bpy.context.temp_override(object=ob, active_object=ob):
         bpy.ops.object.multires_subdivide(modifier="Multires", mode='CATMULL_CLARK')
     ob = link(head_blob(3000, "Mod_Subsurf", seed=501), "Mod_Subsurf", location=place())

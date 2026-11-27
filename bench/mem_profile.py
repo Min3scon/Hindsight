@@ -1,6 +1,6 @@
 """Where Hindsight's memory goes, inside Blender (bpy as a Python module, headless).
 
-Run: /home/user/venvs/bpy53/bin/python bench/mem_profile.py      (HS_MEM_QUICK=1: fewer strokes)
+Run: <bpy python> bench/mem_profile.py      (HS_MEM_QUICK=1: fewer strokes)
 Prints a table and writes bench/results_mem.json.
 
 Sessions: 100k vertices with 6,000 strokes and 1M vertices with 300 strokes, each touching about 2%
@@ -22,7 +22,6 @@ import numpy as np
 import tests.harness as H
 from bench.bench_bl import Stroker, environment, make_mesh
 from hindsight.bl import meshio, runtime
-from hindsight.core import persist
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -204,26 +203,21 @@ def session(n, strokes, tmp, two_objects=False):
     # save / load in each mode
     r["save"] = {}
     r["load"] = {}
-    for mode in ("SIDECAR", "EMBED", "BOTH"):
-        SETTINGS.save_mode = mode
-        drain()
-        blend = os.path.join(tmp, f"m_{mode}.blend")
-        with Peak() as p:
-            bpy.ops.wm.save_as_mainfile(filepath=blend)
-        r["save"][mode] = p.row()
-        sc = persist.sidecar_file(blend)
-        r["save"][mode]["sidecar_bytes"] = os.path.getsize(sc) if os.path.isfile(sc) else 0
-        r["save"][mode]["blend_bytes"] = os.path.getsize(blend)
-        with Peak() as p:
-            bpy.ops.wm.open_mainfile(filepath=blend)
-        r["load"][mode] = p.row()
-        ob = bpy.data.objects["Obj"]
-        h = runtime.history_of(ob)
-        assert h is not None and len(h.entries) == r["history"]["steps"] + len(r.get("topology", {}).get("steps", [])) + 1, \
-            (mode, None if h is None else len(h.entries))
-        r["load"][mode]["entry_overhead_per_1000"] = entries_overhead_after_load(h)
-        if mode != "BOTH":
-            shutil.rmtree(persist.sidecar_dir(blend), ignore_errors=True)
+    mode = "EMBED"  # #48: every save puts the history in the .blend (V1's name for that in the keys)
+    drain()
+    blend = os.path.join(tmp, f"m_{mode}.blend")
+    with Peak() as p:
+        bpy.ops.wm.save_as_mainfile(filepath=blend)
+    r["save"][mode] = p.row()
+    r["save"][mode]["blend_bytes"] = os.path.getsize(blend)
+    with Peak() as p:
+        bpy.ops.wm.open_mainfile(filepath=blend)
+    r["load"][mode] = p.row()
+    ob = bpy.data.objects["Obj"]
+    h = runtime.history_of(ob)
+    assert h is not None and len(h.entries) == r["history"]["steps"] + len(r.get("topology", {}).get("steps", [])) + 1, \
+        (mode, None if h is None else len(h.entries))
+    r["load"][mode]["entry_overhead_per_1000"] = entries_overhead_after_load(h)
     r["history_bytes_at_save"] = sum(e.nbytes() for e in h.entries)
     gc.collect()
     r["rss_end"] = proc("VmRSS")
@@ -318,8 +312,8 @@ def report(env, results):
         for name, b in rows:
             lines.append(f"  {name:<70} {fmt(b):>12}")
         lines.append(f"  packed bytes per step: {hb['packed_bytes_per_step']:,.0f}")
-        lines.append(f"  Entry overhead per step after load (SIDECAR): "
-                     f"{r['load']['SIDECAR']['entry_overhead_per_1000'] / 1000:,.0f} B")
+        lines.append(f"  Entry overhead per step after load: "
+                     f"{r['load']['EMBED']['entry_overhead_per_1000'] / 1000:,.0f} B")
         for name in ("commit", "jump_1", "jump_all_back", "jump_all_forward"):
             p = r[name]
             lines.append(f"  transient {name:<18} python peak {fmt(p['py_peak_extra']):>10}, RSS peak "

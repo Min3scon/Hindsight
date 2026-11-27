@@ -22,9 +22,8 @@ import tests.harness as H
 from tests import oracle as O
 from tests import t1_gate_lib as L
 from tests import t1_ops as T
-from tests.gate import covers
-from hindsight.bl import datarec, idmap, runtime
-from hindsight.core.types import SETTINGS
+from hindsight.bl import runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 ROOT = H.ROOT
@@ -132,23 +131,20 @@ def migrate(tag):
         L.check_steps(r)
         L.recheck(r)
         out = os.path.join(WORK, tag, f"saved_{row.replace('.', '_')}.blend")
-        SETTINGS.save_mode = "SIDECAR"
         T.select()
         bpy.ops.wm.save_as_mainfile(filepath=out)
         bpy.ops.wm.open_mainfile(filepath=out)
-        datarec.FORCE_SCOPE[0] = "EVERYTHING"
+        prefs.FORCE["record_scope"] = "EVERYTHING"
         L.recheck(r)
         if bpy.data.objects.get("B") is not None:
             h = runtime.history_of(bpy.data.objects["B"])
             runtime._goto_history(h, len(h.entries), True)
 
 
-@covers(ROWS, "RELOAD.MIGRATE")
 def test_format3_file():
     migrate("format3")
 
 
-@covers(ROWS, "RELOAD.MIGRATE")
 def test_beta1_file():
     migrate("beta1")
 

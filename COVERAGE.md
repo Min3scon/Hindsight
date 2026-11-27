@@ -1,14 +1,11 @@
 # Coverage
 
-What Hindsight records, and how sure we are. This file is the source for what the add-on, the docs,
-the site and the release notes may claim. `tools/check_copy.py` fails if the built site names a data
-type from a row that isn't `supported` or `partial`, except in a sentence that says it isn't recorded
-or is planned.
+What Hindsight records, and how sure we are. This file is the source for what the add-on, the README
+and the release notes may claim. The copy checker no longer enforces this (its coverage rule ran on the website, which is gone); keep to it by hand.
 
-**Status** comes only from the tier gate (HANDOFF.md, "Test guarantee"), with the evidence in
-TEST_EVIDENCE.md, which `tools/make_evidence.py` generates from real test runs and which also checks
-this column: a row may be `supported` only when every gate item has a passing run on Blender 5.0.1,
-5.1.1 and 5.1.2.
+**Status** comes only from the tier gate (HANDOFF.md, "Test guarantee"): a row may be `supported` only
+when every gate item has a passing run on Blender 5.0.1, 5.1.1 and 5.1.2. Nothing checks this column
+by tool any more (the evidence system was retired, #73); the full test runs are the proof.
 - **supported**: the full gate passed for the whole row.
 - **partial**: the gate passed for part of the row; Limits says exactly what works and what doesn't.
 - **not covered**: the gate hasn't passed (the code may exist). Notes says why.

@@ -1,11 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Save / load glue: sidecar folder, embedded Text datablock and the crash journal.
 
-Save Mode (Add-on Preferences, ``SETTINGS.save_mode``):
-  SIDECAR  history folder ``<stem>_hindsight`` beside the .blend (fastest saves)
-  EMBED    stored inside the .blend (Text ``.hindsight_history``, bytes ID property ``hindsight_data_bin``;
-           files saved by 1.0.0-beta.2 and earlier hold base64 text in ``hindsight_data``, still read)
-  BOTH     both of the above
+Every save stores the history inside the .blend (Text ``.hindsight_history``, bytes ID property
+``hindsight_data_bin``; files saved by 1.0.0-beta.2 and earlier hold base64 text in ``hindsight_data``, still
+read); there is no other place to save it (#48, #51). A history folder ``<stem>_hindsight`` left by V1
+(its Save history setting, SIDECAR or BOTH) is still read until the next save.
 
 Crash Recovery (``SETTINGS.crash_recovery``):
   LAST_SAVED   loading a file restores only what was saved
@@ -14,10 +13,12 @@ Crash Recovery (``SETTINGS.crash_recovery``):
 """
 from __future__ import annotations
 
+import contextlib
 import binascii
 import hashlib
 import os
 import queue
+import shutil
 import tempfile
 import threading
 import uuid
@@ -34,6 +35,8 @@ TEXT_NAME = ".hindsight_history"
 DATA_PROP = "hindsight_data"            # base64 text: earlier builds (read; never written since R061)
 DATA_BIN_PROP = "hindsight_data_bin"    # R061: the registry's bytes as they are (no base64)
 SIDECAR_PROP = "sidecar"
+PARTS_PROP = "hindsight_parts"          # format 5: the index part and the step parts (dev/FORMAT5_LAYOUT.md)
+UNREADABLE_PARTS_PROP = "hindsight_parts_unreadable"
 MISSING_TEXT = "History folder missing. Keep '{folder}' next to the .blend to see this file's history"
 NEWER_TEXT = ("This history was saved by a newer Hindsight (format {found}). Update Hindsight to see it. "
               "It is left untouched until then")
@@ -46,25 +49,38 @@ DAMAGED_PART_TEXT = ("{lost} step{s} of '{obj}' could not be kept because part o
                      "The {kept} steps next to where it was saved are fine")
 DAMAGED_ALL_TEXT = ("The history of '{obj}' is damaged before the step it was saved at, so none of it could be "
                     "kept ({lost} step{s}). '{obj}' itself is as you saved it")
+UNKNOWN_TEXT = ("{n} step{s} of '{obj}' {were} saved by a newer Hindsight, so {they} kept untouched. Update "
+                "Hindsight to go back past {them}")
+HELD_TEXT = ". Until then '{obj}' isn't recorded, as recording would cut {them}"
 LEFT_OUT_TEXT = ("{n} step{s} of '{obj}' from the interrupted session could not be brought back. "
                  "They were made after going back past the last save. '{obj}' is as you saved it")
 UNREADABLE_PROP = "hindsight_data_unreadable"
 SAVE_ID_PROP = "save_id"         # which save of the history this .blend goes with (older builds ignore it)
-EMBED_FALLBACK_TEXT = ("The history could not be stored in the .blend. It is saved in the history folder "
-                       "next to it instead")
-SIDECAR_FAILED_TEXT = ("The history folder could not be written, so it still holds the last save before "
-                       "this one. Save again to keep your history")
+KEPT_LAST_SAVE_TEXT = ("The history could not be stored, so the .blend keeps the history of the save before "
+                       "this one: objects changed since that save may open without their history. Free some "
+                       "memory and save again to keep your history")
+NOT_STORED_TEXT = ("The history could not be stored in the .blend. Free some memory and save again to keep "
+                   "your history")
+_SAVE_NOTES = (KEPT_LAST_SAVE_TEXT, NOT_STORED_TEXT)      # what a save says; the next save replaces it
 OTHER_SAVE_TEXT = ("Steps from an interrupted session were found, but they belong to another save of this "
                    "file. They were not brought back")
 STALE_SIDECAR_TEXT = "The history folder is from another save of this file"
+MOVED_IN_TEXT = "The history is now inside the .blend. The folder '{folder}' beside it is no longer used"
 
-# Set while loading a file whose history this version must not overwrite (newer format).
+# Set while loading a file whose history this version must not overwrite (newer format); "sidecar" also
+# when the history folder it points at is missing: saving keeps pointing at that folder.
 _PROTECT = {"sidecar": False, "embed": False}
+
+# The scenes of the file Hindsight was turned off in (session_uid is new for every file opened): see register()
+_OFF_IN = [set()]
 
 _ROOT_PACKAGE = (__package__ or "hindsight").rsplit(".bl", 1)[0]
 
 _J = {"journal": None, "path": None, "sid": uuid.uuid4().hex[:12]}    # live journal of the session file
-_FALLBACK = {"sidecar": False}   # the history couldn't be stored in the .blend: write the folder instead
+# the history couldn't be stored in the .blend, which keeps the last save's: on_save_post keeps the journal
+_FALLBACK = {"kept": False}
+# this save moves a V1 folder's history into the .blend (dev/FORMAT5_V1.md): on_save_post says so, once
+_MOVED_IN = {"folder": False}
 
 
 # ----------------------------------------------------------------------------- journal
@@ -164,10 +180,8 @@ def _close_journal(remove_untitled: bool = False) -> None:
         except Exception as e:
             guard.fail("saving", e, "journal close error")
         if remove_untitled and path == journal_path(""):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(path)
-            except OSError:
-                pass
 
 
 def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) -> Journal:
@@ -185,6 +199,18 @@ def _open_journal(blend_path: str, keep: bool = False, discard: bool = False) ->
     _J["journal"] = j
     _J["path"] = path
     return j
+
+
+def _carry_journal(blend_path: str) -> None:
+    """#56: a Save As whose history stayed with the last save. The journal since that save goes with the new
+    .blend, so a crash after it brings those steps back; the old .blend's journal is left as it was."""
+    j, old, new = _J["journal"], _J["path"], journal_path(blend_path)
+    if j is None or j.closed or old == new:
+        return
+    drain_journal_writer()
+    j.flush(fsync=True)
+    shutil.copyfile(old, new)
+    _open_journal(blend_path)
 
 
 def _current_blend() -> str:
@@ -249,15 +275,8 @@ def _same_path(a: str, b: str) -> bool:
 def _drain_packer() -> None:
     p = runtime.packer
     if p is not None:
-        try:
+        with contextlib.suppress(Exception):
             p.drain(timeout=30.0)
-        except Exception:
-            pass
-
-
-def _mode() -> str:
-    m = str(getattr(SETTINGS, "save_mode", "SIDECAR") or "SIDECAR").upper()
-    return m if m in ("SIDECAR", "EMBED", "BOTH") else "SIDECAR"
 
 
 def _recovery() -> str:
@@ -339,12 +358,13 @@ def _bridge_paused(reg) -> int:
 
 @bpy.app.handlers.persistent
 @guard.guarded("saving")
-def on_save_pre(*args) -> None:
+def on_save_pre(*args, turning_off=False) -> None:
     runtime.multires.flush()          # a Multires visit that has just ended is a step before the save
     runtime.end_paused(now=True)      # D153: and a Dyntopo visit that paused recording
     runtime.drop_unused_uids()
     drop_default_settings()
-    _FALLBACK["sidecar"] = False
+    _FALLBACK["kept"] = False
+    _MOVED_IN["folder"] = False
     if not _writes_anything(_handler_path(args)):
         return
     reg = runtime.reg()
@@ -361,55 +381,130 @@ def on_save_pre(*args) -> None:
     except Exception as e:
         log.error_once(("saved_prints", str(e)), f"could not note the recorded objects for saving: {e}", e)
     text = None
-    removed = False
+    old = None           # #48: the last save's copy, held until the new one is in
     try:
-        mode = _mode()
-        _drain_packer()
+        drain_journal_writer()             # R079: a crash while the save is built or written loses no step
+        if not turning_off:         # #11 review 8: quitting turns Hindsight off; unpacked steps go quick
+            _drain_packer()
         text = bpy.data.texts.get(TEXT_NAME)
         if text is None:
             text = bpy.data.texts.new(TEXT_NAME)
         text.use_fake_user = True
-        text[SIDECAR_PROP] = mode in ("SIDECAR", "BOTH")
-        if _PROTECT["embed"]:
-            pass   # history from a newer Hindsight: keep it exactly as it was
-        elif mode in ("EMBED", "BOTH"):
-            # The parts are the step blobs themselves (no copy); anything that can go wrong in
-            # putting them together happens here, before the stored copy is touched.
-            parts = persist.registry_parts(reg, _codec())
-            for key in (DATA_PROP, DATA_BIN_PROP):
-                if key in text:
-                    # Blender's copy of the last saved history goes before the new one is built:
-                    # otherwise the old copy, the new bytes and Blender's new copy are all held at once.
-                    del text[key]
-                    removed = True
-            # R061: the bytes themselves (base64 cost time and a third more). Both keys are gone by now, which
-            # matters: Blender cuts bytes at the first zero when it replaces an existing bytes property.
-            data = persist.parts_to_bytes(parts)
+        if not _PROTECT["embed"]:          # else: history from a newer Hindsight, kept exactly as it was
+            # Format 5 (dev/FORMAT5_LAYOUT.md): the stub, and the parts, which on_save_post takes back. Anything
+            # that can go wrong in building them happens here, before the stored copy is touched.
+            index, parts = persist.registry_to_format5(reg, _codec())
+            group = {"index": index, "index_copy": index}
+            group.update({uid: {} for uid in parts})
+            del index                   # #125: the step parts go over one at a time (hand_over)
+            # The held copy goes only once Blender holds the new one (#8 review): until then a failure puts it
+            # back. Every key goes first: Blender cuts bytes at the first zero when it replaces a bytes property.
+            old = {key: text.pop(key) for key in _STORED if key in text}
+            text[DATA_PROP] = persist.STUB
+            text[PARTS_PROP] = group
+            del group
+            group = text[PARTS_PROP]
+
+            def put(uid, i, b):
+                group[uid][str(i)] = b
+            persist.hand_over(reg, parts, put)  # Blender's copy is the only one until on_save_post takes it back
             del parts
-            text[DATA_BIN_PROP] = data
-            del data
-        else:
-            for key in (DATA_PROP, DATA_BIN_PROP):
-                if key in text:
-                    del text[key]
-        if not _PROTECT["embed"]:
-            text[SAVE_ID_PROP] = reg.save_id
+        # #48: the history always goes in the .blend. A folder from a newer Hindsight, or one that
+        # is missing, stays pointed at, so its history is still found there.
+        _MOVED_IN["folder"] = (bool(text.get(SIDECAR_PROP)) and not _PROTECT["sidecar"]
+                               and _same_path(_handler_path(args), _current_blend()))
+        text[SIDECAR_PROP] = _PROTECT["sidecar"]
+        old = None
     except Exception as e:
         guard.fail("saving", e, "could not store undo history in the .blend")
-        if removed and text is not None:
-            # The copy from the last save is gone and the new one couldn't be made (out of memory,
-            # most likely): the .blend would be saved with no history at all. The history folder
-            # gets it instead, and the .blend says so.
-            try:
-                for key in (DATA_PROP, DATA_BIN_PROP):
+        # #48 (option A), no folder: the .blend keeps the last save's history (put back if it was taken
+        # out), its save id and where it pointed, and on_save_post keeps the crash journal that goes with it
+        _FALLBACK["kept"] = True
+        try:
+            if old is not None:
+                _take_parts_back()         # #125: the step parts handed over so far come back first
+                for key in _STORED:            # this save's, as far as it got
                     if key in text:
                         del text[key]
-                text[SIDECAR_PROP] = True
-                text[SAVE_ID_PROP] = reg.save_id
-                _FALLBACK["sidecar"] = True
-                _note("ERROR", EMBED_FALLBACK_TEXT)
-            except Exception as e2:
-                guard.fail("saving", e2, "could not point the .blend at its history folder")
+                for key, value in old.items():
+                    text[key] = value
+            old = None
+            if text is not None:
+                _keep_last_saved(text)
+            had = text is not None and (_holds_history(text) or text.get(SIDECAR_PROP))
+            _drop_save_notes()
+            _note("ERROR", KEPT_LAST_SAVE_TEXT if had else NOT_STORED_TEXT)
+        except Exception as e2:
+            guard.fail("saving", e2, "could not put the last save's history back in the .blend")
+
+
+_STORED = (DATA_PROP, DATA_BIN_PROP, SAVE_ID_PROP, PARTS_PROP)      # what a save replaces on the Text
+
+
+def _holds_history(text) -> bool:
+    """The Text holds a saved history: format 5's parts, or a format 1 to 4 history (not format 5's stub)."""
+    return (PARTS_PROP in text or DATA_BIN_PROP in text
+            or (DATA_PROP in text and text[DATA_PROP] != persist.STUB))
+
+
+def _keep_last_saved(text) -> None:
+    """The Text gets the history its last save stored: the copy still on it, else the one in the session's .blend
+    on disk (format 5's parts go from Blender as they are read, so they are read back only now, when needed)."""
+    if _holds_history(text):
+        return
+    src = _current_blend()
+    if not src or not os.path.isfile(src):
+        return                          # never saved: the history stays in the session until a save works
+    # Blender won't load the open file itself (4.2 crashes): a hard link under another name, else a copy
+    link = os.path.join(os.path.dirname(src), f".{uuid.uuid4().hex[:12]}.hindsight.blend")
+    known = set(bpy.data.libraries)
+    try:
+        try:
+            os.link(src, link)
+        except OSError:
+            link = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4().hex}.blend")
+            shutil.copyfile(src, link)
+        with bpy.data.libraries.load(link) as (stored, into):
+            into.texts = [TEXT_NAME] if TEXT_NAME in stored.texts else []
+        for saved in into.texts:
+            try:
+                for key in (SIDECAR_PROP,) + _STORED:
+                    if key in saved:
+                        if key in text:
+                            del text[key]
+                        text[key] = saved.pop(key)
+            finally:
+                bpy.data.texts.remove(saved)
+    finally:
+        for lib in [lib for lib in bpy.data.libraries if lib not in known]:
+            bpy.data.libraries.remove(lib)          # 4.2 keeps the library it appended from
+        with contextlib.suppress(OSError):
+            os.remove(link)
+
+
+def _take_parts_back() -> None:
+    """Once Blender has written the file, or failed to, Hindsight takes back each step part it handed over and
+    deletes Blender's copy of it straight away, then the group (#125): Hindsight holds the history again."""
+    if _PROTECT["embed"]:
+        return                          # a newer Hindsight's history: kept on the Text exactly as it was
+    text = bpy.data.texts.get(TEXT_NAME)
+    group = text.get(PARTS_PROP) if text is not None else None
+
+    def take(uid, i):
+        g = group.get(uid) if group is not None else None
+        if g is None or str(i) not in g:
+            return None
+        b = g[str(i)]
+        del g[str(i)]
+        return b
+    try:
+        lost = persist.take_back(runtime.reg(), take)
+        if group is not None:
+            del text[PARTS_PROP]
+        if lost:
+            raise RuntimeError(f"{lost} steps were lost: Blender's copy of their step part was gone after saving")
+    except Exception as e:
+        guard.fail("saving", e, "could not take the history back from Blender's copy")
 
 
 @bpy.app.handlers.persistent
@@ -417,31 +512,26 @@ def on_save_pre(*args) -> None:
 def on_save_post(*args) -> None:
     path = _handler_path(args)
     if not path or not _writes_anything(path):
+        _take_parts_back()
         return
-    mode = _mode()
-    folder = mode in ("SIDECAR", "BOTH") or _FALLBACK["sidecar"]
-    _FALLBACK["sidecar"] = False
-    folder_failed = False
-    if folder and _PROTECT["sidecar"] and os.path.isfile(persist.sidecar_file(path)):
-        runtime.log.warn("history folder left untouched: it was saved by a newer Hindsight")
-    elif folder:
-        try:
-            _drain_packer()
-            persist.save_sidecar(runtime.reg(), path)
-        except Exception as e:
-            guard.fail("saving", e, "could not write the undo history folder")
-            folder_failed = mode == "SIDECAR" or mode == "EMBED"     # BOTH: the .blend has it
-            if folder_failed:
-                _note("ERROR", SIDECAR_FAILED_TEXT)
+    kept = _FALLBACK["kept"]
+    _FALLBACK["kept"] = False
     current = _current_blend()
     if current and not _same_path(path, current):
+        _take_parts_back()
         return   # "Save Copy": the session file itself did not change
-    if folder_failed:
-        # The folder still holds the save before this one, and the journal goes with that save:
-        # keep it. The .blend names this save, so opening it knows the folder is older and its
-        # check of every mesh leaves out the histories that no longer fit (D46).
-        runtime.missing_message[0] = None
+    _folder_message(path)
+    if kept:
+        # The .blend still holds the save before this one, and the journal goes with that save: keep it
+        # (on a Save As, at the new path)
+        try:
+            _carry_journal(path)
+        except Exception as e:
+            guard.fail("saving", e, "journal error on save")
+        _take_parts_back()
         return
+    # The journal starts again first (dev/FORMAT5_JOURNAL.md): the file on disk and the journal name different
+    # saves only between Blender putting the file in place and this handler
     try:
         j = _open_journal(path)
         drain_journal_writer()
@@ -449,7 +539,31 @@ def on_save_post(*args) -> None:
         _mark_saved(j, path, getattr(runtime.reg(), "save_id", None))
     except Exception as e:
         guard.fail("saving", e, "journal error on save")
-    runtime.missing_message[0] = None
+    _take_parts_back()
+    _drop_save_notes()                 # the history is stored: an earlier save's failure no longer holds
+    if _MOVED_IN["folder"] and os.path.isdir(persist.sidecar_dir(path)):
+        _note("INFO", MOVED_IN_TEXT.format(folder=os.path.basename(persist.sidecar_dir(path))))
+    _MOVED_IN["folder"] = False
+
+
+@bpy.app.handlers.persistent
+@guard.guarded("saving")
+def on_save_post_fail(*args) -> None:
+    # Blender couldn't write the file: the .blend on disk is as it was and its crash journal stays with it
+    _FALLBACK["kept"] = False
+    _take_parts_back()
+
+
+def _drop_save_notes() -> None:
+    moved = MOVED_IN_TEXT.split("{")[0]          # shown once, after the save that moved the history in
+    runtime.load_notes[:] = [n for n in runtime.load_notes if n[1] not in _SAVE_NOTES and not n[1].startswith(moved)]
+
+
+def _folder_message(path) -> None:
+    """The sidebar message while the .blend points at a history folder that isn't next to it (#8 review)."""
+    missing = _PROTECT["sidecar"] and persist.sidecar_missing(path, True)
+    runtime.missing_message[0] = (MISSING_TEXT.format(folder=os.path.basename(persist.sidecar_dir(path)))
+                                  if missing else None)
 
 
 @bpy.app.handlers.persistent
@@ -468,7 +582,6 @@ def _note(sev, text):
 
 def _load_registry(path: str, text):
     """The saved registry for this file, or None. Never raises; problems become sidebar notes."""
-    mode = _mode()
     embedded = text is not None and (DATA_PROP in text or DATA_BIN_PROP in text)
 
     def from_text():
@@ -482,19 +595,19 @@ def _load_registry(path: str, text):
             del v
             return persist.registry_from_bytes(raw)
         except persist.NewerFormatError as e:
+            if e.found == persist.FORMAT5:
+                return None     # format 5's stub without its parts (an autosave): no history (#11's 11.9 adds the note)
             _PROTECT["embed"] = True
             _note("ERROR", NEWER_TEXT.format(found=e.found))
         except Exception as e:
             runtime.log.error_once(("embed_unreadable", str(e)), f"embedded history unreadable: {e}", e)
-            try:
+            with contextlib.suppress(Exception):
                 v = text[key]
                 if UNREADABLE_PROP in text:
                     # Blender cuts bytes at the first zero when it replaces a bytes property: a new one only
                     del text[UNREADABLE_PROP]
                 text[UNREADABLE_PROP] = v           # keep the data, out of the way
                 del v, text[key]
-            except Exception:
-                pass
             _note("ERROR", UNREADABLE_EMBED_TEXT)
         return None
 
@@ -517,46 +630,127 @@ def _load_registry(path: str, text):
             _note("ERROR", UNREADABLE_TEXT.format(name=os.path.basename(moved or persist.HSR_NAME)))
         return None
 
+    def from_parts():
+        group, taken = text[PARTS_PROP], []
+
+        def take(uid, i):
+            g, k = group.get(uid), str(i)
+            if g is None or k not in g:
+                return None
+            b = g[k]
+            del g[k]            # Blender's copy goes as soon as Hindsight holds the part (#41)
+            taken.append((g, k, b))         # until the registry is built: a failure puts it back (#11 review 1)
+            return b
+        try:
+            reg = persist.registry_from_format5(group.get("index"), group.get("index_copy"), take)
+        except persist.NewerFormatError as e:
+            _PROTECT["embed"] = True        # kept exactly as it is, and saved back so
+            _note("ERROR", NEWER_TEXT.format(found=e.found))
+            return None
+        except Exception as e:
+            runtime.log.error_once(("parts_unreadable", str(e)), f"embedded history unreadable: {e}", e)
+            with contextlib.suppress(Exception):
+                for g, k, b in taken:
+                    g[k] = b
+            with contextlib.suppress(Exception):
+                if UNREADABLE_PARTS_PROP in text:
+                    del text[UNREADABLE_PARTS_PROP]
+                text[UNREADABLE_PARTS_PROP] = text.pop(PARTS_PROP)      # kept, out of the way of the next save
+            _note("ERROR", UNREADABLE_EMBED_TEXT)
+            return None
+        del text[PARTS_PROP]    # its step parts are gone already; parts the index part doesn't list go with it
+        return reg
+
+    if text is not None and PARTS_PROP in text:
+        reg = from_parts()
+        # Saved while a V1 folder was missing or newer, the .blend still points at it (#120 review): a newer one
+        # stays protected, and one back again gives its histories to every object the parts have none for. So
+        # does the folder of an older build that saved the file after this one (#68); the main-branch build's
+        # has a save id of its own, never the parts'
+        folder = from_sidecar()
+        if reg is not None and folder is not None:
+            _take_folder_histories(reg, folder)
+        if reg is not None:
+            _report_load(reg)
+        return reg
     want = text.get(SAVE_ID_PROP) if text is not None else None
-    if mode == "EMBED":
-        reg = from_text() if embedded else None
-        if reg is None:
-            reg = from_sidecar()
-    else:
-        reg = from_sidecar()
-        if reg is None and embedded:
-            reg = from_text()
-        elif reg is not None and want and getattr(reg, "save_id", None) not in (None, want):
-            # the folder wasn't written by the last save of this .blend (writing it failed, or the
-            # .blend is an older or newer save of it): the history stored in the .blend, if it is
-            # the right one, goes first
-            other = from_text() if embedded else None
-            if other is not None and getattr(other, "save_id", None) == want:
-                reg = other
-            else:
-                _note("WARNING", STALE_SIDECAR_TEXT)
+    # a V1 folder first, only while the .blend still points at it; then the .blend
+    reg = from_sidecar()
+    if reg is None and embedded:
+        reg = from_text()
+    elif reg is not None and want and getattr(reg, "save_id", None) != want:
+        # the folder wasn't written by the last save of this .blend (writing it failed, or the
+        # .blend is an older or newer save of it): the history stored in the .blend, if it is
+        # the right one, goes first
+        other = from_text() if embedded else None
+        if other is not None and getattr(other, "save_id", None) == want:
+            if getattr(reg, "save_id", None) is None:
+                # a V1 folder back after this build saved the .blend without it (#120 review): the .blend's
+                # histories are the newer ones, the folder's go on for every object the .blend has none for
+                _take_folder_histories(other, reg)
+            reg = other
+        elif getattr(reg, "save_id", None) is not None:
+            _note("WARNING", STALE_SIDECAR_TEXT)
+    if reg is not None and embedded and not _PROTECT["embed"]:
+        # Blender's copy goes (dev/FORMAT5_V1.md): the history is held once, and until the next save the Text
+        # holds the stub, as after a format 5 save, so an autosave is a stub without parts
+        for key in (DATA_PROP, DATA_BIN_PROP):
+            if key in text:
+                del text[key]
+        text[DATA_PROP] = persist.STUB
     if reg is not None:
         _report_load(reg)
     return reg
 
 
+def _take_folder_histories(reg, folder) -> None:
+    """Into `reg` (the .blend's), the folder's histories of objects `reg` has no history for, nor turned off."""
+    have = set(reg.by_object) | reg.disabled
+    taken = {h.uid for h in folder.all() if have.isdisjoint(h.members)}
+    for d in (folder.load_report or {}).get("damaged", []):
+        if d.get("uid") in taken:                     # reported with the .blend's own (_report_load)
+            reg.load_report["damaged"].append(d)
+    for h in folder.all():
+        if h.uid in taken:
+            reg.histories[h.uid] = h
+            for m in h.members:
+                reg.by_object[m] = h.uid
+                if m in folder.saved:
+                    reg.saved[m] = folder.saved[m]
+    reg.everything |= folder.everything - have
+    # shortcut: step numbers aren't made unique, so the global timeline may take a folder step and a .blend
+    # step as one operation; renumber the packed steps if that matters
+    reg.next_seq = max(reg.next_seq, folder.next_seq)
+
+
+def _obj_name(members) -> str:
+    for m in members:
+        ob = runtime.find_object(m)
+        if ob is not None:
+            return ob.name
+    return "an object"
+
+
 def _report_load(reg) -> None:
     rep = getattr(reg, "load_report", None) or {}
+    for d in rep.get("unknown", []):          # #66: kept as their bytes, saved back as they are
+        n, obj = int(d["n"]), _obj_name(d.get("members", []))
+        one = n == 1
+        words = dict(n=n, s="" if one else "s", obj=obj, were="was" if one else "were",
+                     they="it is" if one else "they are", them="it" if one else "them")
+        _note("WARNING", UNKNOWN_TEXT.format(**words) + (HELD_TEXT.format(**words) if d.get("held") else ""))
     for d in rep.get("damaged", []):
-        obj = None
-        for m in d.get("members", []):
-            ob = runtime.find_object(m)
-            if ob is not None:
-                obj = ob.name
-                break
+        obj = _obj_name(d.get("members", []))
         lost = int(d.get("lost", 0))
         kept = int(d.get("kept", 0))
         if not d.get("before_saved"):
             text = DAMAGED_TEXT
         else:
             text = DAMAGED_PART_TEXT if kept else DAMAGED_ALL_TEXT
-        _note("ERROR", text.format(lost=lost, s="" if lost == 1 else "s", obj=obj or "an object",
-                                   kept=kept))
+        _note("ERROR", text.format(lost=lost, s="" if lost == 1 else "s", obj=obj, kept=kept))
+    if rep.get("mended"):       # #69: damage that lost nothing gets a line in the log, not a note
+        runtime.log.warn(f"damaged history parts read with no step lost, written again at the next save: "
+                         f"{rep['mended']}")
     if rep.get("migrated"):
         runtime.log.info(f"loaded history format {rep.get('format')} ({rep.get('writer')}); "
                          f"it is saved as format {persist.FORMAT_VERSION} from now on")
@@ -575,13 +769,16 @@ def _report_replay(reg) -> None:
         _note("WARNING", LEFT_OUT_TEXT.format(n=n, s="" if n == 1 else "s", obj=obj or "an object"))
 
 
-def _since_save(recs) -> list:
-    """The records after the last SAVE (all of them without one), resync markers left out."""
+def _since_save(recs, save_id=None) -> list:
+    """The records after the last SAVE (all of them without one), or after the last marker that the parts of save
+    `save_id` hold every step before it (#124: put on the Text when Hindsight was turned off); resync and parts
+    markers left out."""
     start = 0
     for i, r in enumerate(recs):
-        if r[0] == "SAVE":
+        if r[0] == "SAVE" or (save_id and r[0] == "META" and r[1].get("parts") == save_id):
             start = i + 1
-    return [r for r in recs[start:] if not (r[0] == "META" and not r[1].get("hist") and r[1].get("resync"))]
+    return [r for r in recs[start:]
+            if not (r[0] == "META" and not r[1].get("hist") and (r[1].get("resync") or r[1].get("parts")))]
 
 
 @bpy.app.handlers.persistent
@@ -592,12 +789,16 @@ def on_load_post(*args) -> None:
     runtime.missing_message[0] = None
     path = _current_blend()
     text = bpy.data.texts.get(TEXT_NAME)
+    by_v2 = text is not None and (PARTS_PROP in text or SAVE_ID_PROP in text)     # read before the parts go
     reg = _load_registry(path, text)
 
-    if reg is None and path and text is not None and text.get(SIDECAR_PROP):
-        if persist.sidecar_missing(path, True):
-            folder = os.path.basename(persist.sidecar_dir(path))
-            runtime.missing_message[0] = MISSING_TEXT.format(folder=folder)
+    # The folder's history wasn't read: none came from the .blend, or the .blend's was saved by this build while
+    # the folder was missing (format 5's parts, or a main-branch build's save id: a beta 2 file saved both ways
+    # holds the folder's own copy, and neither). Saving keeps pointing at the folder until it is back (#8 review).
+    if (path and text is not None and text.get(SIDECAR_PROP) and (reg is None or by_v2)
+            and persist.sidecar_missing(path, True)):
+        _PROTECT["sidecar"] = True
+    _folder_message(path)
 
     recover = reg is not None and bool(path) and _recovery() == "INTERRUPTED"
     j = None
@@ -626,7 +827,7 @@ def on_load_post(*args) -> None:
                     j.flush(fsync=False)
                     kept = True
                     _report_replay(reg)
-                elif _since_save(recs):
+                elif _since_save(recs, getattr(reg, "save_id", None)):
                     _note("WARNING", OTHER_SAVE_TEXT)
             except Exception as e:
                 guard.fail("loading", e, "crash recovery failed")
@@ -634,6 +835,8 @@ def on_load_post(*args) -> None:
                     # replay may have changed part of the history before it failed: start again
                     # from the file alone
                     notes = list(runtime.load_notes)
+                    with contextlib.suppress(Exception):
+                        _keep_last_saved(text)       # format 5's parts went from Blender as they were read
                     reg = _load_registry(path, text) or Registry()
                     runtime.load_notes[:] = notes
 
@@ -651,15 +854,13 @@ def on_load_post(*args) -> None:
             guard.fail("loading", e, "journal error on load")
 
     if reg is not None:
-        try:
+        with contextlib.suppress(Exception):
             p = getattr(bpy.context.scene, "hindsight", None)
             if p is not None:
                 if hasattr(p, "use_global"):
                     reg.use_global = bool(p.use_global)
                 if hasattr(p, "preserve_modes"):
                     reg.preserve_modes = bool(p.preserve_modes)
-        except Exception:
-            pass
         runtime.set_registry(reg)
         try:
             runtime.restamp_overrides(getattr(reg, "saved", None))        # D109
@@ -686,34 +887,55 @@ def on_load_post(*args) -> None:
     problems = ([runtime.missing_message[0]] if runtime.missing_message[0] else []) +         [t for sev, t in runtime.load_notes if sev == "ERROR"]
     if problems:
         more = f" ({len(problems) - 1} more in the Undo History tab)" if len(problems) > 1 else ""
-        try:
+        with contextlib.suppress(Exception):
             from .selfcheck import flash_status
             flash_status("Hindsight: " + problems[0] + more, 15.0)
-        except Exception:
-            pass
 
 
 # ----------------------------------------------------------------------------- register
 _HANDLERS = (
-    ("save_pre", on_save_pre), ("save_post", on_save_post),
+    ("save_pre", on_save_pre), ("save_post", on_save_post), ("save_post_fail", on_save_post_fail),
     ("load_pre", on_load_pre), ("load_post", on_load_post),
 )
 
 
 def register() -> None:
-    try:
+    with contextlib.suppress(Exception):
         from .selfcheck import addon_version
         persist.WRITER = f"Hindsight {addon_version()}"
-    except Exception:
-        pass
     for name, fn in _HANDLERS:
         hl = getattr(bpy.app.handlers, name)
         if fn not in hl:
             hl.append(fn)
     runtime.journal_hook = _on_journal
+    with contextlib.suppress(AttributeError):      # bpy.data is restricted while Blender starts
+        text = bpy.data.texts.get(TEXT_NAME)
+        if not _OFF_IN[0] & {s.session_uid for s in bpy.data.scenes}:
+            # #125: another file was opened while Hindsight was off (no load handler ran), or it was never on:
+            # the session is that file's, never what is left of the one turned off in
+            on_load_post()
+        elif text is not None and PARTS_PROP in text and not _PROTECT["embed"]:
+            g, sid = text[PARTS_PROP], None
+            with contextlib.suppress(Exception):
+                sid = (persist.index_doc(g.get("index"), g.get("index_copy")) or {}).get("save_id")
+            if sid and sid == getattr(runtime.reg(), "save_id", None):
+                _take_parts_back()  # #124: the session still holds the history unregister() put on the Text
+            else:
+                on_load_post()      # #11 review 2: a file opened while Hindsight was off: its parts are read
+        elif not _PROTECT["embed"]:
+            # #125: step parts unregister() handed over to a Text deleted since, in this file: their steps go
+            persist.take_back(runtime.reg(), lambda uid, i: None)
 
 
 def unregister() -> None:
+    # #124: a save without Hindsight writes the Text as it is: the parts go back on it (a save's build, new save id)
+    with contextlib.suppress(AttributeError):      # bpy.data is restricted while Blender starts
+        _OFF_IN[0] = {s.session_uid for s in bpy.data.scenes}
+        if bpy.data.texts.get(TEXT_NAME) is not None:
+            on_save_pre(turning_off=True)
+            j, sid = _J["journal"], getattr(runtime.reg(), "save_id", None)
+            if j is not None and not j.closed and sid:
+                runtime._journal("META", {"parts": sid})      # the parts of save `sid` hold every step journaled so far
     _stop_journal_writer()
     for name, fn in _HANDLERS:
         hl = getattr(bpy.app.handlers, name)
