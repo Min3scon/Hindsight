@@ -56,9 +56,9 @@ merging the stack, in the order of the pull requests (on #24).
    turns a module into a facade switches every reference importing it to the copy, in the same PR. 24.3 (#148) switched
    the references of `core/types.py`, `step.py`, `topopack.py`, `codec.py` and `crc.py` (`tests/reference/step.py`,
    `delta.py`, `types.py`, `framing_extents.py`, `topopack.py`, and `v1_persist.py`'s `Entry`, `step_from_bytes` and
-   `SETTINGS`); still to switch: `v1_persist.py`'s `history.History` and `registry.Registry` (`:224`, `:225`,
-   `:455`; 24.4 and 24.6, since `tests/test_core_framing_crc.py:424` takes it as the oracle of
-   `persist.registry_from_bytes`) and `framing_extents.py:10`'s `history.MeshState` (24.4). `tests/test_core_reference.py`
+   `SETTINGS`); 24.4 (#132) those of `core/history.py` (`v1_persist.py:224`, `:455`, `framing_extents.py:10`);
+   still to switch: `v1_persist.py`'s `registry.Registry` (`:225`; 24.6, since `tests/test_core_framing_crc.py:424`
+   takes it as the oracle of `persist.registry_from_bytes`). `tests/test_core_reference.py`
    fails if a reference imports a facade (its `FACADES`, which each move adds to) and keeps failing if anything under `hindsight/` imports a reference module.
 2. **Equivalence, test first.** Before the engine code: property tests (hypothesis), the corpus of real files from
    formats 1 to 5 (#129) and hostile input (cut short, flipped bytes, huge lengths, wrong types) compare engine and
@@ -171,5 +171,5 @@ Blender or the engine.
 - `bl/joinsep.py`, `bl/dupsep.py`, `bl/filtering.py`, `bl/cleanup.py`, `bl/selfcheck.py`, `bl/warnings.py`:
   hooks and checks on Blender's objects and operators.
 - `bl/guard.py`, `bl/log.py`, `bl/beta.py`, `bl/ctx.py`, `bl/rigmark.py`: glue around Blender's callbacks.
-- The facades `core/__init__.py`, `codec.py`, `crc.py`, `delta.py`, `step.py`, `native.py` and those the moves
+- The facades `core/__init__.py`, `codec.py`, `crc.py`, `delta.py`, `step.py`, `history.py`, `native.py` and those the moves
   leave: they check Python arguments and call the engine.
