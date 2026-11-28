@@ -3,7 +3,7 @@ the engine run on the same input, and must give the same result, write the same 
 (class and message), bit for bit.
 
     equiv.check(ref.registry_from_bytes, persist.registry_from_bytes, data, key=equiv.registry)
-    equiv.check(ref.atomic_write, journal.atomic_write, equiv.Out("h.bin"), data)
+    equiv.check(ref.Journal, journal.Journal, equiv.Out("j.hsj"), keep=True)
 
 Each side gets its own deep copy of the arguments; an `Out(name)` argument becomes a path in a fresh empty folder
 of its own. Afterwards the two results (through `key`, if given), every argument (what each side wrote in place)

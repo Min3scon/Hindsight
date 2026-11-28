@@ -325,7 +325,8 @@ def test_open_keeping_records():
     """R065: Journal(path, keep=True) reads the records in the scan that opens it; the first read() gives
     exactly what a fresh read of the file gives (a cut-off last record and a header that isn't JSON
     included), and anything written or cut since makes read() read the file again."""
-    from hindsight.core.journal import Journal, _HEAD, _CRC, MAGIC, RTYPES
+    from hindsight.core.journal import Journal, MAGIC, RTYPES
+    from tests.reference.journal import _CRC, _HEAD      # the record layout, to write records by hand
     d = _tmp()
     try:
         path = os.path.join(d, "j.hsj")
@@ -456,7 +457,7 @@ def test_crash_tolerance():
 
 
 def test_atomic_write():
-    from hindsight.core.journal import atomic_write, atomic_write_json
+    from tests.reference.journal import atomic_write, atomic_write_json   # gone from hindsight/ with #53, kept as the oracle
     d = _tmp()
     try:
         p = os.path.join(d, "out", "data.bin")
@@ -700,12 +701,24 @@ def test_rename_blend_without_folder():
 
 
 def test_replay_after_save():
+    """The engine's journal and the reference's (tests/reference/journal.py) through the same crash: the same
+    file is left behind and the same steps come back (24.2a: the crash is the engine's test-only `_drop`)."""
     from hindsight.core.journal import Journal
+    from tests.reference.journal import Journal as RefJournal
+
+    def ref_crash(j):
+        j._fh.close(); j._fh = None   # simulate process death (no clean close)
+    d = os.path.join(tempfile.gettempdir(), "hs_journal_crash_%d" % os.getpid())   # one folder: SAVE names the .blend
+    left = [_replay_after_save(Journal, lambda j: j._drop(), d), _replay_after_save(RefJournal, ref_crash, d)]
+    assert left[0] == left[1], "the engine's crash left other bytes than the reference's"
+
+
+def _replay_after_save(Journal, crash, d):
     from hindsight.core.persist import load_sidecar, replay
     from hindsight.core.history import History
     from hindsight.core.registry import Registry
     from hindsight.core.step import step_to_bytes
-    d = _tmp()
+    os.makedirs(d)
     try:
         blend = os.path.join(d, "scene.blend")
         jpath = os.path.join(d, "scene_hindsight", "session.hsj")
@@ -736,8 +749,10 @@ def test_replay_after_save():
         # crash: half-written record at the tail
         off = j.append("STEP", {"hist": "H1", "at": 7}, step_to_bytes(_delta_step(9, "objA", rng)))
         j.flush()
-        j._fh.close(); j._fh = None   # simulate process death (no clean close)
+        crash(j)
         os.truncate(jpath, off + 30)
+        with open(jpath, "rb") as fh:
+            left = [fh.read()]
 
         # "Last Saved"
         last = load_sidecar(blend)
@@ -748,6 +763,8 @@ def test_replay_after_save():
         # "Interrupted Session"
         rec = load_sidecar(blend)
         records = Journal(jpath).read()
+        with open(jpath, "rb") as fh:
+            left.append(fh.read())                     # the half-written record cut off on open
         assert records[-1] == ("CURSOR", {"hist": "H1", "cursor": 6}, b"")
         n = replay(rec, records)
         assert n == 5, n
@@ -759,6 +776,7 @@ def test_replay_after_save():
         assert hr.recovered_cursor == 6
         assert rec.next_seq > 8
         assert rec.by_object == {"objA": "H1"}
+        return left
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

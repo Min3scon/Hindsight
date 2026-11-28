@@ -499,6 +499,7 @@ def test_recovery_decodes_no_step():
 # when the file is opened: it isn't read first (it was read through, checksums and all, and then emptied)
 def test_last_saved_doesn_t_read_the_old_journal():
     from hindsight.core import journal as J
+    from hindsight.core.native import ENGINE as _N
     setup()
     ob, after, path = start("lastsaved", 2)
     file_state = save(ob, path)
@@ -507,17 +508,12 @@ def test_last_saved_doesn_t_read_the_old_journal():
     jp = persistence.journal_path(path)
     assert os.path.getsize(jp) > 10_000
     SETTINGS.crash_recovery = "LAST_SAVED"
-    real = J._scan
-    scans = []
-
-    def spy(*a, **k):
-        scans.append(a[1])
-        return real(*a, **k)
-    J._scan = spy
+    _N.journal_calls()          # the engine's test hook (24.2a) keeps how far each scan of a journal may read
     try:
         ob = interrupt(path)
+        scans = _N.journal_calls()["scans"]
     finally:
-        J._scan = real
+        _N.journal_fault(None)
         SETTINGS.crash_recovery = "INTERRUPTED"
     assert not [n for n in scans if n > 1000], scans
     h = runtime.history_of(ob)

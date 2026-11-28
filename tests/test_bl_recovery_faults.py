@@ -18,7 +18,8 @@ import bpy
 import tests.harness as H
 from hindsight.bl import runtime, persistence, joinsep
 from hindsight.core import persist
-from hindsight.core.journal import Journal, _records, _scan
+from hindsight.core.journal import Journal
+from tests.reference.journal import _records, _scan      # reads the records the add-on wrote (the oracle)
 from hindsight.core.types import SETTINGS
 
 C = bpy.context

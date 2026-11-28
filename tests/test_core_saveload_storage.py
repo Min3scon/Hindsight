@@ -11,6 +11,8 @@ import tracemalloc
 import numpy as np
 
 from hindsight.core import delta, journal as J, persist, step as stepmod, store
+from hindsight.core.native import ENGINE as _N
+from tests.reference import journal as RJ
 from hindsight.core.types import DELTA, POSITION_KEY, Entry, Step
 
 
@@ -61,39 +63,6 @@ def _tmp():
     return tempfile.mkdtemp(prefix="hs_saveload_")
 
 
-def test_journal_fsync_failure_is_reported():
-    d = _tmp()
-    real = os.fsync
-    try:
-        j = J.Journal(os.path.join(d, "j.hsj"))
-        j.append("SAVE", {"blend": "a"})
-        calls = []
-
-        def broken(fd):
-            calls.append(fd)
-            raise OSError(errno.EIO, "I/O error")
-        os.fsync = broken
-        j.flush(fsync=False)                  # a stroke's flush never asks the disk
-        assert not calls
-        try:
-            j.flush(fsync=True)
-        except OSError as e:
-            assert e.errno == errno.EIO
-        else:
-            raise AssertionError("a failed fsync was reported as durable")
-
-        def unsupported(fd):
-            raise OSError(errno.EINVAL, "not supported")
-        os.fsync = unsupported               # a file system with nothing to sync is not a failure
-        j.flush(fsync=True)
-        os.fsync = real
-        j.close()
-        assert [r[0] for r in J.Journal(os.path.join(d, "j.hsj")).read()] == ["SAVE"]
-    finally:
-        os.fsync = real
-        shutil.rmtree(d, ignore_errors=True)
-
-
 class _FailingFile:
     """Passes writes through until `fail_after` bytes, then writes part of the next one and fails
     like a full disk."""
@@ -116,77 +85,164 @@ class _FailingFile:
         return getattr(self._fh, name)
 
 
+class _Buffered:
+    """Takes writes into a buffer; its flush writes 7 bytes of it and fails like a full disk, and so does its close."""
+
+    def __init__(self, fh):
+        self._fh = fh
+        self.buf = b""
+
+    def write(self, b):
+        self.buf += bytes(b)
+        return len(b)
+
+    def flush(self):
+        self._fh.write(self.buf[:7])
+        self._fh.flush()
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    def close(self):
+        self._fh.close()
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    def __getattr__(self, name):
+        return getattr(self._fh, name)
+
+
+class _Ref:
+    """The reference (tests/reference/journal.py) and its faults as before: os.fsync patched, j._fh swapped."""
+    J = RJ
+
+    def __init__(self):
+        self.calls = 0
+        self.real = os.fsync
+
+    def fail_fsync(self, j, code):
+        def broken(fd):
+            self.calls += 1
+            raise OSError(code, os.strerror(code))
+        os.fsync = broken
+
+    def fsync_calls(self):
+        n, self.calls = self.calls, 0
+        return n
+
+    def fail_write(self, j):          # part of the next write reaches the disk, then the disk is full
+        j._fh = _FailingFile(j._fh, 10)
+
+    def fail_flush(self, j):          # the flush writes part of what is buffered, then fails, and so does the close
+        j._fh = _Buffered(j._fh)
+
+    def done(self):
+        os.fsync = self.real
+
+
+class _Engine:
+    """The engine (journal.py's Journal) and the same faults through its test-only fault hook (owner point 2,
+    dev/RUST_PLAN.md): the next fsync, write or flush fails with the errno, a write or flush after writing part
+    of its bytes."""
+    J = J
+
+    def __init__(self):
+        _N.journal_fault(None)
+        _N.journal_calls()
+
+    def fail_fsync(self, j, code):
+        _N.journal_fault("fsync", 1, code)
+
+    def fsync_calls(self):
+        return _N.journal_calls()["fsync"]
+
+    def fail_write(self, j):
+        _N.journal_fault("write", 1, errno.ENOSPC, True)
+
+    def fail_flush(self, j):
+        _N.journal_fault("flush", 1, errno.ENOSPC, True)
+
+    def done(self):
+        _N.journal_fault(None)
+
+
+def test_journal_fsync_failure_is_reported():
+    for side in (_Ref(), _Engine()):
+        d = _tmp()
+        try:
+            j = side.J.Journal(os.path.join(d, "j.hsj"))
+            j.append("SAVE", {"blend": "a"})
+            side.fail_fsync(j, errno.EIO)
+            j.flush(fsync=False)                  # a stroke's flush never asks the disk
+            assert not side.fsync_calls(), type(side).__name__
+            try:
+                j.flush(fsync=True)
+            except OSError as e:
+                assert e.errno == errno.EIO, (type(side).__name__, e)
+            else:
+                raise AssertionError(f"{type(side).__name__}: a failed fsync was reported as durable")
+            side.fail_fsync(j, errno.EINVAL)      # a file system with nothing to sync is not a failure
+            j.flush(fsync=True)
+            assert side.fsync_calls() == 2, type(side).__name__
+            side.done()
+            j.close()
+            assert [r[0] for r in side.J.Journal(os.path.join(d, "j.hsj")).read()] == ["SAVE"]
+        finally:
+            side.done()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 def test_journal_full_disk_keeps_records_before_and_after():
     """A record cut off by a full disk must not hide the records written after it (the reader stops
     at the first broken record); the records before it stay."""
-    d = _tmp()
-    try:
-        path = os.path.join(d, "j.hsj")
-        j = J.Journal(path)
-        j.append("SAVE", {"blend": "a"})
-        j.append("CURSOR", {"hist": "h", "cursor": 1})
-        j.flush(fsync=False)
-        j._fh = _FailingFile(j._fh, 10)
+    for side in (_Ref(), _Engine()):
+        d = _tmp()
         try:
-            j.append("STEP", {"hist": "h", "at": 1}, b"x" * 5000)
+            path = os.path.join(d, "j.hsj")
+            j = side.J.Journal(path)
+            j.append("SAVE", {"blend": "a"})
+            j.append("CURSOR", {"hist": "h", "cursor": 1})
             j.flush(fsync=False)
-        except OSError:
-            pass
-        else:
-            raise AssertionError("the full disk was not reported")
-        j.append("CURSOR", {"hist": "h", "cursor": 2})      # space again
-        j.flush(fsync=False)
-        assert [r[0] for r in j.read()] == ["SAVE", "CURSOR", "CURSOR"]
-        j.close()
-        recs = J.Journal(path).read()
-        assert [(r[0], r[1].get("cursor")) for r in recs] == [("SAVE", None), ("CURSOR", 1), ("CURSOR", 2)]
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+            side.fail_write(j)
+            try:
+                j.append("STEP", {"hist": "h", "at": 1}, b"x" * 5000)
+                j.flush(fsync=False)
+            except OSError as e:
+                assert e.errno == errno.ENOSPC, (type(side).__name__, e)
+            else:
+                raise AssertionError(f"{type(side).__name__}: the full disk was not reported")
+            j.append("CURSOR", {"hist": "h", "cursor": 2})      # space again
+            j.flush(fsync=False)
+            assert [r[0] for r in j.read()] == ["SAVE", "CURSOR", "CURSOR"], type(side).__name__
+            j.close()
+            recs = side.J.Journal(path).read()
+            assert [(r[0], r[1].get("cursor")) for r in recs] == [("SAVE", None), ("CURSOR", 1), ("CURSOR", 2)]
+        finally:
+            side.done()
+            shutil.rmtree(d, ignore_errors=True)
 
 
 def test_journal_failed_flush_is_reported_and_cut_back():
-    d = _tmp()
-    try:
-        path = os.path.join(d, "j.hsj")
-        j = J.Journal(path)
-        j.append("SAVE", {"blend": "a"})
-        j.flush(fsync=False)
-
-        class Buffered:
-            def __init__(self, fh):
-                self._fh = fh
-                self.buf = b""
-
-            def write(self, b):
-                self.buf += bytes(b)
-                return len(b)
-
-            def flush(self):
-                self._fh.write(self.buf[:7])
-                self._fh.flush()
-                raise OSError(errno.ENOSPC, "No space left on device")
-
-            def close(self):
-                self._fh.close()
-                raise OSError(errno.ENOSPC, "No space left on device")
-
-            def __getattr__(self, name):
-                return getattr(self._fh, name)
-        j._fh = Buffered(j._fh)
-        j.append("CURSOR", {"hist": "h", "cursor": 5})
+    for side in (_Ref(), _Engine()):
+        d = _tmp()
         try:
+            path = os.path.join(d, "j.hsj")
+            j = side.J.Journal(path)
+            j.append("SAVE", {"blend": "a"})
             j.flush(fsync=False)
-        except OSError:
-            pass
-        else:
-            raise AssertionError("a failed flush was not reported")
-        j.append("CURSOR", {"hist": "h", "cursor": 6})
-        j.flush(fsync=True)
-        j.close()
-        recs = J.Journal(path).read()
-        assert [(r[0], r[1].get("cursor")) for r in recs] == [("SAVE", None), ("CURSOR", 6)], recs
-    finally:
-        shutil.rmtree(d, ignore_errors=True)
+            side.fail_flush(j)
+            j.append("CURSOR", {"hist": "h", "cursor": 5})
+            try:
+                j.flush(fsync=False)
+            except OSError as e:
+                assert e.errno == errno.ENOSPC, (type(side).__name__, e)
+            else:
+                raise AssertionError(f"{type(side).__name__}: a failed flush was not reported")
+            j.append("CURSOR", {"hist": "h", "cursor": 6})
+            j.flush(fsync=True)
+            j.close()
+            recs = side.J.Journal(path).read()
+            assert [(r[0], r[1].get("cursor")) for r in recs] == [("SAVE", None), ("CURSOR", 6)], recs
+        finally:
+            side.done()
+            shutil.rmtree(d, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------- packer
