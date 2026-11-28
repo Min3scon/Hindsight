@@ -32,24 +32,34 @@ fn mods(py: Python<'_>) -> PyResult<&(PyObject, PyObject, PyObject)> {
     MODS.get(py).ok_or_else(|| PyTypeError::new_err("hindsight_native: history_setup was not called"))
 }
 
-fn delta_fn<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+fn delta_fn<'py>(py: Python<'py>, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
     mods(py)?.0.bind(py).getattr(name)
 }
 
-fn topo<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
+fn topo<'py>(py: Python<'py>, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
     mods(py)?.2.bind(py).getattr(name)
 }
 
-fn eng(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
-    py.import_bound(intern!(py, "hindsight_native"))
+// The modules, imported once: an import per call was most of the 2.5 us a one-step jump lost against the Python.
+static ENG: GILOnceCell<Py<PyModule>> = GILOnceCell::new();
+static NP: GILOnceCell<Py<PyModule>> = GILOnceCell::new();
+static BUILTINS: GILOnceCell<Py<PyModule>> = GILOnceCell::new();
+static OPERATOR: GILOnceCell<Py<PyModule>> = GILOnceCell::new();
+
+fn module<'py>(py: Python<'py>, cell: &'static GILOnceCell<Py<PyModule>>, name: &str) -> PyResult<&'py Bound<'py, PyModule>> {
+    Ok(cell.get_or_try_init(py, || py.import_bound(name).map(Bound::unbind))?.bind(py))
 }
 
-fn np(py: Python<'_>) -> PyResult<Bound<'_, PyModule>> {
-    py.import_bound(intern!(py, "numpy"))
+fn eng(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
+    module(py, &ENG, "hindsight_native")
 }
 
-fn builtin<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>> {
-    py.import_bound(intern!(py, "builtins"))?.getattr(name)
+fn np(py: Python<'_>) -> PyResult<&Bound<'_, PyModule>> {
+    module(py, &NP, "numpy")
+}
+
+fn builtin<'py>(py: Python<'py>, name: &Bound<'py, PyString>) -> PyResult<Bound<'py, PyAny>> {
+    module(py, &BUILTINS, "builtins")?.getattr(name)
 }
 
 fn dict_of<'py>(py: Python<'py>, v: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
@@ -97,7 +107,7 @@ impl MeshState {
         let t = g!(slf, topo);
         slf.borrow_mut().topo = py.None();
         let arr = g!(slf, arr);
-        let unpack = topo(py, "unpack_array")?;
+        let unpack = topo(py, intern!(py, "unpack_array"))?;
         for item in t.call_method0(intern!(py, "items"))?.iter()? {
             let (k, p) = unpack2(py, &item?)?;
             arr.set_item(k, unpack.call1((p,))?)?;
@@ -200,7 +210,7 @@ impl MeshState {
         if !g!(slf, topo).is_none() {
             return Ok(py.None());
         }
-        let keys = topo(py, "TOPO_KEYS")?;
+        let keys = topo(py, intern!(py, "TOPO_KEYS"))?;
         let job = PyDict::new_bound(py);
         for k in keys.iter()? {
             let k = k?;
@@ -238,7 +248,7 @@ impl MeshState {
 
     fn nbytes(slf: &Bound<'_, Self>) -> PyResult<PyObject> {
         let py = slf.py();
-        let packed_bytes = topo(py, "packed_bytes")?;
+        let packed_bytes = topo(py, intern!(py, "packed_bytes"))?;
         let mut total = 0i64.into_py(py).into_bound(py);
         for a in g!(slf, arr).call_method0(intern!(py, "values"))?.iter()? {
             total = total.add(a?.getattr(intern!(py, "nbytes"))?)?;
@@ -266,7 +276,7 @@ impl MeshState {
             } else {
                 values.set_item(k, v)?;
             }
-            out.add(PyTuple::new_bound(py, [PyString::new_bound(py, DATA_MARK).into_any(), a.clone(), path]))?;
+            out.add(PyTuple::new_bound(py, [intern!(py, DATA_MARK).clone().into_any(), a.clone(), path]))?;
         }
         Ok(out.into_any().unbind())
     }
@@ -281,7 +291,7 @@ impl MeshState {
         let arr = Self::ensure(slf, &key)?;
         if d.getattr(intern!(py, "idx"))?.len()? != 0 {
             // idx is unique, so the fancy-index read/modify/write is exact
-            delta_fn(py, "apply")?.call1((arr, d, forward))?;
+            delta_fn(py, intern!(py, "apply"))?.call1((arr, d, forward))?;
         }
         let ex = d.getattr(intern!(py, "exists"))?;
         let exists = if forward.is_truthy()? { ex.get_item(1)? } else { ex.get_item(0)? };
@@ -296,7 +306,7 @@ impl MeshState {
 
     fn set_snapshot(slf: &Bound<'_, Self>, snap: &Bound<'_, PyAny>) -> PyResult<()> {
         let py = slf.py();
-        let topo_keys = topo(py, "TOPO_KEYS")?;
+        let topo_keys = topo(py, intern!(py, "TOPO_KEYS"))?;
         let old_keys = Self::all_keys(slf)?.into_bound(py);   // no unpacking only to be replaced
         let counts = dict_of(py, &snap.getattr(intern!(py, "counts"))?)?;
         slf.borrow_mut().counts = counts.unbind();
@@ -322,7 +332,7 @@ impl MeshState {
         }
         Self::set_arrays(slf, arrays.into_any().unbind());
         let new_keys = set_of(py, &g!(slf, arr))?;
-        let op = py.import_bound(intern!(py, "operator"))?;
+        let op = module(py, &OPERATOR, "operator")?;
         let r = op.getattr(intern!(py, "ior"))?.call1((g!(slf, removed), old_keys.sub(&new_keys)?))?;
         slf.borrow_mut().removed = r.unbind();
         let r = op.getattr(intern!(py, "isub"))?.call1((g!(slf, removed), new_keys))?;
@@ -404,14 +414,14 @@ fn share_chain<'py>(py: Python<'py>, prev: &Bound<'py, PyAny>, step: &Bound<'py,
     let ps = prev.getattr(intern!(py, "step"))?;
     let (kind, after, before, target) = (intern!(py, "kind"), intern!(py, "after"), intern!(py, "before"),
                                           intern!(py, "target"));
-    if ps.is_none() || ps.getattr(kind)?.ne("TOPO")? || step.getattr(kind)?.ne("TOPO")?
+    if ps.is_none() || ps.getattr(kind)?.ne(intern!(py, "TOPO"))? || step.getattr(kind)?.ne(intern!(py, "TOPO"))?
         || ps.getattr(after)?.is_none() || step.getattr(before)?.is_none()
         || ps.getattr(target)?.ne(step.getattr(target)?)? {
         return Ok(());
     }
     let arrays = intern!(py, "arrays");
     let items = step.getattr(before)?.getattr(arrays)?.call_method0(intern!(py, "items"))?;
-    let view_bits = delta_fn(py, "view_bits")?;
+    let view_bits = delta_fn(py, intern!(py, "view_bits"))?;
     let equal = np(py)?.getattr(intern!(py, "array_equal"))?;
     for item in py.get_type_bound::<PyList>().call1((items,))?.iter()? {
         let (key, a) = unpack2(py, &item?)?;
@@ -443,7 +453,7 @@ fn cross_runs<'py>(py: Python<'py>, run: &Bound<'py, PyAny>, entries: &[Bound<'p
         while j < n {
             let x = &entries[j];
             if !x.getattr(step_s)?.is_none() || x.getattr(target_s)?.ne(&target)?
-                || x.getattr(meta_s)?.call_method1(intern!(py, "get"), ("kind", "DELTA"))?.ne("DELTA")? {
+                || x.getattr(meta_s)?.call_method1(intern!(py, "get"), (intern!(py, "kind"), intern!(py, "DELTA")))?.ne(intern!(py, "DELTA"))? {
                 break;
             }
             let b = x.getattr(intern!(py, "blob"))?;
@@ -495,15 +505,15 @@ fn cross<'py>(py: Python<'py>, entry: &Bound<'py, PyAny>, step: &Bound<'py, PyAn
 
 fn records<'py>(py: Python<'py>, step: &Bound<'py, PyAny>, forward: bool, states: &Bound<'py, PyAny>,
                 changed: &Bound<'py, PyDict>) -> PyResult<()> {
-    let snaps = if step.getattr(intern!(py, "kind"))?.eq("DATA")? {
+    let snaps = if step.getattr(intern!(py, "kind"))?.eq(intern!(py, "DATA"))? {
         let extra = step.getattr(intern!(py, "extra"))?;
         let extra = if extra.is_truthy()? { extra } else { PyDict::new_bound(py).into_any() };
-        extra.call_method1(intern!(py, "get"), (SNAPSHOTS_KEY,))?
+        extra.call_method1(intern!(py, "get"), (intern!(py, SNAPSHOTS_KEY),))?
     } else {
         py.None().into_bound(py)
     };
     let recs = step.getattr(intern!(py, "records"))?;
-    let recs = if forward { recs } else { builtin(py, "reversed")?.call1((recs,))? };
+    let recs = if forward { recs } else { builtin(py, intern!(py, "reversed"))?.call1((recs,))? };
     for rec in recs.iter()? {
         let rec = rec?;
         let rs = states.call_method1(intern!(py, "get"), (rec.getattr(intern!(py, "target"))?,))?;
@@ -524,10 +534,10 @@ fn mesh<'py>(py: Python<'py>, entry: &Bound<'py, PyAny>, step: &Bound<'py, PyAny
              states: &Bound<'py, PyAny>, join_hook: &Bound<'py, PyAny>, changed: &Bound<'py, PyDict>) -> PyResult<()> {
     let target = entry.getattr(intern!(py, "target"))?;
     let kind = step.getattr(intern!(py, "kind"))?;
-    if kind.eq("DATA")? {
+    if kind.eq(intern!(py, "DATA"))? {
         return Ok(());
     }
-    if kind.eq("DELTA")? {
+    if kind.eq(intern!(py, "DELTA"))? {
         let deltas = step.getattr(intern!(py, "deltas"))?;
         if deltas.is_truthy()? {
             let keys = keys_of(changed, &target)?;
@@ -539,9 +549,9 @@ fn mesh<'py>(py: Python<'py>, entry: &Bound<'py, PyAny>, step: &Bound<'py, PyAny
         }
         return Ok(());
     }
-    if kind.eq("JOIN")? && !join_hook.is_none() {
+    if kind.eq(intern!(py, "JOIN"))? && !join_hook.is_none() {
         let res = join_hook.call1((step, forward, states))?;
-        keys_of(changed, &target)?.call_method1(intern!(py, "add"), (TOPO_MARK,))?;
+        keys_of(changed, &target)?.call_method1(intern!(py, "add"), (intern!(py, TOPO_MARK),))?;
         if res.is_instance_of::<PyDict>() {
             for item in res.call_method0(intern!(py, "items"))?.iter()? {
                 let (uid, keys) = unpack2(py, &item?)?;
@@ -549,7 +559,7 @@ fn mesh<'py>(py: Python<'py>, entry: &Bound<'py, PyAny>, step: &Bound<'py, PyAny
             }
         } else if !res.is_none() {
             for uid in res.iter()? {
-                keys_of(changed, &uid?)?.call_method1(intern!(py, "add"), (TOPO_MARK,))?;
+                keys_of(changed, &uid?)?.call_method1(intern!(py, "add"), (intern!(py, TOPO_MARK),))?;
             }
         }
         return Ok(());
@@ -559,7 +569,7 @@ fn mesh<'py>(py: Python<'py>, entry: &Bound<'py, PyAny>, step: &Bound<'py, PyAny
     if !snap.is_none() {
         st.call_method1(intern!(py, "set_snapshot"), (snap,))?;
     }
-    keys_of(changed, &target)?.call_method1(intern!(py, "add"), (TOPO_MARK,))?;
+    keys_of(changed, &target)?.call_method1(intern!(py, "add"), (intern!(py, TOPO_MARK),))?;
     Ok(())
 }
 
@@ -711,7 +721,7 @@ impl History {
         let cur = g!(slf, cursor);
         if pos.ne(&cur)? {
             let forward = pos.gt(&cur)?;
-            let range = builtin(py, "range")?;
+            let range = builtin(py, intern!(py, "range"))?;
             let order = if forward {
                 range.call1((&cur, &pos))?
             } else {
