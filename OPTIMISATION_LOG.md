@@ -215,6 +215,11 @@ its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy)
 | | `goto_bl_1_100k` | 0.2055 ms | 0.1871 ms | 0.91, 0.92 (0.91, 0.98) | 11% / 9% (9% / 12%) |
 | | `goto_bl_300_100k` | 5.383 ms | 5.305 ms | 0.99, 0.99 (1.00, 0.99) | 1% / 6% (2% / 1%) |
 | | `oneoff/open_journal_ab.py`: 100k vertices, 3,000 unsaved strokes, the file opened again with Crash Recovery Interrupted (5 alternating rounds, each root with its own engine on `PYTHONPATH`, run twice; rss growth not measured on Windows) | 275.1 ms | 265.2 ms | 0.96, 0.99 (0.97, 0.97) | 13% / 11% (10% / 3%) |
+| 24.2b (#153): the journal's writer thread in the engine (0.18.0 at 4f4e44d against 0.19.0 at 0696991; `bench/results/ab_4f4e44d_vs_153-run1.md`, `-run2.md`, `oj_4f4e44d_vs_153.txt`) | `commit_100k` | 0.6337 ms | 0.6281 ms | 0.99, 0.96 (0.99, 0.98) | 59% / 5% (7% / 6%) |
+| | `commit_1m`: its record goes through the writer thread | 3.996 ms | 3.841 ms | 0.96, 1.01 (0.99, 1.00) | 34% / 6% (3% / 13%) |
+| | `goto_bl_1_100k` | 0.1862 ms | 0.1893 ms | 1.02, 1.07 (0.98, 0.99) | 35% / 8% (10% / 10%) |
+| | `goto_bl_300_100k` | 5.263 ms | 5.317 ms | 1.01, 0.99 (0.99, 1.00) | 2% / 1% (1% / 3%) |
+| | `oneoff/open_journal_ab.py`: 100k vertices, 3,000 unsaved strokes, opened again with Crash Recovery Interrupted (5 alternating rounds, each root with its own engine on `PYTHONPATH`, run twice) | 313.9 ms | 313.9 ms | 1.00, 1.02 (0.99, 0.98) | 11% / 11% (15% / 5%) |
 
 ## Count
 
