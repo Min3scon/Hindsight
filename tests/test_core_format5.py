@@ -66,8 +66,9 @@ def test_engine_api_14():
     # API 18 (#153): the journal's writer thread (tests/test_core_journal_writer.py)
     # API 19 (#132): the history and its mesh state (tests/test_core_history_engine.py)
     # API 20 (#154): the caps, the tiers and the caps memo (tests/test_core_store_engine.py)
-    assert native.API == 20 and N.API == 20 and N.topo_pack and N.Journal.append_later and N.journal_drain \
-        and N.History and N.MeshState and N.enforce and N.CapsMemo and N.store_can_gain, (native.API, N.API)
+    # API 21 (#155): the packer's thread (tests/test_core_packer_engine.py)
+    assert native.API == 21 and N.API == 21 and N.topo_pack and N.Journal.append_later and N.journal_drain \
+        and N.History and N.MeshState and N.enforce and N.CapsMemo and N.store_can_gain and N.Packer and N.packer_setup, (native.API, N.API)
 
 
 def test_step_part_round_trip_bit_exact():
