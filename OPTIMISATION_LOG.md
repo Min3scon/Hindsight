@@ -225,6 +225,11 @@ its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy)
 | | `jump_3000_back_100k` | 57.96 ms | 58.37 ms | 1.01, 0.99 (1.00, 1.00) | 2% / 4% (1% / 3%) |
 | | `commit_100k` | 0.6307 ms | 0.6392 ms | 1.01, 1.02 (1.01, 1.02) | 5% / 3% (3% / 9%) |
 | | all 28 of `commit` and `jumps` | | | best times 0.98 to 1.04 but the two one-step jumps at 100k, 1.10 in both runs: above the A/A band, about 2.6 us more per call (attribute reads of the entries and the state through the C API, where CPython's interpreter specialises them); medians up to 1.04 but `goto_bl_1_100k` 1.13 once (spread 19%; again 1.04) | |
+| 24.5a (#154): the caps, the tiers and the caps memo in the engine (0.20.0 at 8336140 against 0.21.0 at e64ba92; `bench/results/ab_8336140_vs_154-run1.md`, `-run2.md`) | `commit_100k` | 0.65 ms | 0.6572 ms | 1.01, 1.07 (1.03, 1.04) | 23% / 83% (17% / 20%) |
+| | `commit_1m` | 4.108 ms | 4.205 ms | 1.02, 0.98 (1.05, 0.98) | 28% / 10% (27% / 24%) |
+| | `goto_bl_1_100k` | 0.193 ms | 0.1984 ms | 1.03, 1.00 (1.01, 0.94) | 30% / 31% (24% / 24%) |
+| | `goto_bl_300_100k` | 5.528 ms | 5.335 ms | 0.97, 0.99 (0.98, 0.99) | 2% / 11% (6% / 1%) |
+| | all four of `commit` | | | best times 0.97 to 1.05, inside the A/A band 0.92 to 1.06; medians 0.94 to 1.04 but `commit_100k` 1.07 once (spread 83%; again 1.04). `enforce` alone (`timeit`, 3 histories of 200 steps, 5.3.0 module): 167 us against the reference's 169 us under the limit, 61 us against 61 us stuck with the memo; `total_bytes` 122 us against 120 us (the cost is the `Entry.nbytes` calls, made through Python as the reference does, so a patched `Entry.nbytes` is still called) | |
 
 ## Count
 
