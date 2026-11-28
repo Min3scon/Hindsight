@@ -62,7 +62,8 @@ def test_engine_api_14():
     # API 13 (#69): part_salvage (tests/test_core_format5_damage.py)
     # API 15 (#147): the step's shapes, step_from_bytes and same_step (tests/test_core_types_engine.py)
     # API 16 (#148): topology packing (tests/test_core_topopack.py)
-    assert native.API == 16 and N.API == 16 and N.topo_pack, (native.API, N.API)
+    # API 17 (#152): the crash journal (tests/test_core_journal_engine.py)
+    assert native.API == 17 and N.API == 17 and N.topo_pack and N.Journal, (native.API, N.API)
 
 
 def test_step_part_round_trip_bit_exact():

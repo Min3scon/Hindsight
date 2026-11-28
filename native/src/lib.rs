@@ -35,7 +35,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 16;
+const API: u32 = 17;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -192,6 +192,7 @@ mod format5;
 mod stepjson;
 mod types;
 mod topo;
+mod journal;
 
 // ------------------------------------------------------------------------------------ diff
 fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut [u8]) {
@@ -1456,5 +1457,6 @@ fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     stepjson::register(m)?;
     types::register(m)?;
     topo::register(m)?;
+    journal::register(m)?;
     Ok(())
 }

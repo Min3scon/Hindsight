@@ -55,6 +55,10 @@ def loads(b):
     return json.loads(bytes(b).decode("utf-8"))
 
 
+def journal_dumps(obj):
+    return json.dumps(obj, separators=(",", ":")).encode("utf-8")
+
+
 def _enc_value(v):
     if v is MISSING:
         return _MISSING_JSON
@@ -744,11 +748,22 @@ fn json_dumps<'py>(py: Python<'py>, obj: &Bound<'py, PyAny>) -> PyResult<Bound<'
 
 /// json_loads(b) -> object: json.loads(bytes(b).decode("utf-8")).
 #[pyfunction]
-fn json_loads<'py>(py: Python<'py>, b: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
+pub(crate) fn json_loads<'py>(py: Python<'py>, b: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyAny>> {
     guard(|| match parse(b) {
         Ok(v) => Ok(v),
         Err(Bail) => slow(py, "loads", b),
     })
+}
+
+/// A crash journal record's header (journal.py's append): json.dumps(obj, separators "," and ":") as utf-8, no
+/// default (anything json can't take raises as it did).
+pub(crate) fn journal_dumps(py: Python<'_>, obj: &Bound<'_, PyAny>) -> PyResult<Vec<u8>> {
+    let mut out = Vec::with_capacity(64);
+    // SAFETY: obj is borrowed for the call, the GIL is held
+    match unsafe { enc(obj.as_ptr(), &mut out, 0) } {
+        Ok(()) => Ok(out),
+        Err(Bail) => Ok(slow(py, "journal_dumps", obj)?.downcast_into::<PyBytes>()?.as_bytes().to_vec()),
+    }
 }
 
 /// records_to_bytes(records) -> bytes: step.py's records_to_bytes.
