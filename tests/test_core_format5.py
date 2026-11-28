@@ -65,8 +65,9 @@ def test_engine_api_14():
     # API 17 (#152): the crash journal (tests/test_core_journal_engine.py)
     # API 18 (#153): the journal's writer thread (tests/test_core_journal_writer.py)
     # API 19 (#132): the history and its mesh state (tests/test_core_history_engine.py)
-    assert native.API == 19 and N.API == 19 and N.topo_pack and N.Journal.append_later and N.journal_drain \
-        and N.History and N.MeshState, (native.API, N.API)
+    # API 20 (#154): the caps, the tiers and the caps memo (tests/test_core_store_engine.py)
+    assert native.API == 20 and N.API == 20 and N.topo_pack and N.Journal.append_later and N.journal_drain \
+        and N.History and N.MeshState and N.enforce and N.CapsMemo and N.store_can_gain, (native.API, N.API)
 
 
 def test_step_part_round_trip_bit_exact():
