@@ -358,7 +358,7 @@ def test_packer_concurrent():
         t0 = time.perf_counter(); p.drain(); assert time.perf_counter() - t0 < 0.5
     finally:
         p.stop()
-    assert not p._thread.is_alive()
+    assert not p._alive
     # after stop, submit packs synchronously
     e = Entry(tiny_step(1)); p.submit(e, "zlib"); assert e.is_packed()
 

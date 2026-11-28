@@ -1293,14 +1293,14 @@ impl Enc {
     }
 }
 
-/// step_parts(step), the tuple step_encode is called with (core/step.py), taken for the journal's writer: quick, in
-/// `codec`, not strong (parts_to_bytes(parts, codec, QUICK)).
-pub(crate) fn take_parts(parts: &Bound<'_, PyAny>, codec: &str) -> PyResult<Enc> {
+/// step_parts(step), the tuple step_encode is called with (core/step.py), taken for a thread: in `codec`, not strong;
+/// quick for the journal's writer (parts_to_bytes(parts, codec, QUICK)), not for the packer.
+pub(crate) fn take_parts(parts: &Bound<'_, PyAny>, codec: &str, quick: bool) -> PyResult<Enc> {
     type P<'py> = Bound<'py, PyAny>;
     #[allow(clippy::type_complexity)]
     let (kind, seq, time, label, mode, target, extra, deltas, before, after, snaps, records): (String, u64, f64, String, String, String, P, P, P, P, P, P) =
         parts.extract()?;
-    Enc::take(&kind, seq, time, &label, &mode, &target, &extra, &deltas, &before, &after, &snaps, &records, true, codec, false)
+    Enc::take(&kind, seq, time, &label, &mode, &target, &extra, &deltas, &before, &after, &snaps, &records, quick, codec, false)
 }
 
 /// step_encode(kind, seq, time, label, mode, target, extra JSON bytes, deltas, before, after, snaps,

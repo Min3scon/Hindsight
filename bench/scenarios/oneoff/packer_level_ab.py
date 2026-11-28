@@ -9,7 +9,8 @@ A store.Packer gets them with queue_recompress (what opening a file does) and wo
 at; the add-on's own pacing applies (5 s after the last activity, then at most a quarter of one core), except that
 the 1 s idle wait between two steps (store.IDLE_S) is cut to 1 ms here so a run takes seconds, not 20 minutes: in the
 add-on a step is recompressed about once a second, which doesn't change the work per step. Prints one
-line "AB {...}": per set the packer thread's CPU inside recompress (thread_time), the steps made smaller, the
+line "AB {...}": per set the packer thread's CPU inside recompress (thread_time; for the engine's packer, #155, the
+process's CPU less the main thread's, which polls as Blender's tick does), the steps made smaller, the
 bytes before and after, and the wall time until the last step was done (pacing included); plus the engine's
 strong-level switch (0 = its rule)."""
 import json, os, struct, sys, tempfile, threading, time
@@ -56,8 +57,26 @@ sets["s1m"] = s1m
 
 store.IDLE_S = 0.001
 res = {"engine_strong_switch": ENGINE._strong_level() if hasattr(ENGINE, "_strong_level") else None}
-real = store.recompress
+real = getattr(store, "recompress", None)
 for name, blobs in sets.items():
+    if real is None:                  # the engine's packer (#155): its thread counts what it looked at
+        entries = [Entry(blob=b, meta={}) for b in blobs]
+        p = store.Packer()
+        c0, t0 = time.process_time() - time.thread_time(), time.monotonic()
+        try:
+            p.queue_recompress(entries)
+            while p._tried < len(blobs) and time.monotonic() - t0 < 600:
+                p.take_in()
+                time.sleep(0.001)
+        finally:
+            p.stop()
+        wall = time.monotonic() - t0
+        cpu = time.process_time() - time.thread_time() - c0
+        assert p._tried == len(blobs), (name, p._tried)
+        res[name] = {"steps": len(blobs), "cpu_s": round(cpu, 3), "cpu_ms_per_step": round(cpu * 1000 / len(blobs), 3),
+                     "recompressed": p.recompressed, "bytes_before": sum(len(b) for b in blobs),
+                     "bytes_after": sum(len(e.blob) for e in entries), "wall_s": round(wall, 2)}
+        continue
     cpu, looked, done = [0.0], [0], threading.Event()
 
     def timed(b):
@@ -83,5 +102,5 @@ for name, blobs in sets.items():
     res[name] = {"steps": len(blobs), "cpu_s": round(cpu[0], 3), "cpu_ms_per_step": round(cpu[0] * 1000 / len(blobs), 3),
                  "recompressed": p.recompressed, "bytes_before": sum(len(b) for b in blobs),
                  "bytes_after": sum(len(e.blob) for e in entries), "wall_s": round(wall, 2)}
-res["load"] = open("/proc/loadavg").read().split()[:3]
+res["load"] = open("/proc/loadavg").read().split()[:3] if os.path.exists("/proc/loadavg") else None
 print("AB " + json.dumps(res), flush=True)

@@ -9,8 +9,9 @@ Phases of SECONDS each (default 20) on a history of those steps, as just loaded 
   sculpting  the same with a raw step submitted for packing at each stroke (raw tier full)
   idle       nothing happens
   strong     the same steps already recompressed (a file saved after recompression), idle
-Prints "RESULT {json}": per phase the packer thread's CPU seconds (from /proc, 10 ms ticks), steps
-recompressed and how often the worker woke up to look at a step.
+Prints "RESULT {json}": per phase the packer thread's CPU seconds (the process's CPU less the main thread's: the
+packer's is the only other thread), steps recompressed and how often the worker woke up to look at a step (the
+engine's count, #155, or store.recompress's calls for the Python packer).
 """
 import os, sys
 ROOT = os.path.abspath(sys.argv[1])
@@ -25,7 +26,6 @@ from hindsight.core.types import DELTA, POSITION_KEY, ChannelDelta, Entry, Step
 
 assert store.__file__.startswith(ROOT), store.__file__
 SECONDS = float(sys.argv[3]) if len(sys.argv) > 3 else 20.0
-TICK = os.sysconf("SC_CLK_TCK")
 
 
 def blobs(path):
@@ -38,10 +38,8 @@ def blobs(path):
             out.append(fh.read(struct.unpack("<Q", h)[0]))
 
 
-def thread_cpu(tid):
-    with open(f"/proc/self/task/{tid}/stat") as fh:
-        f = fh.read().rsplit(")", 1)[1].split()
-    return (int(f[11]) + int(f[12])) / TICK
+def thread_cpu():
+    return time.process_time() - time.thread_time()
 
 
 def raw_entry(i):
@@ -53,12 +51,13 @@ def raw_entry(i):
 
 def phase(p, entries, strokes, submit=True):
     calls = [0]
-    orig = stepmod.recompress
-    store.recompress = lambda b: (calls.__setitem__(0, calls[0] + 1), orig(b))[1]
+    orig = getattr(store, "recompress", None)
+    tried = lambda: p._tried if hasattr(p, "_tried") else calls[0]
+    if orig is not None:
+        store.recompress = lambda b: (calls.__setitem__(0, calls[0] + 1), orig(b))[1]
     p.queue_recompress(entries)
     p.submit(raw_entry(10 ** 6), "auto")          # wakes a worker that only waits for new work
-    tid = p._thread.native_id
-    c0, r0 = thread_cpu(tid), p.recompressed
+    c0, r0, t0 = thread_cpu(), p.recompressed, tried()
     end = time.monotonic() + SECONDS
     k = 0
     while time.monotonic() < end:
@@ -72,9 +71,12 @@ def phase(p, entries, strokes, submit=True):
             time.sleep(2.0)
         else:
             time.sleep(0.1)
-    out = {"cpu_s": round(thread_cpu(tid) - c0, 2), "recompressed": p.recompressed - r0, "looked_at": calls[0]}
-    store.recompress = orig
-    p._strong.clear()
+        getattr(p, "take_in", lambda: None)()     # Blender's tick takes the engine packer's results in
+    out = {"cpu_s": round(thread_cpu() - c0, 2), "recompressed": p.recompressed - r0, "looked_at": tried() - t0}
+    if orig is not None:
+        store.recompress = orig
+    if hasattr(p._strong, "clear"):
+        p._strong.clear()
     return out
 
 

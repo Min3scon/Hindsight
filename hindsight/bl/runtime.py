@@ -1384,6 +1384,8 @@ def pack_idle_states(wait: bool = False) -> int:
 
 def _maybe_pack() -> None:
     p = packer
+    if p is not None:
+        p.take_in()       # the packer thread's results (#155): packed steps replace their raw ones here when idle
     idle = p._user_idle_for() if p is not None else TOPO_PACK_IDLE_S
     if _PACKING or (idle >= TOPO_PACK_IDLE_S and not _DIRTY and not stroke_running()):
         pack_idle_states()

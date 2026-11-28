@@ -290,14 +290,14 @@ def run_both(spec, ops):
 
 # ------------------------------------------------------------------------------ the tests
 def test_store_names_the_engine():
-    """store.py's caps and tiers are the engine's; besides the Packer (24.5b) it holds no function or loop."""
+    """store.py's caps, tiers and packer are the engine's (24.5a, 24.5b); it holds no function or loop."""
     tree = ast.parse(open(store.__file__, encoding="utf-8").read())
     for node in tree.body:
         assert not isinstance(node, (ast.FunctionDef, ast.For, ast.While, ast.If)), \
             f"store.py still has {type(node).__name__} at line {node.lineno}"
     names = {"enforce_tiers": "enforce_tiers", "enforce_caps": "enforce_caps", "total_bytes": "total_bytes",
              "enforce": "enforce", "CapsMemo": "CapsMemo", "_sig": "caps_sig", "_packer_key": "packer_key",
-             "_can_gain": "store_can_gain"}
+             "_can_gain": "store_can_gain", "Packer": "Packer"}
     for py, eng in names.items():
         assert getattr(store, py) is getattr(store._N, eng), py
     assert store.EVICT_TO == ref.EVICT_TO

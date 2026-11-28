@@ -539,7 +539,7 @@ impl Journal {
             let code = rtype_code(rtype)?;
             let hb = if header.is_none() { b"{}".to_vec() } else { stepjson::journal_dumps(py, header)? };
             let body = match (parts.filter(|p| !p.is_none()), payload.filter(|p| !p.is_none())) {
-                (Some(p), _) => Body::Step(step::take_parts(p, codec)?),
+                (Some(p), _) => Body::Step(step::take_parts(p, codec, true)?),
                 (None, Some(p)) => Body::Bytes(Buf::new(exact_bytes(py, p)?.as_any(), false)?),
                 (None, None) => Body::Empty,
             };

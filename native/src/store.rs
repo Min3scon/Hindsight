@@ -100,7 +100,7 @@ fn can_gain_bytes(b: &[u8]) -> bool {
 /// store._can_gain: False for a blob step.recompress() would leave as it is without trying, told from its first
 /// bytes alone.
 #[pyfunction]
-fn store_can_gain(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<bool> {
+pub(crate) fn store_can_gain(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<bool> {
     if let Ok(b) = blob.downcast_exact::<PyBytes>() {
         return Ok(can_gain_bytes(b.as_bytes()));
     }
