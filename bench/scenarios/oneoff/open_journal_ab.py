@@ -11,6 +11,8 @@ BL = K.load_bench_module("bench_bl")
 from hindsight.bl import runtime
 from hindsight.core.types import SETTINGS
 def kb(tag):
+    if not os.path.exists("/proc/self/status"):     # Windows: not measured (0), as bench/README.md says of hwm_mb
+        return 0
     for line in open("/proc/self/status"):
         if line.startswith(tag):
             return int(line.split()[1])
