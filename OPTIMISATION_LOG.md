@@ -220,6 +220,11 @@ its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy)
 | | `goto_bl_1_100k` | 0.1862 ms | 0.1893 ms | 1.02, 1.07 (0.98, 0.99) | 35% / 8% (10% / 10%) |
 | | `goto_bl_300_100k` | 5.263 ms | 5.317 ms | 1.01, 0.99 (0.99, 1.00) | 2% / 1% (1% / 3%) |
 | | `oneoff/open_journal_ab.py`: 100k vertices, 3,000 unsaved strokes, opened again with Crash Recovery Interrupted (5 alternating rounds, each root with its own engine on `PYTHONPATH`, run twice) | 313.9 ms | 313.9 ms | 1.00, 1.02 (0.99, 0.98) | 11% / 11% (15% / 5%) |
+| 24.4 (#132): the history and its mesh state in the engine (0.19.0 at abb16a2 against 0.20.0 at 3b2894a; `bench/results/ab_abb16a2_vs_132-run1.md`, `-run2.md`) | `jump_1_fwd_100k` | 0.0263 ms | 0.0289 ms | 1.10, 1.09 (1.10, 1.10) | 3% / 6% (57% / 2%) |
+| | `jump_1_back_100k` | 0.0264 ms | 0.0289 ms | 1.10, 1.10 (1.10, 1.09) | 4% / 5% (58% / 41%) |
+| | `jump_3000_back_100k` | 57.96 ms | 58.37 ms | 1.01, 0.99 (1.00, 1.00) | 2% / 4% (1% / 3%) |
+| | `commit_100k` | 0.6307 ms | 0.6392 ms | 1.01, 1.02 (1.01, 1.02) | 5% / 3% (3% / 9%) |
+| | all 28 of `commit` and `jumps` | | | best times 0.98 to 1.04 but the two one-step jumps at 100k, 1.10 in both runs: above the A/A band, about 2.6 us more per call (attribute reads of the entries and the state through the C API, where CPython's interpreter specialises them); medians up to 1.04 but `goto_bl_1_100k` 1.13 once (spread 19%; again 1.04) | |
 
 ## Count
 
