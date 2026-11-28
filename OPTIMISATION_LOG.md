@@ -230,6 +230,12 @@ its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy)
 | | `goto_bl_1_100k` | 0.193 ms | 0.1984 ms | 1.03, 1.00 (1.01, 0.94) | 30% / 31% (24% / 24%) |
 | | `goto_bl_300_100k` | 5.528 ms | 5.335 ms | 0.97, 0.99 (0.98, 0.99) | 2% / 11% (6% / 1%) |
 | | all four of `commit` | | | best times 0.97 to 1.05, inside the A/A band 0.92 to 1.06; medians 0.94 to 1.04 but `commit_100k` 1.07 once (spread 83%; again 1.04). `enforce` alone (`timeit`, 3 histories of 200 steps, 5.3.0 module): 167 us against the reference's 169 us under the limit, 61 us against 61 us stuck with the memo; `total_bytes` 122 us against 120 us (the cost is the `Entry.nbytes` calls, made through Python as the reference does, so a patched `Entry.nbytes` is still called) | |
+| 24.5b (#155): the packer as a Rust thread (0.21.0 at f71be99 against 0.22.0 at 300a647; `bench/results/ab_f71be99_vs_155-run1.md`, `-run2.md`) | `commit_100k` | 0.6435 ms | 0.6185 ms | 0.96, 1.07 (1.01, 1.01) | 39% / 64% (11% / 7%) |
+| | `commit_1m` | 3.866 ms | 3.755 ms | 0.97, 0.95 (1.00, 1.01) | 54% / 13% (14% / 36%) |
+| | `idle_60s_1obj` | 12.48 ms | 12.67 ms | 1.02, 1.02 (0.99, 1.01) | 7% / 18% (3% / 6%) |
+| | `idle_60s_50obj` | 12.94 ms | 13.08 ms | 1.01, 1.01 (1.02, 1.03) | 9% / 68% (4% / 4%) |
+| | `packer_bench.py` (1,000 steps of 100k, 20 s phases, a fresh packer per phase, 3 alternating rounds, each root with its own engine) | | | the same in all three rounds: fresh and sculpting nothing recompressed, idle 19 against 18, strong 1 against 0; the one more on the Python side is the bench's submitted entry that nothing holds, which only the Python worker's local variable kept alive; thread CPU 0.00 to 0.02 s on both, Windows' 15.6 ms resolution | |
+| | `oneoff/packer_level_ab.py` (1,000 steps of 100k, 60 of 1M, 3 alternating rounds) | 31.6 s, 4.0 to 4.2 s wall | 31.1 s, 3.9 to 4.3 s | every step recompressed to the same bytes (8,945,282 and 4,911,421); CPU per step not comparable (the Python side's thread_time inside recompress, the engine's the process's less the main thread's) | |
 
 ## Count
 

@@ -49,7 +49,8 @@ def raw_entry(i):
                       [ChannelDelta(POSITION_KEY, idx, rng.normal(0, 1e-3, (2000, 3)).astype(np.float32))]))
 
 
-def phase(p, entries, strokes, submit=True):
+def phase(entries, strokes, submit=True):
+    p = store.Packer()          # one per phase: what a phase leaves to recompress doesn't count in the next
     calls = [0]
     orig = getattr(store, "recompress", None)
     tried = lambda: p._tried if hasattr(p, "_tried") else calls[0]
@@ -75,8 +76,7 @@ def phase(p, entries, strokes, submit=True):
     out = {"cpu_s": round(thread_cpu() - c0, 2), "recompressed": p.recompressed - r0, "looked_at": tried() - t0}
     if orig is not None:
         store.recompress = orig
-    if hasattr(p._strong, "clear"):
-        p._strong.clear()
+    p.stop()
     return out
 
 
@@ -84,15 +84,11 @@ def main():
     bs = blobs(sys.argv[2])
     entries = [Entry(blob=b, meta={}) for b in bs]
     strong = [Entry(blob=stepmod.recompress(b) or b, meta={}) for b in bs[:300]]
-    p = store.Packer()
-    try:
-        res = {"steps": len(bs), "seconds": SECONDS,
-               "fresh": phase(p, entries[:len(entries) // 3], True, False),
-               "sculpting": phase(p, entries[len(entries) // 3:2 * len(entries) // 3], True),
-               "idle": phase(p, entries[2 * len(entries) // 3:], False),
-               "strong": phase(p, strong, False)}
-    finally:
-        p.stop()
+    res = {"steps": len(bs), "seconds": SECONDS,
+           "fresh": phase(entries[:len(entries) // 3], True, False),
+           "sculpting": phase(entries[len(entries) // 3:2 * len(entries) // 3], True),
+           "idle": phase(entries[2 * len(entries) // 3:], False),
+           "strong": phase(strong, False)}
     print("RESULT " + json.dumps(res))
 
 
