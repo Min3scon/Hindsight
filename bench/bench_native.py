@@ -44,7 +44,7 @@ import numpy as np
 
 from hindsight.core import codec, delta, native, step as stepmod
 from hindsight.core.history import History, MeshState
-from reference.history_goto import History as RefHistory
+from reference.history import History as RefHistory
 from reference import pure
 from hindsight.core.types import DELTA, POSITION_KEY, Entry, Step
 
@@ -217,7 +217,7 @@ def _jump_fixture(nv, folder):
 def jumps(nv, rounds, folder):
     import hashlib
     h, start, end = _jump_fixture(nv, folder)
-    engines = {"steps": History, "python": RefHistory}       # engine apply_steps / tests/reference/history_goto.py
+    engines = {"steps": History, "python": RefHistory}       # engine apply_steps / tests/reference/history.py
     states = {"obj": MeshState({"POINT": end.size // 3}, {POSITION_KEY: end.copy()})}
     arr = lambda: states["obj"].arrays[POSITION_KEY]     # noqa: E731
     times = {e: {} for e in engines}

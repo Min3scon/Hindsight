@@ -7,7 +7,7 @@ equals them to the last bits only."""
 import numpy as np
 
 from hindsight.core import framing as F
-from hindsight.core.history import MeshState
+from .history import MeshState
 from .types import JOIN, POSITION_KEY
 
 

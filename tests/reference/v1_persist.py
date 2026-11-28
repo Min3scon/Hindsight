@@ -221,7 +221,7 @@ def registry_from_bytes(b):
     """Parse a registry blob (bytes, or a history file through _FileBytes). Raises ValueError if it
     is not a Hindsight blob at all, and NewerFormatError for a format from the future. Damaged or
     missing steps are dropped (never applied) and reported in ``reg.load_report``."""
-    from hindsight.core.history import History
+    from .history import History
     from hindsight.core.registry import Registry
 
     mv = b if isinstance(b, _FileBytes) else memoryview(b)
@@ -452,7 +452,7 @@ def replay(reg, records: list) -> int:
 
     ``reg.replay_report`` is {"stopped": {history uid: steps left out}}. The last journaled cursor of a
     history is kept in ``h.recovered_cursor``."""
-    from hindsight.core.history import History
+    from .history import History
     from .step import step_from_bytes
 
     start = 0
