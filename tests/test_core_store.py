@@ -589,12 +589,13 @@ def test_caps_memo_same_as_whole_pass():
     import copy
     from hindsight.core.history import History
     used = [0]
-    real = store._enforce_one
+    real = store.CapsMemo.usable         # enforce takes the short pass exactly when the memo is usable
 
-    def counted(*a, **k):
-        used[0] += 1
-        return real(*a, **k)
-    store._enforce_one = counted
+    def counted(self, *a, **k):
+        r = real(self, *a, **k)
+        used[0] += bool(r)
+        return r
+    store.CapsMemo.usable = counted
     try:
         for seed in range(16):
             # A's size: from well over the limit to just about it, so a stuck total lands both
@@ -652,7 +653,7 @@ def test_caps_memo_same_as_whole_pass():
         print("  short passes:", used[0])
         assert used[0] > 60, f"the short pass was hardly used ({used[0]}): the test doesn't test it"
     finally:
-        store._enforce_one = real
+        store.CapsMemo.usable = real
 
 
 def test_caps_memo_reads_only_the_changed_history():

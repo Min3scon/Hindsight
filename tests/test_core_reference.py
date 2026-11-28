@@ -93,7 +93,7 @@ def test_nothing_in_hindsight_imports_the_reference():
 
 
 # hindsight/core modules that are facades of the engine, their Python in tests/reference (dev/RUST_PLAN.md)
-FACADES = ("codec", "crc", "delta", "history", "journal", "step", "topopack", "types")
+FACADES = ("codec", "crc", "delta", "history", "journal", "step", "store", "topopack", "types")
 
 
 def test_no_reference_imports_a_facade():
