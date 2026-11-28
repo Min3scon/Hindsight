@@ -28,13 +28,14 @@ use pyo3::prelude::*;
 use lz4_sys as _; // links the C library the codec module calls
 
 pyo3::create_exception!(hindsight_native, CorruptStep, PyValueError, "A step blob is damaged or not a step at all.");
+pyo3::create_exception!(hindsight_native, UnknownEncoding, PyValueError, "A step in an encoding this build has no decoder for (a newer Hindsight's).");
 pyo3::create_exception!(hindsight_native, CorruptBlob, PyValueError, "Compressed data is damaged.");
 pyo3::create_exception!(hindsight_native, CorruptDelta, PyValueError, "A packed delta is damaged or not a delta at all.");
 pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A file format newer than this build reads.");
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 8;
+const API: u32 = 21;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -103,6 +104,10 @@ impl Buf {
         self.len() > 0 && other.len() > 0 && a0 < b0 + other.len() && b0 < a0 + self.len()
     }
 }
+
+// SAFETY: a shared Buf only reads the bytes the exporter keeps valid while the view is held, from any thread; the
+// release (Drop) needs ownership, and stays with the GIL holder (journal.rs's Pinned sends one across threads).
+unsafe impl Sync for Buf {}
 
 impl Drop for Buf {
     fn drop(&mut self) {
@@ -185,6 +190,16 @@ mod step;
 mod crc;
 mod hash;
 mod same;
+mod morph;
+mod framing;
+mod format5;
+mod stepjson;
+mod types;
+mod topo;
+mod journal;
+mod history;
+mod store;
+mod packer;
 
 // ------------------------------------------------------------------------------------ diff
 fn sub_rows<const N: usize>(a: &[u8], b: &[u8], idx: &[u32], per: usize, o: &mut [u8]) {
@@ -1443,5 +1458,15 @@ fn hindsight_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     crc::register(m)?;
     hash::register(m)?;
     same::register(m)?;
+    morph::register(m)?;
+    framing::register(m)?;
+    format5::register(m)?;
+    stepjson::register(m)?;
+    types::register(m)?;
+    topo::register(m)?;
+    journal::register(m)?;
+    history::register(m)?;
+    store::register(m)?;
+    packer::register(m)?;
     Ok(())
 }

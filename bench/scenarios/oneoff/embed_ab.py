@@ -6,10 +6,8 @@ sys.argv = [sys.argv[0], ROOT, "100000", "6000", "1"]
 sys.path.insert(0, os.path.join(ROOT, "bench"))
 import saveload_bench as SB
 import bpy
-from hindsight.core.types import SETTINGS
 from hindsight.bl import runtime
 SB.setup()
-SETTINGS.save_mode = "EMBED"
 tmp = tempfile.mkdtemp(prefix="hs_ab_")
 blend = os.path.join(tmp, "p.blend")
 saves, opens, peaks = [], [], []

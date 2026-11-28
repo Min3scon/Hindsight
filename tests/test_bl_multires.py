@@ -15,6 +15,7 @@ import bpy
 import numpy as np
 import tests.harness as H
 from hindsight.bl import multires, runtime
+from hindsight.bl import prefs
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -57,7 +58,7 @@ def mesh_hash(ob):
 
 def setup(levels=2):
     H.fresh()
-    multires.FORCE[0] = True
+    prefs.FORCE["record_multires"] = True
     multires.SETTLE[0] = 0.0
     bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3)
     ob = C.active_object
@@ -132,7 +133,7 @@ def check_positions(ob, states, order):
 
 def test_off_by_default_pauses_as_before():
     ob = setup()
-    multires.FORCE[0] = None
+    prefs.FORCE["record_multires"] = None
     assert not multires.enabled()
     from hindsight.bl import warnings as W
     assert W.blocking(C, ob), "Multires must still pause recording when the preference is off"
@@ -141,7 +142,6 @@ def test_off_by_default_pauses_as_before():
     runtime._tick_once()
     h = runtime.history_of(ob)
     assert h is None or not h.entries
-    from hindsight.bl import prefs
     assert prefs.HINDSIGHT_AP_prefs.__annotations__["record_multires"].keywords["default"] is False
     print("PASS test_off_by_default_pauses_as_before")
 
@@ -187,11 +187,10 @@ def test_level_change_takes_the_step():
 
 def test_save_and_reload():
     ob, states = three_visits()
-    SETTINGS.save_mode = "SIDECAR"
     path = os.path.join(TMP, "mr.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path)
     bpy.ops.wm.open_mainfile(filepath=path)
-    multires.FORCE[0] = True
+    prefs.FORCE["record_multires"] = True
     ob = bpy.data.objects[NAME]
     h = runtime.history_of(ob)
     assert h is not None and len(h.entries) == 3 and h.cursor == 3, "history not restored"
@@ -202,7 +201,6 @@ def test_save_and_reload():
 
 def test_crash_recovery_replays_the_visits():
     ob = setup()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "INTERRUPTED"
     states = [(top_hash(ob), mesh_hash(ob))]
     states.append(visit(ob, 1))
@@ -212,7 +210,7 @@ def test_crash_recovery_replays_the_visits():
     states.append(visit(ob, 2))                            # only in the journal
     runtime.missing_message[0] = None
     bpy.ops.wm.open_mainfile(filepath=path)                # the session ends without saving
-    multires.FORCE[0] = True
+    prefs.FORCE["record_multires"] = True
     ob = bpy.data.objects[NAME]
     h = runtime.history_of(ob)
     assert h is not None and len(h.entries) == 2, (None if h is None else len(h.entries))
@@ -263,6 +261,30 @@ def test_stroke_before_the_baseline_settles_stays_in_the_step():
     print("PASS test_stroke_before_the_baseline_settles_stays_in_the_step")
 
 
+def test_a_jump_keeps_the_meshs_id():
+    """#104: a jump puts a snapshot's mesh on the object (a new datablock). It keeps the mesh's id, as
+    it keeps its name: a snapshot taken before Record everything gave the mesh an id brought a mesh
+    with another id, which Record on Everything took for a different mesh, a step at the jump's
+    position that threw away the steps after it (window scenario multires)."""
+    from hindsight.bl import datarec, idmap
+    from tests import t1_gate_lib as L
+    ob = setup()
+    states = [(top_hash(ob), mesh_hash(ob))]
+    states.append(visit(ob, 1))
+    datarec.record_file_default()
+    L.tick_like("baseline")
+    uid = idmap.uid_of(ob.data)
+    assert uid is not None
+    h = runtime.history_of(ob)
+    for pos in (0, 1):
+        runtime.goto(C, pos)
+        L.tick_like("after the jump")
+        assert idmap.uid_of(ob.data) == uid, (pos, uid, idmap.uid_of(ob.data))
+        assert len(h.entries) == 1 and h.cursor == pos, (pos, len(h.entries), h.cursor)
+        assert (top_hash(ob), mesh_hash(ob)) == states[pos], pos
+    print("PASS test_a_jump_keeps_the_meshs_id")
+
+
 def test_digest_reads_the_mesh_not_its_materials():
     """D150: a visit is compared by a digest of the mesh's own blocks in the written file. Blender 5.0 to
     5.2 write a material a little differently each time (one byte in its data changes between two writes
@@ -304,8 +326,8 @@ if __name__ == "__main__":
     for t in (test_digest_reads_the_mesh_not_its_materials, test_off_by_default_pauses_as_before, test_one_step_per_visit_and_exact,
               test_a_visit_that_changes_nothing_is_no_step, test_level_change_takes_the_step, test_save_and_reload,
               test_crash_recovery_replays_the_visits, test_steps_are_counted_by_the_caps,
-              test_stroke_before_the_baseline_settles_stays_in_the_step):
+              test_stroke_before_the_baseline_settles_stays_in_the_step, test_a_jump_keeps_the_meshs_id):
         H.run(t)
-    multires.FORCE[0] = None
+    prefs.FORCE["record_multires"] = None
     H.finish()
     shutil.rmtree(TMP, ignore_errors=True)

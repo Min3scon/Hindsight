@@ -16,15 +16,6 @@ import bpy
 import common as C
 
 
-def mesh_hash(ob):
-    snap = C.mod("meshio").read_snapshot(ob.data, sculpt_only=False)
-    h = hashlib.blake2b(digest_size=16)
-    for k in sorted(snap.arrays):
-        h.update(k.encode())
-        h.update(snap.arrays[k].tobytes())
-    return h.hexdigest()
-
-
 def pos_hash(ob):
     a = C.mod("meshio").read_channel(ob.data, "position|POINT|FLOAT_VECTOR")
     return hashlib.blake2b(a.tobytes(), digest_size=12).hexdigest()
@@ -41,7 +32,7 @@ def run(d):
     C.frame_view(d)
     C.set_mode(d, "SCULPT")
     yield 0.6
-    hashes = [mesh_hash(ob)]
+    hashes = [C.mesh_hash(ob)]
     positions = [pos_hash(ob)]
     snap = C.mod("meshio").read_snapshot(ob.data, sculpt_only=False)
     channels0 = {k: hashlib.blake2b(snap.arrays[k].tobytes(), digest_size=6).hexdigest() for k in sorted(snap.arrays)}
@@ -49,7 +40,7 @@ def run(d):
         yield from C.real_stroke(d, k)
         i = C.info(d)
         if i and i["len"] == len(hashes):
-            hashes.append(mesh_hash(ob))
+            hashes.append(C.mesh_hash(ob))
             positions.append(pos_hash(ob))
     n = C.info(d)["len"]
     d.check(f"{label}: 6 strokes, 6 steps", n == 6 == len(hashes) - 1, (n, len(hashes)))
@@ -59,7 +50,7 @@ def run(d):
     for p in range(n + 1):
         with d.override():
             rt.goto(bpy.context, p)
-        pos_map.append(mesh_hash(ob))
+        pos_map.append(C.mesh_hash(ob))
     with d.override():
         rt.goto(bpy.context, n)
     d.check(f"{label}: jumping reproduces every recorded state", pos_map == hashes, "")
@@ -147,7 +138,8 @@ def run(d):
     files = {}
     C.set_mode(d, "OBJECT")
     for mode, cursor in (("SIDECAR", n), ("EMBED", n), ("BOTH", 3)):
-        prefs.save_mode = mode
+        if hasattr(prefs, "save_mode"):          # V2 has no Save history (#51)
+            prefs.save_mode = mode
         with d.override():
             rt.goto(bpy.context, cursor)
         path = os.path.join(out, f"{label}_{mode.lower()}{'_mid' if cursor != n else ''}.blend")
@@ -155,7 +147,8 @@ def run(d):
             bpy.ops.wm.save_as_mainfile(filepath=path)
         yield 0.3
         files[os.path.basename(path)] = {"mode": mode, "steps": n, "cursor": cursor}
-    prefs.save_mode = "SIDECAR"
+    if hasattr(prefs, "save_mode"):
+        prefs.save_mode = "SIDECAR"
     snap = C.mod("meshio").read_snapshot(ob.data, sculpt_only=False)
     channels_end = {k: hashlib.blake2b(snap.arrays[k].tobytes(), digest_size=6).hexdigest() for k in sorted(snap.arrays)}
     json.dump({"label": label, "hashes": hashes, "positions": positions, "scripted": scripted, "files": files,

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """The Hindsight benchmark suite: a fixed list of scenarios, one JSON file of results.
 
-    python3 bench/suite.py [--root PATH] [--only a,b] [--quick] [--py /home/user/venvs/bpy53/bin/python]
+    python3 bench/suite.py [--root PATH] [--only a,b] [--quick] [--py ~/venvs/bpy53/bin/python]
                            [--label NAME] [--out FILE]
 
   --root PATH   the code under test (default: this checkout)
   --only a,b    run only the groups and scenarios whose name contains one of these
   --quick       small sizes, a smoke run (numbers are not comparable with a full run)
-  --py PYTHON   the interpreter with bpy (default /home/user/venvs/bpy53/bin/python)
+  --py PYTHON   the interpreter with bpy (default ~/venvs/bpy53/bin/python)
   --label NAME  result name (default: the git short hash of the root, "-dirty" if it has changes)
   --out FILE    default bench/results/<label>.json
 
@@ -28,7 +28,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCEN = os.path.join(HERE, "scenarios")
-DEFAULT_PY = "/home/user/venvs/bpy53/bin/python"
+DEFAULT_PY = os.path.expanduser("~/venvs/bpy53/bin/python")
 
 T = ("100k", "1m")
 GROUPS = {
@@ -37,6 +37,7 @@ GROUPS = {
              + [f"drag_5000_{d}_{t}" for t in T for d in ("fwd", "back")],
     "saveload": [f"{op}_{m}_100k_{s}" for s in (1000, 6000) for op in ("save", "open") for m in ("folder", "embed")],
     "editmode": ["edit_step_100k", "edit_step_300k"],
+    "stepjson": ["stepjson_write_corpus", "stepjson_read_corpus", "stepjson_header_corpus"],
     "datarec": ["dr_finish_nochange_500", "dr_finish_move_500", "dr_tick_idle_500", "dr_on_update_500",
                 "dr_prime_500"],
     "draw": [f"redraw_{k}_{c}" for c in ("1obj_object", "1obj_global", "50obj_object", "50obj_global",
@@ -57,7 +58,7 @@ def log(*a):
 def loadavg():
     try:
         return [round(x, 2) for x in os.getloadavg()]
-    except OSError:
+    except (OSError, AttributeError):  # Windows has no getloadavg
         return None
 
 
@@ -84,12 +85,13 @@ def select_groups(only):
 def native_env(root, base_env=None):
     """Environment that makes the root's own shipped Rust wheel the one that gets imported."""
     env = dict(base_env or os.environ)
-    if sys.platform != "linux" or platform.machine() != "x86_64":
+    tags = {("linux", "x86_64"): ("manylinux", "x86_64"), ("win32", "AMD64"): ("win_amd64",)}.get(
+        (sys.platform, platform.machine()))
+    if not tags:
         return env
     wd = os.path.join(root, "hindsight", "wheels")
     try:
-        wheels = [w for w in os.listdir(wd) if w.startswith("hindsight_native") and "manylinux" in w
-                  and "x86_64" in w]
+        wheels = [w for w in os.listdir(wd) if w.startswith("hindsight_native") and all(t in w for t in tags)]
     except OSError:
         return env
     if not wheels:

@@ -33,9 +33,8 @@ import zlib
 import numpy as np
 
 from . import codec as _codec
-from . import delta as _rdelta
 from .delta import NORMAL, QUICK, CorruptDelta, pack_delta, unpack_at, unpack_delta
-from hindsight.core.types import DATA, DELTA, JOIN, MISSING, TOPO, DataChange, Snapshot, Step
+from .types import DATA, DELTA, JOIN, MISSING, TOPO, DataChange, Snapshot, Step
 
 STEP_MAGIC_V1 = b"HSS1"
 STEP_MAGIC = b"HSS3"

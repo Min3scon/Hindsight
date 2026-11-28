@@ -15,8 +15,9 @@ import bpy
 import tests.harness as H
 from tests import oracle as O
 from tests import t1_ops as T
-from tests.gate import covers
 from hindsight.bl import adapters, datarec, guard, idmap, runtime, selfcheck
+from hindsight.bl import log, prefs
+from hindsight.core.types import SETTINGS
 
 C = bpy.context
 ROWS = {"rna": ["obj.transforms", "obj.parenting"], "object": ["obj.constraints", "obj.collections"],
@@ -26,7 +27,7 @@ ROWS = {"rna": ["obj.transforms", "obj.parenting"], "object": ["obj.constraints"
 def setup():
     H.fresh()
     T.build_scene()
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     for ob in list(C.scene.objects):
         datarec.set_tracked(ob, True)
     datarec.set_tracked(C.scene, True)
@@ -114,27 +115,21 @@ def check_fault(aid, where):
     assert len(hist("A").entries) == n_before["A"] + 1, "recording works again"
 
 
-@covers("obj.transforms", "FAULT")
-@covers("obj.parenting", "FAULT")
 def test_rna_adapter_faults():
     for where in ("capture", "diff", "apply"):
         check_fault("rna", where)
 
 
-@covers("obj.constraints", "FAULT")
-@covers("obj.collections", "FAULT")
 def test_object_adapter_faults():
     for where in ("capture", "diff", "apply"):
         check_fault("object", where)
 
 
-@covers("obj.addremove", "FAULT")
 def test_scene_adapter_faults():
     for where in ("capture", "diff", "apply"):
         check_fault("scene", where)
 
 
-@covers("obj.editsteps", "FAULT")
 def test_edit_steps_fault():
     """Edit Mode step by step raising: only it switches off; the object's other data and sculpting
     still record; the history plays back."""
@@ -168,7 +163,6 @@ def test_edit_steps_fault():
     assert not guard.failed()
 
 
-@covers("obj.transforms", "FAULT")
 def test_object_mode_mesh_check_fault():
     """The Object Mode mesh check (Apply, Shade Smooth) raising: only it switches off; transforms
     still record."""
@@ -190,7 +184,6 @@ def test_object_mode_mesh_check_fault():
     assert not guard.failed()
 
 
-@covers("obj.transforms", "STEPS")
 def test_mesh_change_without_an_operator_is_recorded():
     """D32: a change to a recorded mesh in Object Mode that comes without an operator (a script, or
     an operator's update that arrives after the timer saw it finish) reaches the recorder through the
@@ -218,7 +211,6 @@ def test_mesh_change_without_an_operator_is_recorded():
     assert O.object_state(a) == after
 
 
-@covers("obj.constraints", "STEPS")
 def test_animated_constraint_settings_are_not_steps():
     """D15: keyframed or driven constraint settings change with the frame: never a step."""
     setup()
@@ -245,8 +237,144 @@ def test_animated_constraint_settings_are_not_steps():
     assert len(hist("A").entries) == n + 1
 
 
+def test_strokes_while_the_recorder_is_off_are_one_step():
+    """#118 (D46, D95): strokes made while a fault had the recorder switched off become one step of
+    their own when Self-check switches it back on; the next stroke is the step after it, and going back
+    over it gives the mesh from before the fault. A recorded object not changed meanwhile gets no step."""
+    H.fresh()
+    other = H.make_mesh(400, name="Other", location=(3, 0, 0))
+    ob = H.make_mesh(400, name="Blob")
+    H.enter(other, "SCULPT")
+    H.fake_stroke(other, 9)
+    H.commit(other)
+    H.enter(ob, "SCULPT")
+    ho = runtime.reg().history_for(runtime.obj_uid(other))
+    n_other = len(ho.entries)
+    for seed in (0, 1):
+        H.fake_stroke(ob, seed)
+        H.commit(ob)
+    h = runtime.reg().history_for(runtime.obj_uid(ob))
+    assert len(h.entries) == 2
+    before = H.snapshot(ob)
+    real = runtime._observe
+    runtime._observe = boom
+    try:
+        H.fake_stroke(ob, 2)
+        runtime._DIRTY[runtime.obj_uid(ob)] = 0.0   # the stroke has settled
+        runtime._tick_once()                        # the recorder's timer commits it and fails
+    finally:
+        runtime._observe = real
+    assert not guard.ok("recorder") and len(h.entries) == 2
+    H.fake_stroke(ob, 3)                            # made while the recorder is off
+    off = H.snapshot(ob)
+    selfcheck.run_checks(retry_failed=True)         # what the Self-check button runs
+    assert guard.ok("recorder")
+    assert len(ho.entries) == n_other               # nothing changed on it: no step
+    H.fake_stroke(ob, 4)
+    H.commit(ob)
+    assert len(h.entries) == 4, [e.meta.get("label") for e in h.entries]
+    assert h.entries[2].meta.get("label") == "Changes While Off"
+    runtime._goto_history(h, 3, True)               # back one step: only the last stroke is undone
+    assert all((H.snapshot(ob)[k] == v).all() for k, v in off.items())
+    runtime._goto_history(h, 2, True)               # back over "Changes While Off": the mesh before the fault
+    assert all((H.snapshot(ob)[k] == v).all() for k, v in before.items())
+
+
+def test_changes_while_off_never_ask_to_drop_steps():
+    """#119 review: with 10 or more steps ahead of the cursor, Self-check's "Changes While Off" step drops them
+    without asking and keeps the strokes made while the recorder was off (never puts the mesh back)."""
+    H.fresh()
+    ob = H.make_mesh(400, name="Blob")
+    H.enter(ob, "SCULPT")
+    for seed in range(12):
+        H.fake_stroke(ob, seed)
+        H.commit(ob)
+    h = runtime.reg().history_for(runtime.obj_uid(ob))
+    runtime._goto_history(h, 1, True)               # 11 steps ahead of the cursor
+    SETTINGS.truncation_threshold = 10
+    guard.fail("recorder", RuntimeError("injected fault"))
+    H.fake_stroke(ob, 20)                           # made while the recorder is off
+    off = H.snapshot(ob)
+    selfcheck.run_checks(retry_failed=True)
+    assert guard.ok("recorder") and SETTINGS.truncation_threshold == 10
+    assert not runtime._PENDING_TRUNCATE
+    assert [e.meta.get("label") for e in h.entries][1:] == ["Changes While Off"] and h.cursor == 2
+    assert all((H.snapshot(ob)[k] == v).all() for k, v in off.items())
+
+
+
+def test_changes_while_off_go_on_past_an_object_that_fails():
+    """#119 review: if one object's "Changes While Off" step raises, the other objects still get theirs and
+    the failure is logged."""
+    H.fresh()
+    a = H.make_mesh(400, name="A", location=(3, 0, 0))
+    b = H.make_mesh(400, name="B")
+    for ob in (a, b):
+        H.enter(ob, "SCULPT")
+        H.fake_stroke(ob, 0)
+        H.commit(ob)
+    ua, ub = runtime.obj_uid(a), runtime.obj_uid(b)
+    assert [u for u in runtime._STATES if u in (ua, ub)] == [ua, ub]     # A's step is tried first
+    hb = runtime.reg().history_for(ub)
+    n = len(hb.entries)
+    guard.fail("recorder", RuntimeError("injected fault"))
+    H.fake_stroke(a, 1)
+    H.fake_stroke(b, 1)                             # both changed while the recorder is off
+    real = runtime.commit
+
+    def flaky(ob, **kw):
+        if ob == a:
+            raise RuntimeError("no step for A")
+        return real(ob, **kw)
+
+    runtime.commit = flaky
+    try:
+        selfcheck.run_checks(retry_failed=True)
+    finally:
+        runtime.commit = real
+    assert len(hb.entries) == n + 1 and hb.entries[-1].meta.get("label") == "Changes While Off"
+    assert any("no step for A" in line for line in log.tail(400))
+
+
+def test_changes_while_off_hold_the_values_too():
+    """#119 review (D46): with Record everything, Self-check's "Changes While Off" steps hold the values
+    changed while the recorder was off as well as the mesh, as Turn On does: going back over them gives
+    both from before the fault, in Object Mode and in Sculpt Mode."""
+    H.fresh()
+    prefs.FORCE["record_scope"] = "EVERYTHING"
+    a = H.make_mesh(400, name="A", location=(3, 0, 0))     # stays in Object Mode
+    b = H.make_mesh(400, name="B")                          # sculpted
+    for ob in (a, b):
+        datarec.set_tracked(ob, True)
+    a.location.x = 4.0
+    tick("move")
+    H.enter(b, "SCULPT")
+    H.fake_stroke(b, 0)
+    H.commit(b)
+    hs = {ob: runtime.reg().history_for(runtime.obj_uid(ob)) for ob in (a, b)}
+    n0 = {ob: len(h.entries) for ob, h in hs.items()}
+    assert all(n0.values()), n0
+    before = {ob: (H.snapshot(ob), ob.location.x) for ob in (a, b)}
+    guard.fail("recorder", RuntimeError("injected fault"))
+    for ob, seed in ((a, 1), (b, 2)):                       # values and mesh changed while it is off
+        ob.location.x += 1.5
+        H.fake_stroke(ob, seed)
+    off = {ob: (H.snapshot(ob), ob.location.x) for ob in (a, b)}
+    selfcheck.run_checks(retry_failed=True)
+    assert guard.ok("recorder")
+    for ob, h in hs.items():
+        n1 = len(h.entries)
+        labels = [e.meta.get("label") for e in h.entries[n0[ob]:]]
+        assert n1 > n0[ob] and set(labels) == {"Changes While Off"}, (ob.name, labels)
+        for pos, (snap, x) in ((n0[ob], before[ob]), (n1, off[ob])):
+            runtime._goto_history(h, pos, True)
+            assert abs(ob.location.x - x) < 1e-6, (ob.name, pos, ob.location.x, x)
+            assert all((H.snapshot(ob)[k] == v).all() for k, v in snap.items()), (ob.name, pos)
+
 for fn in (test_rna_adapter_faults, test_object_adapter_faults, test_scene_adapter_faults, test_edit_steps_fault,
            test_object_mode_mesh_check_fault, test_mesh_change_without_an_operator_is_recorded,
-           test_animated_constraint_settings_are_not_steps):
+           test_animated_constraint_settings_are_not_steps, test_strokes_while_the_recorder_is_off_are_one_step,
+           test_changes_while_off_never_ask_to_drop_steps, test_changes_while_off_go_on_past_an_object_that_fails,
+           test_changes_while_off_hold_the_values_too):
     H.run(fn)
 H.finish()

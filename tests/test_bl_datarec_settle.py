@@ -4,12 +4,14 @@ recorder with a fake clock (datarec._now): a drag with gaps of 0.44, 0.24, 0.23,
 window on llvmpipe) must give ONE "Change" step, a single change still commits after 0.3 s, the wait
 after an update follows the gap between the last two updates, and a step is only continued while it
 is the newest step of its history."""
+import contextlib
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bpy
 import tests.harness as H
 from tests import t1_gate_lib as L
 from tests.addons import hs_fake_addon as FAKE
 from hindsight.bl import datarec, idmap, runtime
+from hindsight.bl import prefs
 
 C = bpy.context
 clock = [0.0]
@@ -50,10 +52,8 @@ def steps_of(ob):
 
 def teardown():
     datarec._now = lambda: __import__("time").time()
-    try:
+    with contextlib.suppress(Exception):
         FAKE.unregister()
-    except Exception:
-        pass
 
 
 def test_a_slow_drag_is_one_step():
@@ -156,7 +156,6 @@ def _interrupted_after(drag_values, tag):
     import tempfile
     from hindsight.core.types import SETTINGS
     ob, uid = setup()
-    SETTINGS.save_mode = "SIDECAR"
     SETTINGS.crash_recovery = "INTERRUPTED"
     update(ob, uid, 0.5)                             # a stored value (an unset one reads as the default)
     advance(1.0)
@@ -172,7 +171,7 @@ def _interrupted_after(drag_values, tag):
     live = [(e.seq, e.meta.get("label")) for e in steps_of(ob)]
     datarec._now = lambda: __import__("time").time()
     bpy.ops.wm.open_mainfile(filepath=path)          # interrupted: the journal is replayed
-    datarec.FORCE_SCOPE[0] = "EVERYTHING"
+    prefs.FORCE["record_scope"] = "EVERYTHING"
     ob = bpy.data.objects["A"]
     h = runtime.reg().history_for(idmap.uid_of(ob))
     return ob, h, live, saved
@@ -235,10 +234,30 @@ def test_a_drag_after_an_operator_is_one_step():
     print("PASS test_a_drag_after_an_operator_is_one_step")
 
 
+def test_a_change_soon_after_a_step_waits_only_the_settle_time():
+    """Window scenarios adapters and tier1: a change 0.7 s after the updates of a step already recorded waited
+    1.5 x 0.7 s, the gap taken across that step as if it were a drag's redraws, so an operator ending in that
+    time took the change into its own step. A gap only counts between updates of changes not yet recorded."""
+    ob, uid = setup()
+    try:
+        update(ob, uid, 0.6)
+        advance(0.7)
+        assert len(steps_of(ob)) == 1
+        ob.location.x += 1.0                      # another kind of data, 0.7 s after the last update
+        datarec._DIRTY[uid] = clock[0]
+        datarec._note_update(clock[0])
+        advance(0.35)
+        assert len(steps_of(ob)) == 2, "a change 0.7 s after a recorded step waited past the settle time"
+    finally:
+        teardown()
+    print("PASS test_a_change_soon_after_a_step_waits_only_the_settle_time")
+
+
 if __name__ == "__main__":
     for t in (test_a_slow_drag_is_one_step, test_a_single_change_commits_after_the_settle_time,
               test_the_wait_follows_the_gap_between_updates, test_a_drag_back_to_where_it_started_leaves_no_step,
               test_only_the_newest_step_is_continued, test_a_merged_step_comes_back_after_a_crash,
-              test_a_drag_back_to_the_start_leaves_no_step_after_a_crash, test_a_drag_after_an_operator_is_one_step):
+              test_a_drag_back_to_the_start_leaves_no_step_after_a_crash, test_a_drag_after_an_operator_is_one_step,
+              test_a_change_soon_after_a_step_waits_only_the_settle_time):
         H.run(t)
     H.finish()

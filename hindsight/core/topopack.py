@@ -6,56 +6,20 @@ the one before it, then zstd), a real sculpt mesh's topology takes about a third
 vertices: 75 MB to 24 MB). The packed form keeps an xxh3-128 checksum of every array, so a compare of the
 topology never needs the arrays back.
 
-The differences are taken modulo 2**32 (numpy integer arithmetic wraps) and the running sum gives the
-array back exactly, whatever the values.
+The packing runs in the Rust engine (native/src/topo.rs, #148), the delta coding, codec and checksum without the
+GIL (pack_all runs off the main thread); the Python is in tests/reference/topopack.py.
+
+hash_of(a)          xxh3-128 of the array's bytes, 32 hex digits
+pack_array(a)       (packed bytes, dtype, shape, checksum, delta-coded); unpack_array gives the array back
+pack_all(arrays)    {key: pack_array(a)}
+packed_bytes(p)     the packed bytes of a pack_all result
 """
 from __future__ import annotations
 
-import numpy as np
-
-from . import codec
+from .native import ENGINE as _N
 from .types import CORNER_EDGE_KEY, CORNER_VERT_KEY, EDGE_VERTS_KEY, FACE_OFFSETS_KEY
 
 TOPO_KEYS = (EDGE_VERTS_KEY, CORNER_VERT_KEY, CORNER_EDGE_KEY, FACE_OFFSETS_KEY)
-_CODEC = "zstd"
 
-
-def hash_of(a) -> str:
-    """xxh3-128 of the array's bytes (the engine's Hasher128)."""
-    from .native import ENGINE
-    h = ENGINE.Hasher128()
-    h.update(np.ascontiguousarray(a).reshape(-1).view(np.uint8))
-    return h.hexdigest()
-
-
-def pack_array(a) -> tuple:
-    """(packed bytes, dtype, shape, checksum, delta-coded) of one array; unpack_array gives it back."""
-    a = np.ascontiguousarray(a)
-    flat = a.reshape(-1)
-    delta = flat.dtype.kind in "iu"
-    if delta and len(flat):
-        d = np.empty_like(flat)
-        d[0] = flat[0]
-        np.subtract(flat[1:], flat[:-1], out=d[1:])
-    else:
-        d = flat
-    return codec.compress(d.view(np.uint8), _CODEC), a.dtype.str, a.shape, hash_of(a), delta
-
-
-def unpack_array(p: tuple) -> np.ndarray:
-    blob, dt, shape, _h, delta = p
-    dtype = np.dtype(dt)
-    n = int(np.prod(shape)) if len(shape) else 1
-    raw = codec.decompress(blob, n * dtype.itemsize)
-    flat = np.frombuffer(raw, dtype)
-    out = np.cumsum(flat, dtype=dtype) if delta and len(flat) else flat.copy()
-    return out.reshape(shape)
-
-
-def pack_all(arrays: dict) -> dict:
-    """{key: pack_array(a)} (run off the main thread: the codec works without the GIL)."""
-    return {k: pack_array(a) for k, a in arrays.items()}
-
-
-def packed_bytes(packed: dict) -> int:
-    return sum(len(p[0]) for p in packed.values())
+hash_of, pack_array, unpack_array, pack_all, packed_bytes = (
+    _N.topo_hash, _N.topo_pack, _N.topo_unpack, _N.topo_pack_all, _N.topo_packed_bytes)

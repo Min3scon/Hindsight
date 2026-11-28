@@ -1,0 +1,1 @@
+[["dup", "C", false], ["mat", "E", 0], ["edit", "E", "bevel", 135], ["mat", "C", 0], ["delete", "Pivot"], ["rename", "Pivot", 2], ["coll_remove", "C", "Extra"], ["mat", "E", 0], ["mod_del", "E", 2]]

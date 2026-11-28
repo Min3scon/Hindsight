@@ -12,12 +12,13 @@ last valid record.
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import json
 import os
 import struct
 import tempfile
-import zlib
+from zlib import crc32      # the value of the facade crc.py (rule 1: a reference never imports a facade)
 
 MAGIC = b"HSJ1"
 
@@ -28,6 +29,9 @@ _HEAD = struct.Struct("<4sBIQ")
 _CRC = struct.Struct("<I")
 _MAX_HEADER = 64 * 2 ** 20          # sanity bound for header JSON length
 _CHUNK = 4 * 2 ** 20
+# R065: reading a journal goes through a 1 MB buffer: a record's parts (head, header, payload, checksum)
+# are read from memory instead of one read of the file each (a payload of a few KB bypassed the 8 KB one)
+_READ_BUF = 2 ** 20
 # fsync errors that mean "this file system has nothing to sync" (some network and FUSE file
 # systems), not "the data didn't reach the disk"
 _NO_SYNC = {errno.EINVAL, getattr(errno, "ENOTSUP", errno.EINVAL), getattr(errno, "EOPNOTSUPP", errno.EINVAL)}
@@ -37,10 +41,12 @@ def _scan(fh, limit: int, want_payload: bool):
     """Yield (start, end, type_code, header_bytes, payload_or_None) for each
     valid record in fh (positioned at 0), never reading past `limit` bytes."""
     pos = 0
+    at = None                     # where fh is (records are read in order: no seek between them)
     while True:
         if pos + _HEAD.size > limit:
             return
-        fh.seek(pos)
+        if pos != at:
+            fh.seek(pos)
         raw = fh.read(_HEAD.size)
         if len(raw) < _HEAD.size:
             return
@@ -53,44 +59,72 @@ def _scan(fh, limit: int, want_payload: bool):
         hbytes = fh.read(hlen)
         if len(hbytes) < hlen:
             return
-        crc = zlib.crc32(hbytes, zlib.crc32(raw))
+        crc = crc32(hbytes, crc32(raw))
         payload = None
         if want_payload:
             payload = fh.read(plen)
             if len(payload) < plen:
                 return
-            crc = zlib.crc32(payload, crc)
+            crc = crc32(payload, crc)
         else:
             left = plen
             while left:
                 chunk = fh.read(min(left, _CHUNK))
                 if not chunk:
                     return
-                crc = zlib.crc32(chunk, crc)
+                crc = crc32(chunk, crc)
                 left -= len(chunk)
         tail = fh.read(_CRC.size)
         if len(tail) < _CRC.size or _CRC.unpack(tail)[0] != (crc & 0xFFFFFFFF):
             return
         yield pos, end, code, hbytes, payload
-        pos = end
+        pos = at = end
+
+
+def _records(scan, out: list):
+    """Pass _scan's records through, putting (type, header, payload) into out up to the first header
+    that isn't JSON (none after it: what read() has always returned)."""
+    ok = True
+    for rec in scan:
+        if ok:
+            _s, _e, code, hbytes, payload = rec
+            try:
+                header = json.loads(hbytes.decode("utf-8")) if hbytes else {}
+            except (ValueError, UnicodeDecodeError):
+                ok = False
+            else:
+                out.append((RTYPE_NAMES[code], header, payload))
+        yield rec
 
 
 class Journal:
     """Append-only record file. See module docstring for the record format."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, keep: bool = False, discard: bool = False):
+        """keep (R065): the caller reads the journal right away (crash recovery). The scan that finds
+        where the good records end reads them too, and the first read() gets them from it instead of
+        reading the file a second time (if nothing was written in between).
+        discard (R067): the caller starts the journal again (no recovery): what is in it is let go
+        unread instead of being read through first."""
         self.path = os.path.abspath(path)
         parent = os.path.dirname(self.path)
         if parent:
             os.makedirs(parent, exist_ok=True)
         self._size = 0
-        if os.path.exists(self.path):
+        self._kept = None                # (size, records) from that scan, until read() takes them
+        if discard and not keep and os.path.exists(self.path):
+            os.truncate(self.path, 0)
+        elif os.path.exists(self.path):
             file_size = os.path.getsize(self.path)
-            with open(self.path, "rb") as fh:
-                for _start, end, _c, _h, _p in _scan(fh, file_size, False):
+            recs = [] if keep else None
+            with open(self.path, "rb", buffering=_READ_BUF) as fh:
+                scan = _scan(fh, file_size, keep)
+                for _start, end, _c, _h, _p in (_records(scan, recs) if keep else scan):
                     self._size = end
             if file_size > self._size:
                 os.truncate(self.path, self._size)
+            if keep:
+                self._kept = (self._size, recs)
         self._good = self._size          # size up to which every record was written out whole
         self._fh = open(self.path, "ab")
 
@@ -103,10 +137,8 @@ class Journal:
             self._fh.close()             # writes out what is still buffered, or fails again
         except OSError:
             size = self._good
-        try:
+        with contextlib.suppress(OSError):
             os.truncate(self.path, size)
-        except OSError:
-            pass
         self._size = size
         self._good = min(self._good, size)
         self._fh = open(self.path, "ab")
@@ -114,13 +146,14 @@ class Journal:
     def append(self, rtype: str, header: dict, payload: bytes = b"") -> int:
         if self._fh is None:
             raise ValueError("journal is closed")
+        self._kept = None
         code = RTYPES[rtype]
         hbytes = json.dumps(header if header is not None else {},
                             separators=(",", ":")).encode("utf-8")
         if not isinstance(payload, (bytes, bytearray)):
             payload = bytes(payload)
         prefix = _HEAD.pack(MAGIC, code, len(hbytes), len(payload)) + hbytes
-        crc = zlib.crc32(payload, zlib.crc32(prefix)) & 0xFFFFFFFF
+        crc = crc32(payload, crc32(prefix)) & 0xFFFFFFFF
         start = self._size
         try:
             self._fh.write(prefix)
@@ -157,24 +190,22 @@ class Journal:
 
     # -- reading ---------------------------------------------------------
     def read(self, upto: int | None = None) -> list:
+        kept, self._kept = self._kept, None
+        if kept is not None and upto is None and kept[0] == self._size:
+            return kept[1]
         if self._fh is not None:
             self._fh.flush()
         limit = self._size if upto is None else max(0, min(int(upto), self._size))
         out = []
-        try:
-            with open(self.path, "rb") as fh:
-                for _s, _e, code, hbytes, payload in _scan(fh, limit, True):
-                    try:
-                        header = json.loads(hbytes.decode("utf-8")) if hbytes else {}
-                    except (ValueError, UnicodeDecodeError):
-                        break
-                    out.append((RTYPE_NAMES[code], header, payload))
-        except OSError:
-            pass
+        with contextlib.suppress(OSError):
+            with open(self.path, "rb", buffering=_READ_BUF) as fh:
+                for _rec in _records(_scan(fh, limit, True), out):
+                    pass
         return out
 
     # -- maintenance -----------------------------------------------------
     def truncate(self, size: int) -> None:
+        self._kept = None
         size = max(0, min(int(size), self._size))
         if self._fh is not None:
             self._fh.close()
@@ -203,11 +234,9 @@ class Journal:
         self.close()
 
     def __del__(self):
-        try:
+        with contextlib.suppress(Exception):
             if self._fh is not None:
                 self._fh.close()
-        except Exception:
-            pass
 
 
 def atomic_write(path: str, data) -> None:
@@ -228,20 +257,16 @@ def atomic_write(path: str, data) -> None:
             os.fsync(fh.fileno())
         os.replace(tmp, path)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
     if hasattr(os, "O_DIRECTORY"):
-        try:
+        with contextlib.suppress(OSError):
             dfd = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
             try:
                 os.fsync(dfd)
             finally:
                 os.close(dfd)
-        except OSError:
-            pass
 
 
 def atomic_write_json(path: str, obj) -> None:

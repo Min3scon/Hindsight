@@ -3,7 +3,7 @@
     <bpy python> bench/scenarios/idle.py CODE_ROOT [--quick] [--only a,b] [--reps N]
 
 Scenarios:
-  idle_60s_1obj, idle_60s_50obj   CPU time (process_time, ms) of 60 simulated seconds of our timers
+  idle_60s_1obj, idle_60s_50obj   CPU time (K.cpu: process_time; wall time on Windows, ms) of 60 simulated seconds of our timers
         (runtime.tick, which also runs the data recorder and camera ticks, and slider_prop's range
         timer): each timer function is called, in virtual time, at the interval it returned last.
         Object Mode, nothing changing. The samples are repeated simulations. extra: timer calls.
@@ -15,7 +15,6 @@ Blender's own timer scheduling is not included. --quick: fewer repeats.
 import heapq
 import os
 import sys
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _common as K  # noqa: E402
@@ -53,14 +52,14 @@ def simulate(seconds=60.0):
     heap = [(0.5, 0, runtime.tick), (0.2, 1, slider_prop._timer)]
     heapq.heapify(heap)
     n = 0
-    t0 = time.process_time()
+    t0 = K.cpu()
     while heap[0][0] <= seconds:
         due, k, fn = heapq.heappop(heap)
         nxt = fn()
         n += 1
         if nxt is not None:
             heapq.heappush(heap, (due + nxt, k, fn))
-    return (time.process_time() - t0) * 1000, n
+    return (K.cpu() - t0) * 1000, n
 
 
 class _U:
@@ -74,10 +73,10 @@ def depsgraph_cost(ob, n=1000):
     class DG:
         updates = [_U(ob), _U(ob.data)]
     dg = DG()
-    t0 = time.process_time()
+    t0 = K.cpu()
     for _ in range(n):
         runtime.on_depsgraph(C.scene, dg)
-    ms = (time.process_time() - t0) * 1000
+    ms = (K.cpu() - t0) * 1000
     runtime._DIRTY.clear()
     runtime._STROKE_SEEN.clear()
     return ms

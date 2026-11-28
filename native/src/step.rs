@@ -31,6 +31,8 @@ const MAX_OUT: u64 = 2 * codec::MAX_RAW;
 
 pub enum StepErr {
     Corrupt(String),
+    /// Intact, in an encoding this build has no decoder for (a later build's, dev/FORMAT5_ENCODINGS.md).
+    Unknown(u8),
     Value(String),
     Mem,
 }
@@ -329,6 +331,11 @@ pub fn parse_head(b: &[u8]) -> Result<Head<'_>, StepErr> {
     if crc32fast::hash(&b[8..]) as usize != u32le(b, 4).unwrap() {
         return corrupt("step blob: checksum mismatch");
     }
+    if let Some(&n) = b.get(10) {
+        if n > 4 {
+            return Err(StepErr::Unknown(n)); // the prefix CRC covers byte 10: a later encoding, not damage
+        }
+    }
     let hl = u16le(b, 8).unwrap();
     let h = b.get(10..10 + hl).ok_or_else(|| StepErr::Corrupt("step blob: header cut short".into()))?;
     let bad = |m: &str| StepErr::Corrupt(format!("step blob: bad header ({m})"));
@@ -555,6 +562,20 @@ fn decode_v1(b: &[u8]) -> Result<Dec, StepErr> {
     })
 }
 
+/// The encodings this build decodes (dev/FORMAT5_ENCODINGS.md).
+pub const ENCODINGS: [u8; 3] = [1, 3, 4];
+
+/// The encoding a step's bytes say they use: 1 for `HSS1`, byte 10 of the step prefix for `HSS3` (5 to 255: a later
+/// build's). The prefix CRC is not checked: where this is asked (at open) the step part's CRC-32 vouches for the
+/// bytes, and decoding checks it. HSS3 numbers 0 to 2 were never given out, so they are damage.
+pub fn encoding(b: &[u8]) -> Result<u8, StepErr> {
+    match (b.get(..4), b.get(10)) {
+        (Some(m), _) if m == MAGIC_V1 => Ok(1),
+        (Some(m), Some(&n)) if m == MAGIC_V3 && n >= 3 => Ok(n),
+        _ => corrupt("step blob: not a Hindsight step (wrong header)"),
+    }
+}
+
 pub fn decode(b: &[u8]) -> Result<Dec, StepErr> {
     match b.get(..4) {
         Some(m) if m == MAGIC_V3 => decode_v3(b),
@@ -731,8 +752,11 @@ pub fn recompress_core(b: &[u8]) -> Result<Option<Vec<u8>>, StepErr> {
         return Ok(None);
     }
     if magic == Some(MAGIC_V3) {
-        // nothing to gain, told from the header alone (the body is not read)
-        let h = parse_head(b)?;
+        // nothing to gain, told from the header alone (the body is not read); an unknown step is never re-packed
+        let h = match parse_head(b) {
+            Err(StepErr::Unknown(_)) => return Ok(None),
+            h => h?,
+        };
         let id = *h.payload.first().ok_or_else(|| StepErr::Corrupt("step blob: empty body".into()))?;
         if codec::is_strong(id) && !h.quick {
             return Ok(None);
@@ -773,9 +797,10 @@ pub fn recompress_core(b: &[u8]) -> Result<Option<Vec<u8>>, StepErr> {
 // ---------------------------------------------------------------------------------- Python side
 use pyo3::types::{PyByteArray, PyList, PyTuple};
 
-fn err(e: StepErr) -> PyErr {
+pub(crate) fn err(e: StepErr) -> PyErr {
     match e {
         StepErr::Corrupt(s) => CorruptStep::new_err(s),
+        StepErr::Unknown(n) => UnknownEncoding::new_err(format!("step blob: encoding {n}, written by a newer Hindsight")),
         StepErr::Value(s) => PyValueError::new_err(s),
         StepErr::Mem => pyo3::exceptions::PyMemoryError::new_err("hindsight_native: out of memory"),
     }
@@ -824,6 +849,15 @@ fn resolve_name(name: &str) -> u8 {
         return codec::ZSTD;
     }
     codec::id_of(&n).unwrap_or(codec::ZLIB)
+}
+
+/// step_encoding(blob) -> the encoding number its bytes say they use (encoding() above); CorruptStep if not a step.
+#[pyfunction]
+fn step_encoding(blob: &Bound<'_, PyAny>) -> PyResult<u8> {
+    guard(|| {
+        let inp = input(blob)?;
+        encoding(inp.get()).map_err(err)
+    })
 }
 
 #[pyfunction]
@@ -948,7 +982,7 @@ fn step_decode(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<PyObject> {
 /// delta count, before size, after size, [(uid, size)] or None, raw body length, written quickly,
 /// records size); format 1 and 2 -> (1, header JSON bytes). Checks the checksum, not the body.
 #[pyfunction]
-fn step_info(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<PyObject> {
+pub(crate) fn step_info(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<PyObject> {
     guard(|| {
         let inp = input(blob)?;
         let b = inp.get();
@@ -986,18 +1020,6 @@ fn step_info(py: Python<'_>, blob: &Bound<'_, PyAny>) -> PyResult<PyObject> {
             _ => Err(CorruptStep::new_err("step blob: not a Hindsight step (wrong header)")),
         }
     })
-}
-
-/// The bytes of a list of buffers, joined into `out`; also their total length.
-fn join_parts(parts: &Bound<'_, PyAny>, out: &mut Vec<u8>) -> PyResult<usize> {
-    let mut n = 0;
-    for p in parts.iter()? {
-        let buf = Buf::new(&p?, false)?;
-        out.try_reserve(buf.len()).map_err(|_| no_mem())?;
-        out.extend_from_slice(buf.bytes());
-        n += buf.len();
-    }
-    Ok(n)
 }
 
 /// One delta of a step to write, its arrays borrowed from the caller for the call.
@@ -1148,12 +1170,144 @@ fn record<'py>(
     })
 }
 
+/// What step_encode encodes a step from, taken with the GIL: names and numbers copied, every buffer pinned (read
+/// without the GIL; released when this is dropped, which needs the GIL). The journal's writer thread encodes one
+/// (journal.rs, 24.2b), and gives it back to the main thread to be dropped.
+pub(crate) struct Enc {
+    kind: String,
+    seq: u64,
+    time: f64,
+    label: String,
+    mode: String,
+    target: String,
+    extra: Buf,
+    deltas: Vec<InDelta>,
+    before: Option<Vec<Buf>>,
+    after: Option<Vec<Buf>>,
+    snaps: Option<Vec<(String, Vec<Buf>)>>,
+    records: Option<Buf>,
+    quick: bool,
+    codec: u8,
+    strong: bool,
+}
+
+fn bufs(parts: &Bound<'_, PyAny>) -> PyResult<Vec<Buf>> {
+    parts.iter()?.map(|p| Buf::new(&p?, false)).collect()
+}
+
+/// The bytes of pinned buffers, joined into `out`; also their total length.
+fn join_bufs(parts: &[Buf], out: &mut Vec<u8>) -> Result<usize, StepErr> {
+    let mut n = 0;
+    for b in parts {
+        out.try_reserve(b.len()).map_err(|_| StepErr::Mem)?;
+        out.extend_from_slice(b.bytes());
+        n += b.len();
+    }
+    Ok(n)
+}
+
+impl Enc {
+    #[allow(clippy::too_many_arguments)]
+    fn take(
+        kind: &str,
+        seq: u64,
+        time: f64,
+        label: &str,
+        mode: &str,
+        target: &str,
+        extra: &Bound<'_, PyAny>,
+        deltas: &Bound<'_, PyAny>,
+        before: &Bound<'_, PyAny>,
+        after: &Bound<'_, PyAny>,
+        snaps: &Bound<'_, PyAny>,
+        records: &Bound<'_, PyAny>,
+        quick: bool,
+        name: &str,
+        strong: bool,
+    ) -> PyResult<Self> {
+        let extra = Buf::new(extra, false)?;
+        let deltas = take_deltas(deltas)?;
+        let before = if before.is_none() { None } else { Some(bufs(before)?) };
+        let after = if after.is_none() { None } else { Some(bufs(after)?) };
+        let snaps = if snaps.is_none() {
+            None
+        } else {
+            let mut v = Vec::new();
+            for it in snaps.iter()? {
+                let (uid, sparts): (String, Bound<'_, PyAny>) = it?.extract()?;
+                v.push((uid, bufs(&sparts)?));
+            }
+            Some(v)
+        };
+        let records = if records.is_none() { None } else { Some(Buf::new(records, false)?) };
+        let (kind, label, mode, target) = (kind.to_owned(), label.to_owned(), mode.to_owned(), target.to_owned());
+        Ok(Enc { kind, seq, time, label, mode, target, extra, deltas, before, after, snaps, records, quick, codec: resolve_name(name), strong })
+    }
+
+    /// The step blob: the delta packing, the parts copied once into the body, the codec and the checksum. Reads
+    /// the pinned buffers only, so it runs without the GIL.
+    pub(crate) fn encode(&self) -> Result<Vec<u8>, StepErr> {
+        let mut raw = Vec::new();
+        for d in &self.deltas {
+            let r = d.rec();
+            pack_record(&r, r.add && !self.quick, &mut raw)?;
+        }
+        let before = match &self.before {
+            None => None,
+            Some(p) => Some(join_bufs(p, &mut raw)?),
+        };
+        let after = match &self.after {
+            None => None,
+            Some(p) => Some(join_bufs(p, &mut raw)?),
+        };
+        let snaps = match &self.snaps {
+            None => None,
+            Some(s) => {
+                let mut v = Vec::with_capacity(s.len());
+                for (uid, p) in s {
+                    v.push((uid.as_str(), join_bufs(p, &mut raw)?));
+                }
+                Some(v)
+            }
+        };
+        let records = match &self.records {
+            None => None,
+            Some(r) => Some(join_bufs(std::slice::from_ref(r), &mut raw)?),
+        };
+        let l = Layout {
+            kind: &self.kind,
+            seq: self.seq,
+            time: self.time,
+            label: &self.label,
+            mode: &self.mode,
+            target: &self.target,
+            extra: self.extra.bytes(),
+            n_deltas: self.deltas.len(),
+            before,
+            after,
+            snaps,
+            records,
+            quick: self.quick,
+        };
+        assemble(&l, &raw, self.codec, self.strong)
+    }
+}
+
+/// step_parts(step), the tuple step_encode is called with (core/step.py), taken for a thread: in `codec`, not strong;
+/// quick for the journal's writer (parts_to_bytes(parts, codec, QUICK)), not for the packer.
+pub(crate) fn take_parts(parts: &Bound<'_, PyAny>, codec: &str, quick: bool) -> PyResult<Enc> {
+    type P<'py> = Bound<'py, PyAny>;
+    #[allow(clippy::type_complexity)]
+    let (kind, seq, time, label, mode, target, extra, deltas, before, after, snaps, records): (String, u64, f64, String, String, String, P, P, P, P, P, P) =
+        parts.extract()?;
+    Enc::take(&kind, seq, time, &label, &mode, &target, &extra, &deltas, &before, &after, &snaps, &records, quick, codec, false)
+}
+
 /// step_encode(kind, seq, time, label, mode, target, extra JSON bytes, deltas, before, after, snaps,
 /// records, quick, codec, strong) -> the step blob. `deltas` is [(key, indices, values, itemsize,
-/// width, exists before, exists after, add)] (packed here, GIL released); `before`, `after` and each snapshot of
-/// `snaps` ([(uid, parts)]) are lists of buffers (packed records, snapshot blob pieces), `records`
-/// is JSON bytes or None. The parts are copied once into the body; the codec and the checksum run
-/// without the GIL.
+/// width, exists before, exists after, add)]; `before`, `after` and each snapshot of `snaps` ([(uid, parts)]) are
+/// lists of buffers (packed records, snapshot blob pieces), `records` is JSON bytes or None. The buffers are
+/// pinned with the GIL, then packed, copied once into the body, compressed and checksummed without it.
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 fn step_encode<'py>(
@@ -1175,53 +1329,8 @@ fn step_encode<'py>(
     strong: bool,
 ) -> PyResult<Bound<'py, PyBytes>> {
     guard(|| {
-        let ex = input(extra)?;
-        let ins = take_deltas(deltas)?;
-        let n_deltas = ins.len();
-        let recs: Vec<RecRef> = ins.iter().map(|d| d.rec()).collect();
-        let packed = py.allow_threads(|| -> Result<Vec<u8>, StepErr> {
-            let mut o = Vec::new();
-            for r in &recs {
-                pack_record(r, r.add && !quick, &mut o)?;
-            }
-            Ok(o)
-        });
-        let mut raw = packed.map_err(err)?;
-        let before_n = if before.is_none() { None } else { Some(join_parts(before, &mut raw)?) };
-        let after_n = if after.is_none() { None } else { Some(join_parts(after, &mut raw)?) };
-        let mut uids: Vec<(String, usize)> = Vec::new();
-        let has_snaps = !snaps.is_none();
-        if has_snaps {
-            for it in snaps.iter()? {
-                let (uid, sparts): (String, Bound<'_, PyAny>) = it?.extract()?;
-                uids.push((uid, join_parts(&sparts, &mut raw)?));
-            }
-        }
-        let rec_n = if records.is_none() {
-            None
-        } else {
-            let r = input(records)?;
-            raw.try_reserve(r.get().len()).map_err(|_| no_mem())?;
-            raw.extend_from_slice(r.get());
-            Some(r.get().len())
-        };
-        let l = Layout {
-            kind,
-            seq,
-            time,
-            label,
-            mode,
-            target,
-            extra: ex.get(),
-            n_deltas,
-            before: before_n,
-            after: after_n,
-            snaps: if has_snaps { Some(uids.iter().map(|(u, n)| (u.as_str(), *n)).collect()) } else { None },
-            records: rec_n,
-            quick,
-        };
-        let id = resolve_name(name);
-        let out = py.allow_threads(|| assemble(&l, &raw, id, strong)).map_err(err)?;
+        let e = Enc::take(kind, seq, time, label, mode, target, extra, deltas, before, after, snaps, records, quick, name, strong)?;
+        let out = py.allow_threads(|| e.encode()).map_err(err)?;
         Ok(PyBytes::new_bound(py, &out))
     })
 }
@@ -1330,6 +1439,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(snapshot_decode, m)?)?;
     m.add_function(wrap_pyfunction!(step_decode, m)?)?;
     m.add_function(wrap_pyfunction!(step_info, m)?)?;
+    m.add_function(wrap_pyfunction!(step_encoding, m)?)?;
     m.add_function(wrap_pyfunction!(step_encode, m)?)?;
     m.add_function(wrap_pyfunction!(record, m)?)?;
     m.add_function(wrap_pyfunction!(recompress, m)?)?;
@@ -1337,6 +1447,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(_strong_level, m)?)?;
     let py = m.py();
     m.add("CorruptStep", py.get_type_bound::<CorruptStep>())?;
+    m.add("UnknownEncoding", py.get_type_bound::<UnknownEncoding>())?;
+    m.add("ENCODINGS", PyTuple::new_bound(py, ENCODINGS))?;
     m.add("CorruptBlob", py.get_type_bound::<CorruptBlob>())?;
     m.add("CorruptDelta", py.get_type_bound::<CorruptDelta>())?;
     m.add("NewerFormatError", py.get_type_bound::<NewerFormatError>())?;

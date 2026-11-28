@@ -121,7 +121,7 @@ def main(argv=None):
             for side in ("A", "B"):
                 res, secs = suite.run_group(a.py, roots[side], g, a.quick, only, envs[side])
                 got[side].update(res)
-            suite.log(f"round {rnd + 1}/{a.rounds} {g} done ({time.time() - t_start:.0f} s, load {suite.loadavg()[0]})")
+            suite.log(f"round {rnd + 1}/{a.rounds} {g} done ({time.time() - t_start:.0f} s, load {(suite.loadavg() or [None])[0]})")
         per["A"].append(got["A"])
         per["B"].append(got["B"])
         loads.append({"round": rnd + 1, "start": l0, "end": suite.loadavg()})

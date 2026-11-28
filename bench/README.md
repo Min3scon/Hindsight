@@ -18,11 +18,11 @@ python3 bench/suite.py --only commit,jump_300,idle
 
 # old against new, alternating processes, 5 rounds (this is what an optimisation round cites)
 python3 bench/ab.py --a /path/to/old/checkout [--b /path/to/new/checkout] [--rounds 5]
-                    [--only ...] [--py /home/user/venvs/bpy53/bin/python]
+                    [--only ...] [--py <venv>/bin/python]
 ```
 
 Options of `suite.py`: `--root PATH` (code under test, default this checkout), `--only a,b`,
-`--quick`, `--py PYTHON` (interpreter with `bpy`, default `/home/user/venvs/bpy53/bin/python`),
+`--quick`, `--py PYTHON` (interpreter with `bpy`, default `<venv>/bin/python`),
 `--label NAME` (default: git short hash of the root, `-dirty` if it has uncommitted changes),
 `--out FILE`. `ab.py` takes `--a`, `--b`, `--rounds`, `--only`, `--quick`, `--py`, `--label-a`,
 `--label-b`, `--out` and writes `bench/results/ab_<A>_vs_<B>.json` and `.md`.
@@ -32,9 +32,12 @@ shared 4-core machine. Run old and new through `ab.py`, never one after the othe
 
 The Rust engine used by a root is the one shipped in that root's own `hindsight/wheels`
 (unpacked to `<tmp>/hs_bench_native/` and put first on `PYTHONPATH`), so an old root runs the
-engine it was released with and a new one the engine it ships. `HINDSIGHT_NATIVE=0 python3
-bench/suite.py` measures the Python fallback instead. The result file records whether the engine
-loaded (`machine.rust_engine_loaded`).
+engine it was released with and a new one the engine it ships. The result file records whether the engine
+loaded (`machine.rust_engine_loaded`). Linux x86_64 and Windows x64 (`win_amd64`) wheels are used this way.
+
+On Windows (#129): there is no `/proc`, so `hwm_mb` is 0 there (not measured: `held_once_mem_f5.py` polls the
+working set from outside), and the idle group times its loops by wall time (`perf_counter`), because Windows'
+`process_time` moves in 15.6 ms ticks.
 
 ## Files
 
@@ -65,6 +68,7 @@ headless. The packer thread is drained before each timed commit.
 | commit | `goto_bl_1_100k`, `goto_bl_300_100k` | `runtime.goto` in Blender (history read plus mesh write) over 1 and 300 steps (both ways) at 100k |
 | jumps | `jump_{1,30,300,3000}_{fwd,back}_{100k,1m}` | core `History.goto` over a 5,000-step packed history (newest 64 raw). Memory on `jump_300_fwd_*` and `jump_3000_back_*` |
 | jumps | `drag_5000_{fwd,back}_{100k,1m}` | a drag across the whole history: 100 slider events of 50 steps, each way |
+| stepjson | `stepjson_write_corpus`, `stepjson_read_corpus`, `stepjson_header_corpus` | `step.py`'s JSON over every step of the corpus (`tests/corpus.py`: the registries of `FILES`, the 6,000 steps of `big_format5`): `_dumps` of the extras and `records_to_bytes`, `_extra` and `records_from_bytes` of those bytes, `read_header` (#146) |
 | saveload | `{save,open}_{folder,embed}_100k_{1000,6000}` | `save_as_mainfile` and `open_mainfile`, history folder and Embed, 1,000 and 6,000 steps, memory included (`saveload_bench.py`) |
 | editmode | `edit_step_100k`, `edit_step_300k` | `datarec.finish_operation` after a Move in Edit Mode (2% selected), split in `commit_ms`/`edit_step_ms` |
 | datarec | `dr_finish_nochange_500`, `dr_finish_move_500` | operator finish with 500 recorded objects, nothing changed / one moved |
@@ -111,7 +115,7 @@ the median shows what a user on a busy machine sees.
 
 Recorded run: `results/ab_66fcdf8_vs_dd9f35b.{json,md}`: old = commit 66fcdf8 (state before the
 2026-11-18 optimisation work), new = dd9f35b (main line plus the bench files), 5 rounds,
-`/home/user/venvs/bpy53/bin/python`, shared 4-core machine, load average 1 to 3 during the run
+`<venv>/bin/python`, shared 4-core machine, load average 1 to 3 during the run
 (about 22 minutes). Run-to-run spread (highest minus lowest round median, over the lowest):
 
 - Steady (spread under about 20%): jumps at 100k and 1M, save and open, dr_finish_*, dr_prime,

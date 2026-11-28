@@ -1,4 +1,5 @@
 """Helpers shared by the real-UI scenarios (run inside Blender)."""
+import hashlib
 import importlib
 import math
 
@@ -146,3 +147,50 @@ def keymap_hits(idname):
     kc = bpy.context.window_manager.keyconfigs.addon
     return [(km.name, kmi.type, kmi.ctrl, kmi.shift) for km in kc.keymaps for kmi in km.keymap_items
             if kmi.idname == idname]
+
+
+def dyntopo_state(d):
+    """The mesh as Dyntopo has it (written back first)."""
+    with d.override():
+        ob = bpy.context.active_object
+        if ob.mode == "SCULPT" and ob.use_dynamic_topology_sculpting:
+            bpy.ops.ed.flush_edits()
+        me = ob.data
+        co = [0.0] * (3 * len(me.vertices))
+        me.vertices.foreach_get("co", co)
+        cv = [0] * len(me.loops)
+        me.loops.foreach_get("vertex_index", cv)
+        h = hashlib.sha1(repr(([round(x, 5) for x in co], cv)).encode()).hexdigest()[:12]
+        return (len(me.vertices), len(me.polygons), h)
+
+
+def mesh_hash(ob):
+    snap = mod("meshio").read_snapshot(ob.data, sculpt_only=False)
+    h = hashlib.blake2b(digest_size=16)
+    for k in sorted(snap.arrays):
+        h.update(k.encode())
+        h.update(snap.arrays[k].tobytes())
+    return h.hexdigest()
+
+
+def step_detail(st):
+    """A step (or its packed bytes) as (label, mesh channels, [(adapter, target, {path: (old, new)})]): what a
+    failed check prints, so a CI log says which step came and why."""
+    try:
+        if not hasattr(st, "records"):
+            st = importlib.import_module(f"{PKG}.core.step").step_from_bytes(st)
+        recs = [(r.adapter, r.target, {p: (repr(o)[:40], repr(n)[:40]) for p, (o, n) in sorted(r.changes.items())[:6]})
+                for r in st.records[:6]]
+        return st.label, [c.key for c in st.deltas][:6], recs
+    except Exception as e:      # only a check's detail: never the reason a check fails
+        return repr(e)
+
+
+def steps_detail(d, ob=None):
+    """The steps of the object's history (the active object's by default), each as step_detail gives it."""
+    try:
+        with d.override():
+            h = mod("runtime").history_of(ob or bpy.context.active_object)
+        return None if h is None else [step_detail(e.step if e.step is not None else e.blob) for e in h.entries]
+    except Exception as e:
+        return repr(e)

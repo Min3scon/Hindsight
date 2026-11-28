@@ -1,9 +1,12 @@
-"""The Movie Mode panel's rows in a real window (HANDOFF beta 3 checklist).
+"""The Movie Mode panel's rows in a real window (HANDOFF V2 checklist), and Create time lapse (#113).
 
 The panel is closed by default and Blender has no call that opens a panel, so the scenario registers it
-again without DEFAULT_CLOSED (a fresh sidebar then shows it open), opens the Undo History tab with Movie
-Mode on, and takes a screenshot of the sidebar to look at. Checks: the panel draws every row (Step, Frames
-per step, Steps per frame, the movie length, Quick auto key, Camera and Lighting, Frame the model, Use this
+again without DEFAULT_CLOSED (a fresh sidebar then shows it open), opens the Undo History tab, presses
+Create time lapse from the sidebar (the operator run in the sidebar region's context, as its button runs it:
+Blender gives no button positions to click), and takes a screenshot of the sidebar to look at. Before the
+press there is no Hindsight camera, light, frame handler or camera and lighting timer; after it they are
+there and Movie Mode is on. Checks: the panel draws every row (Step, Frames
+per step, Steps per frame, the movie length, Create time lapse, Camera and Lighting, Frame the model, Use this
 view) with no error, and its draw ran.
 """
 import bpy
@@ -25,8 +28,14 @@ def run(d):
     yield 0.4
     sc = bpy.context.scene
     sc.hindsight.use_global = True
-    sc.hindsight.movie_mode = True
     yield 1.0
+    camrig, movie = C.mod("camrig"), C.mod("movie")
+
+    def made():
+        return (bool(camrig.rig(sc)), sc.hindsight.movie_mode,
+                movie.on_frame_change in bpy.app.handlers.frame_change_post,
+                bpy.app.timers.is_registered(camrig._timer))
+    d.check("before Create time lapse: no camera, light, handler or timer", made() == (False,) * 4, made())
     ui_panel = C.mod("ui_panel")
     cls = ui_panel.VIEW3D_PT_hindsight_movie
     drawn = []
@@ -44,6 +53,14 @@ def run(d):
         yield from C.show_sidebar_tab(d)
         yield 0.8
         win, area, reg, ui, space = d.view3d()
+        d.redraw()
+        yield 0.4
+        with bpy.context.temp_override(window=win, area=area, region=ui):
+            r = bpy.ops.hindsight.create_time_lapse('INVOKE_DEFAULT')
+        yield 1.0
+        d.check("Create time lapse from the sidebar: camera, lights, handler and timer", r == {'FINISHED'} and
+                made() == (True,) * 4 and set(camrig.rig(sc)) == ({"camera"} if camrig.scene_has_own_light(sc) else
+                {"camera", "key", "fill", "rim"}), (r, made(), list(camrig.rig(sc))))
         d.redraw()
         yield 0.4
         d.shot("movie_panel_sidebar", area=area)

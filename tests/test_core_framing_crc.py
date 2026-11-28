@@ -1,10 +1,12 @@
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 """M5: the checksum of the registry stream and the journal is the engine's crc32.
 
 The framing itself (registry stream, journal records) stays Python: measured against a Rust reader
 (dev/reports/RUST.md, M5), reading is the kernel's copy and what Python spent its time on was
 zlib.crc32, which the engine does ten times as fast. So hindsight/core/{persist,journal,types}.py
-call `native.crc32`, and the pre-M5 files (zlib.crc32) are kept as tests/reference/{persist,journal}.py.
+call `native.crc32`, and the pre-M5 files (zlib.crc32) are kept as tests/reference/{persist,journal}.py. Since 24.2a
+(#152) the journal's framing is the engine's too (tests/test_core_journal_engine.py).
 
   crc32      equals zlib.crc32 for every buffer kind, length, start value and chaining
   journal    the bytes written, the records read back, the size found on open: equal to the reference,
@@ -16,14 +18,14 @@ import array
 import json
 import struct
 import tempfile
-import traceback
 import zipfile
 import zlib
 
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference copies (Blender's --python adds no path)
-from reference import journal as rjournal, persist as rpersist                 # noqa: E402
+from reference import v1_journal as rjournal, v1_persist as rpersist               # noqa: E402
+from reference import journal as cjournal   # 24.2a: the scanner is the engine's; it is checked against this one (test_core_journal_engine.py)  # noqa: E402
 from hindsight.core import journal, native, persist, step as stepmod          # noqa: E402
 from hindsight.core.history import History                                    # noqa: E402
 from hindsight.core.registry import Registry                                  # noqa: E402
@@ -66,7 +68,7 @@ def test_crc32_equals_zlib():
                 pass
             else:
                 raise AssertionError((f, bad))
-    print(f"PASS test_crc32_equals_zlib ({n} start values and sizes, six buffer kinds)")
+    print(f"  test_crc32_equals_zlib ({n} start values and sizes, six buffer kinds)")
 
 
 def test_crc32_with_other_threads():
@@ -91,7 +93,7 @@ def test_crc32_with_other_threads():
     assert ticks[0] > 100, ticks
     ba = bytearray(big[:5_000_000])
     assert native.crc32(ba) == zlib.crc32(bytes(ba))
-    print(f"PASS test_crc32_with_other_threads (a second thread ran {ticks[0]} turns during 3 hashes of 40 MB)")
+    print(f"  test_crc32_with_other_threads (a second thread ran {ticks[0]} turns during 3 hashes of 40 MB)")
 
 
 # ------------------------------------------------------------------------------ journal
@@ -151,7 +153,7 @@ def test_journal_equals_the_reference():
     write_journal(journal, qa, big); write_journal(rjournal, qb, big)
     assert open(qa, "rb").read() == open(qb, "rb").read()
     assert read_all(journal, qa) == read_all(rjournal, qb)
-    print(f"PASS test_journal_equals_the_reference ({len(recs)} records, {len(da)} bytes, a 9.5 MB record)")
+    print(f"  test_journal_equals_the_reference ({len(recs)} records, {len(da)} bytes, a 9.5 MB record)")
 
 
 def outcome_journal(mod, data):
@@ -168,7 +170,7 @@ def test_journal_truncated_and_flipped_everywhere():
     # cut at every byte: both readers find the same records, and opening cuts the file back to the same size
     for n in range(len(data) + 1):
         cut = data[:n]
-        a, b = outcome_journal(journal, cut), outcome_journal(rjournal, cut)
+        a, b = outcome_journal(cjournal, cut), outcome_journal(rjournal, cut)
         assert a == b, n
         tests += 1
     for n in range(0, len(data), 5):
@@ -181,16 +183,16 @@ def test_journal_truncated_and_flipped_everywhere():
         for xor in (0x01, 0x80, 0xFF):
             bad = bytearray(data)
             bad[i] ^= xor
-            assert outcome_journal(journal, bytes(bad)) == outcome_journal(rjournal, bytes(bad)), (i, xor)
+            assert outcome_journal(cjournal, bytes(bad)) == outcome_journal(rjournal, bytes(bad)), (i, xor)
             tests += 1
     # a claimed payload or header length that runs past the file, or past the u64
     head = struct.Struct("<4sBIQ")
     for plen in (2 ** 64 - 1, 2 ** 63, 2 ** 40, len(data) + 1, 10):
         for hlen in (0, 2, 64 * 2 ** 20, 64 * 2 ** 20 + 1, 2 ** 32 - 1):
             bad = head.pack(b"HSJ1", 1, hlen, plen) + b"{}" * 8 + b"\x00" * 8
-            assert outcome_journal(journal, bad) == outcome_journal(rjournal, bad), (plen, hlen)
+            assert outcome_journal(cjournal, bad) == outcome_journal(rjournal, bad), (plen, hlen)
             bad2 = data[:40] + bad
-            assert outcome_journal(journal, bad2) == outcome_journal(rjournal, bad2), (plen, hlen)
+            assert outcome_journal(cjournal, bad2) == outcome_journal(rjournal, bad2), (plen, hlen)
     # records with the CRC recomputed after damage (the damage is then not detectable by the CRC): a header that
     # is not JSON stops read() the same way in both
     hb = b"{not json"
@@ -200,7 +202,7 @@ def test_journal_truncated_and_flipped_everywhere():
     pa, pb = os.path.join(d, "a.j"), os.path.join(d, "b.j")
     open(pa, "wb").write(data3); open(pb, "wb").write(data3)
     assert read_all(journal, pa) == read_all(rjournal, pb)
-    print(f"PASS test_journal_truncated_and_flipped_everywhere ({tests} damaged journals read the same)")
+    print(f"  test_journal_truncated_and_flipped_everywhere ({tests} damaged journals read the same)")
 
 
 # ------------------------------------------------------------------------------ registry
@@ -309,7 +311,7 @@ def test_registry_written_and_read_like_the_reference():
     ok = same(live, "whole")
     assert ok[0] == "ok" and not ok[1]["report"]["damaged"], ok
     assert sum(len(h[5]) for h in ok[1]["h"]) == 10
-    print(f"PASS test_registry_written_and_read_like_the_reference ({len(live)} bytes, 3 histories, 5 codec settings)")
+    print(f"  test_registry_written_and_read_like_the_reference ({len(live)} bytes, 3 histories, 5 codec settings)")
     return live
 
 
@@ -365,7 +367,7 @@ def test_registry_truncated_and_flipped_everywhere():
     d3 = json.loads(json.dumps(doc)); d3["format"] = 5
     r = same(rebuild(d3, blobs), "newer format")
     assert r[0] == "err" and r[1] == "NewerFormatError", r
-    print(f"PASS test_registry_truncated_and_flipped_everywhere ({n} damaged registries read the same, errors and load_report included)")
+    print(f"  test_registry_truncated_and_flipped_everywhere ({n} damaged registries read the same, errors and load_report included)")
 
 
 def test_registry_old_files():
@@ -394,7 +396,7 @@ def test_registry_old_files():
             bad = bytearray(data); bad[i] ^= 0x20
             same(bytes(bad), (name, "flip", i))
             n += 1
-    print(f"PASS test_registry_old_files (formats 1 and 2: {n} cut or flipped files read the same)")
+    print(f"  test_registry_old_files (formats 1 and 2: {n} cut or flipped files read the same)")
 
 
 def test_loaded_entries_keep_their_checksum():
@@ -410,7 +412,6 @@ def test_loaded_entries_keep_their_checksum():
     _jl, doc, spans = layout(again)
     flat = [c for hd in doc["histories"] for c in hd["crcs"]]
     assert flat == [zlib.crc32(again[bp:bp + ln]) for _lp, bp, ln in spans]
-    print("PASS test_loaded_entries_keep_their_checksum")
 
 
 def test_loaded_metas_share_their_strings():
@@ -431,7 +432,6 @@ def test_loaded_metas_share_their_strings():
     assert len({id(m["extra"]) for m in metas}) == len(metas)
     metas[0]["extra"]["n"] = 99
     assert metas[1]["extra"]["n"] != 99
-    print("PASS test_loaded_metas_share_their_strings")
 
 
 def main():
@@ -439,18 +439,10 @@ def main():
              test_journal_truncated_and_flipped_everywhere, test_registry_written_and_read_like_the_reference,
              test_registry_truncated_and_flipped_everywhere, test_registry_old_files, test_loaded_entries_keep_their_checksum,
              test_loaded_metas_share_their_strings]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    import shutil
+        R.run(t)
     shutil.rmtree(SCRATCH, ignore_errors=True)
-    print(f"{len(tests) - failed}/{len(tests)} passed")
-    sys.exit(1 if failed else 0)
+    R.finish()
 
 
 if __name__ == "__main__":

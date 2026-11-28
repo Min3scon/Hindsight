@@ -13,11 +13,10 @@ DATA steps, channels that appear and go, empty deltas, several objects, raw and 
 damaged blobs. apply_steps itself is also fed hostile input directly (any thread count).
 """
 import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import tests.runner as R
 import json
 import struct
 import subprocess
-import traceback
-import zlib
 
 import numpy as np
 
@@ -25,26 +24,18 @@ sys.path.insert(0, os.path.dirname(__file__))
 import test_core_codec as tc                                     # noqa: E402  (damaged-blob maker)
 from hindsight.core import codec, delta, native, step as stepmod   # noqa: E402
 from hindsight.core.history import History, MeshState           # noqa: E402
-from reference.history import History as RefHistory                # noqa: E402
+from reference.history import History as RefHistory                  # noqa: E402
 from hindsight.core.types import (                              # noqa: E402
     ADD, CHANNEL_TYPES, DATA, DELTA, MISSING, POSITION_KEY, TOPO, XOR,
     ChannelDelta, DataChange, Entry, Snapshot, Step, key_dtype, key_width, make_key,
 )
 
-LIB = native.lib
-HAS = LIB is not None and hasattr(LIB, "apply_steps")
+LIB = native.ENGINE
 KEYS = [make_key(f"c_{t.lower()}", "POINT", t) for t in CHANNEL_TYPES]
 WEIRD32 = tc.WEIRD32
 
 
 ENGINES = [("native", History), ("reference", RefHistory)]       # History.goto against the Python loop
-
-
-def skip(name):
-    if not HAS:
-        print(f"SKIP {name}: hindsight_native with apply_steps not loaded ({native.ERROR})")
-        return True
-    return False
 
 
 # ------------------------------------------------------------------------------ values
@@ -255,8 +246,6 @@ def plan_for(rng, n, k=60):
 
 # ------------------------------------------------------------------------------ tests
 def test_mixed_histories():
-    if skip("test_mixed_histories"):
-        return
     jumps = 0
     for seed in range(12):
         rng = np.random.default_rng(1000 + seed)
@@ -270,13 +259,11 @@ def test_mixed_histories():
             part = {"A": start["A"]}
             run_twins(entries, part, 0, [n] + plan_for(rng, n, 20), f"seed {seed} A only")
         assert twins[0][2].cursor == twins[-1][2].cursor
-    print(f"PASS test_mixed_histories (12 histories, every engine agrees)")
+    print("  test_mixed_histories (12 histories, every engine agrees)")
 
 
 def test_ends_are_exact():
     """Plain stroke histories end where they were recorded, both ways, at every channel type."""
-    if skip("test_ends_are_exact"):
-        return
     for seed in range(4):
         entries, start, cur = build(50 + seed, n_steps=200, n=2000, targets=("A",), mix=False)
         h, states = twin(entries, start, 0)
@@ -287,7 +274,6 @@ def test_ends_are_exact():
         for k, v in start["A"].arrays.items():
             assert states["A"].arrays[k].tobytes() == v.tobytes(), (seed, k)
         run_twins(entries, start, 0, [200, 0, 137, 3, 200, 199, 0], f"plain {seed}")
-    print("PASS test_ends_are_exact")
 
 
 try:
@@ -300,8 +286,6 @@ except Exception:
 def test_damaged_blobs():
     """A damaged step in the middle of a run: the same exception and the same state on every
     engine (steps before it applied, cursor kept)."""
-    if skip("test_damaged_blobs"):
-        return
     rng = np.random.default_rng(77)
     entries, start, cur = build(9, n_steps=40, n=200, targets=("A",), mix=False)
     n = 0
@@ -329,7 +313,7 @@ def test_damaged_blobs():
             continue
         kinds[twins[0][2].cursor == 40] = kinds.get(twins[0][2].cursor == 40, 0) + 1
         n += 1
-    print(f"PASS test_damaged_blobs ({n} damaged steps; reached the end {kinds.get(True, 0)} times)")
+    print(f"  test_damaged_blobs ({n} damaged steps; reached the end {kinds.get(True, 0)} times)")
 
 
 def _crafted(st):
@@ -393,8 +377,6 @@ def _crafted(st):
 def test_crafted_blobs():
     """Damage made on purpose in each field apply_steps checks, in the middle of a run: the same
     outcome on every engine."""
-    if skip("test_crafted_blobs"):
-        return
     entries, start, cur = build(4, n_steps=30, n=300, targets=("A",), mix=False)
     at = 17
     st = entries[at].load()
@@ -404,14 +386,12 @@ def test_crafted_blobs():
         bad = list(entries)
         bad[at] = Entry(blob=b, meta=dict(entries[at].meta))
         run_twins(bad, start, 0, [30, 0, at + 1, at, 30, 5], name)
-    print(f"PASS test_crafted_blobs ({len(cases)} cases)")
+    print(f"  test_crafted_blobs ({len(cases)} cases)")
 
 
 def test_empty_records_count_as_changed():
     """A record with no changed element still names its channel as changed (as the Python path
     does), inside a run, whichever way."""
-    if skip("test_empty_records_count_as_changed"):
-        return
     rng = np.random.default_rng(12)
     n = 50
     a = {KEYS[0]: values(rng, KEYS[0], n), KEYS[4]: values(rng, KEYS[4], n)}
@@ -426,17 +406,14 @@ def test_empty_records_count_as_changed():
             ds.append(ChannelDelta(KEYS[4], np.zeros(0, np.uint32), np.zeros((0, w), np.uint32), (True, True), ADD))
         st = Step(i + 1, "Stroke", "SCULPT", "A", 0.0, DELTA, ds)
         entries.append(Entry(blob=stepmod.step_to_bytes(st, "zstd"), meta=st.meta()))
-    twins = run_twins(entries, start, 0, [6, 0, 4, 3, 2, 6], "empty record")
+    run_twins(entries, start, 0, [6, 0, 4, 3, 2, 6], "empty record")
     h, states = twin(entries, start, 0)
     assert set(h.goto(6, states)["A"]) == {KEYS[0], KEYS[4]}
-    print("PASS test_empty_records_count_as_changed")
 
 
 def test_hostile_calls():
     """apply_steps on its own: bad arguments and hostile data never crash, never write a step it
     refuses, and never allocate from an unchecked length."""
-    if skip("test_hostile_calls"):
-        return
     L = LIB
     rng = np.random.default_rng(3)
     key = POSITION_KEY
@@ -517,15 +494,12 @@ def test_hostile_calls():
             agree += 1
         else:
             assert a[key].tobytes() == pos.tobytes()
-    print(f"PASS test_hostile_calls ({len(cases)} hostile blobs, {agree} taken and matching Python)")
+    print(f"  test_hostile_calls ({len(cases)} hostile blobs, {agree} taken and matching Python)")
 
 
 def test_threads_agree():
     """Any helper thread count gives the same arrays, and a step that isn't taken stops every
     thread count at the same place."""
-    if skip("test_threads_agree"):
-        return
-    rng = np.random.default_rng(8)
     entries, start, cur = build(21, n_steps=150, n=3000, targets=("A",), mix=False)
     blobs = [e.blob for e in entries]
     stop = 97
@@ -543,18 +517,14 @@ def test_threads_agree():
                 assert v.tobytes() == start["A"].arrays[k].tobytes(), (th, k)
             res.append((sorted(keys), {k: v.tobytes() for k, v in a.items()}))
         assert all(r == res[0] for r in res), "thread counts disagree"
-    print("PASS test_threads_agree")
 
 
 def test_property():
     """Random small histories (hypothesis): every engine agrees on every jump."""
-    if skip("test_property"):
-        return
     try:
         from hypothesis import given, settings, strategies as hs, HealthCheck
     except ImportError:
-        print("SKIP test_property: hypothesis not installed")
-        return
+        raise R.Skip("hypothesis not installed")
 
     @settings(max_examples=60, deadline=None, suppress_health_check=list(HealthCheck))
     @given(hs.integers(0, 2 ** 31), hs.integers(1, 40), hs.integers(1, 120), hs.booleans(),
@@ -564,50 +534,36 @@ def test_property():
         run_twins(entries, start, 0, [min(p, n_steps) for p in plan] + [n_steps, 0], f"prop {seed}")
 
     prop()
-    print("PASS test_property")
 
 
 def test_old_module_and_loader():
     """The engine must be API 3: a module from an older release (API 1 or 2, no codecs or step
-    container) or a newer one (or none at all) is refused with EngineMissing, in every mode. The
+    container) or a newer one (or none at all) is refused with EngineMissing. The
     engine is one module: there is no older-module mode."""
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 
     def fake(api):
         return (f"import sys, types; m = types.ModuleType('hindsight_native'); m.API = {api}; "
                 "sys.modules['hindsight_native'] = m; ")
-    probe = "from hindsight.core import native; print(native.lib is not None, repr(native.ERROR))"
+    probe = "from hindsight.core import native; print(native.ENGINE is not None)"
 
-    def run(code, mode):
-        env = dict(os.environ)
-        env.pop("HINDSIGHT_NATIVE", None)
-        if mode is not None:
-            env["HINDSIGHT_NATIVE"] = mode
-        return subprocess.run([sys.executable, "-c", code], cwd=root, env=env, capture_output=True, text=True)
+    def run(code):
+        return subprocess.run([sys.executable, "-c", code], cwd=root, capture_output=True, text=True)
 
     for api in (0, 1, 2, native.API + 1):
-        for mode in (None, "require"):
-            r = run(fake(api) + probe, mode)
-            assert r.returncode != 0 and "EngineMissing" in r.stderr and f"found API {api}" in r.stderr, (api, mode, r)
-    r = run(probe, None)
-    assert r.returncode == 0 and r.stdout.startswith("True None"), r
-    print("PASS test_old_module_and_loader")
+        r = run(fake(api) + probe)
+        assert r.returncode != 0 and "EngineMissing" in r.stderr and f"found API {api}" in r.stderr, (api, r)
+    r = run(probe)
+    assert r.returncode == 0 and r.stdout.startswith("True"), r
 
 
 def main():
     tests = [test_old_module_and_loader, test_ends_are_exact, test_threads_agree, test_mixed_histories,
              test_damaged_blobs, test_crafted_blobs, test_empty_records_count_as_changed, test_hostile_calls,
              test_property]
-    failed = 0
     for t in tests:
-        try:
-            t()
-        except Exception:
-            failed += 1
-            print(f"FAIL {t.__name__}")
-            traceback.print_exc()
-    sys.stdout.flush()
-    sys.exit(1 if failed else 0)
+        R.run(t)
+    R.finish()
 
 
 if __name__ == "__main__":

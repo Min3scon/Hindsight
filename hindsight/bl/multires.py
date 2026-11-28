@@ -14,6 +14,7 @@ stays for everything but this).
 Preference "Record Multires" (off by default until a real-window check). Off: recording pauses on a
 Multires object as before.
 """
+import contextlib
 import os
 import tempfile
 
@@ -22,9 +23,9 @@ import numpy as np
 
 from ..core import codec
 from ..core.types import TOPO, Snapshot, Step, make_key
+from .prefs import value as _pref
 
 MR_KEY = make_key("multires:blob", "POINT", "INT8")
-FORCE = [None]            # tests: True or False when the preferences aren't registered
 _BASE: dict = {}          # object uid -> (raw blob digest, compressed blob array) at the start of the visit
 _LEVEL: dict = {}         # object uid -> (levels, sculpt_levels, render_levels) seen while sculpting
 _PENDING: dict = {}       # uid -> time the visit began; its baseline is read again at the first tick after SETTLE
@@ -34,14 +35,7 @@ SETTLE = [0.25]           # (tests set 0: no timer runs there)
 
 
 def enabled() -> bool:
-    if FORCE[0] is not None:
-        return FORCE[0]
-    try:
-        from .prefs import get_prefs
-        p = get_prefs()
-        return p is not None and bool(getattr(p, "record_multires", False))
-    except Exception:
-        return False
+    return bool(_pref("record_multires", False))
 
 
 def modifier(obj):
@@ -70,10 +64,8 @@ def snapshot_bytes(me) -> bytes:
         with open(path, "rb") as fh:
             return fh.read()
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.remove(path)
-        except OSError:
-            pass
 
 
 def pack(raw: bytes) -> np.ndarray:
@@ -95,9 +87,11 @@ def restore(obj, arr) -> None:
     """Put the snapshot's mesh on the object: libraries.load, then user_remap. The object keeps its
     mesh's name, its materials (the load brings copies of them: they are put back and dropped) and its
     modifiers. Not in Sculpt Mode (the caller leaves it first)."""
+    from . import idmap
     raw = unpack(arr)
     old = obj.data
     name = old.name
+    uid = old.get(idmap.UID_PROP)
     mats = list(old.materials)
     before = {c: set(getattr(bpy.data, c)) for c in ("materials", "images", "meshes", "shape_keys")}
     path = _tmp_path()
@@ -107,10 +101,8 @@ def restore(obj, arr) -> None:
         with bpy.data.libraries.load(path) as (src, dst):
             dst.meshes = list(src.meshes)
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.remove(path)
-        except OSError:
-            pass
     new = dst.meshes[0]
     for i, m in enumerate(mats):                  # the load made copies of the materials: use the originals
         if i < len(new.materials):
@@ -118,6 +110,8 @@ def restore(obj, arr) -> None:
     old.user_remap(new)
     bpy.data.meshes.remove(old)
     new.name = name
+    if uid is not None:     # #104: and its id (one from an older snapshot is another mesh to Record everything)
+        new[idmap.UID_PROP] = uid
     for cat in ("materials", "images", "shape_keys"):
         coll = getattr(bpy.data, cat)
         for idb in [x for x in coll if x not in before[cat] and x.users == 0]:

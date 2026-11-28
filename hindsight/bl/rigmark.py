@@ -3,6 +3,7 @@
 Marked objects are Hindsight's own: the recorder never records them and the global history never
 takes them away or brings them back. The mark is a custom property, so it survives saving.
 """
+import contextlib
 RIG_PROP = "_hindsight_rig"
 ROLES = ("camera", "key", "fill", "rim")
 
@@ -27,8 +28,6 @@ def mark(ob, role: str) -> None:
 
 
 def unmark(ob) -> None:
-    try:
+    with contextlib.suppress(AttributeError, ReferenceError, TypeError):
         if RIG_PROP in ob.keys():
             del ob[RIG_PROP]
-    except (AttributeError, ReferenceError, TypeError):
-        pass

@@ -1,4 +1,4 @@
-"""The on-screen slider with the toolbar, the sidebar, both and neither open (HANDOFF, beta 3 checklist).
+"""The on-screen slider with the toolbar, the sidebar, both and neither open (HANDOFF, V2 checklist).
 
 In each layout the slider's bar must stay clear of the toolbar and the sidebar (Region Overlap draws
 them over the viewport), be visible on screen (a screenshot pixel in the middle of the filled bar is

@@ -1,0 +1,23 @@
+# open_journal_ab.py 3000, 5.3.0 module, this Windows PC: A = 153a (4f4e44d, engine 0.18.0), B = 153 (0696991, 0.19.0), alternating, run twice
+## run 1
+153a AB {"open_ms": 314.3, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 313.9, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 317.4, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 347.1, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 347.4, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 316.2, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 313.9, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 338.4, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 331.3, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 323.7, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+## run 2
+153a AB {"open_ms": 324.3, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 310.4, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 313.7, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 326.3, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 328.2, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 316.7, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 358.2, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 314.9, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153a AB {"open_ms": 312.8, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}
+153 AB {"open_ms": 319.7, "rss_growth_mb": 0.0, "history_mb": 31.5, "raw_steps": 0, "steps": 3001}

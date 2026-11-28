@@ -69,10 +69,10 @@ Changes Hindsight makes itself (playback) are never recorded.
 
 ## Scope and opt-in
 
-- Preference **Record**: `Sculpting only` (default, exactly the current behaviour) or `Everything`.
+- Preference **Record**: `Everything` (the default since V2, #10) or `Sculpting only` (V1's behaviour).
 - With `Everything`, other data is recorded only for objects (and their materials) the user turned
   on with **Record everything on this object** in the Undo History tab, plus the scene if **Record the
-  scene** is on. Nothing else is recorded until enabled.
+  scene** is on. Since V2 both are on in a file where nobody switched anything on or off (#60).
 - Per-data-type toggles in an Advanced sub-panel; per-datablock pause like the existing per-object one.
 
 ## Storage
@@ -94,4 +94,7 @@ Changes Hindsight makes itself (playback) are never recorded.
 4. Keyframes and F-curves, shape keys, armatures and pose bones, NLA basics, frame range. Scrubbing
    never changes the current frame or playback state.
 5. Curves, text, metaballs, lattices, Grease Pencil, lights, cameras, empties.
-6. Scene, world, render settings, collection structure.
+6. Scene, world, render settings, view layers, collection structure; making, deleting and renaming a scene
+   (#110). Never the window layout (workspaces, screens): Blender's API can't put a screen's areas back.
+   Hindsight's own scene settings (Use Global, Preserve Modes, Movie Mode) aren't recorded: a scene made again
+   has them at their defaults.

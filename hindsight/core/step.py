@@ -1,7 +1,7 @@
 """Step (de)serialisation. The container (header, checksum, codecs, every record of every kind of
 step, formats 1 to 4) is done by the Rust engine (native/src/step.rs); this module turns Python
-objects (Step, ChannelDelta, Snapshot, DataChange, extras) into buffers for it and back. Pure Python +
-numpy, no bpy.
+objects (Step, ChannelDelta, Snapshot, DataChange, extras) into buffers for it; building them back from a blob
+and same_step are the engine's too (native/src/types.rs, #147). Pure Python + numpy, no bpy.
 
 Step blob, formats 3 and 4 (written since beta 2):
   b"HSS3" | u32 CRC-32 of everything after this field | u16 header length | header | body
@@ -28,7 +28,6 @@ handles it as bytes.
 """
 from __future__ import annotations
 
-import json
 import os
 import struct
 
@@ -36,7 +35,7 @@ import numpy as np
 
 from . import native as _native
 from .delta import NORMAL, QUICK
-from .types import key_width, ADD, DATA, DELTA, JOIN, MISSING, TOPO, XOR, ChannelDelta, DataChange, Snapshot, Step
+from .types import key_width, ADD, DATA, DELTA, JOIN, MISSING, TOPO, DataChange, Snapshot, Step
 
 _N = _native.ENGINE
 
@@ -48,28 +47,18 @@ _FIXED = struct.Struct("<BBBBQdI")
 SNAPSHOTS_KEY = "_snapshots"
 _KINDS = {DELTA: 0, TOPO: 1, JOIN: 2, DATA: 3}
 RECORDS_FLAG = 16
-_MISSING_JSON = {"$": "missing"}
 QUICK_FLAG = 8
 # Tests set this (or HINDSIGHT_VERIFY=1): every written step is read back and compared.
 VERIFY = bool(os.environ.get("HINDSIGHT_VERIFY"))
 
-_BITS = {1: np.uint8, 2: np.uint16, 4: np.uint32, 8: np.uint64}
-
 CorruptStep = _N.CorruptStep
+UnknownEncoding = _N.UnknownEncoding      # intact, but a later build's encoding (dev/FORMAT5_ENCODINGS.md)
 
 
-def _json_default(o):
-    if isinstance(o, np.generic):
-        return o.item()
-    if isinstance(o, np.ndarray):
-        return o.tolist()
-    if isinstance(o, (set, frozenset, tuple)):
-        return list(o)
-    raise TypeError(f"not JSON serialisable: {type(o).__name__}")
-
-
-def _dumps(obj) -> bytes:
-    return json.dumps(obj, separators=(",", ":"), default=_json_default).encode("utf-8")
+# The JSON of extras and data records runs in the engine (#146): the same bytes and exceptions as
+# the reference copy (tests/reference/step_json).
+_json_default = _N.json_setup(MISSING, DataChange)[0]      # its encoder and decoder of values: only the engine uses them
+_dumps = _N.json_dumps
 
 
 # --------------------------------------------------------------------------- snapshots
@@ -88,51 +77,12 @@ def snapshot_to_bytes(s: Snapshot) -> bytes:
     return b"".join(_snapshot_parts(s))
 
 
-def _snapshot(parsed) -> Snapshot:
-    counts, arrays = parsed
-    return Snapshot(dict(counts), {key: np.frombuffer(buf, dtype=dstr) for key, dstr, buf in arrays})
-
-
-def snapshot_from_bytes(b) -> Snapshot:
-    return _snapshot(_N.snapshot_decode(b))
+snapshot_from_bytes = _N.snapshot_from_bytes
 
 
 # --------------------------------------------------------------------------- data records
-def _enc_value(v):
-    if v is MISSING:
-        return _MISSING_JSON
-    if isinstance(v, (tuple, list)):
-        return [_enc_value(x) for x in v]
-    if isinstance(v, dict):
-        return {"$d": {str(k): _enc_value(x) for k, x in v.items()}}
-    return v
-
-
-def _dec_value(v):
-    if isinstance(v, dict):
-        if v == _MISSING_JSON:
-            return MISSING
-        if len(v) == 1 and isinstance(v.get("$d"), dict):
-            return {k: _dec_value(x) for k, x in v["$d"].items()}
-        raise ValueError("records: unexpected object value")
-    if isinstance(v, list):
-        return [_dec_value(x) for x in v]
-    return v
-
-
-def records_to_bytes(records: list) -> bytes:
-    out = [[r.adapter, r.target, [[p, _enc_value(o), _enc_value(n)] for p, (o, n) in r.changes.items()]]
-           for r in records]
-    return json.dumps(out, separators=(",", ":"), allow_nan=True).encode("utf-8")
-
-
-def records_from_bytes(b) -> list:
-    out = []
-    for adapter, target, changes in json.loads(bytes(b).decode("utf-8")):
-        if not isinstance(adapter, str) or not isinstance(target, str):
-            raise ValueError("records: bad adapter or target")
-        out.append(DataChange(adapter, target, {str(p): (_dec_value(o), _dec_value(n)) for p, o, n in changes}))
-    return out
+records_to_bytes = _N.records_to_bytes
+records_from_bytes = _N.records_from_bytes
 
 
 # --------------------------------------------------------------------------- writing
@@ -161,8 +111,10 @@ def record_step(kind, seq, t, label, mode, target, channels, extra=None, codec="
                      _dumps(extra) if extra else b"", chs, effort == QUICK, codec, strong)
 
 
-def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
-    """Format 3 blob. effort QUICK (0) is for the crash-recovery journal, on the main thread."""
+def step_parts(step: Step) -> tuple:
+    """What the engine encodes a step from: its JSON already bytes, its arrays the step's own. Taken on the main thread
+    when a step is handed to the journal writer or the packer, so a thread gets no Python values and a later edit
+    of the step doesn't change its bytes (owner point 1, dev/RUST_PLAN.md)."""
     if step.kind not in _KINDS:
         raise ValueError(f"unknown step kind {step.kind!r}")
     extra = dict(step.extra or {})
@@ -172,110 +124,48 @@ def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong:
     before = _snapshot_parts(step.before) if step.before is not None else None
     after = _snapshot_parts(step.after) if step.after is not None else None
     snap_parts = [(str(uid), _snapshot_parts(s)) for uid, s in snaps.items()] if snaps is not None else None
-    blob = _N.step_encode(
-        step.kind, int(step.seq), float(step.time or 0.0), step.label or "", step.mode or "", step.target or "",
-        _dumps(extra) if extra else b"", parts, before, after, snap_parts,
-        records_to_bytes(step.records) if step.records else None, effort == QUICK, codec, strong)
+    return (step.kind, int(step.seq), float(step.time or 0.0), step.label or "", step.mode or "", step.target or "",
+            _dumps(extra) if extra else b"", parts, before, after, snap_parts,
+            records_to_bytes(step.records) if step.records else None)
+
+
+def parts_to_bytes(parts: tuple, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
+    """The blob of step_parts(step): the delta packing, codec and checksum in the engine (GIL released)."""
+    return _N.step_encode(*parts, effort == QUICK, codec, strong)
+
+
+def step_to_bytes(step: Step, codec: str = "auto", effort: int = NORMAL, strong: bool = False) -> bytes:
+    """Format 3 blob. effort QUICK (0) is for the crash-recovery journal, on the main thread."""
+    blob = parts_to_bytes(step_parts(step), codec, effort, strong)
     if VERIFY and not same_step(step, step_from_bytes(blob)):
         raise AssertionError(f"step {step.seq}: written blob does not read back the same")
     return blob
 
 
 # --------------------------------------------------------------------------- reading
-def _extra(raw: bytes) -> dict:
-    if not raw:
-        return {}
-    try:
-        e = json.loads(raw.decode("utf-8"))
-        return dict(e)
-    except (ValueError, TypeError) as e:
-        raise CorruptStep(f"step blob: bad header ({e})") from e
+_extra = _N.step_extra
+read_header = _N.read_header          # step metadata without decompressing the body
 
 
-def read_header(b) -> dict:
-    """Step metadata without decompressing the body."""
-    r = _N.step_info(b)
-    if r[0] == 1:
-        return json.loads(bytes(r[1]).decode("utf-8"))
-    _v, kind, seq, t, label, mode, target, extra, nd, before, after, snaps, raw, quick, records = r
-    meta = {"seq": seq, "label": label, "mode": mode, "target": target, "time": t, "kind": kind,
-            "extra": _extra(extra)}
-    return {"v": 3, "meta": meta, "deltas": nd, "before": before, "after": after,
-            "snaps": None if snaps is None else [[u, n] for u, n in snaps], "raw": raw, "quick": quick,
-            "records": records}
-
-
-def step_from_bytes(b) -> Step:
-    (ver, seq, t, kind, label, mode, target, extra_b, _quick, deltas, before, after, snaps,
-     rec_b) = _N.step_decode(b)
-    extra = _extra(extra_b)
-    out = []
-    for key, add, e0, e1, k, w, isz, ib, vb in deltas:
-        bdt = _BITS[isz]
-        if k == 0:
-            idx, vals = np.zeros(0, dtype=np.uint32), np.zeros((0, w), dtype=bdt)
-        else:
-            idx, vals = np.frombuffer(ib, dtype=np.uint32), np.frombuffer(vb, dtype=bdt).reshape(k, w)
-        out.append(ChannelDelta(key, idx, vals, (e0, e1), ADD if add else XOR))
-    try:
-        before = _snapshot(before) if before is not None else None
-        after = _snapshot(after) if after is not None else None
-        if snaps is not None:
-            extra[SNAPSHOTS_KEY] = {uid: _snapshot(s) for uid, s in snaps}
-        records = records_from_bytes(rec_b) if rec_b is not None else []
-    except (ValueError, KeyError, TypeError, UnicodeDecodeError, RecursionError) as e:
-        raise CorruptStep(f"step blob: damaged ({e})") from e
-    return Step(seq=seq, label=label, mode=mode, target=target, time=t, kind=kind, deltas=out,
-                before=before, after=after, extra=extra, records=records)
+step_from_bytes = _N.step_from_bytes     # the Step built in the engine (#147)
 
 
 def version_of(b) -> int:
-    """3 for format 3 blobs, 1 for formats 1 and 2, 0 if not a step."""
+    """3 for format 3 blobs, 1 for formats 1 and 2, 0 if not a step (the container; the encoding: is_unknown)."""
     magic = bytes(memoryview(b)[:4])
     return 3 if magic == STEP_MAGIC else (1 if magic == STEP_MAGIC_V1 else 0)
 
 
-def _same_arrays(a: dict, b: dict) -> bool:
-    if a.keys() != b.keys():
+def is_unknown(b) -> bool:
+    """Do step bytes `b` say they use an encoding this build has no decoder for (a later build's)? Read from the
+    step prefix alone (dev/FORMAT5_ENCODINGS.md); bytes that aren't a step are damage, not unknown."""
+    try:
+        return _N.step_encoding(b[:11]) not in _N.ENCODINGS     # the prefix alone: a Slice isn't copied (#125)
+    except CorruptStep:
         return False
-    return all(a[k].dtype == b[k].dtype and a[k].tobytes() == b[k].tobytes() for k in a)
 
 
-def _same_snap(a, b) -> bool:
-    if a is None or b is None:
-        return a is b
-    return a.counts == b.counts and _same_arrays(a.arrays, b.arrays)
-
-
-def same_step(a: Step, b: Step) -> bool:
-    """True if two steps hold exactly the same data (deltas compared after decoding to the same
-    form: XOR deltas only equal XOR deltas, ADD only ADD). Used by HINDSIGHT_VERIFY and tests."""
-    if (a.seq, a.label, a.mode, a.target, a.kind) != (b.seq, b.label, b.mode, b.target, b.kind):
-        return False
-    if float(a.time or 0.0) != float(b.time or 0.0) or len(a.deltas) != len(b.deltas):
-        return False
-    for x, y in zip(a.deltas, b.deltas):
-        if (x.key, x.op, tuple(x.exists)) != (y.key, y.op, tuple(y.exists)):
-            return False
-        if not np.array_equal(np.asarray(x.idx, np.int64), np.asarray(y.idx, np.int64)):
-            return False
-        xv, yv = np.asarray(x.vals), np.asarray(y.vals)
-        if xv.dtype != yv.dtype or xv.reshape(-1).tobytes() != yv.reshape(-1).tobytes():
-            return False
-    if not (_same_snap(a.before, b.before) and _same_snap(a.after, b.after)):
-        return False
-    if records_to_bytes(a.records) != records_to_bytes(b.records):
-        return False
-    ea, eb = dict(a.extra or {}), dict(b.extra or {})
-    sa, sb = ea.pop(SNAPSHOTS_KEY, None), eb.pop(SNAPSHOTS_KEY, None)
-    if json.loads(_dumps(ea)) != json.loads(_dumps(eb)):
-        return False
-    if (sa is None) != (sb is None):
-        return False
-    if sa is not None:
-        if list(sa) != list(sb) or not all(_same_snap(sa[k], sb[k]) for k in sa):
-            return False
-    return True
+same_step = _N.same_step     # True if two steps hold exactly the same data (HINDSIGHT_VERIFY and tests)
 
 
 def recompress(b) -> bytes | None:

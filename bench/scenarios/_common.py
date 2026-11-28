@@ -14,6 +14,7 @@ script prints ONE JSON object on its last line:
 A scenario that cannot run on that code (it lacks something) is {"error": "..."} and the suite
 reports it as "not available", never as a number. Times are milliseconds unless "unit" says so.
 """
+import contextlib
 import importlib.util
 import json
 import os
@@ -24,6 +25,11 @@ import traceback
 
 BENCH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHECKOUT = os.path.dirname(BENCH)          # the checkout this file lives in (not necessarily ROOT)
+
+
+# CPU seconds of this process. shortcut: Windows' process_time moves in 15.6 ms ticks, so there it is the wall time
+# of the loop (perf_counter); use QueryProcessCycleTime if a Windows scenario ever needs other threads' CPU.
+cpu = time.perf_counter if os.name == "nt" else time.process_time
 
 
 class Opts:
@@ -87,13 +93,11 @@ def stats(samples, unit="ms", **extra):
 
 
 def proc(field):
-    try:
+    with contextlib.suppress(OSError):
         with open("/proc/self/status") as fh:
             for line in fh:
                 if line.startswith(field + ":"):
                     return int(line.split()[1]) * 1024
-    except OSError:
-        pass
     return 0
 
 
@@ -169,7 +173,7 @@ def attempt(results, name, fn):
 def native_loaded():
     try:
         from hindsight.core import native
-        return native.lib is not None
+        return native.ENGINE is not None
     except Exception:
         return False
 

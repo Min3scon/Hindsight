@@ -1,10 +1,11 @@
 """Record everything on a 40k-vertex mesh with K shape keys: moving one shape key's slider (Object Mode), then the
 operator's end (finish_operation): ms, and cProfile."""
-import os, sys, time, statistics, cProfile, pstats, io
+import sys, time, statistics, cProfile
 ROOT = sys.argv[1]; K = int(sys.argv[2]); sys.path.insert(0, ROOT)
 import bpy, numpy as np
 import tests.harness as H
 from hindsight.bl import datarec, runtime
+from hindsight.bl import prefs
 H.fresh()
 ob = H.make_mesh(40_000, name="Face")
 ob.shape_key_add(name="Basis")
@@ -15,7 +16,7 @@ for k in range(K):
     co = np.empty(n * 3, np.float32); sk.data.foreach_get("co", co)
     co[rng.integers(0, n * 3, 500)] += 0.01
     sk.data.foreach_set("co", co)
-datarec.FORCE_SCOPE[0] = "EVERYTHING"
+prefs.FORCE["record_scope"] = "EVERYTHING"
 datarec.set_tracked(ob, True)
 datarec.finish_operation("baseline")
 ts = []
