@@ -3,12 +3,12 @@ import os, sys; sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..")
 write, 344 ms of the 532 ms the step cost) are encoded and written on a helper thread. Records keep their order
 (any record behind a pending one waits for it), and everything that reads, empties or switches the journal waits
 for the helper first, so recovery sees exactly what it saw before. The threshold is lowered here so every step
-goes through the helper."""
+goes through the helper. Since 24.2b (#153) the helper is the engine's writer thread: the engine counts what it
+encodes and can wait before each record (its test hooks), where these tests once patched core.step.parts_to_bytes."""
 import contextlib
 import shutil
 import tempfile
 import threading
-import time
 
 import bpy
 
@@ -17,6 +17,7 @@ from hindsight.bl import persistence, runtime
 from hindsight.core import journal as J
 from hindsight.core import persist
 from hindsight.core import step as stepmod
+from hindsight.core.native import ENGINE as _N
 from hindsight.core.types import SETTINGS
 
 C = bpy.context
@@ -44,7 +45,8 @@ def start(tag, n):
 
 @contextlib.contextmanager
 def encode_threads():
-    """The thread id of every step encoding while inside the block."""
+    """The thread id of every step encoding in Python while inside the block, then how many the engine's writer
+    thread encoded (its last item, "writer N")."""
     threads = []
     real = stepmod.parts_to_bytes
 
@@ -52,10 +54,13 @@ def encode_threads():
         threads.append(threading.get_ident())
         return real(*a, **k)
     stepmod.parts_to_bytes = spy
+    _N.journal_calls()
     try:
         yield threads
     finally:
         stepmod.parts_to_bytes = real
+        threads.append(f"writer {_N.journal_calls()['encoded']}")
+        _N.journal_fault(None)
 
 
 def test_big_records_are_encoded_off_the_main_thread_in_order():
@@ -73,7 +78,7 @@ def test_big_records_are_encoded_off_the_main_thread_in_order():
                 runtime.goto(C, 2)                     # a CURSOR record between steps
                 runtime.goto(C, len(runtime.history_of(ob).entries))
         persistence.drain_journal_writer()
-    assert threads and all(t != MAIN for t in threads), "big records were encoded on the main thread"
+    assert threads == ["writer 6"], f"big records were encoded on the main thread: {threads}"
     recs = J.Journal(persistence.journal_path(path)).read()
     steps = [r for r in recs if r[0] == "STEP"]
     seqs = [stepmod.read_header(r[2])["meta"]["seq"] for r in steps]
@@ -128,12 +133,7 @@ def test_crash_in_the_middle_of_a_save_loses_no_step():
     bpy.ops.wm.save_as_mainfile(filepath=path)
     ob = bpy.data.objects["W"]
     H.enter(ob, "SCULPT")
-    real_encode = stepmod.parts_to_bytes
-
-    def slow(*a, **k):              # the helper is still writing them when the save starts
-        time.sleep(0.3)
-        return real_encode(*a, **k)
-    stepmod.parts_to_bytes = slow
+    _N.journal_writer_delay(0.3)    # the helper is still writing them when the save starts
     try:
         for s in range(3):
             H.fake_stroke(ob, 90 + s, n=80)
@@ -153,7 +153,7 @@ def test_crash_in_the_middle_of_a_save_loses_no_step():
         finally:
             persist.registry_to_format5 = real_build
     finally:
-        stepmod.parts_to_bytes = real_encode
+        _N.journal_writer_delay(0)
     H.fresh()                       # let go of the file and its journal, then put back what the crash left
     SETTINGS.crash_recovery = "INTERRUPTED"
     for key, f in (("journal", jp), ("blend", path)):
@@ -178,7 +178,7 @@ def test_small_records_stay_on_the_main_thread():
     with encode_threads() as threads:
         H.fake_stroke(ob, 99, n=80)
         assert H.commit(ob) is not None
-    assert threads and all(t == MAIN for t in threads), threads
+    assert threads[:-1] and all(t == MAIN for t in threads[:-1]) and threads[-1] == "writer 0", threads
 
 
 if __name__ == "__main__":

@@ -221,7 +221,9 @@ def test_bytes_fixed_at_the_packer_hand_off():
     assert e.step is None and bytes(e.blob) == want, "the packer encoded the step as it was edited after submit"
 
 
-for t in (test_arrays_are_the_reference, test_hypothesis, test_corpus_topology, test_hostile,
-          test_names_are_the_engines, test_bytes_fixed_at_the_journal_hand_off, test_bytes_fixed_at_the_packer_hand_off):
-    H.run(t)
-H.finish()
+if __name__ == "__main__":     # test_core_journal_writer.py takes handed_step and edit
+    for t in (test_arrays_are_the_reference, test_hypothesis, test_corpus_topology, test_hostile,
+              test_names_are_the_engines, test_bytes_fixed_at_the_journal_hand_off,
+              test_bytes_fixed_at_the_packer_hand_off):
+        H.run(t)
+    H.finish()
