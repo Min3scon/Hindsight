@@ -210,6 +210,11 @@ its own win_amd64 wheel, Blender 5.3.0 module, this Windows PC (12 cores, noisy)
 | | `edit_step_300k` | 121.4 ms | 119.1 ms | 0.98, 1.10 (1.04, 1.08; third run 0.98, 1.01) | 9% / 27% (10% / 16%; 22% / 18%) |
 | | all 26 of `commit`, `jumps` and `editmode` | | | best times 0.96 to 1.03 (0.87 to 1.04; third run 0.98 to 1.05), inside the A/A band or faster; medians 0.88 to 1.10 (0.84 to 1.27): above the band only `edit_step_300k` (gone in the third run) and `goto_bl_1_100k` 1.27 in the second run (spread 151% / 63%, best time 1.01) | |
 | | held memory (`held_once_mem_f5.py`, 100k vertices, 6,000 steps, 3 rounds, each root alone with its own engine) | after open 604.7 and 604.9 MB, save peak 691.8 and 693.7 MB (the two sides of its A/A; 519.8 MB before open) | after open 604.6 and 605.4 MB, save peak 693.0 and 693.9 MB (519.7 MB before open) | 1.00 | rounds within 1 MB after open, save peak within 10 MB |
+| 24.2a (#152): the crash journal's file in the engine (0.17.0 at b98173e against 0.18.0 at 04e811a; `bench/results/ab_b98173e_vs_152-run1.md`, `-run2.md`, `oj_b98173e_vs_152.txt`) | `commit_100k` | 0.6515 ms | 0.6369 ms | 0.98, 0.98 (0.97, 0.95) | 17% / 4% (20% / 4%) |
+| | `commit_1m` | 3.955 ms | 3.92 ms | 0.99, 0.99 (0.99, 0.98) | 36% / 4% (8% / 3%) |
+| | `goto_bl_1_100k` | 0.2055 ms | 0.1871 ms | 0.91, 0.92 (0.91, 0.98) | 11% / 9% (9% / 12%) |
+| | `goto_bl_300_100k` | 5.383 ms | 5.305 ms | 0.99, 0.99 (1.00, 0.99) | 1% / 6% (2% / 1%) |
+| | `oneoff/open_journal_ab.py`: 100k vertices, 3,000 unsaved strokes, the file opened again with Crash Recovery Interrupted (5 alternating rounds, each root with its own engine on `PYTHONPATH`, run twice; rss growth not measured on Windows) | 275.1 ms | 265.2 ms | 0.96, 0.99 (0.97, 0.97) | 13% / 11% (10% / 3%) |
 
 ## Count
 

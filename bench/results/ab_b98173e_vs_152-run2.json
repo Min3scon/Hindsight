@@ -1,0 +1,489 @@
+{
+ "a": {
+  "label": "b98173e",
+  "root": "D:\\hs-wt\\152a",
+  "facts": {
+   "python": "3.13.4",
+   "executable": "D:\\hs-venvs\\bpy53\\Scripts\\python.exe",
+   "blender": "5.3.0",
+   "engine_version": "1.0.0-beta.2",
+   "rust_engine_loaded": true,
+   "native_api_expected": 16,
+   "native_module": "D:\\.tmp\\hs152\\tmp\\hs_bench_native\\hindsight_native-0.17.0-cp311-abi3-win_amd64\\hindsight_native\\__init__.py",
+   "native_api": 16,
+   "native_version": null
+  }
+ },
+ "b": {
+  "label": "152-run2",
+  "root": "D:\\hs-wt\\152",
+  "facts": {
+   "python": "3.13.4",
+   "executable": "D:\\hs-venvs\\bpy53\\Scripts\\python.exe",
+   "blender": "5.3.0",
+   "engine_version": "1.0.0-beta.2",
+   "rust_engine_loaded": true,
+   "native_api_expected": 17,
+   "native_module": "D:\\.tmp\\hs152\\tmp\\hs_bench_native\\hindsight_native-0.18.0-cp311-abi3-win_amd64\\hindsight_native\\__init__.py",
+   "native_api": 17,
+   "native_version": null
+  }
+ },
+ "rounds": 5,
+ "quick": false,
+ "only": [
+  "commit"
+ ],
+ "started": "2026-11-28 03:17:36",
+ "cores": 12,
+ "load_average_per_round": [
+  {
+   "round": 1,
+   "start": null,
+   "end": null
+  },
+  {
+   "round": 2,
+   "start": null,
+   "end": null
+  },
+  {
+   "round": 3,
+   "start": null,
+   "end": null
+  },
+  {
+   "round": 4,
+   "start": null,
+   "end": null
+  },
+  {
+   "round": 5,
+   "start": null,
+   "end": null
+  }
+ ],
+ "elapsed_s_after_round": [
+  11,
+  20,
+  28,
+  37,
+  46
+ ],
+ "summary": {
+  "A": {
+   "commit_100k": {
+    "min": 0.6535,
+    "median": 0.7359,
+    "spread": 0.19640095599606344,
+    "rounds": 5,
+    "unit": "ms",
+    "tracemalloc_mb": 0.046,
+    "hwm_mb": 0.0
+   },
+   "commit_1m": {
+    "min": 3.9578,
+    "median": 4.3003,
+    "spread": 0.07896060352053642,
+    "rounds": 5,
+    "unit": "ms",
+    "tracemalloc_mb": 0.409,
+    "hwm_mb": 0.0
+   },
+   "goto_bl_1_100k": {
+    "min": 0.2055,
+    "median": 0.2138,
+    "spread": 0.0850047755491882,
+    "rounds": 5,
+    "unit": "ms"
+   },
+   "goto_bl_300_100k": {
+    "min": 5.3328,
+    "median": 5.4787,
+    "spread": 0.019198940748096666,
+    "rounds": 5,
+    "unit": "ms"
+   }
+  },
+  "B": {
+   "commit_100k": {
+    "min": 0.6311,
+    "median": 0.7016,
+    "spread": 0.04243569248655719,
+    "rounds": 5,
+    "unit": "ms",
+    "tracemalloc_mb": 0.046,
+    "hwm_mb": 0.0
+   },
+   "commit_1m": {
+    "min": 3.9018,
+    "median": 4.1999,
+    "spread": 0.03178388902409352,
+    "rounds": 5,
+    "unit": "ms",
+    "tracemalloc_mb": 0.408,
+    "hwm_mb": 0.0
+   },
+   "goto_bl_1_100k": {
+    "min": 0.1865,
+    "median": 0.2093,
+    "spread": 0.11817226890756298,
+    "rounds": 5,
+    "unit": "ms"
+   },
+   "goto_bl_300_100k": {
+    "min": 5.3297,
+    "median": 5.4196,
+    "spread": 0.009107737874861146,
+    "rounds": 5,
+    "unit": "ms"
+   }
+  }
+ },
+ "per_round": {
+  "A": [
+   {
+    "commit_100k": {
+     "min_ms": 0.7123,
+     "median_ms": 0.851,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.047,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 4.1788,
+     "median_ms": 4.5052,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.409,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.2072,
+     "median_ms": 0.211,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.4429,
+     "median_ms": 5.5422,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.6697,
+     "median_ms": 0.7359,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.047,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 3.9578,
+     "median_ms": 4.3003,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.409,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.2055,
+     "median_ms": 0.2138,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.4243,
+     "median_ms": 5.5151,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.6542,
+     "median_ms": 0.7113,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.047,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 4.0929,
+     "median_ms": 4.2262,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.409,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.2083,
+     "median_ms": 0.2272,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.3328,
+     "median_ms": 5.4378,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.6576,
+     "median_ms": 0.7442,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.047,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 4.0438,
+     "median_ms": 4.1755,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.409,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.2063,
+     "median_ms": 0.2094,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.3475,
+     "median_ms": 5.4787,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.6535,
+     "median_ms": 0.7224,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.046,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 3.9789,
+     "median_ms": 4.3206,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.409,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.2161,
+     "median_ms": 0.2262,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.4211,
+     "median_ms": 5.4747,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   }
+  ],
+  "B": [
+   {
+    "commit_100k": {
+     "min_ms": 0.6394,
+     "median_ms": 0.691,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.046,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 4.008,
+     "median_ms": 4.1398,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.408,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.1865,
+     "median_ms": 0.1904,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.3756,
+     "median_ms": 5.4112,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.642,
+     "median_ms": 0.7016,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.046,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 3.9709,
+     "median_ms": 4.109,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.408,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.1932,
+     "median_ms": 0.2093,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.3297,
+     "median_ms": 5.402,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.6422,
+     "median_ms": 0.708,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.046,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 3.962,
+     "median_ms": 4.1999,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.408,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.1937,
+     "median_ms": 0.2092,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.3702,
+     "median_ms": 5.4196,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.6367,
+     "median_ms": 0.6881,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.046,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 3.9018,
+     "median_ms": 4.2326,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.408,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.1913,
+     "median_ms": 0.2129,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.3536,
+     "median_ms": 5.4512,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   },
+   {
+    "commit_100k": {
+     "min_ms": 0.6311,
+     "median_ms": 0.7173,
+     "n": 25,
+     "vertices": 99904,
+     "tracemalloc_mb": 0.046,
+     "hwm_mb": 0.0
+    },
+    "commit_1m": {
+     "min_ms": 4.0494,
+     "median_ms": 4.2396,
+     "n": 12,
+     "vertices": 999698,
+     "tracemalloc_mb": 0.408,
+     "hwm_mb": 0.0
+    },
+    "goto_bl_1_100k": {
+     "min_ms": 0.194,
+     "median_ms": 0.2102,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 1
+    },
+    "goto_bl_300_100k": {
+     "min_ms": 5.3341,
+     "median_ms": 5.4248,
+     "n": 12,
+     "vertices": 100000,
+     "steps": 400,
+     "jump": 200
+    }
+   }
+  ]
+ }
+}
