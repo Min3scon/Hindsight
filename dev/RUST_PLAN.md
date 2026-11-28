@@ -56,8 +56,8 @@ merging the stack, in the order of the pull requests (on #24).
    turns a module into a facade switches every reference importing it to the copy, in the same PR. 24.3 (#148) switched
    the references of `core/types.py`, `step.py`, `topopack.py`, `codec.py` and `crc.py` (`tests/reference/step.py`,
    `delta.py`, `types.py`, `framing_extents.py`, `topopack.py`, and `v1_persist.py`'s `Entry`, `step_from_bytes` and
-   `SETTINGS`); 24.4 (#132) those of `core/history.py` (`v1_persist.py:224`, `:455`, `framing_extents.py:10`);
-   still to switch: `v1_persist.py`'s `registry.Registry` (`:225`; 24.6, since `tests/test_core_framing_crc.py:424`
+   `SETTINGS`); 24.4 (#132) those of `core/history.py` (`v1_persist.py:224`, `:455`, `framing_extents.py:10`); 24.5a (#154) none (no reference imports `core/store.py`; its Packer, still
+   Python, moves in 24.5b); still to switch: `v1_persist.py`'s `registry.Registry` (`:225`; 24.6, since `tests/test_core_framing_crc.py:424`
    takes it as the oracle of `persist.registry_from_bytes`). `tests/test_core_reference.py`
    fails if a reference imports a facade (its `FACADES`, which each move adds to) and keeps failing if anything under `hindsight/` imports a reference module.
 2. **Equivalence, test first.** Before the engine code: property tests (hypothesis), the corpus of real files from
@@ -86,7 +86,7 @@ merging the stack, in the order of the pull requests (on #24).
 | 24.2 | #130, split: 24.2a #152, 24.2b #153 | `core/journal.py` with a test-only fault hook (a), the journal writer thread (b, blocked by a) | #129, #131 | `commit`, `oneoff/open_journal_ab.py` | `commit_100k` 0.6423 ms (38%) |
 | 24.3 | #131, split: 24.3a #146, 24.3b #147, 24.3c #148 | `core/types.py` (not `Settings`), `core/topopack.py`, the step data's JSON and `same_step` in `core/step.py`; in three parts, each blocked by the one before: the JSON (a), the engine classes with `step_from_bytes` and `same_step` (b), `topopack.py`, the hand-off, the dead code and the references switch (c) | #129 | `commit`, `jumps`, `editmode`, held memory | `commit_100k` 0.6423 ms (38%); `jump_3000_back_100k` 56.98 ms (18%); `edit_step_100k` 40.98 ms (11%); held after open 270.8 MB, save peak 348.3 MB (working set) |
 | 24.4 | #132 | `core/history.py` | #131 | `jumps`, `commit` | `jump_3000_back_100k` 56.98 ms (18%); `commit_100k` 0.6423 ms (38%) |
-| 24.5 | #133 | `core/store.py` | #132 | `commit`, `idle`, `packer_bench.py` | `commit_100k` 0.6423 ms (38%); `idle_60s_50obj` 13.01 ms (26%) |
+| 24.5 | #133, split: 24.5a #154, 24.5b #155 | `core/store.py`: the caps, the tiers and the caps memo (a), the packer as a Rust thread (b, blocked by a) | #132 | `commit` (a); `commit`, `idle`, `packer_bench.py` (b) | `commit_100k` 0.6423 ms (38%); `idle_60s_50obj` 13.01 ms (26%) |
 | 24.6 | #134 | `core/registry.py`, formats 1 to 4 and the history folder in `persist.py`; the format 4 writer to `tests/reference/` | #132 | `saveload` (open), `oneoff/regload_ab.py` | `open_embed_100k_6000` 3079 ms (34%) |
 | 24.7 | #135 | format 5 in `persist.py` | #134 | `saveload`, `oneoff/embed_ab.py`, `held_once_mem_f5.py` | `save_embed_100k_6000` 952.1 ms (18%); `open_embed_100k_6000` 3079 ms (34%); held after open 270.8 MB, save peak 348.3 MB (working set) |
 | 24.8 | #136 | journal replay in `persist.py` | #130, #135 | `oneoff/replay_ab.py`, `open_journal_ab.py` | its one-offs only, run by the move |
