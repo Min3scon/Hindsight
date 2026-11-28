@@ -78,7 +78,8 @@ fn hooked(e: i32) -> io::Error {
 }
 
 /// journal_fault(op=None, n=1, errno=0, short=False): test only. The nth `op` ("write", "flush" or "fsync") from now
-/// fails with OSError(errno), a short one after writing half its bytes, as a full disk does; op None turns the hook off.
+/// fails with OSError(errno); a short write writes half its bytes and the write after it fails, as a full disk does (a
+/// short flush writes half of what is buffered, then fails); op None turns the hook off.
 #[pyfunction]
 #[pyo3(signature = (op=None, n=1, errno=0, short=false))]
 fn journal_fault(op: Option<&str>, n: u64, errno: i32, short: bool) -> PyResult<()> {
@@ -93,6 +94,12 @@ fn journal_fault(op: Option<&str>, n: u64, errno: i32, short: bool) -> PyResult<
     (f.op, f.n, f.errno, f.short) = (at, n, errno, short);
     ON.store(at.is_some(), Ordering::Relaxed);
     Ok(())
+}
+
+/// The next call of `op` fails with `errno` (the hook is on).
+fn arm(op: usize, errno: i32) {
+    let mut f = hook();
+    (f.op, f.n, f.errno, f.short) = (Some(op), 1, errno, false);
 }
 
 /// journal_calls() -> dict: test only. The writes, flushes and fsyncs, and the limit of each scan, since the last
@@ -179,8 +186,10 @@ struct Out(File);
 impl Write for Out {
     fn write(&mut self, b: &[u8]) -> io::Result<usize> {
         if let Some((e, short)) = fault(0) {
-            if short {
-                self.0.write_all(&b[..b.len() / 2])?;
+            if short && b.len() > 1 {
+                // a full disk: this write is short (and says so, or the buffer writes its bytes again), the next fails
+                arm(0, e);
+                return self.0.write(&b[..b.len() / 2]);
             }
             return Err(hooked(e));
         }

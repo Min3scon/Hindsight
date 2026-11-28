@@ -219,6 +219,38 @@ def test_journal_full_disk_keeps_records_before_and_after():
             shutil.rmtree(d, ignore_errors=True)
 
 
+def test_journal_full_disk_keeps_records_still_buffered():
+    """A full disk hit while an earlier record is still buffered (appended, not flushed): that record is written
+    out whole and stays, the broken one is cut back, and the records after it are read (#152 review: the hook's
+    short write once reported no bytes written, so the cut back wrote the buffer a second time over the first)."""
+    for side in (_Ref(), _Engine()):
+        d = _tmp()
+        try:
+            path = os.path.join(d, "j.hsj")
+            j = side.J.Journal(path)
+            j.append("SAVE", {"blend": "a"})
+            j.flush(fsync=False)
+            j.append("CURSOR", {"hist": "h", "cursor": 1})       # buffered
+            side.fail_write(j)
+            try:
+                j.append("STEP", {"hist": "h", "at": 1}, b"x" * 20000)   # past the buffer: written at once
+                j.flush(fsync=False)
+            except OSError as e:
+                assert e.errno == errno.ENOSPC, (type(side).__name__, e)
+            else:
+                raise AssertionError(f"{type(side).__name__}: the full disk was not reported")
+            j.append("CURSOR", {"hist": "h", "cursor": 2})
+            j.flush(fsync=False)
+            assert [r[0] for r in j.read()] == ["SAVE", "CURSOR", "CURSOR"], type(side).__name__
+            j.close()
+            recs = side.J.Journal(path).read()
+            assert [(r[0], r[1].get("cursor")) for r in recs] == [("SAVE", None), ("CURSOR", 1), ("CURSOR", 2)], \
+                (type(side).__name__, recs)
+        finally:
+            side.done()
+            shutil.rmtree(d, ignore_errors=True)
+
+
 def test_journal_failed_flush_is_reported_and_cut_back():
     for side in (_Ref(), _Engine()):
         d = _tmp()
@@ -474,6 +506,7 @@ def test_save_reuses_known_step_checksums():
 
 TESTS = [test_embedded_bytes_are_the_parts_joined, test_embedded_bytes_of_a_registry_read_back, test_embedded_bytes_peak_memory,
          test_journal_fsync_failure_is_reported, test_journal_full_disk_keeps_records_before_and_after,
+         test_journal_full_disk_keeps_records_still_buffered,
          test_journal_failed_flush_is_reported_and_cut_back, test_can_gain_matches_recompress,
          test_can_gain_same_answer_as_before_r047,
          test_packer_skips_steps_with_nothing_to_gain, test_packer_waits_while_the_user_works,
