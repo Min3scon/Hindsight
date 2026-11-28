@@ -233,9 +233,11 @@ def _walk(n):
 # ------------------------------------------------------------------------------ tests
 def test_history_holds_no_algorithm():
     """history.py names the engine's MeshState and History and keeps its three marks; nothing else."""
-    src = open(history.__file__, encoding="utf-8").read()
-    for word in ("np.", "def ", "class ", "for ", "while "):
-        assert word not in src, f"history.py still does {word!r}"
+    import ast
+    tree = ast.parse(open(history.__file__, encoding="utf-8").read())
+    kinds = {type(n).__name__ for n in ast.walk(tree)}
+    for k in ("FunctionDef", "ClassDef", "For", "While", "If", "Lambda", "ListComp", "DictComp"):
+        assert k not in kinds, f"history.py still has a {k}"
     assert history.History is history._N.History and history.MeshState is history._N.MeshState
     assert (history.TOPO_MARK, history.DATA_MARK, history.SNAPSHOTS_KEY) == (ref.TOPO_MARK, ref.DATA_MARK,
                                                                              ref.SNAPSHOTS_KEY)

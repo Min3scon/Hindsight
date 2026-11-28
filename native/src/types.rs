@@ -70,6 +70,16 @@ class Entry:
         pass
 
 
+class MeshState:
+    def __init__(self, counts, arrays, values=None):
+        pass
+
+
+class History:
+    def __init__(self, uid, members=None):
+        pass
+
+
 def unpack2(v):
     a, b = v
     return a, b
@@ -131,7 +141,7 @@ fn iadd<'py>(py: Python<'py>, a: &Bound<'py, PyAny>, b: &Bound<'py, PyAny>) -> P
 }
 
 /// `a, b = v` (exact tuples and lists of two read here; anything else by Python, for its own errors).
-fn unpack2<'py>(py: Python<'py>, v: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
+pub(crate) fn unpack2<'py>(py: Python<'py>, v: &Bound<'py, PyAny>) -> PyResult<(Bound<'py, PyAny>, Bound<'py, PyAny>)> {
     if let Ok(t) = v.downcast_exact::<PyTuple>() {
         if t.len() == 2 {
             return Ok((t.get_item(0)?, t.get_item(1)?));
@@ -154,7 +164,7 @@ fn unpack3<'py>(py: Python<'py>, v: &Bound<'py, PyAny>) -> PyResult<[Bound<'py, 
 
 /// The constructor's arguments by name, as the dataclass's `__init__` binds them; on anything it can't bind, that
 /// `__init__` (made in FALLBACK) is called with them, so the TypeError is CPython's own.
-fn bind<'py>(py: Python<'py>, cls: &str, names: &[&str], nreq: usize, args: &Bound<'py, PyTuple>,
+pub(crate) fn bind<'py>(py: Python<'py>, cls: &str, names: &[&str], nreq: usize, args: &Bound<'py, PyTuple>,
              kw: Option<&Bound<'py, PyDict>>) -> PyResult<Vec<Option<Bound<'py, PyAny>>>> {
     let mut out: Vec<Option<Bound<'py, PyAny>>> = vec![None; names.len()];
     let mut ok = args.len() <= names.len();

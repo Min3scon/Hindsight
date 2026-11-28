@@ -13,7 +13,7 @@ history.py call the engine. The Python versions are in tests/reference/.
 """
 from __future__ import annotations
 
-API = 18                    # the module's API number (native/src/lib.rs) this code is written for
+API = 19                    # the module's API number (native/src/lib.rs) this code is written for
 # API 1: diff, apply, pack, unpack.  API 2: + apply_steps.  API 3: + codecs, step container,
 # recompress, the exceptions CorruptStep, CorruptBlob, CorruptDelta, NewerFormatError.  API 4: step_encode
 # packs the records itself (takes arrays), + record (diff, pack and codec of a stroke in one call).
@@ -37,6 +37,7 @@ API = 18                    # the module's API number (native/src/lib.rs) this c
 # API 17: + Journal, journal_fault, journal_calls: the crash journal (journal.py, #152), with a test-only fault hook.
 # API 18: + Journal.append_later, journal_pending, journal_drain, journal_stop, journal_writer_delay: the journal's
 #   writer thread (#153); journal_calls counts what it encoded.
+# API 19: + MeshState, History, history_setup: the history and its mesh state (history.py, #132).
 
 
 class EngineMissing(ImportError):
