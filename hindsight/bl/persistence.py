@@ -17,15 +17,14 @@ import contextlib
 import binascii
 import hashlib
 import os
-import queue
 import shutil
 import tempfile
-import threading
 import uuid
 
 import bpy
 
 from ..core import persist
+from ..core import journal as J
 from ..core.journal import Journal
 from ..core.registry import Registry
 from ..core.types import SETTINGS
@@ -122,58 +121,23 @@ def current_journal():
 # R079: the records of big steps (a topology change at 1M vertices is about 120 MB to encode and write) are
 # encoded and written on a helper thread, in order: once one is waiting, every later record waits behind it.
 # Whatever reads, empties, switches or closes the journal waits for the helper first. A crash can lose only the
-# newest records still waiting, so the journal recovery reads is always a prefix of what was written.
+# newest records still waiting, so the journal recovery reads is always a prefix of what was written. The helper is
+# the engine's writer thread (24.2b, #153): it gets bytes and pinned arrays, never a Python object.
 BIG_RECORD_DEFAULT = 4 << 20     # a step held with this many bytes or more is journaled by the helper
 BIG_RECORD = [BIG_RECORD_DEFAULT]
-_JW = {"q": None, "thread": None, "error": None}
-_JLOCK = threading.Lock()        # one writer at a time into the journal file
-
-
-def _writer_loop(q) -> None:
-    while True:
-        item = q.get()
-        try:
-            if item is None:
-                return
-            j, rtype, header, fn = item
-            payload = fn() if fn is not None else b""
-            with _JLOCK:
-                if not j.closed:
-                    j.append(rtype, header, payload)
-                    j.flush(fsync=False)
-        except Exception as e:
-            _JW["error"] = e
-        finally:
-            q.task_done()
-
-
-def _writer_queue():
-    q = _JW["q"]
-    t = _JW["thread"]
-    if q is None or t is None or not t.is_alive():
-        q = _JW["q"] = queue.Queue()
-        t = _JW["thread"] = threading.Thread(target=_writer_loop, args=(q,), name="hindsight-journal", daemon=True)
-        t.start()
-    return q
 
 
 def drain_journal_writer() -> None:
     """Wait until every record handed to the helper is in the journal (main thread)."""
-    q = _JW["q"]
-    if q is not None:
-        q.join()
-    e, _JW["error"] = _JW["error"], None
-    if e is not None:
+    try:
+        J.writer_drain()
+    except Exception as e:
         log.error_once(("journal_writer", str(e)), f"crash-recovery journal error: {e}", e)
 
 
 def _stop_journal_writer() -> None:
-    q, t = _JW["q"], _JW["thread"]
-    if q is not None and t is not None and t.is_alive():
-        drain_journal_writer()
-        q.put(None)
-        t.join(timeout=10.0)
-    _JW["q"] = _JW["thread"] = None
+    drain_journal_writer()
+    J.writer_stop()
 
 
 def _close_journal(remove_untitled: bool = False) -> None:
@@ -240,14 +204,13 @@ def _on_journal(rtype, header, payload_fn=None) -> None:
     if j is None or j.closed:
         j = _open_journal("" if _J["unsaved"] else _current_blend())
     header = dict(header, s=_J["sid"])
-    q = _JW["q"]
-    if (q is not None and q.unfinished_tasks) or getattr(payload_fn, "size", 0) >= BIG_RECORD[0]:
-        _writer_queue().put((j, rtype, header, payload_fn))       # R079: encoded and written by the helper
+    if J.writer_pending() or getattr(payload_fn, "size", 0) >= BIG_RECORD[0]:
+        later = getattr(payload_fn, "later", None) or ((payload_fn(),) if payload_fn is not None else ())
+        j.append_later(rtype, header, *later)       # R079: encoded and written by the helper
         return
     payload = payload_fn() if payload_fn is not None else b""
-    with _JLOCK:
-        j.append(rtype, header, payload)
-        j.flush(fsync=False)
+    j.append(rtype, header, payload)
+    j.flush(fsync=False)
 
 
 def _new_session() -> None:

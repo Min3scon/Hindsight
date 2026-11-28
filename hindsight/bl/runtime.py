@@ -201,7 +201,8 @@ def step_payload(entry):
     """The journal payload of a step: a function giving its bytes, with `.size` (the step's size as it is held)
     for the journal to decide where to encode it (R079: a big step's record is encoded and written on a helper
     thread). The step is taken now, its JSON too (owner point 1): the packer may pack the entry meanwhile, and a later
-    edit of the step doesn't change what the journal writes."""
+    edit of the step doesn't change what the journal writes. `.later` is what the engine's writer thread gets instead
+    (Journal.append_later: the blob, or the parts it encodes, #153)."""
     from ..core import step as S
     blob = entry.blob
     parts = S.step_parts(entry.step) if blob is None else None
@@ -211,6 +212,7 @@ def step_payload(entry):
             return blob
         return S.parts_to_bytes(parts, JOURNAL_CODEC, 0)    # S.: tests patch core.step.parts_to_bytes
     fn.size = entry.nbytes()
+    fn.later = (blob, parts, JOURNAL_CODEC)
     return fn
 
 

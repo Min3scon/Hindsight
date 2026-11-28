@@ -6,18 +6,29 @@
 //! call for call. The file work runs with the GIL released and a lock held, so a helper thread's append never
 //! blocks the main thread's Python. A test-only fault hook (owner point 2, dev/RUST_PLAN.md), off unless a test arms
 //! it, fails the nth write, flush or fsync with an errno; `_drop` lets the file go without a clean close.
+//!
+//! The writer thread (24.2b, #153; its Python is tests/reference/journal_writer.py): R079's helper that encodes and
+//! writes the records of big steps, in order, now a Rust thread that touches no Python object (dev/RUST_DESIGN.md,
+//! rule 3). `append_later` makes a record's header JSON and takes its payload or step parts on the main thread,
+//! pinning their buffers; the thread encodes and writes it; the pins go back to the main thread, which releases them
+//! at its next call. A write error is kept for the next `journal_drain`, as the Python writer kept it.
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::mem::ManuallyDrop;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard};
+use std::thread;
+use std::time::Duration;
 
-use pyo3::exceptions::{PyKeyError, PyOSError, PyValueError};
+use pyo3::exceptions::{PyKeyError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList, PyString};
 
-use crate::{guard, stepjson};
+use crate::step::{self, Enc, StepErr};
+use crate::{guard, stepjson, Buf};
 
 const MAGIC: &[u8; 4] = b"HSJ1";
 const NAMES: [&str; 8] = ["STEP", "CURSOR", "TRUNC", "DROP", "RESET", "META", "SAVE", "META_EVERYTHING"];
@@ -35,10 +46,11 @@ struct Fault {
     short: bool,
     calls: [u64; 3],
     scans: Vec<u64>,
+    encoded: u64, // steps the writer thread encoded
 }
 
 static ON: AtomicBool = AtomicBool::new(false);
-static FAULT: Mutex<Fault> = Mutex::new(Fault { op: None, n: 0, errno: 0, short: false, calls: [0; 3], scans: Vec::new() });
+static FAULT: Mutex<Fault> = Mutex::new(Fault { op: None, n: 0, errno: 0, short: false, calls: [0; 3], scans: Vec::new(), encoded: 0 });
 const OPS: [&str; 3] = ["write", "flush", "fsync"];
 
 fn hook() -> MutexGuard<'static, Fault> {
@@ -102,8 +114,8 @@ fn arm(op: usize, errno: i32) {
     (f.op, f.n, f.errno, f.short) = (Some(op), 1, errno, false);
 }
 
-/// journal_calls() -> dict: test only. The writes, flushes and fsyncs, and the limit of each scan, since the last
-/// call; counting goes on from now until journal_fault(None).
+/// journal_calls() -> dict: test only. The writes, flushes and fsyncs, the limit of each scan and the steps the writer
+/// thread encoded ("encoded"), since the last call; counting goes on from now until journal_fault(None).
 #[pyfunction]
 fn journal_calls(py: Python<'_>) -> PyResult<PyObject> {
     let mut f = hook();
@@ -113,6 +125,7 @@ fn journal_calls(py: Python<'_>) -> PyResult<PyObject> {
         d.set_item(k, f.calls[i])?;
     }
     d.set_item("scans", std::mem::take(&mut f.scans))?;
+    d.set_item("encoded", std::mem::take(&mut f.encoded))?;
     f.calls = [0; 3];
     Ok(d.into_any().unbind())
 }
@@ -373,6 +386,32 @@ fn as_size(py: Python<'_>, v: &Bound<'_, PyAny>) -> PyResult<u64> {
     Ok(n.extract::<u64>().unwrap_or(u64::MAX))
 }
 
+/// MAGIC | type | header length | payload length | header JSON: what a record's checksum starts with.
+fn record_prefix(code: u8, hb: &[u8], n: usize) -> Vec<u8> {
+    let mut prefix = Vec::with_capacity(HEAD + hb.len());
+    prefix.extend_from_slice(MAGIC);
+    prefix.push(code);
+    prefix.extend_from_slice(&(hb.len() as u32).to_le_bytes());
+    prefix.extend_from_slice(&(n as u64).to_le_bytes());
+    prefix.extend_from_slice(hb);
+    prefix
+}
+
+fn record_crc(prefix: &[u8], data: &[u8]) -> u32 {
+    let mut h = crc32fast::Hasher::new();
+    h.update(prefix);
+    h.update(data);
+    h.finalize()
+}
+
+/// A payload as append writes it: an exact bytes object as it is, anything else through bytes().
+fn exact_bytes<'py>(py: Python<'py>, p: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyBytes>> {
+    match p.downcast_exact::<PyBytes>() {
+        Ok(b) => Ok(b.clone()),
+        Err(_) => Ok(py.get_type_bound::<PyBytes>().call1((p,))?.downcast_into::<PyBytes>()?),
+    }
+}
+
 fn rtype_code(r: &Bound<'_, PyAny>) -> PyResult<u8> {
     if let Ok(s) = r.downcast::<PyString>() {
         if let Ok(s) = s.to_cow() {
@@ -396,7 +435,7 @@ fn given<'py>(o: &Bound<'py, PyAny>) -> PyResult<Option<Bound<'py, PyAny>>> {
 pub struct Journal {
     #[pyo3(get)]
     path: String,
-    inner: Mutex<Inner>,
+    inner: Arc<Mutex<Inner>>, // shared with the records waiting for the writer thread
     kept: Mutex<Option<(u64, Py<PyList>)>>, // R065: (size, records) of the scan on open, until read() takes them
 }
 
@@ -447,7 +486,7 @@ impl Journal {
                 kept = recs.map(|r| (size, r.unbind()));
             }
             let fh = open_append(&p).map_err(oserr)?;
-            Ok(Journal { path: p, inner: Mutex::new(Inner { size, good: size, fh: Some(fh) }), kept: Mutex::new(kept) })
+            Ok(Journal { path: p, inner: Arc::new(Mutex::new(Inner { size, good: size, fh: Some(fh) })), kept: Mutex::new(kept) })
         })
     }
 
@@ -468,28 +507,47 @@ impl Journal {
             let hb = if header.is_none() { b"{}".to_vec() } else { stepjson::journal_dumps(py, header)? };
             let payload = match payload {
                 None => PyBytes::new_bound(py, b""),
-                Some(p) => match p.downcast_exact::<PyBytes>() {
-                    Ok(b) => b.clone(),
-                    Err(_) => py.get_type_bound::<PyBytes>().call1((p,))?.downcast_into::<PyBytes>()?,
-                },
+                Some(p) => exact_bytes(py, &p)?,
             };
             let data = payload.as_bytes();
-            let mut prefix = Vec::with_capacity(HEAD + hb.len());
-            prefix.extend_from_slice(MAGIC);
-            prefix.push(code);
-            prefix.extend_from_slice(&(hb.len() as u32).to_le_bytes());
-            prefix.extend_from_slice(&(data.len() as u64).to_le_bytes());
-            prefix.extend_from_slice(&hb);
+            let prefix = record_prefix(code, &hb, data.len());
             let (at, n) = (data.as_ptr() as usize, data.len());
             let r = py.allow_threads(|| {
                 // SAFETY: an exact bytes object (immutable), kept alive by `payload` until this returns
                 let data = unsafe { std::slice::from_raw_parts(at as *const u8, n) };
-                let mut h = crc32fast::Hasher::new();
-                h.update(&prefix);
-                h.update(data);
-                self.inner().append(&self.path, &prefix, data, h.finalize())
+                self.inner().append(&self.path, &prefix, data, record_crc(&prefix, data))
             });
             r.or_else(|f| done(py, Err(f), &self.path).map(|_| 0))
+        })
+    }
+
+    /// R079: the record goes to the writer thread, behind every record handed to it before, and is encoded and written
+    /// there unless the journal is closed by then. `payload` is its bytes, or `parts` a step's (core/step.py's
+    /// step_parts), encoded quick in `codec`. The header JSON is made and the payload or parts taken now, so a later
+    /// change to the step doesn't change the record.
+    #[pyo3(signature = (rtype, header, payload=None, parts=None, codec="auto"))]
+    fn append_later(
+        &self,
+        py: Python<'_>,
+        rtype: &Bound<'_, PyAny>,
+        header: &Bound<'_, PyAny>,
+        payload: Option<&Bound<'_, PyAny>>,
+        parts: Option<&Bound<'_, PyAny>>,
+        codec: &str,
+    ) -> PyResult<()> {
+        guard(|| {
+            let code = rtype_code(rtype)?;
+            let hb = if header.is_none() { b"{}".to_vec() } else { stepjson::journal_dumps(py, header)? };
+            let body = match (parts.filter(|p| !p.is_none()), payload.filter(|p| !p.is_none())) {
+                (Some(p), _) => Body::Step(step::take_parts(p, codec)?),
+                (None, Some(p)) => Body::Bytes(Buf::new(exact_bytes(py, p)?.as_any(), false)?),
+                (None, None) => Body::Empty,
+            };
+            *self.kept() = None;
+            let job = Job { inner: self.inner.clone(), path: self.path.clone(), code, hb, body: Pinned(ManuallyDrop::new(body)) };
+            let r = writer_put(job);
+            release(py);
+            r.map_err(|e| PyRuntimeError::new_err(format!("hindsight_native: no journal writer thread ({e})")))
         })
     }
 
@@ -597,9 +655,183 @@ impl Journal {
     }
 }
 
+// ------------------------------------------------------------------------------------ the writer thread
+/// What the writer writes a record's payload from.
+enum Body {
+    Empty,
+    Bytes(Buf),
+    Step(Enc),
+}
+
+/// A record's pinned buffers on their way to the writer thread and back. The writer only reads them; releasing them
+/// needs the GIL, so they go back to the main thread (`release`). One dropped anywhere else is leaked, never released
+/// without the GIL.
+struct Pinned(ManuallyDrop<Body>);
+
+// SAFETY: the buffers are only read off the main thread (Buf is Sync); the only release is `Pinned::release`, with
+// the GIL.
+unsafe impl Send for Pinned {}
+
+impl Pinned {
+    fn release(mut self, _py: Python<'_>) {
+        // SAFETY: taken once, here, with the GIL held (the token)
+        unsafe { ManuallyDrop::drop(&mut self.0) }
+    }
+}
+
+/// A record handed to the writer: its header JSON made, its payload pinned, the file it goes to.
+struct Job {
+    inner: Arc<Mutex<Inner>>,
+    path: String,
+    code: u8,
+    hb: Vec<u8>,
+    body: Pinned,
+}
+
+enum WErr {
+    Io(Fail, String),
+    Step(StepErr),
+    Panic,
+}
+
+struct Writer {
+    tx: Option<mpsc::Sender<Job>>,
+    thread: Option<thread::JoinHandle<()>>,
+    pending: usize,      // handed over, not written yet (the Python writer's unfinished_tasks)
+    error: Option<WErr>, // the last one, for the next drain
+    done: Vec<Pinned>,   // written: to be released on the main thread
+}
+
+static W: Mutex<Writer> = Mutex::new(Writer { tx: None, thread: None, pending: 0, error: None, done: Vec::new() });
+static IDLE: Condvar = Condvar::new();
+static DELAY_US: AtomicU64 = AtomicU64::new(0);
+
+fn writer() -> MutexGuard<'static, Writer> {
+    W.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Encode and write one record, as the Python writer did: skipped if the journal was closed meanwhile.
+fn write_job(job: &Job) -> Result<(), WErr> {
+    let owned;
+    let data: &[u8] = match &*job.body.0 {
+        Body::Empty => &[],
+        Body::Bytes(b) => b.bytes(),
+        Body::Step(e) => {
+            if ON.load(Ordering::Relaxed) {
+                hook().encoded += 1;
+            }
+            owned = e.encode().map_err(WErr::Step)?;
+            &owned
+        }
+    };
+    let prefix = record_prefix(job.code, &job.hb, data.len());
+    let crc = record_crc(&prefix, data);
+    let mut g = job.inner.lock().unwrap_or_else(|e| e.into_inner());
+    if g.fh.is_none() {
+        return Ok(());
+    }
+    let io = |f| WErr::Io(f, job.path.clone());
+    g.append(&job.path, &prefix, data, crc).map_err(io)?;
+    g.flush(&job.path, false).map_err(io)
+}
+
+fn writer_loop(rx: mpsc::Receiver<Job>) {
+    for job in rx {
+        let us = DELAY_US.load(Ordering::Relaxed);
+        if us > 0 {
+            thread::sleep(Duration::from_micros(us));
+        }
+        let r = catch_unwind(AssertUnwindSafe(|| write_job(&job))).unwrap_or(Err(WErr::Panic));
+        let mut w = writer();
+        if let Err(e) = r {
+            w.error = Some(e);
+        }
+        w.done.push(job.body);
+        w.pending -= 1;
+        IDLE.notify_all();
+    }
+}
+
+/// Hand a record to the writer thread, starting it if it isn't running.
+fn writer_put(job: Job) -> io::Result<()> {
+    let mut w = writer();
+    if w.thread.as_ref().map_or(true, |t| t.is_finished()) {
+        let (tx, rx) = mpsc::channel();
+        w.thread = Some(thread::Builder::new().name("hindsight-journal".into()).spawn(move || writer_loop(rx))?);
+        w.tx = Some(tx);
+    }
+    w.tx.as_ref().expect("started above").send(job).map_err(|_| io::Error::other("the writer thread is gone"))?;
+    w.pending += 1;
+    Ok(())
+}
+
+/// Release the buffers of the records written since the last call (main thread; outside the lock, since a release
+/// can run Python code).
+fn release(py: Python<'_>) {
+    let done = std::mem::take(&mut writer().done);
+    for p in done {
+        p.release(py);
+    }
+}
+
+/// journal_pending() -> int: how many records handed to the writer are not written yet.
+#[pyfunction]
+fn journal_pending(py: Python<'_>) -> usize {
+    let n = writer().pending;
+    release(py);
+    n
+}
+
+/// journal_drain(): wait until every record handed to the writer is written (the GIL released meanwhile); raise the
+/// last write error since the last drain, as the Python writer's drain reported it.
+#[pyfunction]
+fn journal_drain(py: Python<'_>) -> PyResult<()> {
+    py.allow_threads(|| {
+        let mut w = writer();
+        while w.pending > 0 {
+            w = IDLE.wait(w).unwrap_or_else(|e| e.into_inner());
+        }
+    });
+    let e = writer().error.take();
+    release(py);
+    match e {
+        None => Ok(()),
+        Some(WErr::Io(f, path)) => done(py, Err(f), &path),
+        Some(WErr::Step(e)) => Err(step::err(e)),
+        Some(WErr::Panic) => Err(PyRuntimeError::new_err("hindsight_native: internal error")),
+    }
+}
+
+/// journal_stop(): the writer thread ends once every record handed to it is written; the next record starts it
+/// again. A write error stays for the next drain.
+#[pyfunction]
+fn journal_stop(py: Python<'_>) {
+    let (tx, t) = {
+        let mut w = writer();
+        (w.tx.take(), w.thread.take())
+    };
+    drop(tx);
+    if let Some(t) = t {
+        py.allow_threads(|| {
+            let _ = t.join();
+        });
+    }
+    release(py);
+}
+
+/// journal_writer_delay(seconds): test only. The writer thread waits this long before each record (0: not at all).
+#[pyfunction]
+fn journal_writer_delay(seconds: f64) {
+    DELAY_US.store((seconds.max(0.0) * 1e6) as u64, Ordering::Relaxed);
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Journal>()?;
     m.add_function(wrap_pyfunction!(journal_fault, m)?)?;
     m.add_function(wrap_pyfunction!(journal_calls, m)?)?;
+    m.add_function(wrap_pyfunction!(journal_pending, m)?)?;
+    m.add_function(wrap_pyfunction!(journal_drain, m)?)?;
+    m.add_function(wrap_pyfunction!(journal_stop, m)?)?;
+    m.add_function(wrap_pyfunction!(journal_writer_delay, m)?)?;
     Ok(())
 }

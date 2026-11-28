@@ -8,6 +8,10 @@ Record layout (little endian):
 Reading stops silently at the first truncated or corrupt record, so a crash in the middle of an append never loses
 the records written before it. On open, a trailing partial/corrupt record is cut off so new appends follow the last
 valid record. atomic_write went with #53 (no add-on code writes a history folder); the reference keeps it.
+
+The writer thread (R079, 24.2b #153; its Python is tests/reference/journal_writer.py) is the engine's too:
+Journal.append_later hands it a record, writer_pending says how many it hasn't written, writer_drain waits for them
+and raises the last write error, writer_stop ends the thread once they are written.
 """
 from __future__ import annotations
 
@@ -22,3 +26,6 @@ except ImportError:     # EngineMissing: the names above still import, as types.
     _N = None
 if _N is not None:
     Journal = _N.Journal
+    writer_pending = _N.journal_pending
+    writer_drain = _N.journal_drain
+    writer_stop = _N.journal_stop

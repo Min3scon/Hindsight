@@ -103,7 +103,7 @@ def plan_of(rng, steps):
 
 
 def test_records_in_order_as_the_python_writer():
-    steps = list(C.steps())[::15]
+    steps = list(C.steps())
     assert len(steps) > 100, len(steps)
     for seed in (153, 1530, 15300):
         plan = plan_of(random.Random(seed), steps)

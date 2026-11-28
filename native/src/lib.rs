@@ -35,7 +35,7 @@ pyo3::create_exception!(hindsight_native, NewerFormatError, PyValueError, "A fil
 use pyo3::types::{PyByteArray, PyBytes, PyDict, PyList, PyString};
 
 /// Bumped when a function's meaning changes; hindsight/core/native.py refuses a different one.
-const API: u32 = 17;
+const API: u32 = 18;
 
 const TAG_RAW: u8 = 255;
 const MAX_ORDER: u8 = 3;
@@ -104,6 +104,10 @@ impl Buf {
         self.len() > 0 && other.len() > 0 && a0 < b0 + other.len() && b0 < a0 + self.len()
     }
 }
+
+// SAFETY: a shared Buf only reads the bytes the exporter keeps valid while the view is held, from any thread; the
+// release (Drop) needs ownership, and stays with the GIL holder (journal.rs's Pinned sends one across threads).
+unsafe impl Sync for Buf {}
 
 impl Drop for Buf {
     fn drop(&mut self) {
