@@ -83,7 +83,7 @@ merging the stack, in the order of the pull requests (on #24).
 | Move | Sub-issue | What moves | Blocked by | Measured by | Before (24.1: min, A/A spread) |
 |---|---|---|---|---|---|
 | 24.1 | #129 | nothing: baseline numbers and the commit they were measured at, the corpus, the equivalence helper, four references renamed | the stack merged | full `bench/suite.py`, `held_once_mem_f5.py` | this: `bench/results/baseline_8dbb008.md` |
-| 24.2 | #130 | `core/journal.py` with a test-only fault hook, the journal writer thread | #129, #131 | `commit`, `oneoff/open_journal_ab.py` | `commit_100k` 0.6423 ms (38%) |
+| 24.2 | #130, split: 24.2a #152, 24.2b #153 | `core/journal.py` with a test-only fault hook (a), the journal writer thread (b, blocked by a) | #129, #131 | `commit`, `oneoff/open_journal_ab.py` | `commit_100k` 0.6423 ms (38%) |
 | 24.3 | #131, split: 24.3a #146, 24.3b #147, 24.3c #148 | `core/types.py` (not `Settings`), `core/topopack.py`, the step data's JSON and `same_step` in `core/step.py`; in three parts, each blocked by the one before: the JSON (a), the engine classes with `step_from_bytes` and `same_step` (b), `topopack.py`, the hand-off, the dead code and the references switch (c) | #129 | `commit`, `jumps`, `editmode`, held memory | `commit_100k` 0.6423 ms (38%); `jump_3000_back_100k` 56.98 ms (18%); `edit_step_100k` 40.98 ms (11%); held after open 270.8 MB, save peak 348.3 MB (working set) |
 | 24.4 | #132 | `core/history.py` | #131 | `jumps`, `commit` | `jump_3000_back_100k` 56.98 ms (18%); `commit_100k` 0.6423 ms (38%) |
 | 24.5 | #133 | `core/store.py` | #132 | `commit`, `idle`, `packer_bench.py` | `commit_100k` 0.6423 ms (38%); `idle_60s_50obj` 13.01 ms (26%) |

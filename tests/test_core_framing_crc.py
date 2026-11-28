@@ -5,7 +5,8 @@ import tests.runner as R
 The framing itself (registry stream, journal records) stays Python: measured against a Rust reader
 (dev/reports/RUST.md, M5), reading is the kernel's copy and what Python spent its time on was
 zlib.crc32, which the engine does ten times as fast. So hindsight/core/{persist,journal,types}.py
-call `native.crc32`, and the pre-M5 files (zlib.crc32) are kept as tests/reference/{persist,journal}.py.
+call `native.crc32`, and the pre-M5 files (zlib.crc32) are kept as tests/reference/{persist,journal}.py. Since 24.2a
+(#152) the journal's framing is the engine's too (tests/test_core_journal_engine.py).
 
   crc32      equals zlib.crc32 for every buffer kind, length, start value and chaining
   journal    the bytes written, the records read back, the size found on open: equal to the reference,
@@ -24,6 +25,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))         # tests/: the reference copies (Blender's --python adds no path)
 from reference import v1_journal as rjournal, v1_persist as rpersist               # noqa: E402
+from reference import journal as cjournal   # 24.2a: the scanner is the engine's; it is checked against this one (test_core_journal_engine.py)  # noqa: E402
 from hindsight.core import journal, native, persist, step as stepmod          # noqa: E402
 from hindsight.core.history import History                                    # noqa: E402
 from hindsight.core.registry import Registry                                  # noqa: E402
@@ -168,7 +170,7 @@ def test_journal_truncated_and_flipped_everywhere():
     # cut at every byte: both readers find the same records, and opening cuts the file back to the same size
     for n in range(len(data) + 1):
         cut = data[:n]
-        a, b = outcome_journal(journal, cut), outcome_journal(rjournal, cut)
+        a, b = outcome_journal(cjournal, cut), outcome_journal(rjournal, cut)
         assert a == b, n
         tests += 1
     for n in range(0, len(data), 5):
@@ -181,16 +183,16 @@ def test_journal_truncated_and_flipped_everywhere():
         for xor in (0x01, 0x80, 0xFF):
             bad = bytearray(data)
             bad[i] ^= xor
-            assert outcome_journal(journal, bytes(bad)) == outcome_journal(rjournal, bytes(bad)), (i, xor)
+            assert outcome_journal(cjournal, bytes(bad)) == outcome_journal(rjournal, bytes(bad)), (i, xor)
             tests += 1
     # a claimed payload or header length that runs past the file, or past the u64
     head = struct.Struct("<4sBIQ")
     for plen in (2 ** 64 - 1, 2 ** 63, 2 ** 40, len(data) + 1, 10):
         for hlen in (0, 2, 64 * 2 ** 20, 64 * 2 ** 20 + 1, 2 ** 32 - 1):
             bad = head.pack(b"HSJ1", 1, hlen, plen) + b"{}" * 8 + b"\x00" * 8
-            assert outcome_journal(journal, bad) == outcome_journal(rjournal, bad), (plen, hlen)
+            assert outcome_journal(cjournal, bad) == outcome_journal(rjournal, bad), (plen, hlen)
             bad2 = data[:40] + bad
-            assert outcome_journal(journal, bad2) == outcome_journal(rjournal, bad2), (plen, hlen)
+            assert outcome_journal(cjournal, bad2) == outcome_journal(rjournal, bad2), (plen, hlen)
     # records with the CRC recomputed after damage (the damage is then not detectable by the CRC): a header that
     # is not JSON stops read() the same way in both
     hb = b"{not json"
