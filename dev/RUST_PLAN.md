@@ -56,8 +56,8 @@ merging the stack, in the order of the pull requests (on #24).
    turns a module into a facade switches every reference importing it to the copy, in the same PR. 24.3 (#148) switched
    the references of `core/types.py`, `step.py`, `topopack.py`, `codec.py` and `crc.py` (`tests/reference/step.py`,
    `delta.py`, `types.py`, `framing_extents.py`, `topopack.py`, and `v1_persist.py`'s `Entry`, `step_from_bytes` and
-   `SETTINGS`); 24.4 (#132) those of `core/history.py` (`v1_persist.py:224`, `:455`, `framing_extents.py:10`); 24.5a (#154) none (no reference imports `core/store.py`; its Packer, still
-   Python, moves in 24.5b); still to switch: `v1_persist.py`'s `registry.Registry` (`:225`; 24.6, since `tests/test_core_framing_crc.py:424`
+   `SETTINGS`); 24.4 (#132) those of `core/history.py` (`v1_persist.py:224`, `:455`, `framing_extents.py:10`); 24.5a (#154) and 24.5b (#155) none (no reference imports `core/store.py`;
+   its Packer is `tests/reference/store.py`'s since 24.5b); still to switch: `v1_persist.py`'s `registry.Registry` (`:225`; 24.6, since `tests/test_core_framing_crc.py:424`
    takes it as the oracle of `persist.registry_from_bytes`). `tests/test_core_reference.py`
    fails if a reference imports a facade (its `FACADES`, which each move adds to) and keeps failing if anything under `hindsight/` imports a reference module.
 2. **Equivalence, test first.** Before the engine code: property tests (hypothesis), the corpus of real files from
@@ -143,6 +143,18 @@ The review of #142 asked for design choices. These are the answers the moves fol
    against the recursion limit is given back for the fallback, so a `RecursionError` hits where it did). The cost is
    on the error path only: over the corpus's steps no stdlib json runs. If the owner lets the messages differ, the
    fallback can go and `tests/equiv.py` compares those functions' exceptions by class only.
+
+6. **When the main thread takes the packer's results in (24.5b, #155).** The packer is a Rust thread that holds no
+   Python object, so it can't set `entry.blob` itself as the Python worker did. Its results (a packed step's blob, a
+   recompressed blob, an error) wait in the engine until the main thread takes them in: at every call into the
+   packer (`submit`, `queue_recompress`, `pending`, `drain`, `stop`, `take_in`, and reading `packed`,
+   `recompressed`, `errors` or `last_error`, which the enforce pass and the Memory panel do) and at Blender's tick
+   (`runtime._maybe_pack` calls `take_in`, every 0.1 s when idle). A save drains first, as before, so it sees every
+   step packed; a quit stops the packer, which packs what it was handed, then takes it in. The entries change as
+   the worker changed them (`entry.step is step` checked, then the blob, `step = None`, the counters), only later:
+   a packed step's raw one is held up to one tick longer. A step to recompress is handed over as its pinned blob one
+   at a time, as soon as the user is idle, so the thread's own idle wait (IDLE_S, USER_IDLE_S, DUTY) is unchanged.
+   The alternative, a GIL-holding callback from the thread, breaks GIL rule 3.
 
 ## What stays in Python
 
